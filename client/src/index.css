@@ -1,0 +1,123 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Hero-Bild austauschbar per CSS-Variable (weißer Blüten-/Blätterwald).
+     Bleibt leer -> CSS-Atmosphäre als Fallback (siehe .hero-atmosphere). */
+  --hero-image: none;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-bg text-sage font-sans antialiased;
+    margin: 0;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display text-ivory;
+  }
+
+  /* Sichtbarer, kontraststarker Fokusring (WCAG) */
+  :focus-visible {
+    @apply outline-none ring-2 ring-mint ring-offset-2 ring-offset-bg;
+  }
+
+  ::selection {
+    background: #5dba8c;
+    color: #08150d;
+  }
+}
+
+@layer components {
+  /* Einheitliches Formularfeld (Inputs, Selects, Textareas) */
+  .input {
+    @apply w-full rounded-lg bg-card border border-white/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted;
+  }
+  .input:focus {
+    @apply outline-none border-mint/50;
+  }
+
+  /* Fallback-Atmosphäre, falls kein Hero-Bild gesetzt ist */
+  .hero-atmosphere {
+    background-color: #0b1e14;
+    background-image:
+      radial-gradient(1100px 520px at 78% -10%, rgba(93, 186, 140, 0.18), transparent 60%),
+      radial-gradient(820px 480px at 12% 12%, rgba(134, 210, 172, 0.1), transparent 55%),
+      radial-gradient(620px 620px at 50% 120%, rgba(28, 63, 45, 0.6), transparent 60%);
+  }
+
+  .hero-image {
+    background-image: var(--hero-image);
+    background-size: cover;
+    background-position: center;
+  }
+}
+
+/* Druck: nur das Dokument, sauberes A4-Layout */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #ffffff !important;
+  }
+  .print-page {
+    box-shadow: none !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+  }
+  @page {
+    margin: 16mm;
+  }
+}
+
+/* Sanfte Scroll-Animationen, respektiert reduzierte Bewegung */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Schmale, dezente Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #1c3f2d;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #27543c;
+}

@@ -1,0 +1,35 @@
+# Render.com Blueprint – kostenloses Deployment der DBZ-App (ein Web-Service).
+#
+# Deploy in wenigen Klicks:
+#   1. Konto auf https://render.com anlegen (kostenlos, GitHub-Login möglich)
+#   2. "New +" -> "Blueprint" -> dieses Repo + Branch auswählen
+#   3. Render liest diese Datei, erzeugt JWT_SECRET automatisch, klick "Apply"
+#   4. Nach ein paar Minuten ist die App unter einer *.onrender.com-Adresse live
+#
+# Hinweis zur Persistenz: Der kostenlose Tarif hat KEINE dauerhafte Festplatte.
+# Für eine Live-Demo genügt das – Demo-Konten werden bei jedem Start neu angelegt,
+# neu eingegebene Daten gehen bei einem Neustart aber verloren. Für Dauerbetrieb:
+# entweder eine bezahlte Instanz + Disk (siehe auskommentierten Block unten), oder
+# der geplante Umstieg auf Supabase/Postgres (nur server/store.js betroffen).
+services:
+  - type: web
+    name: dbz-app
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true # Render erzeugt einen sicheren Zufallswert
+
+# --- Für Dauerbetrieb mit Persistenz (kostenpflichtige Instanz) ---------------
+# Ersetze oben "plan: free" durch "plan: starter" und ergänze:
+#     envVars:
+#       - key: DBZ_DATA_DIR
+#         value: /data
+#     disk:
+#       name: dbz-data
+#       mountPath: /data
+#       sizeGB: 1

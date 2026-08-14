@@ -1,0 +1,19 @@
+{
+  "name": "DBZ – Deen Bildungszentrum",
+  "short_name": "DBZ",
+  "description": "Digitale Schulplattform des Deen Bildungszentrum: Anwesenheit, Hausaufgaben, Qur'an-Fortschritt und Kommunikation.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0B1E14",
+  "theme_color": "#0B1E14",
+  "categories": ["education", "productivity"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
