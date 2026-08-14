@@ -29,7 +29,7 @@ function Stat({ label, value, tone = 'mint' }) {
     absent: 'text-status-absent',
   };
   return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+    <div className="rounded-lg border border-black/10 bg-white/[0.03] p-4">
       <div className={`font-mono text-2xl ${colors[tone] || colors.mint}`}>{value}</div>
       <div className="text-xs text-sage-muted mt-1">{label}</div>
     </div>
@@ -99,7 +99,7 @@ function StudentHome({ d }) {
           <ul className="space-y-2">
             {d.openAssignments.map((a) => (
               <li key={a.id}>
-                <Link to={`/aufgaben/${a.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 p-3 hover:bg-white/[0.04]">
+                <Link to={`/aufgaben/${a.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-black/10 p-3 hover:bg-white/[0.04]">
                   <div className="min-w-0">
                     <div className="text-ivory truncate">{a.title}</div>
                     <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · Frist {fmtTime(a.dueAt) || 'offen'}</div>
@@ -173,7 +173,7 @@ function TeacherHome({ d }) {
 
 function ActionCard({ to, icon: Icon, label, count }) {
   return (
-    <Link to={to} className="rounded-xl border border-white/10 bg-card p-4 hover:bg-hover transition flex items-center gap-3">
+    <Link to={to} className="rounded-xl border border-black/10 bg-card p-4 hover:bg-hover transition flex items-center gap-3">
       <span className="grid place-items-center h-10 w-10 rounded-lg bg-mint/15 text-mint"><Icon size={20} /></span>
       <div>
         <div className="font-mono text-xl text-ivory">{count}</div>
@@ -233,7 +233,7 @@ function SharedHome({ d }) {
       {hasUpcoming && (
         <Card className="p-5">
           <CardHeader title="Anstehend" icon={CalendarClock} action={<Button as={Link} to="/kalender" variant="ghost" size="sm">Kalender</Button>} />
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-black/5">
             {d.upcoming.map((e, i) => (
               <li key={i} className="py-2.5 flex items-center gap-3">
                 <span className={`grid place-items-center h-8 w-8 rounded-lg shrink-0 ${e.type === 'lesson' ? 'bg-mint/15 text-mint' : 'bg-status-late/15 text-status-late'}`}>
@@ -253,7 +253,7 @@ function SharedHome({ d }) {
       {hasAnn && (
         <Card className="p-5">
           <CardHeader title="Ankündigungen" icon={Megaphone} action={<Button as={Link} to="/ankuendigungen" variant="ghost" size="sm">Alle</Button>} />
-          <ul className="divide-y divide-white/5">
+          <ul className="divide-y divide-black/5">
             {d.announcements.map((a) => (
               <li key={a.id} className="py-2.5">
                 <div className="text-sm text-ivory">{a.title} <span className="text-[11px] text-sage-muted">· {a.audienceLabel}</span></div>
@@ -272,10 +272,10 @@ function NotificationPeek({ items }) {
   return (
     <Card className="mt-6 p-5">
       <CardHeader title="Neueste Benachrichtigungen" icon={Bell} action={<Button as={Link} to="/benachrichtigungen" variant="ghost" size="sm">Alle</Button>} />
-      <ul className="divide-y divide-white/5">
+      <ul className="divide-y divide-black/5">
         {items.slice(0, 4).map((n) => (
           <li key={n.id} className="py-3 flex items-start gap-3">
-            <span className={`mt-1.5 h-2 w-2 rounded-full ${n.read ? 'bg-white/20' : 'bg-mint'}`} />
+            <span className={`mt-1.5 h-2 w-2 rounded-full ${n.read ? 'bg-black/15' : 'bg-mint'}`} />
             <div>
               <div className="text-sm text-ivory">{n.title}</div>
               <div className="text-xs text-sage-muted">{n.body}</div>

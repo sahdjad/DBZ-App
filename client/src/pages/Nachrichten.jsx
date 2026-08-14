@@ -125,7 +125,7 @@ function ThreadView({ id, onBack }) {
   if (!data) return <Spinner />;
   return (
     <Card className="flex flex-col" style={{ height: 'calc(100vh - 220px)', minHeight: 360 }}>
-      <div className="flex items-center gap-3 p-4 border-b border-white/10">
+      <div className="flex items-center gap-3 p-4 border-b border-black/10">
         <button onClick={onBack} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
         <span className="text-ivory">{data.otherName}</span>
@@ -135,7 +135,7 @@ function ThreadView({ id, onBack }) {
           const mine = m.senderId === data.meId;
           return (
             <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-              <div className={['max-w-[80%] rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-sidebar rounded-br-sm' : 'bg-card border border-white/10 text-sage rounded-bl-sm'].join(' ')}>
+              <div className={['max-w-[80%] rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-sidebar rounded-br-sm' : 'bg-card border border-black/10 text-sage rounded-bl-sm'].join(' ')}>
                 <p className="text-sm whitespace-pre-line">{m.body}</p>
                 <div className={`text-[10px] mt-1 ${mine ? 'text-sidebar/70' : 'text-sage-muted'}`}>{fmt(m.createdAt)}</div>
               </div>
@@ -144,7 +144,7 @@ function ThreadView({ id, onBack }) {
         })}
         <div ref={bottomRef} />
       </div>
-      <div className="p-3 border-t border-white/10 flex items-end gap-2">
+      <div className="p-3 border-t border-black/10 flex items-end gap-2">
         <textarea className="input flex-1 resize-none" rows={1} placeholder="Nachricht …" value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }} />

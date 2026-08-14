@@ -31,27 +31,27 @@
   }
 
   ::selection {
-    background: #5dba8c;
-    color: #08150d;
+    background: #15653f;
+    color: #ffffff;
   }
 }
 
 @layer components {
   /* Einheitliches Formularfeld (Inputs, Selects, Textareas) */
   .input {
-    @apply w-full rounded-lg bg-card border border-white/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted;
+    @apply w-full rounded-lg bg-card border border-black/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted;
   }
   .input:focus {
     @apply outline-none border-mint/50;
   }
 
-  /* Fallback-Atmosphäre, falls kein Hero-Bild gesetzt ist */
+  /* Fallback-Atmosphäre, falls kein Hero-Bild gesetzt ist (helle Variante) */
   .hero-atmosphere {
-    background-color: #0b1e14;
+    background-color: #eef5f0;
     background-image:
-      radial-gradient(1100px 520px at 78% -10%, rgba(93, 186, 140, 0.18), transparent 60%),
-      radial-gradient(820px 480px at 12% 12%, rgba(134, 210, 172, 0.1), transparent 55%),
-      radial-gradient(620px 620px at 50% 120%, rgba(28, 63, 45, 0.6), transparent 60%);
+      radial-gradient(1100px 520px at 78% -10%, rgba(21, 101, 63, 0.10), transparent 60%),
+      radial-gradient(820px 480px at 12% 12%, rgba(30, 138, 86, 0.08), transparent 55%),
+      radial-gradient(620px 620px at 50% 120%, rgba(21, 101, 63, 0.06), transparent 60%);
   }
 
   .hero-image {
@@ -115,9 +115,9 @@
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1c3f2d;
+  background: #c4d6cc;
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #27543c;
+  background: #a9c4b7;
 }

@@ -48,7 +48,7 @@ function SurahList({ surahs, marks, onSelect, onMarksChanged }) {
       {marks?.bookmarks?.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Lesezeichen" icon={Bookmark} />
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-black/5">
             {marks.bookmarks.map((b) => (
               <div key={b.id} className="py-2.5 flex items-center justify-between gap-3">
                 <button onClick={() => onSelect(b.surah, b.ayah)} className="text-left min-w-0">
@@ -69,7 +69,7 @@ function SurahList({ surahs, marks, onSelect, onMarksChanged }) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {filtered.map((s) => (
           <button key={s.n} onClick={() => onSelect(s.n)}
-            className="flex items-center gap-3 rounded-xl border border-white/10 bg-card p-3 hover:bg-hover transition text-left">
+            className="flex items-center gap-3 rounded-xl border border-black/10 bg-card p-3 hover:bg-hover transition text-left">
             <span className="grid place-items-center h-9 w-9 rounded-lg bg-mint/15 text-mint font-mono text-sm shrink-0">{s.n}</span>
             <div className="min-w-0">
               <div className="text-ivory truncate">{s.name}</div>

@@ -106,7 +106,7 @@ export default function AufgabeDetail() {
               </a>
             ))}
             {review && (
-              <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.03] p-3">
+              <div className="mt-3 rounded-lg border border-black/10 bg-white/[0.03] p-3">
                 <div className="text-sm text-ivory mb-1">Feedback der Lehrkraft</div>
                 {review.gradeLabel && <div className="text-sm text-mint-light">Bewertung: {review.gradeLabel}</div>}
                 {review.feedbackText && <p className="text-sage text-sm whitespace-pre-line mt-1">{review.feedbackText}</p>}
@@ -129,7 +129,7 @@ export default function AufgabeDetail() {
           <CardHeader title={sub ? 'Erneut abgeben / überarbeiten' : 'Abgabe'} icon={Upload} />
           <div className="p-4 space-y-4">
             {(a.type === 'audio' || a.type === 'quran' || a.type === 'mixed') && (
-              <div className="rounded-lg border border-white/10 p-4">
+              <div className="rounded-lg border border-black/10 p-4">
                 <div className="text-sm text-sage mb-2">Audio direkt aufnehmen</div>
                 {!recording ? (
                   <Button onClick={startRec} variant="outline"><Mic size={18} /> Aufnahme starten</Button>

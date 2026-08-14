@@ -107,12 +107,12 @@ function UsersTab() {
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-sage-muted border-b border-white/10">
+            <thead><tr className="text-left text-sage-muted border-b border-black/10">
               <th className="p-3">Name</th><th className="p-3">E-Mail</th><th className="p-3">Rolle</th><th className="p-3">Status</th><th className="p-3"></th>
             </tr></thead>
             <tbody>
               {users.map((u) => (
-                <tr key={u.id} className="border-b border-white/5">
+                <tr key={u.id} className="border-b border-black/5">
                   <td className="p-3 text-ivory">{u.name}</td>
                   <td className="p-3 text-sage-muted font-mono text-xs">{u.email}</td>
                   <td className="p-3">{u.roleLabel}</td>
@@ -209,7 +209,7 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
           </div>
         )}
 
-        <div className="rounded-lg border border-white/10 p-3">
+        <div className="rounded-lg border border-black/10 p-3">
           <div className="text-sm text-sage mb-2 flex items-center gap-2"><KeyRound size={16} /> Passwort zurücksetzen</div>
           <div className="flex gap-2">
             <input type="text" className="input" placeholder="Neues Passwort (mind. 6 Zeichen)" value={pw} onChange={(e) => setPw(e.target.value)} />
@@ -320,12 +320,12 @@ function AuditTab() {
     <Card className="p-0 overflow-hidden">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-sage-muted border-b border-white/10">
+          <thead><tr className="text-left text-sage-muted border-b border-black/10">
             <th className="p-3">Zeit</th><th className="p-3">Aktion</th><th className="p-3">Objekt</th>
           </tr></thead>
           <tbody>
             {logs.map((l) => (
-              <tr key={l.id} className="border-b border-white/5">
+              <tr key={l.id} className="border-b border-black/5">
                 <td className="p-3 text-sage-muted font-mono text-xs">{new Date(l.createdAt).toLocaleString('de-DE')}</td>
                 <td className="p-3 text-ivory font-mono text-xs">{l.action}</td>
                 <td className="p-3 text-sage-muted text-xs">{l.entityType}</td>
@@ -414,12 +414,12 @@ function InvitesTab() {
       <Card className="p-0 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-sage-muted border-b border-white/10">
+            <thead><tr className="text-left text-sage-muted border-b border-black/10">
               <th className="p-3">Rolle</th><th className="p-3">Klasse</th><th className="p-3">Nutzung</th><th className="p-3">Gültig bis</th><th className="p-3">Status</th><th className="p-3"></th>
             </tr></thead>
             <tbody>
               {invites.map((i) => (
-                <tr key={i.id} className="border-b border-white/5">
+                <tr key={i.id} className="border-b border-black/5">
                   <td className="p-3 text-ivory">{i.roleLabel}{i.childName ? ` (${i.childName})` : ''}</td>
                   <td className="p-3 text-sage-muted">{i.className || '–'}</td>
                   <td className="p-3">{i.usedCount}/{i.maxUses}</td>

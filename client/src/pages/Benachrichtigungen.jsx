@@ -32,7 +32,7 @@ export default function Benachrichtigungen() {
         <div className="space-y-2">
           {items.map((n) => (
             <Card key={n.id} className={`p-4 flex items-start gap-3 ${n.read ? '' : 'border-mint/30'}`}>
-              <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${n.read ? 'bg-white/20' : dot[n.level] || 'bg-mint'}`} />
+              <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${n.read ? 'bg-black/15' : dot[n.level] || 'bg-mint'}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-ivory">{n.title}</div>
                 <div className="text-sm text-sage">{n.body}</div>

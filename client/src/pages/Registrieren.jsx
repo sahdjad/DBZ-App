@@ -46,7 +46,7 @@ export default function Registrieren() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-bg">
-      <div className="hidden lg:flex flex-col justify-between p-12 hero-atmosphere border-r border-white/10">
+      <div className="hidden lg:flex flex-col justify-between p-12 hero-atmosphere border-r border-black/10">
         <div className="flex items-center gap-3">
           <span className="grid place-items-center h-11 w-11 rounded-lg bg-mint/15 border border-mint/25 text-mint"><BookMarked size={24} /></span>
           <div className="leading-tight">

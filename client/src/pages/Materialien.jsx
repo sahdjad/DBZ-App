@@ -63,7 +63,7 @@ function MaterialCard({ m, canDelete, onDelete }) {
         {canDelete && <button onClick={onDelete} className="text-status-absent p-1 shrink-0" aria-label="Löschen"><Trash2 size={16} /></button>}
       </div>
       {m.description && <p className="text-sage text-sm mt-2">{m.description}</p>}
-      {m.materialType === 'note' && <p className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-white/[0.03] border border-white/10 p-3">{m.body}</p>}
+      {m.materialType === 'note' && <p className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-white/[0.03] border border-black/10 p-3">{m.body}</p>}
       {m.materialType === 'link' && (
         <a href={m.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-mint-light text-sm hover:underline">
           Öffnen <ExternalLink size={14} />

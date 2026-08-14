@@ -105,7 +105,7 @@ function NavItems({ items, unread, onNavigate }) {
             [
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300',
               isActive
-                ? 'bg-hover text-ivory border border-white/10'
+                ? 'bg-hover text-ivory border border-black/10'
                 : 'text-sage hover:text-ivory hover:bg-white/[0.05] border border-transparent',
             ].join(' ')
           }
@@ -148,10 +148,10 @@ export default function AppLayout({ children, title }) {
   };
 
   const Sidebar = (
-    <div className="flex flex-col h-full bg-sidebar border-r border-white/10">
+    <div className="flex flex-col h-full bg-sidebar border-r border-black/10">
       <Brand />
       <NavItems items={items} unread={unread} onNavigate={() => setOpen(false)} />
-      <div className="p-3 border-t border-white/10">
+      <div className="p-3 border-t border-black/10">
         <div className="flex items-center gap-3 px-2 py-2">
           <Avatar name={user?.name} size={36} />
           <div className="leading-tight min-w-0 flex-1">
@@ -181,7 +181,7 @@ export default function AppLayout({ children, title }) {
 
       <div className="flex-1 min-w-0 flex flex-col">
         {/* Topbar */}
-        <header className="sticky top-0 z-30 flex items-center gap-3 px-4 lg:px-8 py-4 bg-bg/85 backdrop-blur border-b border-white/10">
+        <header className="sticky top-0 z-30 flex items-center gap-3 px-4 lg:px-8 py-4 bg-bg/85 backdrop-blur border-b border-black/10">
           <button
             className="lg:hidden text-sage hover:text-ivory"
             onClick={() => setOpen(true)}
@@ -211,7 +211,7 @@ export default function AppLayout({ children, title }) {
 
 function MobileTabBar({ items }) {
   return (
-    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar/95 backdrop-blur border-t border-white/10 flex">
+    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar/95 backdrop-blur border-t border-black/10 flex">
       {items.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}

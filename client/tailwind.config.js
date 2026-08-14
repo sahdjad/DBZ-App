@@ -4,27 +4,27 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Design-System „Deep Forest / Dark Nature"
-        bg: '#0B1E14',
-        sidebar: '#08150D',
-        card: '#142F22',
-        moss: '#1C3F2D', // Moos-Rahmen
-        hover: '#27543C',
+        // Design-System „Ivory / Deep Forest" – weiß mit dunkelgrünen Akzenten (DBZ-Logo)
+        bg: '#F4F8F5', // Seitenhintergrund (sanftes Weiß)
+        sidebar: '#FFFFFF', // Navigations-/Kartenweiß & Kontrasttext auf Grün
+        card: '#FFFFFF', // Karten & Eingabefelder
+        moss: '#DCE7E1', // helle Rahmen
+        hover: '#E7F1EB', // sanftes Grün beim Überfahren
         mint: {
-          DEFAULT: '#5DBA8C',
-          light: '#86D2AC',
+          DEFAULT: '#15653F', // Dunkelgrün (Akzent, Buttons, Links) – wie DBZ-Logo
+          light: '#1E8A56',
         },
-        ivory: '#F6FAF8', // Überschriften
+        ivory: '#0F2A1E', // Überschriften (sehr dunkles Grün)
         sage: {
-          DEFAULT: '#D1DCD6', // Fließtext
-          muted: '#88A192', // gedämpft
+          DEFAULT: '#39493F', // Fließtext
+          muted: '#68786E', // gedämpft
         },
         status: {
-          present: '#5DBA8C',
-          late: '#CBA45A', // Bernstein – verspätet
-          incomplete: '#CBA45A',
-          excused: '#7CA5C9', // dezentes Blau – entschuldigt
-          absent: '#D08770', // Terrakotta – unentschuldigt/abwesend
+          present: '#1E8A56',
+          late: '#A9781A', // Bernstein – verspätet
+          incomplete: '#A9781A',
+          excused: '#3C6B9E', // dezentes Blau – entschuldigt
+          absent: '#BC5238', // Terrakotta – unentschuldigt/abwesend
         },
       },
       fontFamily: {

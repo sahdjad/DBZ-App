@@ -83,7 +83,7 @@ function ReviewCard({ sub, onDone }) {
       )}
 
       {open && (
-        <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
+        <div className="mt-4 border-t border-black/10 pt-4 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[['tajwid', 'Tajwid'], ['pronunciation', 'Aussprache'], ['fluency', 'Flüssigkeit'], ['memorization', 'Hifz'], ['errorCount', 'Fehler']].map(([k, l]) => (
               <label key={k} className="block">

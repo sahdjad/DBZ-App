@@ -60,7 +60,7 @@ function StudentExam() {
             const myAns = (attempt.answers || []).find((a) => a.questionId === q.id) || {};
             const correct = solById[q.id] || [];
             return (
-              <div key={q.id} className="rounded-lg border border-white/10 p-3">
+              <div key={q.id} className="rounded-lg border border-black/10 p-3">
                 <div className="text-ivory mb-2">{i + 1}. {q.prompt} <span className="text-xs text-sage-muted">({q.points} P)</span></div>
                 {q.type === 'text' ? (
                   <p className="text-sage text-sm whitespace-pre-line">{myAns.text || '—'}{typeof myAns.awardedPoints === 'number' ? ` · ${myAns.awardedPoints}/${q.points} P` : ''}</p>
@@ -127,7 +127,7 @@ function StudentExam() {
       <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} action={<Badge tone="neutral">Bestehen ab {passPercentage}%</Badge>} />
       <div className="p-4 space-y-4">
         {exam.questions.map((q, i) => (
-          <div key={q.id} className="rounded-lg border border-white/10 p-3">
+          <div key={q.id} className="rounded-lg border border-black/10 p-3">
             <div className="text-ivory mb-2">{i + 1}. {q.prompt} <span className="text-xs text-sage-muted">({q.points} P)</span></div>
             {q.type === 'text' ? (
               <textarea className="input" rows={3} value={answers[q.id]?.text || ''} onChange={(e) => setText(q.id, e.target.value)} />
@@ -137,8 +137,8 @@ function StudentExam() {
                   const sel = (answers[q.id]?.selected || []).includes(o.id);
                   return (
                     <button key={o.id} onClick={() => (q.type === 'single' ? setSingle(q.id, o.id) : toggleMulti(q.id, o.id))}
-                      className={['w-full text-left px-3 py-2 rounded-lg border flex items-center gap-2', sel ? 'border-mint bg-mint/10 text-ivory' : 'border-white/10 text-sage hover:bg-white/5'].join(' ')}>
-                      <span className={['h-4 w-4 grid place-items-center', q.type === 'single' ? 'rounded-full' : 'rounded', sel ? 'bg-mint text-sidebar' : 'border border-white/30'].join(' ')}>{sel ? '✓' : ''}</span>
+                      className={['w-full text-left px-3 py-2 rounded-lg border flex items-center gap-2', sel ? 'border-mint bg-mint/10 text-ivory' : 'border-black/10 text-sage hover:bg-black/5'].join(' ')}>
+                      <span className={['h-4 w-4 grid place-items-center', q.type === 'single' ? 'rounded-full' : 'rounded', sel ? 'bg-mint text-sidebar' : 'border border-black/20'].join(' ')}>{sel ? '✓' : ''}</span>
                       {o.text}
                     </button>
                   );
@@ -221,7 +221,7 @@ function GradeCard({ exam, att, onDone }) {
           const a = (att.answers || []).find((x) => x.questionId === q.id) || {};
           if (q.type === 'text') {
             return (
-              <div key={q.id} className="rounded-lg border border-white/10 p-3">
+              <div key={q.id} className="rounded-lg border border-black/10 p-3">
                 <div className="text-sm text-sage-muted mb-1">{i + 1}. {q.prompt} ({q.points} P)</div>
                 <p className="text-sage text-sm whitespace-pre-line mb-2">{a.text || '—'}</p>
                 <label className="text-xs text-sage-muted flex items-center gap-2">
@@ -236,7 +236,7 @@ function GradeCard({ exam, att, onDone }) {
           const sel = new Set(a.selected || []);
           const ok = correct.size === sel.size && [...correct].every((c) => sel.has(c));
           return (
-            <div key={q.id} className="rounded-lg border border-white/10 p-3">
+            <div key={q.id} className="rounded-lg border border-black/10 p-3">
               <div className="text-sm text-sage-muted mb-1 flex items-center gap-2">
                 {i + 1}. {q.prompt} ({q.points} P)
                 {ok ? <CheckCircle2 size={14} className="text-status-present" /> : <span className="text-status-absent text-xs">falsch</span>}

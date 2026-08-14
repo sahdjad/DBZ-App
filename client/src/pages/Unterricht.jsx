@@ -118,7 +118,7 @@ export default function Unterricht() {
           subtitle="Automatisch per Check-in, manuell korrigierbar"
           action={<Button variant="ghost" size="sm" onClick={() => loadAttendance(active)}><RefreshCw size={16} /> Aktualisieren</Button>}
         />
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-black/5">
           {!attendance ? <Spinner /> : attendance.map((r) => (
             <div key={r.studentId} className="py-3 flex items-center justify-between gap-3 flex-wrap">
               <div className="min-w-0">

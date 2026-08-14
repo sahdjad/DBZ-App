@@ -21,7 +21,7 @@ export function QrImage({ value, size = 220 }) {
       alive = false;
     };
   }, [value, size]);
-  if (!src) return <div style={{ width: size, height: size }} className="rounded-lg bg-white/10 animate-pulse" />;
+  if (!src) return <div style={{ width: size, height: size }} className="rounded-lg bg-black/10 animate-pulse" />;
   return <img src={src} width={size} height={size} alt="QR-Code zum Einchecken" className="rounded-lg" />;
 }
 
@@ -96,7 +96,7 @@ export function QrScanner({ onResult, onError }) {
   }, []);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-white/10 bg-black">
+    <div className="relative rounded-xl overflow-hidden border border-black/10 bg-black">
       <video ref={videoRef} playsInline muted className="w-full aspect-square object-cover" />
       {active && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center">

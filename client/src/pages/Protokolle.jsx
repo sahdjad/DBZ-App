@@ -73,7 +73,7 @@ export default function Protokolle() {
 
       <Card className="p-5">
         <CardHeader title="Protokolle" subtitle="Erst nach Lehrerbestätigung offiziell" icon={ClipboardList} />
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-black/5">
           {!protocols ? <Spinner /> : protocols.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
           ) : protocols.map((p) => (

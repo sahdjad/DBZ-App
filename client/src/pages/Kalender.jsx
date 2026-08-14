@@ -51,11 +51,11 @@ export default function Kalender() {
     <AppLayout title="Kalender">
       <Card className="p-5">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={() => move(-1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-white/5" aria-label="Vorheriger Monat">
+          <button onClick={() => move(-1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-black/5" aria-label="Vorheriger Monat">
             <ChevronLeft size={20} />
           </button>
           <h2 className="font-display text-lg text-ivory capitalize">{monthName}</h2>
-          <button onClick={() => move(1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-white/5" aria-label="Nächster Monat">
+          <button onClick={() => move(1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-black/5" aria-label="Nächster Monat">
             <ChevronRight size={20} />
           </button>
         </div>
@@ -78,7 +78,7 @@ export default function Kalender() {
                   onClick={() => setSelected(new Date(d))}
                   className={[
                     'aspect-square rounded-lg flex flex-col items-center justify-center gap-1 text-sm transition border',
-                    isSel ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-white/5',
+                    isSel ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-black/5',
                     inMonth ? 'text-ivory' : 'text-sage-muted/50',
                   ].join(' ')}
                 >
@@ -103,7 +103,7 @@ export default function Kalender() {
 
       <Card className="p-5 mt-4">
         <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-black/5">
           {selectedEvents.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Keine Termine an diesem Tag.</p>
           ) : (

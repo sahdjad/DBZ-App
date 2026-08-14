@@ -55,7 +55,7 @@ export default function StudentProfil() {
         {/* Aufgaben */}
         <Card className="md:col-span-2 p-5">
           <CardHeader title="Aufgaben" icon={BookOpen} />
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-black/5">
             {data.assignments.length === 0 ? (
               <p className="p-4 text-sage-muted text-sm">Keine Aufgaben.</p>
             ) : (
@@ -79,7 +79,7 @@ export default function StudentProfil() {
       {/* Verhalten */}
       <Card className="p-5 mt-4">
         <CardHeader title="Verhalten & Tarbiyah" icon={Sparkles} />
-        <div className="divide-y divide-white/5">
+        <div className="divide-y divide-black/5">
           {data.behavior.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Keine Vermerke.</p>
           ) : (

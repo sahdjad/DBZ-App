@@ -58,7 +58,7 @@ export default function Login() {
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-bg">
       {/* Markenseite */}
-      <div className="hidden lg:flex flex-col justify-between p-12 hero-atmosphere border-r border-white/10">
+      <div className="hidden lg:flex flex-col justify-between p-12 hero-atmosphere border-r border-black/10">
         <div className="flex items-center gap-3">
           <span className="grid place-items-center h-11 w-11 rounded-lg bg-mint/15 border border-mint/25 text-mint">
             <BookMarked size={24} strokeWidth={1.75} />
@@ -97,7 +97,7 @@ export default function Login() {
                 autoComplete="username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="mt-1 w-full rounded-lg bg-card border border-white/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
+                className="mt-1 w-full rounded-lg bg-card border border-black/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
                 placeholder="name@dbz.de"
                 required
               />
@@ -109,7 +109,7 @@ export default function Login() {
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="mt-1 w-full rounded-lg bg-card border border-white/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
+                className="mt-1 w-full rounded-lg bg-card border border-black/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
                 placeholder="••••••••"
                 required
               />
@@ -127,7 +127,7 @@ export default function Login() {
 
           <p className="text-sm text-sage-muted mt-4 text-center">
             <Link to="/passwort-vergessen" className="text-mint-light hover:underline">Passwort vergessen?</Link>
-            <span className="mx-2 text-white/20">·</span>
+            <span className="mx-2 text-black/15">·</span>
             Einladung? <Link to="/registrieren" className="text-mint-light hover:underline">Konto erstellen</Link>
           </p>
 
@@ -141,7 +141,7 @@ export default function Login() {
                   key={d.email}
                   onClick={(e) => submit(e, { email: d.email, password: 'demo1234' })}
                   disabled={busy}
-                  className="text-left rounded-lg border border-white/10 px-3 py-2 hover:bg-white/[0.05] transition"
+                  className="text-left rounded-lg border border-black/10 px-3 py-2 hover:bg-white/[0.05] transition"
                 >
                   <div className="text-sm text-ivory">{d.label}</div>
                   <div className="text-[11px] font-mono text-sage-muted truncate">{d.email}</div>
