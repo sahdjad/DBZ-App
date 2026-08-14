@@ -16,8 +16,10 @@ services:
     name: dbz-app
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
-    startCommand: npm start
+    # NODE_ENV=production lässt npm die devDependencies aus – dazu gehört auch
+    # das Build-Werkzeug vite. Darum die dev-Abhängigkeiten explizit mitinstallieren.
+    buildCommand: npm install --include=dev && npm --prefix client install --include=dev && npm --prefix client run build
+    startCommand: node server/index.js
     envVars:
       - key: NODE_ENV
         value: production
