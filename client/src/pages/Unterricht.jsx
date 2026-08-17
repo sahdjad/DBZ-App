@@ -13,6 +13,16 @@ const STATUSES = [
   ['left_early', 'Früher gegangen'],
 ];
 
+// Farbige Markierung pro Zeile – Anwesenheit auf einen Blick (grün/gelb/blau/rot).
+const ROW_TINT = {
+  present: 'border-status-present bg-status-present/[0.07]',
+  late: 'border-status-late bg-status-late/[0.07]',
+  left_early: 'border-status-late bg-status-late/[0.07]',
+  excused: 'border-status-excused bg-status-excused/[0.07]',
+  unexcused: 'border-status-absent bg-status-absent/[0.07]',
+};
+const rowTint = (status) => ROW_TINT[status] || 'border-status-absent bg-status-absent/[0.05]';
+
 export default function Unterricht() {
   const toast = useToast();
   const [sessions, setSessions] = useState(null);
@@ -118,9 +128,9 @@ export default function Unterricht() {
           subtitle="Automatisch per Check-in, manuell korrigierbar"
           action={<Button variant="ghost" size="sm" onClick={() => loadAttendance(active)}><RefreshCw size={16} /> Aktualisieren</Button>}
         />
-        <div className="divide-y divide-black/5">
+        <div className="space-y-2 mt-2">
           {!attendance ? <Spinner /> : attendance.map((r) => (
-            <div key={r.studentId} className="py-3 flex items-center justify-between gap-3 flex-wrap">
+            <div key={r.studentId} className={`rounded-lg border-l-4 pl-3 pr-3 py-2.5 flex items-center justify-between gap-3 flex-wrap ${rowTint(r.status)}`}>
               <div className="min-w-0">
                 <div className="text-ivory">{r.name}</div>
                 <div className="text-xs text-sage-muted">

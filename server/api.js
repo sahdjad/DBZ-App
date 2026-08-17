@@ -603,6 +603,8 @@ function attendanceStats(studentId) {
     avgMinutesLate: lateMinutes.length
       ? Math.round(lateMinutes.reduce((a, b) => a + b, 0) / lateMinutes.length)
       : 0,
+    // Kumulierte Gesamt-Verspätung in Minuten (Summe über alle Sitzungen).
+    totalMinutesLate: lateMinutes.reduce((a, b) => a + b, 0),
   };
 }
 
@@ -942,6 +944,13 @@ function decorateForStudent(a, studentId) {
   const sub = db.all('submissions').find((s) => s.assignmentId === a.id && s.studentId === studentId);
   const due = effectiveDue(a, studentId);
   const isOverdue = due ? new Date(due).getTime() < Date.now() : false;
+  const isRevision = sub && sub.status === 'revision_required';
+  // Nach dem Absenden gesperrt (10-Min-Kulanz), außer der Lehrer gab zur Überarbeitung frei.
+  const GRACE_MS = 10 * 60 * 1000;
+  const locked =
+    !!sub && sub.status === 'submitted' && !isRevision && sub.submittedAt
+      ? Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS
+      : false;
   let studentStatus = 'not_opened';
   if (sub) {
     studentStatus =
@@ -962,7 +971,8 @@ function decorateForStudent(a, studentId) {
     type: a.type,
     subjectName: findSubject(a.subjectId)?.name || null,
     dueAt: due,
-    canSubmit: !isOverdue || (sub && sub.status === 'revision_required'),
+    canSubmit: isRevision || (!isOverdue && !locked),
+    locked,
     studentStatus,
   };
 }
@@ -1026,6 +1036,13 @@ router.post(
     // Nach Deadline gesperrt – außer Überarbeitung nach Aufforderung.
     if (due && new Date(due).getTime() < Date.now() && !isRevision)
       return res.status(400).json({ error: 'Die Abgabefrist ist abgelaufen' });
+    // Nach dem Absenden gesperrt (10-Min-Kulanz), außer der Lehrer gibt sie zur Überarbeitung frei.
+    const GRACE_MS = 10 * 60 * 1000;
+    if (sub && sub.status === 'submitted' && !isRevision &&
+        Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS)
+      return res.status(400).json({
+        error: 'Diese Abgabe ist gesperrt. Bitte deine Lehrkraft, sie zurückzusetzen oder die Frist zu verlängern.',
+      });
 
     const files = (req.files || []).map((f) => ({
       id: newId('subfile'),

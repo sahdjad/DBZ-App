@@ -168,7 +168,11 @@ export default function AufgabeDetail() {
           </div>
         </Card>
       ) : (
-        <Card className="p-5 text-sage-muted">Die Abgabefrist ist abgelaufen. Wende dich an deine Lehrkraft für eine Verlängerung.</Card>
+        <Card className="p-5 text-sage-muted">
+          {a.locked
+            ? 'Deine Abgabe wurde gesendet und ist jetzt gesperrt. Für Korrekturen wende dich an deine Lehrkraft – sie kann die Abgabe zurücksetzen oder die Frist verlängern.'
+            : 'Die Abgabefrist ist abgelaufen. Wende dich an deine Lehrkraft für eine Verlängerung.'}
+        </Card>
       )}
     </AppLayout>
   );

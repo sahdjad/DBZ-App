@@ -89,6 +89,7 @@ function ManagerView() {
                   <th className="p-3 font-medium">Quote</th>
                   <th className="p-3 font-medium">Anw.</th>
                   <th className="p-3 font-medium">Versp.</th>
+                  <th className="p-3 font-medium">Versp. gesamt</th>
                   <th className="p-3 font-medium">Entsch.</th>
                   <th className="p-3 font-medium">Unentsch.</th>
                 </tr>
@@ -100,11 +101,12 @@ function ManagerView() {
                     <td className="p-3 font-mono">{rate(r)}%</td>
                     <td className="p-3">{r.present}</td>
                     <td className="p-3">{r.late}</td>
+                    <td className="p-3 font-mono">{r.totalMinutesLate || 0} Min</td>
                     <td className="p-3">{r.excused}</td>
                     <td className="p-3">{r.unexcused > 0 ? <StatusBadge status="unexcused" /> : r.unexcused}</td>
                   </tr>
                 ))}
-                {rows.length === 0 && <tr><td colSpan={6} className="p-4 text-sage-muted">Keine Schüler in dieser Klasse.</td></tr>}
+                {rows.length === 0 && <tr><td colSpan={7} className="p-4 text-sage-muted">Keine Schüler in dieser Klasse.</td></tr>}
               </tbody>
             </table>
           </div>
