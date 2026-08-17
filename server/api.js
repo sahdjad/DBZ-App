@@ -108,6 +108,38 @@ function ensureTodaySession(klass) {
   return s;
 }
 
+/** Fester Check-in-Code der Klasse für den aufhängbaren Tür-QR (stabil, einmalig erzeugt). */
+function ensureClassCheckinCode(klass) {
+  if (!klass.checkinCode) {
+    klass.checkinCode = 'TUR-' + crypto.randomBytes(6).toString('base64url');
+    db.commit();
+  }
+  return klass.checkinCode;
+}
+
+/**
+ * Ist der Tür-Check-in gerade möglich? Öffnet automatisch rund um die
+ * Unterrichtszeit (ohne dass die Lehrkraft anwesend sein muss). Die Lehrkraft
+ * kann das Fenster per Fernöffnung setzen/verlängern. Rückgabe { open, reason }.
+ */
+function doorCheckinOpen(session) {
+  const now = Date.now();
+  if (!session) return { open: false, reason: 'Heute ist kein Unterricht geplant.' };
+  if (session.status === 'ended') return { open: false, reason: 'Der Unterricht ist bereits beendet.' };
+  if (session.checkinOpenUntil && now < new Date(session.checkinOpenUntil).getTime()) return { open: true };
+  if (session.status === 'active') return { open: true };
+  // Automatisch nur am Unterrichtstag der Klasse (sonst nur manuell/aktiv geöffnet).
+  const klass = findClass(session.classId);
+  if (klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
+    return { open: false, reason: 'Heute ist kein Unterrichtstag dieser Klasse.' };
+  const start = new Date(session.scheduledStart).getTime();
+  const EARLY_MS = 15 * 60000;
+  const windowMin = org().checkinWindowMinutes || 90;
+  if (now < start - EARLY_MS) return { open: false, reason: 'Check-in öffnet automatisch kurz vor Unterrichtsbeginn.' };
+  if (now <= start + windowMin * 60000) return { open: true };
+  return { open: false, reason: 'Das Check-in-Fenster ist vorbei. Bitte die Lehrkraft, es zu öffnen.' };
+}
+
 // --- Auth-Middleware ---------------------------------------------------------
 
 function requireAuth(req, res, next) {
@@ -439,6 +471,8 @@ function sessionView(s, klass, user) {
     endedAt: s.endedAt,
     hasActiveQr:
       !!s.qr && !s.qr.revoked && new Date(s.qr.expiresAt).getTime() > Date.now(),
+    checkinOpenUntil: s.checkinOpenUntil || null,
+    doorOpen: doorCheckinOpen(s).open,
   };
   // eigener Anwesenheitsstatus des Schülers
   if (user?.role === ROLES.SCHUELER) {
@@ -482,17 +516,69 @@ router.post('/sessions/:id/qr', requireAuth, (req, res) => {
   res.json({ token, expiresAt: s.qr.expiresAt });
 });
 
+// Fester Tür-QR-Code der Klasse (zum Aufhängen). Stabil; Gültigkeit ist zeitgesteuert.
+router.get('/classes/:id/checkin-qr', requireAuth, (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const code = ensureClassCheckinCode(klass);
+  const session = ensureTodaySession(klass);
+  res.json({
+    code,
+    className: klass.name,
+    startTime: klass.startTime,
+    endTime: klass.endTime,
+    window: doorCheckinOpen(session),
+    checkinOpenUntil: session.checkinOpenUntil || null,
+  });
+});
+
+// Lehrkraft öffnet/verlängert das Check-in-Fenster aus der Ferne (z. B. vom Handy).
+router.post('/sessions/:id/checkin-open', requireAuth, (req, res) => {
+  const s = byId('sessions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+  if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const minutes = Math.min(Math.max(parseInt(req.body?.minutes, 10) || 30, 5), 180);
+  s.checkinOpenUntil = new Date(Date.now() + minutes * 60000).toISOString();
+  if (s.status === 'ended') s.status = 'scheduled';
+  db.commit();
+  audit(req.user.id, 'session.checkin_open', 'session', s.id, null, { minutes });
+  res.json({ session: sessionView(s, findClass(s.classId), req.user) });
+});
+
+// Tür-Code neu erzeugen – alte Fotos/Ausdrucke werden dadurch ungültig.
+router.post('/classes/:id/checkin-qr/rotate', requireAuth, (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  klass.checkinCode = 'TUR-' + crypto.randomBytes(6).toString('base64url');
+  db.commit();
+  audit(req.user.id, 'class.checkin_code_rotate', 'class', klass.id);
+  res.json({ code: klass.checkinCode });
+});
+
 // Schüler-Check-in per QR-Token (Serverzeit, Verspätung serverseitig berechnet).
 router.post('/checkin', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => {
   const { token } = req.body || {};
   if (!token) return res.status(400).json({ error: 'Kein QR-Code übermittelt' });
   const myClassIds = req.user.classIds || [];
-  const active = db
-    .all('sessions')
-    .filter((s) => myClassIds.includes(s.classId) && s.status === 'active');
-  const session = active.find((s) => verifyQrToken(s, token).ok);
-  if (!session)
-    return res.status(400).json({ error: 'QR-Code ungültig oder abgelaufen' });
+  let session = null;
+  if (String(token).startsWith('TUR-')) {
+    // Fester Tür-QR der Klasse: gültig nur im automatischen/geöffneten Zeitfenster.
+    const klass = db.all('classes').find((c) => c.checkinCode === token && myClassIds.includes(c.id));
+    if (!klass) return res.status(400).json({ error: 'Dieser QR-Code gehört nicht zu deiner Klasse.' });
+    session = ensureTodaySession(klass);
+    const win = doorCheckinOpen(session);
+    if (!win.open) return res.status(400).json({ error: win.reason });
+  } else {
+    // Kurzlebiger Sitzungs-Code (auf dem Lehrer-Bildschirm angezeigt).
+    const active = db
+      .all('sessions')
+      .filter((s) => myClassIds.includes(s.classId) && s.status === 'active');
+    session = active.find((s) => verifyQrToken(s, token).ok);
+    if (!session)
+      return res.status(400).json({ error: 'QR-Code ungültig oder abgelaufen' });
+  }
 
   const existing = db
     .all('attendance')
