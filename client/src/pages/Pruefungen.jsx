@@ -25,9 +25,10 @@ function StudentView() {
           <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-ivory truncate">{e.title}</div>
-              <div className="text-xs text-sage-muted">{e.subjectName || 'Prüfung'} · {e.questionCount} Fragen</div>
+              <div className="text-xs text-sage-muted">{e.subjectName || 'Prüfung'} · {e.linkOnly ? 'Externe Prüfung (Link)' : `${e.questionCount} Fragen`}</div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {e.link && <Badge tone="neutral">Link</Badge>}
               {e.result && <span className="font-mono text-sm text-mint-light">{e.result.total}/{e.result.max}</span>}
               <StatusBadge status={e.studentStatus === 'open' ? 'not_opened' : e.studentStatus} />
             </div>
@@ -75,7 +76,9 @@ function CreateExam({ onDone, onCancel }) {
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
-  const [meta, setMeta] = useState({ classId: '', subjectId: '', title: '', description: '', passPercentage: 50 });
+  const [students, setStudents] = useState([]);
+  const [targetIds, setTargetIds] = useState([]); // leer = ganze Klasse
+  const [meta, setMeta] = useState({ classId: '', subjectId: '', title: '', description: '', passPercentage: 50, link: '' });
   const [questions, setQuestions] = useState([blankQuestion()]);
 
   useEffect(() => {
@@ -83,12 +86,21 @@ function CreateExam({ onDone, onCancel }) {
     api.get('/subjects').then((d) => setSubjects(d.subjects));
   }, []);
 
+  useEffect(() => {
+    if (!meta.classId) return;
+    setTargetIds([]);
+    api.get(`/classes/${meta.classId}/students`).then((d) => setStudents(d.students)).catch(() => setStudents([]));
+  }, [meta.classId]);
+
+  const toggleTarget = (id) => setTargetIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+
   const save = async (publish) => {
     try {
       const payload = {
         ...meta,
         passPercentage: Number(meta.passPercentage),
-        questions: questions.map((q) => ({
+        targetStudentIds: targetIds,
+        questions: questions.filter((q) => q.prompt.trim()).map((q) => ({
           type: q.type,
           prompt: q.prompt,
           points: Number(q.points),
@@ -124,7 +136,30 @@ function CreateExam({ onDone, onCancel }) {
             </select>
           </Field>
           <div className="sm:col-span-2"><Field label="Beschreibung"><textarea className="input" rows={2} value={meta.description} onChange={(e) => setMeta({ ...meta, description: e.target.value })} /></Field></div>
+          <div className="sm:col-span-2">
+            <Field label="Externer Link (optional – z. B. Kahoot, Formular, PDF-Link)">
+              <input className="input" placeholder="https://…" value={meta.link} onChange={(e) => setMeta({ ...meta, link: e.target.value })} />
+            </Field>
+            <p className="text-[11px] text-sage-muted mt-1">Mit Link darf die Prüfung auch ganz ohne Fragen sein – die Schüler öffnen dann einfach den Link.</p>
+          </div>
         </div>
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader title="Zuweisen an" subtitle="Nichts auswählen = ganze Klasse. Einzelne wählen = nur diese Schüler." />
+        <div className="p-4 flex flex-wrap gap-2">
+          {students.length === 0 ? <p className="text-sm text-sage-muted">Keine Schüler in dieser Klasse.</p> : students.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => toggleTarget(s.id)}
+              className={`text-sm px-3 py-1.5 rounded-full border transition ${targetIds.includes(s.id) ? 'bg-mint text-sidebar border-mint' : 'border-black/15 text-sage hover:bg-hover'}`}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+        {targetIds.length > 0 && <p className="px-4 pb-4 text-xs text-sage-muted">Nur {targetIds.length} ausgewählte{targetIds.length === 1 ? 'r Schüler' : ' Schüler'} bekommt/bekommen diese Prüfung.</p>}
       </Card>
 
       {questions.map((q, i) => (

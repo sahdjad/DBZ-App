@@ -1679,6 +1679,7 @@ function examForStudent(exam) {
     id: exam.id,
     title: exam.title,
     description: exam.description,
+    link: exam.link || null,
     subjectName: findSubject(exam.subjectId)?.name || null,
     passPercentage: exam.passPercentage,
     questions: exam.questions.map((q) => ({
@@ -1692,13 +1693,15 @@ function examForStudent(exam) {
 }
 
 router.post('/exams', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
-  const { classId, subjectId, title, description, passPercentage, questions } = req.body || {};
+  const { classId, subjectId, title, description, passPercentage, questions, link, targetStudentIds } = req.body || {};
   if (!canManageClass(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
-  if (!Array.isArray(questions) || questions.length === 0)
-    return res.status(400).json({ error: 'Mindestens eine Frage erforderlich' });
+  const cleanLink = typeof link === 'string' && /^https?:\/\//i.test(link.trim()) ? link.trim() : '';
+  const qList = Array.isArray(questions) ? questions : [];
+  if (!cleanLink && qList.length === 0)
+    return res.status(400).json({ error: 'Mindestens eine Frage oder ein Link erforderlich' });
 
-  const parsed = questions.map((q, i) => {
+  const parsed = qList.map((q, i) => {
     const type = ['single', 'multi', 'text'].includes(q.type) ? q.type : 'single';
     const options = type === 'text' ? [] : (q.options || []).map((o, j) => ({ id: `o${i}_${j}`, text: String(o.text || '').trim() }));
     const correct = type === 'text' ? [] : (q.correct || []).map((idx) => `o${i}_${idx}`);
@@ -1723,6 +1726,11 @@ router.post('/exams', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
     subjectId: findSubject(subjectId) ? subjectId : null,
     title: title.trim(),
     description: description || '',
+    link: cleanLink,
+    // Leer = ganze Klasse; sonst nur diese Schüler (Einzelzuweisung).
+    targetStudentIds: Array.isArray(targetStudentIds)
+      ? targetStudentIds.filter((id) => targetStudentsOfClass(classId).includes(id))
+      : [],
     passPercentage: Math.min(100, Math.max(0, parseInt(passPercentage, 10) || 50)),
     questions: parsed,
     status: 'draft',
@@ -1740,7 +1748,7 @@ router.post('/exams/:id/publish', requireAuth, requireRole(CLASS_MANAGERS), (req
   if (!canManageClass(req.user, exam.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   exam.status = 'published';
   db.commit();
-  targetStudentsOfClass(exam.classId).forEach((sid) =>
+  examTargets(exam).forEach((sid) =>
     notify(sid, { type: 'exam_published', level: 'info', title: 'Neue Prüfung', body: exam.title, deepLink: '/pruefungen' }),
   );
   audit(req.user.id, 'exam.publish', 'exam', exam.id);
@@ -1751,11 +1759,22 @@ function targetStudentsOfClass(classId) {
   return db.all('users').filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(classId)).map((u) => u.id);
 }
 
+/** Zielschüler einer Prüfung: leere Zuweisung = ganze Klasse, sonst die zugewiesenen. */
+function examTargets(exam) {
+  const all = targetStudentsOfClass(exam.classId);
+  return exam.targetStudentIds?.length ? all.filter((id) => exam.targetStudentIds.includes(id)) : all;
+}
+
+/** Ist der Schüler Ziel dieser Prüfung? */
+function examTargetsStudent(exam, studentId) {
+  return !exam.targetStudentIds?.length || exam.targetStudentIds.includes(studentId);
+}
+
 router.get('/exams', requireAuth, (req, res) => {
   if (req.user.role === ROLES.SCHUELER) {
     const list = db
       .all('exams')
-      .filter((e) => e.status === 'published' && (req.user.classIds || []).includes(e.classId))
+      .filter((e) => e.status === 'published' && (req.user.classIds || []).includes(e.classId) && examTargetsStudent(e, req.user.id))
       .map((e) => {
         const att = db.all('exam_attempts').find((a) => a.examId === e.id && a.studentId === req.user.id);
         let studentStatus = 'open';
@@ -1764,7 +1783,7 @@ router.get('/exams', requireAuth, (req, res) => {
           studentStatus = att.status === 'released' ? 'released' : att.status === 'submitted' ? 'submitted' : 'in_progress';
           if (att.status === 'released') result = { total: att.total, max: att.max, percent: att.percent, passed: att.percent >= e.passPercentage };
         }
-        return { id: e.id, title: e.title, subjectName: findSubject(e.subjectId)?.name || null, questionCount: e.questions.length, studentStatus, result };
+        return { id: e.id, title: e.title, subjectName: findSubject(e.subjectId)?.name || null, questionCount: e.questions.length, link: e.link || null, linkOnly: !!e.link && e.questions.length === 0, studentStatus, result };
       });
     return res.json({ exams: list });
   }
@@ -1795,7 +1814,7 @@ router.get('/exams/:id', requireAuth, (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam) return res.status(404).json({ error: 'Prüfung nicht gefunden' });
   if (req.user.role === ROLES.SCHUELER) {
-    if (exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId))
+    if (exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
       return res.status(403).json({ error: 'Kein Zugriff' });
     const att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
     let attempt = null;

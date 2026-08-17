@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send } from 'lucide-react';
+import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -34,7 +34,8 @@ function StudentExam() {
     (async () => {
       const d = await api.get(`/exams/${id}`);
       setData(d);
-      if (!d.attempt || d.attempt.status === 'in_progress') {
+      // Nur bei echten Frage-Prüfungen einen Versuch anlegen (Link-Prüfungen brauchen keinen).
+      if (d.exam.questions?.length && (!d.attempt || d.attempt.status === 'in_progress')) {
         await api.post(`/exams/${id}/attempt`);
       }
     })();
@@ -124,8 +125,16 @@ function StudentExam() {
 
   return (
     <Card className="p-5">
-      <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} action={<Badge tone="neutral">Bestehen ab {passPercentage}%</Badge>} />
+      <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} action={exam.questions.length > 0 ? <Badge tone="neutral">Bestehen ab {passPercentage}%</Badge> : null} />
       <div className="p-4 space-y-4">
+        {exam.link && (
+          <>
+            <a href={exam.link} target="_blank" rel="noreferrer" className="block">
+              <Button className="w-full"><ExternalLink size={18} /> Prüfung öffnen</Button>
+            </a>
+            {exam.questions.length === 0 && <p className="text-sm text-sage-muted text-center">Diese Prüfung findet extern statt – tippe oben auf „Prüfung öffnen".</p>}
+          </>
+        )}
         {exam.questions.map((q, i) => (
           <div key={q.id} className="rounded-lg border border-black/10 p-3">
             <div className="text-ivory mb-2">{i + 1}. {q.prompt} <span className="text-xs text-sage-muted">({q.points} P)</span></div>
@@ -148,7 +157,9 @@ function StudentExam() {
             )}
           </div>
         ))}
-        <Button onClick={submit} disabled={busy}><Send size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
+        {exam.questions.length > 0 && (
+          <Button onClick={submit} disabled={busy}><Send size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
+        )}
       </div>
     </Card>
   );
