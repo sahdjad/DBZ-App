@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   QrCode,
   BookOpen,
@@ -18,6 +18,7 @@ import {
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Ring } from '../components/ui.jsx';
+import { openNotification } from '../lib/notify.js';
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -29,7 +30,7 @@ function Stat({ label, value, tone = 'mint' }) {
     absent: 'text-status-absent',
   };
   return (
-    <div className="rounded-lg border border-black/10 bg-white/[0.03] p-4">
+    <div className="rounded-lg border border-black/10 bg-black/[0.03] p-4">
       <div className={`font-mono text-2xl ${colors[tone] || colors.mint}`}>{value}</div>
       <div className="text-xs text-sage-muted mt-1">{label}</div>
     </div>
@@ -99,7 +100,7 @@ function StudentHome({ d }) {
           <ul className="space-y-2">
             {d.openAssignments.map((a) => (
               <li key={a.id}>
-                <Link to={`/aufgaben/${a.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-black/10 p-3 hover:bg-white/[0.04]">
+                <Link to={`/aufgaben/${a.id}`} className="flex items-center justify-between gap-3 rounded-lg border border-black/10 p-3 hover:bg-black/[0.04]">
                   <div className="min-w-0">
                     <div className="text-ivory truncate">{a.title}</div>
                     <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · Frist {fmtTime(a.dueAt) || 'offen'}</div>
@@ -268,18 +269,25 @@ function SharedHome({ d }) {
 }
 
 function NotificationPeek({ items }) {
+  const navigate = useNavigate();
   if (!items?.length) return null;
   return (
     <Card className="mt-6 p-5">
       <CardHeader title="Neueste Benachrichtigungen" icon={Bell} action={<Button as={Link} to="/benachrichtigungen" variant="ghost" size="sm">Alle</Button>} />
       <ul className="divide-y divide-black/5">
         {items.slice(0, 4).map((n) => (
-          <li key={n.id} className="py-3 flex items-start gap-3">
-            <span className={`mt-1.5 h-2 w-2 rounded-full ${n.read ? 'bg-black/15' : 'bg-mint'}`} />
-            <div>
-              <div className="text-sm text-ivory">{n.title}</div>
-              <div className="text-xs text-sage-muted">{n.body}</div>
-            </div>
+          <li key={n.id}>
+            <button
+              type="button"
+              onClick={() => openNotification(n, navigate)}
+              className="w-full text-left py-3 flex items-start gap-3 rounded-lg -mx-2 px-2 hover:bg-hover transition"
+            >
+              <span className={`mt-1.5 h-2 w-2 rounded-full shrink-0 ${n.read ? 'bg-black/15' : 'bg-mint'}`} />
+              <div>
+                <div className="text-sm text-ivory">{n.title}</div>
+                <div className="text-xs text-sage-muted">{n.body}</div>
+              </div>
+            </button>
           </li>
         ))}
       </ul>

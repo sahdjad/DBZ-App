@@ -1907,7 +1907,8 @@ router.patch('/reports/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res
 router.get('/reports', requireAuth, (req, res) => {
   let list = db.all('student_reports');
   if (isClassManager(req.user)) list = list.filter((r) => canManageClass(req.user, r.classId));
-  else if (req.user.role === ROLES.SCHUELER) list = list.filter((r) => r.studentId === req.user.id && r.status === 'released');
+  else if (req.user.role === ROLES.SCHUELER || req.user.role === ROLES.KLASSENSPRECHER)
+    list = list.filter((r) => r.studentId === req.user.id && r.status === 'released');
   else if (req.user.role === ROLES.ELTERN)
     list = list.filter((r) => (req.user.childIds || []).includes(r.studentId) && r.status === 'released');
   else list = [];
@@ -2251,6 +2252,15 @@ router.post('/notifications/read', requireAuth, (req, res) => {
   db.all('notifications').forEach((n) => {
     if (n.userId === req.user.id) n.read = true;
   });
+  db.commit();
+  res.json({ ok: true });
+});
+
+// Einzelne Benachrichtigung als gelesen markieren (beim Anklicken).
+router.post('/notifications/:id/read', requireAuth, (req, res) => {
+  const n = byId('notifications', req.params.id);
+  if (!n || n.userId !== req.user.id) return res.status(404).json({ error: 'Nicht gefunden' });
+  n.read = true;
   db.commit();
   res.json({ ok: true });
 });

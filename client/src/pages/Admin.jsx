@@ -185,7 +185,7 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
             <div className="mt-1 flex flex-wrap gap-2">
               {classes.map((c) => (
                 <button key={c.id} onClick={() => toggle('classIds', c.id)}
-                  className={['px-3 py-1.5 rounded-lg border text-sm', f.classIds.includes(c.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-white/15 text-sage'].join(' ')}>
+                  className={['px-3 py-1.5 rounded-lg border text-sm', f.classIds.includes(c.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-black/15 text-sage'].join(' ')}>
                   {c.name}
                 </button>
               ))}
@@ -200,7 +200,7 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
             <div className="mt-1 flex flex-wrap gap-2">
               {students.map((s) => (
                 <button key={s.id} onClick={() => toggle('childIds', s.id)}
-                  className={['px-3 py-1.5 rounded-lg border text-sm', f.childIds.includes(s.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-white/15 text-sage'].join(' ')}>
+                  className={['px-3 py-1.5 rounded-lg border text-sm', f.childIds.includes(s.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-black/15 text-sage'].join(' ')}>
                   {s.name}
                 </button>
               ))}

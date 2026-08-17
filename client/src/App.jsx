@@ -72,8 +72,8 @@ export default function App() {
       <Route path="/verhalten" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Verhalten /></Protected>} />
       <Route path="/profil/:id" element={<Protected><StudentProfil /></Protected>} />
       <Route path="/kalender" element={<Protected><Kalender /></Protected>} />
-      <Route path="/berichte" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'eltern']}><Berichte /></Protected>} />
-      <Route path="/bericht/:id/druck" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'eltern']}><BerichtDruck /></Protected>} />
+      <Route path="/berichte" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Berichte /></Protected>} />
+      <Route path="/bericht/:id/druck" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><BerichtDruck /></Protected>} />
       <Route path="/pruefungen" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefungen /></Protected>} />
       <Route path="/pruefung/:id" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefung /></Protected>} />
       <Route path="/hifz" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Hifz /></Protected>} />

@@ -162,7 +162,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
               Wiederholung:
               {[1, 3, 5, 10].map((r) => (
                 <button key={r} onClick={() => setRepeat(r)}
-                  className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-white/15 text-sage-muted'].join(' ')}>{r}×</button>
+                  className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{r}×</button>
               ))}
             </div>
           </Card>

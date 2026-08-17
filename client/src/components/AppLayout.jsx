@@ -106,7 +106,7 @@ function NavItems({ items, unread, onNavigate }) {
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300',
               isActive
                 ? 'bg-hover text-ivory border border-black/10'
-                : 'text-sage hover:text-ivory hover:bg-white/[0.05] border border-transparent',
+                : 'text-sage hover:text-ivory hover:bg-black/[0.05] border border-transparent',
             ].join(' ')
           }
         >
@@ -131,12 +131,17 @@ export default function AppLayout({ children, title }) {
 
   useEffect(() => {
     let alive = true;
-    api
-      .get('/notifications')
-      .then((d) => alive && setUnread(d.unread || 0))
-      .catch(() => {});
+    const refresh = () =>
+      api
+        .get('/notifications')
+        .then((d) => alive && setUnread(d.unread || 0))
+        .catch(() => {});
+    refresh();
+    // Wird ausgelöst, sobald irgendwo eine Benachrichtigung gelesen wird.
+    window.addEventListener('dbz:notifications', refresh);
     return () => {
       alive = false;
+      window.removeEventListener('dbz:notifications', refresh);
     };
   }, []);
 

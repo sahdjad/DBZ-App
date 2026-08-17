@@ -24,8 +24,8 @@ export function Button({
     primary:
       'bg-mint text-sidebar border border-mint-light/40 hover:bg-mint-light shadow-[0_0_0_1px_rgba(134,210,172,0.15)]',
     outline:
-      'border border-white/15 text-ivory bg-white/0 hover:bg-white/[0.06] hover:border-white/25',
-    ghost: 'text-sage hover:text-ivory hover:bg-white/[0.05]',
+      'border border-black/15 text-ivory bg-white/0 hover:bg-black/[0.05] hover:border-black/20',
+    ghost: 'text-sage hover:text-ivory hover:bg-black/[0.05]',
     danger: 'border border-status-absent/40 text-status-absent hover:bg-status-absent/10',
   };
   return (
@@ -78,7 +78,7 @@ export function Badge({ tone = 'mint', children, className = '' }) {
     incomplete: 'bg-status-incomplete/15 text-status-incomplete border-status-incomplete/30',
     excused: 'bg-status-excused/15 text-status-excused border-status-excused/30',
     absent: 'bg-status-absent/15 text-status-absent border-status-absent/30',
-    neutral: 'bg-white/[0.06] text-sage border-black/10',
+    neutral: 'bg-black/[0.05] text-sage border-black/10',
   };
   return (
     <span
@@ -266,7 +266,7 @@ export function Reveal({ children, className = '', delay = 0 }) {
 export function Spinner({ label = 'Lädt …' }) {
   return (
     <div className="flex items-center justify-center gap-3 py-16 text-sage-muted" role="status">
-      <span className="h-5 w-5 rounded-full border-2 border-white/15 border-t-mint animate-spin" />
+      <span className="h-5 w-5 rounded-full border-2 border-black/15 border-t-mint animate-spin" />
       <span className="text-sm">{label}</span>
     </div>
   );

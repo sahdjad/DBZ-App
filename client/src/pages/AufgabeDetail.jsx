@@ -106,7 +106,7 @@ export default function AufgabeDetail() {
               </a>
             ))}
             {review && (
-              <div className="mt-3 rounded-lg border border-black/10 bg-white/[0.03] p-3">
+              <div className="mt-3 rounded-lg border border-black/10 bg-black/[0.03] p-3">
                 <div className="text-sm text-ivory mb-1">Feedback der Lehrkraft</div>
                 {review.gradeLabel && <div className="text-sm text-mint-light">Bewertung: {review.gradeLabel}</div>}
                 {review.feedbackText && <p className="text-sage text-sm whitespace-pre-line mt-1">{review.feedbackText}</p>}

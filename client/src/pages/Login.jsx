@@ -141,7 +141,7 @@ export default function Login() {
                   key={d.email}
                   onClick={(e) => submit(e, { email: d.email, password: 'demo1234' })}
                   disabled={busy}
-                  className="text-left rounded-lg border border-black/10 px-3 py-2 hover:bg-white/[0.05] transition"
+                  className="text-left rounded-lg border border-black/10 px-3 py-2 hover:bg-black/[0.05] transition"
                 >
                   <div className="text-sm text-ivory">{d.label}</div>
                   <div className="text-[11px] font-mono text-sage-muted truncate">{d.email}</div>

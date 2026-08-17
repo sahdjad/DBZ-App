@@ -138,7 +138,8 @@ export async function seed() {
       'Nimm deine Rezitation von Surah Al-Fatiha auf und achte auf die Tajwid-Regeln, die wir besprochen haben.',
     type: 'audio',
     opensAt: now,
-    dueAt: '2026-08-16T18:00:00.000Z',
+    // Relativ zur Startzeit, damit die Demo-Aufgabe immer offen ist (nicht abgelaufen).
+    dueAt: new Date(Date.now() + 7 * 86400000).toISOString(),
     targetType: 'class',
     targetStudentIds: [],
     createdBy: lehrer.id,
