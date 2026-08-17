@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import jsQR from 'jsqr';
 
 /**
  * Rendert einen scanbaren QR-Code für einen Textwert (hier: den Check-in-Token).
@@ -25,71 +26,98 @@ export function QrImage({ value, size = 220 }) {
   return <img src={src} width={size} height={size} alt="QR-Code zum Einchecken" className="rounded-lg" />;
 }
 
-/** Prüft, ob der native BarcodeDetector QR-Codes lesen kann. */
+/**
+ * Kamera-Scannen ist überall möglich, wo die Kamera per getUserMedia verfügbar ist
+ * (inkl. iOS-Safari). Die eigentliche QR-Erkennung übernimmt jsQR im Browser.
+ */
 export async function qrScanSupported() {
-  if (!('BarcodeDetector' in window)) return false;
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+async function makeBarcodeDetector() {
   try {
+    if (!('BarcodeDetector' in window)) return null;
     const formats = await window.BarcodeDetector.getSupportedFormats();
-    return formats.includes('qr_code');
+    if (!formats.includes('qr_code')) return null;
+    return new window.BarcodeDetector({ formats: ['qr_code'] });
   } catch {
-    return false;
+    return null;
   }
 }
 
 /**
  * Kamera-basierter QR-Scanner. Ruft onResult(text) beim ersten Treffer auf.
- * Nutzt die native BarcodeDetector-API (Android Chrome/Chromium). Wird sie nicht
- * unterstützt, sollte der Aufrufer die manuelle Code-Eingabe anbieten.
+ * Nutzt – wo vorhanden – die native BarcodeDetector-API (Android Chrome), sonst
+ * jsQR als plattformübergreifende Erkennung (auch iOS/Safari).
  */
 export function QrScanner({ onResult, onError }) {
   const videoRef = useRef(null);
-  const rafRef = useRef(null);
+  const canvasRef = useRef(null);
+  const timerRef = useRef(null);
   const streamRef = useRef(null);
   const [active, setActive] = useState(true);
 
   useEffect(() => {
-    let detector;
     let stopped = false;
+
+    const stop = () => {
+      stopped = true;
+      setActive(false);
+      clearTimeout(timerRef.current);
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
 
     (async () => {
       try {
-        detector = new window.BarcodeDetector({ formats: ['qr_code'] });
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: { facingMode: { ideal: 'environment' } },
+          audio: false,
         });
         streamRef.current = stream;
         const video = videoRef.current;
         if (!video) return;
         video.srcObject = stream;
+        video.setAttribute('playsinline', 'true');
         await video.play();
+
+        const detector = await makeBarcodeDetector();
+        const canvas = canvasRef.current || document.createElement('canvas');
+        canvasRef.current = canvas;
 
         const tick = async () => {
           if (stopped) return;
+          let value = null;
           try {
-            const codes = await detector.detect(video);
-            if (codes.length) {
-              const value = codes[0].rawValue;
-              stop();
-              onResult(value);
-              return;
+            if (detector) {
+              const codes = await detector.detect(video);
+              if (codes.length) value = codes[0].rawValue;
+            } else if (video.videoWidth) {
+              // Bild herunterskalieren für flüssige Erkennung.
+              const w = Math.min(video.videoWidth, 640);
+              const h = Math.round((video.videoHeight / video.videoWidth) * w);
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d', { willReadFrequently: true });
+              ctx.drawImage(video, 0, 0, w, h);
+              const img = ctx.getImageData(0, 0, w, h);
+              const found = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+              if (found?.data) value = found.data;
             }
           } catch {
             /* einzelne Frames können fehlschlagen – weiter versuchen */
           }
-          rafRef.current = requestAnimationFrame(tick);
+          if (value) {
+            stop();
+            onResult(value);
+            return;
+          }
+          timerRef.current = setTimeout(tick, detector ? 120 : 180);
         };
-        rafRef.current = requestAnimationFrame(tick);
+        tick();
       } catch (err) {
         onError?.(err);
       }
     })();
-
-    function stop() {
-      stopped = true;
-      setActive(false);
-      cancelAnimationFrame(rafRef.current);
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-    }
 
     return stop;
     // eslint-disable-next-line react-hooks/exhaustive-deps
