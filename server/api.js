@@ -892,7 +892,13 @@ router.get('/absence-requests', requireAuth, (req, res) => {
     list = list.filter((r) => (req.user.childIds || []).includes(r.studentId));
   } else if (isClassManager(req.user)) {
     list = list.filter((r) => canManageClass(req.user, r.classId));
-    // Verwalter sehen den Grund nur allgemein (Datenschutz) – Kategorie ja, Detail-Kommentar ja für Entscheidung.
+    // Zähler: wie oft war der Schüler insgesamt schon abwesend – Kontext für die Entscheidung.
+    list = list.map((r) => {
+      const recs = db.all('attendance').filter((a) => a.studentId === r.studentId);
+      const absences = recs.filter((a) => a.status === 'excused' || a.status === 'unexcused').length;
+      const requestCount = db.all('absence_requests').filter((x) => x.studentId === r.studentId).length;
+      return { ...r, studentAbsences: absences, studentAbsenceRequests: requestCount };
+    });
   } else {
     list = [];
   }
@@ -1275,6 +1281,8 @@ router.get('/protocols', requireAuth, (req, res) => {
   let list = db.all('protocols');
   if (req.user.role === ROLES.KLASSENSPRECHER || req.user.role === ROLES.SCHUELER) {
     list = list.filter((p) => (req.user.classIds || []).includes(p.classId));
+    // Reine Schüler sehen Protokolle erst, nachdem die Lehrkraft sie freigegeben hat.
+    if (req.user.role === ROLES.SCHUELER) list = list.filter((p) => p.status === 'approved');
   } else if (isClassManager(req.user)) {
     list = list.filter((p) => canManageClass(req.user, p.classId));
   } else if (!isAdmin(req.user)) {
@@ -1352,6 +1360,20 @@ router.post('/protocols/:id/approve', requireAuth, (req, res) => {
   p.reviewedAt = new Date().toISOString();
   db.commit();
   audit(req.user.id, 'protocol.review', 'protocol', p.id, before, { status: p.status });
+  // Nach Freigabe: Schüler der Klasse benachrichtigen (jetzt sichtbar).
+  if (p.status === 'approved') {
+    db.all('users')
+      .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(p.classId))
+      .forEach((st) =>
+        notify(st.id, {
+          type: 'protocol_submitted',
+          level: 'info',
+          title: 'Neues Protokoll',
+          body: 'Ein Unterrichtsprotokoll wurde freigegeben.',
+          deepLink: '/protokolle',
+        }),
+      );
+  }
   res.json({ protocol: p });
 });
 
@@ -1380,7 +1402,8 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), (req, res) =>
     category,
     tone: tone === 'negative' ? 'negative' : 'positive',
     note: note.trim(),
-    visibleToStudent: visibleToStudent !== false,
+    // Standard: Schüler sehen den Vermerk NICHT (erst mit dem Zeugnis); nur wenn ausdrücklich freigegeben.
+    visibleToStudent: visibleToStudent === true,
     visibleToParent: visibleToParent !== false,
     createdBy: req.user.id,
     createdAt: new Date().toISOString(),

@@ -36,7 +36,14 @@ export default function Entschuldigungen() {
           {pending.length === 0 ? <p className="p-4 text-sage-muted text-sm">Keine offenen Anträge.</p> : pending.map((r) => (
             <div key={r.id} className="py-3 flex items-start justify-between gap-3 flex-wrap">
               <div className="min-w-0">
-                <div className="text-ivory">{r.studentName} · {TYPE_LABEL[r.requestType]}</div>
+                <div className="text-ivory flex items-center gap-2 flex-wrap">
+                  {r.studentName} · {TYPE_LABEL[r.requestType]}
+                  {r.studentAbsences > 0 && (
+                    <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.studentAbsences >= 2 ? 'bg-status-late/15 text-status-late' : 'bg-black/5 text-sage-muted'}`}>
+                      schon {r.studentAbsences}× abwesend
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-sage-muted">Grund: {r.reasonCategory}{r.comment ? ` · ${r.comment}` : ''} · {r.sessionDate ? fmt(r.sessionDate) : fmt(r.createdAt)}</div>
               </div>
               <div className="flex gap-2">

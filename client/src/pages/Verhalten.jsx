@@ -61,7 +61,7 @@ function ManagerView() {
   const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
   const [records, setRecords] = useState(null);
-  const [form, setForm] = useState({ studentId: '', category: 'adab', tone: 'positive', note: '', visibleToStudent: true, visibleToParent: true });
+  const [form, setForm] = useState({ studentId: '', category: 'adab', tone: 'positive', note: '', visibleToStudent: false, visibleToParent: true });
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -138,6 +138,7 @@ function ManagerView() {
               <input type="checkbox" checked={form.visibleToParent} onChange={(e) => setForm({ ...form, visibleToParent: e.target.checked })} /> Für Eltern sichtbar
             </label>
           </div>
+          <p className="text-[11px] text-sage-muted">Standard: nur Eltern sehen den Vermerk. Schüler sehen Verhalten normalerweise erst im Zeugnis – „Für Schüler sichtbar" nur bei Bedarf aktivieren.</p>
           <Button type="submit"><Plus size={18} /> Speichern</Button>
         </form>
       </Card>
