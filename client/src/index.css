@@ -109,15 +109,62 @@
   }
 }
 
-/* Schmale, dezente Scrollbar */
+/* Weiches, natürliches Scrollen: Momentum auf Touch, sanfte Overscroll-Grenze
+   (verhindert „durchziehen" in Overlays), Bounce am Rand nur wo der Browser es
+   nativ unterstützt (iOS/macOS Safari). */
+html {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(21, 101, 63, 0.32) transparent;
+}
+body {
+  -webkit-overflow-scrolling: touch;
+}
+/* Innere Scrollbereiche (Chat, Dialoge, Tabellen) sollen nicht die ganze Seite
+   mitscrollen und weich abgefangen werden. */
+main,
+[class*="overflow-y-auto"],
+[class*="overflow-x-auto"] {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Dynamische, dezente Scrollleiste (WebKit/Blink):
+   dünn im Ruhezustand, beim Scrollen/Hover kräftiger & etwas breiter,
+   am oberen/unteren Ende sanft zurückgenommen. */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #c4d6cc;
+  background: rgba(21, 101, 63, 0.28);
+  background-clip: padding-box;
+  border: 4px solid transparent; /* macht den Balken dünn – innerhalb der Spur */
   border-radius: 999px;
+  transition: background-color 0.25s ease, border-width 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #a9c4b7;
+  background: rgba(21, 101, 63, 0.5);
+  background-clip: padding-box;
+  border-width: 3px;
+}
+html.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgba(21, 101, 63, 0.46);
+  background-clip: padding-box;
+  border-width: 3px;
+}
+html.at-edge::-webkit-scrollbar-thumb {
+  background: rgba(21, 101, 63, 0.16);
+  background-clip: padding-box;
+  border-width: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::-webkit-scrollbar-thumb {
+    transition: none;
+  }
 }

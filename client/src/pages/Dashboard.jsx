@@ -133,13 +133,15 @@ function StudentHome({ d }) {
 }
 
 function RepHome({ d }) {
+  // Volle Schüleransicht (eigenes 3-Spalten-Raster) OBEN, darunter die
+  // Klassensprecher-Karte – nicht ineinander verschachteln (sonst Überlappung).
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="space-y-4">
       <StudentHome d={{ ...d, openAssignments: d.openAssignments || [] }} />
       <Card className="p-5">
         <CardHeader title="Klassensprecher" subtitle="Protokoll für die heutige Sitzung" icon={ClipboardList} />
-        <div className="p-2">
-          <Button as={Link} to="/protokolle" className="w-full mt-2">Protokoll bearbeiten</Button>
+        <div className="p-4 pt-2">
+          <Button as={Link} to="/protokolle">Protokoll bearbeiten</Button>
         </div>
       </Card>
     </div>
