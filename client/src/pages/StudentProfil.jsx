@@ -1,9 +1,29 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarCheck, BookOpen, Sparkles, ThumbsUp, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, BookOpen, Sparkles, ThumbsUp, AlertTriangle, Users } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Ring, StatusBadge, Badge, Spinner } from '../components/ui.jsx';
+import { useAuth } from '../lib/AuthContext.jsx';
+
+const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
+
+function FamilyCodeCard({ studentId }) {
+  const [code, setCode] = useState(null);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    api.get(`/students/${studentId}/family-code`).then((d) => setCode(d.code)).catch(() => setHidden(true));
+  }, [studentId]);
+  if (hidden) return null;
+  return (
+    <Card className="p-5 mt-4">
+      <CardHeader title="Familien-Code" subtitle="Den Eltern geben, damit sie ihr Kind verknüpfen können" icon={Users} />
+      <div className="p-4">
+        {!code ? <Spinner /> : <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-black/5 rounded-lg px-4 py-2">{code}</span>}
+      </div>
+    </Card>
+  );
+}
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : 'offen');
 const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
@@ -11,6 +31,7 @@ const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions)
 export default function StudentProfil() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -75,6 +96,8 @@ export default function StudentProfil() {
           </div>
         </Card>
       </div>
+
+      {MANAGER.includes(user.role) && <FamilyCodeCard studentId={id} />}
 
       {/* Verhalten */}
       <Card className="p-5 mt-4">

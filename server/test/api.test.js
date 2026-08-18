@@ -256,6 +256,40 @@ test('Strafen: Lehrer erfasst direkt genehmigt; ungültiger Schüler wird abgele
   assert.equal(bad.status, 400);
 });
 
+test('Eltern↔Kind: Verknüpfung per Familien-Code, falscher Code abgelehnt, Zugriff erst danach', async () => {
+  // Lehrer holt den Familien-Code eines (noch nicht verknüpften) Schülers.
+  const teacher = await loginAs('lehrer@dbz.de');
+  const codeRes = await teacher('GET', '/students/user_amina/family-code');
+  assert.equal(codeRes.status, 200);
+  const code = codeRes.data.code;
+  assert.ok(code && code.length >= 6);
+
+  const parent = await loginAs('eltern@dbz.de');
+  // Vor Verknüpfung: kein Zugriff auf Aminas Profil.
+  assert.equal((await parent('GET', '/students/user_amina/profile')).status, 403);
+  // Falscher Code wird abgelehnt.
+  assert.equal((await parent('POST', '/family/link', { code: 'XXXXXX' })).status, 404);
+  // Richtiger Code verknüpft.
+  const link = await parent('POST', '/family/link', { code });
+  assert.equal(link.status, 200);
+  assert.equal(link.data.child.id, 'user_amina');
+  // Doppelte Verknüpfung wird abgelehnt.
+  assert.equal((await parent('POST', '/family/link', { code })).status, 400);
+  // Jetzt Zugriff auf Aminas Profil und Kind erscheint in der Liste.
+  assert.equal((await parent('GET', '/students/user_amina/profile')).status, 200);
+  assert.ok((await parent('GET', '/family/children')).data.children.some((c) => c.id === 'user_amina'));
+
+  // Wieder lösen -> erneut kein Zugriff.
+  assert.equal((await parent('POST', '/family/unlink', { childId: 'user_amina' })).status, 200);
+  assert.equal((await parent('GET', '/students/user_amina/profile')).status, 403);
+});
+
+test('Familien-Code: Fremde (anderes Elternteil) bekommt den Code eines Kindes nicht', async () => {
+  const parent = await loginAs('eltern@dbz.de');
+  // Eltern dürfen den Code nicht über die Verwalter-Route abrufen.
+  assert.equal((await parent('GET', '/students/user_yusuf/family-code')).status, 403);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

@@ -57,10 +57,10 @@ const findUserByEmail = (email) =>
 const findClass = (id) => byId('classes', id);
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
 
-/** Öffentlich sichtbare Nutzerfelder (nie passwordHash). */
+/** Öffentlich sichtbare Nutzerfelder (nie passwordHash oder Familien-Code). */
 function publicUser(u) {
   if (!u) return null;
-  const { passwordHash, ...rest } = u;
+  const { passwordHash, familyCode, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role };
 }
 
@@ -2510,6 +2510,110 @@ router.delete('/penalties/:id', requireAuth, (req, res) => {
   list.splice(idx, 1);
   db.commit();
   audit(req.user.id, 'penalty.delete', 'penalty', p.id);
+  res.json({ ok: true });
+});
+
+// =============================================================================
+// Eltern ↔ Kind: Verknüpfung per Familien-Code
+//
+// Jeder Schüler hat einen kurzen Familien-Code. Eltern geben ihn in ihrem Konto
+// ein und werden dadurch mit dem Kind verknüpft (dürfen dann dessen Anwesenheit,
+// Berichte, Verhalten & Strafen sehen). Der Code ist mehrfach nutzbar (Vater und
+// Mutter) und kann vom Schüler/Verwalter neu erzeugt (= alter ungültig) werden.
+// Die maßgebliche Verknüpfung durch die Leitung bleibt zusätzlich über
+// PATCH /admin/users/:id { childIds } möglich.
+// =============================================================================
+
+const FAMILY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // ohne 0/O/1/I/L
+const LINKABLE_ROLES = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER];
+
+function genFamilyCode() {
+  let c = '';
+  for (let i = 0; i < 6; i++) c += FAMILY_ALPHABET[Math.floor(Math.random() * FAMILY_ALPHABET.length)];
+  return c;
+}
+function ensureFamilyCode(student) {
+  if (!student.familyCode) {
+    let code;
+    do {
+      code = genFamilyCode();
+    } while (db.all('users').some((u) => u.familyCode === code));
+    student.familyCode = code;
+    db.commit();
+  }
+  return student.familyCode;
+}
+
+// Schüler: eigenen Familien-Code ansehen / neu erzeugen.
+router.get('/me/family-code', requireAuth, requireRole(LINKABLE_ROLES), (req, res) => {
+  res.json({ code: ensureFamilyCode(req.user) });
+});
+router.post('/me/family-code/rotate', requireAuth, requireRole(LINKABLE_ROLES), (req, res) => {
+  req.user.familyCode = null;
+  res.json({ code: ensureFamilyCode(req.user) });
+});
+
+// Verwalter/Admin (oder der Schüler selbst): Familien-Code eines Schülers ansehen,
+// um ihn den Eltern weiterzugeben.
+router.get('/students/:id/family-code', requireAuth, (req, res) => {
+  const student = findUserById(req.params.id);
+  if (!student || !LINKABLE_ROLES.includes(student.role))
+    return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  const managesClass = (student.classIds || []).some((c) => canManageClass(req.user, c));
+  if (!(req.user.id === student.id || isAdmin(req.user) || managesClass))
+    return res.status(403).json({ error: 'Kein Zugriff' });
+  res.json({ code: ensureFamilyCode(student), studentName: student.name });
+});
+
+// Eltern: verknüpfte Kinder auflisten.
+router.get('/family/children', requireAuth, requireRole(ROLES.ELTERN), (req, res) => {
+  const children = (req.user.childIds || [])
+    .map((cid) => {
+      const c = findUserById(cid);
+      if (!c) return null;
+      const klass = findClass((c.classIds || [])[0]);
+      return { id: c.id, name: c.name, className: klass?.name || null };
+    })
+    .filter(Boolean);
+  res.json({ children });
+});
+
+// Eltern: mit einem Kind per Code verknüpfen.
+router.post('/family/link', requireAuth, requireRole(ROLES.ELTERN), (req, res) => {
+  const code = String(req.body?.code || '').trim().toUpperCase();
+  if (code.length < 4) return res.status(400).json({ error: 'Bitte einen gültigen Familien-Code eingeben' });
+  const student = db
+    .all('users')
+    .find((u) => LINKABLE_ROLES.includes(u.role) && u.familyCode && u.familyCode.toUpperCase() === code);
+  if (!student) return res.status(404).json({ error: 'Familien-Code ungültig' });
+
+  req.user.childIds = req.user.childIds || [];
+  if (req.user.childIds.includes(student.id))
+    return res.status(400).json({ error: `${student.name} ist bereits mit deinem Konto verknüpft` });
+  req.user.childIds.push(student.id);
+  student.parentIds = student.parentIds || [];
+  if (!student.parentIds.includes(req.user.id)) student.parentIds.push(req.user.id);
+  db.commit();
+  audit(req.user.id, 'family.link', 'user', student.id);
+  notify(student.id, {
+    type: 'family_linked',
+    level: 'info',
+    title: 'Elternteil verknüpft',
+    body: `${req.user.name} ist jetzt mit deinem Konto verknüpft.`,
+    deepLink: '/konto',
+  });
+  const klass = findClass((student.classIds || [])[0]);
+  res.json({ child: { id: student.id, name: student.name, className: klass?.name || null } });
+});
+
+// Eltern: Verknüpfung zu einem Kind wieder lösen.
+router.post('/family/unlink', requireAuth, requireRole(ROLES.ELTERN), (req, res) => {
+  const { childId } = req.body || {};
+  req.user.childIds = (req.user.childIds || []).filter((c) => c !== childId);
+  const student = findUserById(childId);
+  if (student) student.parentIds = (student.parentIds || []).filter((p) => p !== req.user.id);
+  db.commit();
+  audit(req.user.id, 'family.unlink', 'user', childId);
   res.json({ ok: true });
 });
 

@@ -1,9 +1,11 @@
-import { useState } from 'react';
-import { UserCog, Save, KeyRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Avatar, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+
+const LINKABLE = ['schueler', 'klassensprecher'];
 
 export default function Konto() {
   const { user, updateName } = useAuth();
@@ -47,9 +49,140 @@ export default function Konto() {
           </div>
         </Card>
 
+        {user.role === 'eltern' && <ParentChildrenCard />}
+        {LINKABLE.includes(user.role) && <FamilyCodeCard />}
+
         <PasswordCard />
       </div>
     </AppLayout>
+  );
+}
+
+// Eltern: mit Kindern per Familien-Code verknüpfen und verwalten.
+function ParentChildrenCard() {
+  const toast = useToast();
+  const [children, setChildren] = useState(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.get('/family/children').then((d) => setChildren(d.children));
+  useEffect(() => { load(); }, []);
+
+  const link = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { child } = await api.post('/family/link', { code: code.trim() });
+      toast.push(`${child.name} verknüpft`, 'success');
+      setCode('');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unlink = async (childId, name) => {
+    if (!window.confirm(`Verknüpfung zu ${name} wirklich lösen?`)) return;
+    try {
+      await api.post('/family/unlink', { childId });
+      toast.push('Verknüpfung gelöst', 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
+  return (
+    <Card className="p-5">
+      <CardHeader title="Meine Kinder" subtitle="Mit dem Familien-Code des Kindes verknüpfen" icon={Users} />
+      <div className="p-4 space-y-4">
+        {!children ? (
+          <Spinner />
+        ) : children.length === 0 ? (
+          <p className="text-sm text-sage-muted">Noch kein Kind verknüpft. Gib unten den Familien-Code ein, den dein Kind (oder die Lehrkraft) dir gibt.</p>
+        ) : (
+          <ul className="divide-y divide-black/5">
+            {children.map((c) => (
+              <li key={c.id} className="py-2.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar name={c.name} size={36} />
+                  <div className="min-w-0">
+                    <div className="text-ivory truncate">{c.name}</div>
+                    {c.className && <div className="text-xs text-sage-muted">{c.className}</div>}
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => unlink(c.id, c.name)} aria-label="Verknüpfung lösen">
+                  <Unlink size={16} />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={link} className="flex items-end gap-2">
+          <label className="block flex-1">
+            <span className="text-sm text-sage">Familien-Code</span>
+            <input
+              className="input mt-1 font-mono tracking-widest uppercase"
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase())}
+              placeholder="z. B. K7F9QT"
+              maxLength={8}
+              required
+            />
+          </label>
+          <Button type="submit" disabled={busy}><Link2 size={18} /> Verknüpfen</Button>
+        </form>
+      </div>
+    </Card>
+  );
+}
+
+// Schüler: eigener Familien-Code für die Eltern.
+function FamilyCodeCard() {
+  const toast = useToast();
+  const [code, setCode] = useState(null);
+
+  useEffect(() => { api.get('/me/family-code').then((d) => setCode(d.code)); }, []);
+
+  const rotate = async () => {
+    if (!window.confirm('Neuen Code erzeugen? Der alte Code funktioniert dann nicht mehr.')) return;
+    try {
+      const d = await api.post('/me/family-code/rotate');
+      setCode(d.code);
+      toast.push('Neuer Code erzeugt', 'success');
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.push('Code kopiert', 'success');
+    } catch {
+      toast.push('Kopieren nicht möglich', 'error');
+    }
+  };
+
+  return (
+    <Card className="p-5">
+      <CardHeader title="Familien-Code" subtitle="Gib diesen Code deinen Eltern, damit sie dich verknüpfen können" icon={Users} />
+      <div className="p-4">
+        {!code ? (
+          <Spinner />
+        ) : (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-black/5 rounded-lg px-4 py-2">{code}</span>
+            <Button size="sm" variant="outline" onClick={copy}><Copy size={16} /> Kopieren</Button>
+            <Button size="sm" variant="ghost" onClick={rotate}><RefreshCw size={16} /> Neu</Button>
+          </div>
+        )}
+        <p className="text-[11px] text-sage-muted mt-3">Nur an deine eigenen Eltern weitergeben. Bei Missbrauch einfach „Neu" drücken – der alte Code wird ungültig.</p>
+      </div>
+    </Card>
   );
 }
 
