@@ -49,6 +49,7 @@ const emptyDb = () => ({
   extensions: [], // deadline_extensions
   protocols: [], // class_protocols
   behavior_records: [],
+  penalties: [], // Strafen (Seiten/Geld): Klassensprecher erfasst -> Lehrer genehmigt
   quran_goals: [],
   recitation_attempts: [],
   exams: [],

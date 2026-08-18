@@ -21,6 +21,7 @@ import {
   canViewStudent,
   requireRole,
   CLASS_MANAGERS,
+  TEACHING_ROLES,
 } from './rbac.js';
 import {
   attendanceStatusFor,
@@ -2305,6 +2306,210 @@ router.delete('/materials/:id', requireAuth, (req, res) => {
   const [removed] = list.splice(idx, 1);
   db.commit();
   audit(req.user.id, 'material.delete', 'material', removed.id);
+  res.json({ ok: true });
+});
+
+// =============================================================================
+// Strafen (Seiten / Geld)
+//
+// Ablauf: Klassensprecher ERFASST eine Strafe (Status "pending") -> Klassenlehrer
+// GENEHMIGT oder LEHNT AB. Genehmigte Strafen sind offene Schulden; die Leitung/
+// Lehrkraft verbucht sie später als ERLEDIGT (bezahlt bzw. Seiten abgegeben).
+// Erfasst ein Verwalter selbst, ist die Strafe sofort genehmigt.
+// =============================================================================
+
+function penaltyText(p) {
+  return p.type === 'money' ? `${p.amount} €` : `${p.amount} Seiten`;
+}
+
+/** Darf der Nutzer für diese Klasse Strafen erfassen? (Verwalter oder Klassensprecher der Klasse) */
+function canRecordPenalty(user, classId) {
+  if (canManageClass(user, classId)) return true;
+  if (user.role === ROLES.KLASSENSPRECHER) return (user.classIds || []).includes(classId);
+  return false;
+}
+
+/** Lädt eine Strafe und prüft Verwalter-Zugriff auf ihre Klasse. */
+function penaltyForManager(req, res) {
+  const p = byId('penalties', req.params.id);
+  if (!p) {
+    res.status(404).json({ error: 'Strafe nicht gefunden' });
+    return null;
+  }
+  if (!canManageClass(req.user, p.classId)) {
+    res.status(403).json({ error: 'Kein Zugriff' });
+    return null;
+  }
+  return p;
+}
+
+// Strafe erfassen (Klassensprecher oder Verwalter der Klasse).
+router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLASSENSPRECHER]), (req, res) => {
+  const { classId, studentId, type, amount, reason } = req.body || {};
+  const klass = findClass(classId);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canRecordPenalty(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
+
+  const student = findUserById(studentId);
+  if (!student || student.role !== ROLES.SCHUELER || !(student.classIds || []).includes(classId))
+    return res.status(400).json({ error: 'Bitte einen gültigen Schüler dieser Klasse wählen' });
+  if (!['pages', 'money'].includes(type)) return res.status(400).json({ error: 'Ungültige Straf-Art' });
+  const amt = Number(amount);
+  if (!(amt > 0)) return res.status(400).json({ error: 'Bitte eine Menge größer 0 angeben' });
+  if (!reason || !reason.trim()) return res.status(400).json({ error: 'Bitte einen Grund angeben' });
+
+  const isManager = canManageClass(req.user, classId);
+  const now = new Date().toISOString();
+  const p = {
+    id: newId('pen'),
+    classId,
+    className: klass.name,
+    studentId,
+    studentName: student.name,
+    type,
+    amount: amt,
+    reason: reason.trim(),
+    status: isManager ? 'approved' : 'pending',
+    createdBy: req.user.id,
+    createdByName: req.user.name,
+    createdByRole: req.user.role,
+    createdAt: now,
+    decidedBy: isManager ? req.user.id : null,
+    decidedByName: isManager ? req.user.name : null,
+    decidedAt: isManager ? now : null,
+    settledBy: null,
+    settledByName: null,
+    settledAt: null,
+    rejectionReason: null,
+  };
+  db.insert('penalties', p);
+  audit(req.user.id, 'penalty.create', 'penalty', p.id);
+
+  if (isManager) {
+    notify(student.id, {
+      type: 'penalty_new',
+      level: 'warning',
+      title: 'Neue Strafe',
+      body: `${penaltyText(p)} – Grund: ${p.reason}`,
+      deepLink: '/strafen',
+    });
+  } else {
+    db.all('users')
+      .filter((u) => canManageClass(u, classId) && !isAdmin(u))
+      .forEach((t) =>
+        notify(t.id, {
+          type: 'penalty_pending',
+          level: 'info',
+          title: 'Strafe zu genehmigen',
+          body: `${req.user.name} hat eine Strafe für ${student.name} erfasst.`,
+          deepLink: '/strafen',
+        }),
+      );
+  }
+  res.json({ penalty: p });
+});
+
+// Strafen auflisten (rollenabhängig gefiltert).
+router.get('/penalties', requireAuth, (req, res) => {
+  const all = db.all('penalties');
+  const u = req.user;
+  let list;
+  if (isAdmin(u)) list = all;
+  else if (TEACHING_ROLES.includes(u.role)) list = all.filter((p) => (u.classIds || []).includes(p.classId));
+  else if (u.role === ROLES.KLASSENSPRECHER) list = all.filter((p) => (u.classIds || []).includes(p.classId));
+  else if (u.role === ROLES.SCHUELER)
+    list = all.filter((p) => p.studentId === u.id && ['approved', 'settled'].includes(p.status));
+  else if (u.role === ROLES.ELTERN)
+    list = all.filter((p) => (u.childIds || []).includes(p.studentId) && ['approved', 'settled'].includes(p.status));
+  else list = [];
+
+  if (req.query.classId) list = list.filter((p) => p.classId === req.query.classId);
+  if (req.query.studentId) list = list.filter((p) => p.studentId === req.query.studentId);
+  list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  res.json({
+    penalties: list,
+    canManage: isClassManager(u),
+    canRecord: isClassManager(u) || u.role === ROLES.KLASSENSPRECHER,
+  });
+});
+
+// Genehmigen (Verwalter).
+router.post('/penalties/:id/approve', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (p.status !== 'pending') return res.status(400).json({ error: 'Nur offene Einträge können genehmigt werden' });
+  p.status = 'approved';
+  p.decidedBy = req.user.id;
+  p.decidedByName = req.user.name;
+  p.decidedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'penalty.approve', 'penalty', p.id);
+  notify(p.studentId, {
+    type: 'penalty_new',
+    level: 'warning',
+    title: 'Neue Strafe',
+    body: `${penaltyText(p)} – Grund: ${p.reason}`,
+    deepLink: '/strafen',
+  });
+  res.json({ penalty: p });
+});
+
+// Ablehnen (Verwalter).
+router.post('/penalties/:id/reject', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (p.status !== 'pending') return res.status(400).json({ error: 'Nur offene Einträge können abgelehnt werden' });
+  p.status = 'rejected';
+  p.decidedBy = req.user.id;
+  p.decidedByName = req.user.name;
+  p.decidedAt = new Date().toISOString();
+  p.rejectionReason = (req.body?.reason || '').trim() || null;
+  db.commit();
+  audit(req.user.id, 'penalty.reject', 'penalty', p.id);
+  if (p.createdBy !== req.user.id)
+    notify(p.createdBy, {
+      type: 'penalty_rejected',
+      level: 'info',
+      title: 'Strafe abgelehnt',
+      body: `Deine Erfassung für ${p.studentName} wurde abgelehnt.`,
+      deepLink: '/strafen',
+    });
+  res.json({ penalty: p });
+});
+
+// Als erledigt verbuchen (bezahlt / Seiten abgegeben) – Verwalter/Leitung.
+router.post('/penalties/:id/settle', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (p.status !== 'approved')
+    return res.status(400).json({ error: 'Nur genehmigte (offene) Strafen können als erledigt gebucht werden' });
+  p.status = 'settled';
+  p.settledBy = req.user.id;
+  p.settledByName = req.user.name;
+  p.settledAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'penalty.settle', 'penalty', p.id);
+  notify(p.studentId, {
+    type: 'penalty_settled',
+    level: 'success',
+    title: 'Strafe erledigt',
+    body: `${penaltyText(p)} wurde als erledigt verbucht.`,
+    deepLink: '/strafen',
+  });
+  res.json({ penalty: p });
+});
+
+// Löschen: eigener, noch offener Eintrag (z. B. Klassensprecher-Tippfehler) oder Admin.
+router.delete('/penalties/:id', requireAuth, (req, res) => {
+  const list = db.all('penalties');
+  const idx = list.findIndex((p) => p.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
+  const p = list[idx];
+  const own = p.createdBy === req.user.id && p.status === 'pending';
+  if (!own && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
+  list.splice(idx, 1);
+  db.commit();
+  audit(req.user.id, 'penalty.delete', 'penalty', p.id);
   res.json({ ok: true });
 });
 

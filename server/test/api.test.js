@@ -209,6 +209,53 @@ test('Schülerprofil: Lehrer und eigenes Elternteil dürfen, Fremde nicht', asyn
   assert.equal((await parent('GET', '/students/user_amina/profile')).status, 403);
 });
 
+test('Strafen: Klassensprecher erfasst (pending), Lehrer genehmigt, Schüler sieht, dann erledigt', async () => {
+  const sprecher = await loginAs('sprecher@dbz.de');
+  const create = await sprecher('POST', '/penalties', {
+    classId: 'class_3', studentId: 'user_yusuf', type: 'pages', amount: 5, reason: 'Hausaufgabe vergessen',
+  });
+  assert.equal(create.status, 200);
+  assert.equal(create.data.penalty.status, 'pending');
+  const id = create.data.penalty.id;
+
+  // Schüler darf keine Strafe erfassen und sieht die noch nicht genehmigte nicht.
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal(
+    (await student('POST', '/penalties', { classId: 'class_3', studentId: 'user_yusuf', type: 'pages', amount: 1, reason: 'x' })).status,
+    403,
+  );
+  assert.ok(!(await student('GET', '/penalties')).data.penalties.some((p) => p.id === id));
+
+  // Lehrer genehmigt -> offen.
+  const teacher = await loginAs('lehrer@dbz.de');
+  const appr = await teacher('POST', `/penalties/${id}/approve`);
+  assert.equal(appr.status, 200);
+  assert.equal(appr.data.penalty.status, 'approved');
+
+  // Jetzt sieht der Schüler die offene Strafe.
+  const s2 = await loginAs('schueler@dbz.de');
+  assert.ok((await s2('GET', '/penalties')).data.penalties.some((p) => p.id === id && p.status === 'approved'));
+
+  // Lehrer verbucht als erledigt.
+  const settle = await teacher('POST', `/penalties/${id}/settle`);
+  assert.equal(settle.status, 200);
+  assert.equal(settle.data.penalty.status, 'settled');
+});
+
+test('Strafen: Lehrer erfasst direkt genehmigt; ungültiger Schüler wird abgelehnt', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const direct = await teacher('POST', '/penalties', {
+    classId: 'class_3', studentId: 'user_yusuf', type: 'money', amount: 2, reason: 'Direkt',
+  });
+  assert.equal(direct.status, 200);
+  assert.equal(direct.data.penalty.status, 'approved');
+
+  const bad = await teacher('POST', '/penalties', {
+    classId: 'class_3', studentId: 'user_nobody', type: 'money', amount: 2, reason: 'x',
+  });
+  assert.equal(bad.status, 400);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

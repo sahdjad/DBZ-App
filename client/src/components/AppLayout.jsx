@@ -26,6 +26,7 @@ import {
   FolderOpen,
   Book,
   MessagesSquare,
+  Scale,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
@@ -45,6 +46,7 @@ const ITEMS = {
   entschuldigungen: { to: '/entschuldigungen', label: 'Entschuldigungen', icon: ClipboardCheck },
   korrektur: { to: '/korrektur', label: 'Korrektur', icon: CheckSquare },
   verhalten: { to: '/verhalten', label: 'Verhalten', icon: Sparkles },
+  strafen: { to: '/strafen', label: 'Strafen', icon: Scale },
   quran: { to: '/quran', label: "Qur'an", icon: Book },
   hifz: { to: '/hifz', label: "Hifz & Muraja'ah", icon: Star },
   materialien: { to: '/materialien', label: 'Materialien', icon: FolderOpen },
@@ -61,17 +63,17 @@ function navForRole(role) {
   const k = (...keys) => keys.map((key) => ITEMS[key]);
   switch (role) {
     case 'schueler':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'anwesenheit', 'verhalten', 'berichte', 'abwesenheit', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'abwesenheit', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'klassensprecher':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'protokolle', 'anwesenheit', 'verhalten', 'berichte', 'abwesenheit', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'protokolle', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'abwesenheit', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'klassenlehrer':
     case 'vertretung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'unterricht', 'aufgaben', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'korrektur', 'entschuldigungen', 'anwesenheit', 'verhalten', 'berichte', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'unterricht', 'aufgaben', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'korrektur', 'entschuldigungen', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'eltern':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'berichte', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'strafen', 'berichte', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'super_admin':
     case 'leitung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'admin', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'admin', 'strafen', 'benachrichtigungen', 'dbzonline', 'konto');
     default:
       return k('dashboard', 'benachrichtigungen', 'konto');
   }
