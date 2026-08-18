@@ -4,6 +4,7 @@
 import { createApp } from './app.js';
 import { seed } from './seed.js';
 import { scheduleMaintenance } from './maintenance.js';
+import { initStore, flushStore } from './store.js';
 
 const PORT = process.env.PORT || 4000;
 
@@ -19,10 +20,32 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// Datenbestand aus dem aktiven Backend (Supabase oder lokale Datei) laden,
+// bevor irgendein Code darauf zugreift.
+await initStore();
 await seed();
 const app = createApp();
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`DBZ-App läuft auf Port ${PORT} (${process.env.NODE_ENV || 'development'})`);
   scheduleMaintenance();
 });
+
+// Sauberes Herunterfahren (z. B. Render-Redeploy sendet SIGTERM): letzte
+// Änderungen noch dauerhaft speichern, dann beenden.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} empfangen – speichere und beende…`);
+  try {
+    await flushStore();
+  } catch (err) {
+    console.error('[shutdown] Speichern fehlgeschlagen:', err.message);
+  }
+  server.close(() => process.exit(0));
+  // Notausstieg, falls offene Verbindungen das Schließen blockieren.
+  setTimeout(() => process.exit(0), 5000).unref?.();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

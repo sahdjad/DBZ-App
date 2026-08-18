@@ -39,6 +39,13 @@ const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex'
 
 const router = express.Router();
 
+// Öffentlicher Health-/Diagnose-Endpunkt: zeigt an, ob der Server läuft und
+// welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal).
+// Enthält bewusst keine sensiblen Daten.
+router.get('/health', (_req, res) => {
+  res.json({ ok: true, storage: db.backend, time: new Date().toISOString() });
+});
+
 // --- Datensatz-Helfer --------------------------------------------------------
 
 const byId = (coll, id) => db.all(coll).find((x) => x.id === id) || null;
