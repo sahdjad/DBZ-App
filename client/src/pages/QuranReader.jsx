@@ -1,11 +1,45 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
+
+function TafsirPanel({ data, edition, onEdition }) {
+  const EDS = [['saadi', 'as-Saʿdī · عربي'], ['ibnkathir', 'Ibn Kathīr · EN']];
+  return (
+    <div className="mt-3 rounded-lg border border-mint/25 bg-mint/[0.04] p-3">
+      <div className="flex items-center gap-1 mb-2 flex-wrap">
+        <span className="text-xs text-sage-muted mr-1 inline-flex items-center gap-1"><FileText size={13} /> Tafsir</span>
+        {EDS.map(([k, l]) => (
+          <button key={k} onClick={() => onEdition(k)}
+            className={['text-[11px] px-2 py-0.5 rounded-md border', edition === k ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{l}</button>
+        ))}
+      </div>
+      {!data || data.loading ? (
+        <p className="text-sm text-sage-muted">Wird geladen …</p>
+      ) : data.error ? (
+        <p className="text-sm text-status-absent">{data.error}</p>
+      ) : (
+        <div dir={data.dir || 'ltr'} className={`text-sm whitespace-pre-line ${data.dir === 'rtl' ? 'font-arabic text-lg leading-loose text-ivory' : 'text-sage'}`}>
+          {data.text || 'Kein Tafsir zu dieser Ayah.'}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Tafsir-Text (kommt als HTML) sicher zu Klartext mit Absätzen.
+const stripHtml = (html) =>
+  (html || '')
+    .replace(/<\/(p|h[1-6]|div|li)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
 export default function QuranReader() {
   const [surahs, setSurahs] = useState(null);
@@ -107,6 +141,9 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const [marked, setMarked] = useState(new Set());
   const [notes, setNotes] = useState({}); // ayah -> Notiztext
   const [readMode, setReadMode] = useState('study'); // study | mushaf
+  const [tafsirOpen, setTafsirOpen] = useState(null); // Ayah-Nummer
+  const [tafsirEd, setTafsirEd] = useState('saadi'); // saadi | ibnkathir
+  const [tafsir, setTafsir] = useState({}); // `${ed}:${ayah}` -> {loading|text|error}
   const audioRef = useRef(null);
   const stateRef = useRef({ stopped: true, start: 0, end: 0, left: 0 });
 
@@ -204,6 +241,21 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       onMarksChanged();
     } catch (err) { toast.push(err.message, 'error'); }
   };
+
+  const loadTafsir = (ayah, ed) => {
+    const k = `${ed}:${ayah}`;
+    if (tafsir[k]) return;
+    setTafsir((t) => ({ ...t, [k]: { loading: true } }));
+    api.get(`/quran/tafsir/${n}/${ayah}?edition=${ed}`)
+      .then(({ tafsir: d }) => setTafsir((t) => ({ ...t, [k]: { text: stripHtml(d.text), dir: d.dir, name: d.editionName } })))
+      .catch((err) => setTafsir((t) => ({ ...t, [k]: { error: err.message } })));
+  };
+  const toggleTafsir = (ayah) => {
+    const willOpen = tafsirOpen !== ayah;
+    setTafsirOpen(willOpen ? ayah : null);
+    if (willOpen) loadTafsir(ayah, tafsirEd);
+  };
+  const changeEdition = (ed) => { setTafsirEd(ed); if (tafsirOpen) loadTafsir(tafsirOpen, ed); };
 
   const MODES = [['single', 'Einzeln'], ['continuous', 'Weiterlaufen'], ['range', 'Bereich']];
 
@@ -322,6 +374,9 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                   <div className="flex items-start justify-between gap-3">
                     <span className="grid place-items-center h-7 w-7 rounded-full bg-mint/15 text-mint font-mono text-xs shrink-0">{a.n}</span>
                     <div className="flex items-center gap-3 shrink-0">
+                      <button onClick={() => toggleTafsir(a.n)} className={tafsirOpen === a.n ? 'text-mint-light' : 'text-sage-muted hover:text-ivory'} aria-label="Tafsir" title="Tafsir">
+                        <FileText size={18} />
+                      </button>
                       <button onClick={() => editNote(a.n)} className={notes[a.n] ? 'text-mint-light' : 'text-sage-muted hover:text-ivory'} aria-label="Notiz">
                         <StickyNote size={18} />
                       </button>
@@ -341,6 +396,9 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                     <p className="text-xs text-mint-light bg-mint/10 rounded-lg px-3 py-2 mt-3 flex items-start gap-2">
                       <StickyNote size={13} className="mt-0.5 shrink-0" /> {notes[a.n]}
                     </p>
+                  )}
+                  {tafsirOpen === a.n && (
+                    <TafsirPanel data={tafsir[`${tafsirEd}:${a.n}`]} edition={tafsirEd} onEdition={changeEdition} />
                   )}
                 </Card>
               ))}

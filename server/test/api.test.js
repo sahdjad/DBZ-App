@@ -413,6 +413,18 @@ test("Qur'an: Ayah-Notiz setzen legt Lesezeichen an und ist privat", async () =>
   assert.ok(!meOther.data.bookmarks.some((b) => b.note === 'Ghunnah beachten'));
 });
 
+test("Qur'an: Tafsir-Ausgaben verfügbar, ungültige Ayah abgewiesen", async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const eds = await student('GET', '/quran/tafsir-editions');
+  assert.equal(eds.status, 200);
+  assert.ok(eds.data.editions.some((e) => e.key === 'saadi'));
+  assert.ok(eds.data.editions.some((e) => e.key === 'ibnkathir'));
+
+  // Ungültige Sure -> 404 (ohne externen Abruf).
+  const bad = await student('GET', '/quran/tafsir/999/1');
+  assert.equal(bad.status, 404);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

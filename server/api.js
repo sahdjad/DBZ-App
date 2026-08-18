@@ -33,6 +33,7 @@ import {
 import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
 import { listSurahs, getSurah } from './providers/quranProvider.js';
+import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -1761,6 +1762,21 @@ router.post('/quran/notes', requireAuth, (req, res) => {
   b.note = String(note || '').trim();
   db.commit();
   res.json({ bookmark: { ...b, surahName: surahByN(b.surah)?.name } });
+});
+
+// Tafsir-Ausgaben (as-Saʿdī arabisch, Ibn Kathīr englisch) und Inhalt pro Ayah.
+router.get('/quran/tafsir-editions', requireAuth, (_req, res) => res.json({ editions: listTafsirEditions() }));
+
+router.get('/quran/tafsir/:surah/:ayah', requireAuth, async (req, res) => {
+  try {
+    const data = await getTafsir(req.params.surah, req.params.ayah, req.query.edition || 'saadi');
+    res.json({ tafsir: data });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Ayah nicht gefunden' });
+    if (err.code === 'PROVIDER_UNAVAILABLE')
+      return res.status(503).json({ error: 'Tafsir konnte nicht geladen werden. Bitte später erneut versuchen.' });
+    res.status(500).json({ error: 'Serverfehler beim Laden des Tafsir' });
+  }
 });
 
 router.get('/quran/surah/:n', requireAuth, async (req, res) => {

@@ -79,8 +79,9 @@ export default function Tadschwid() {
       ))}
 
       <p className="text-[11px] text-sage-muted">
-        Kurzreferenz zum Lernen. Die automatische Einfärbung des Textes im Reader und der deutsche
-        Tafsīr (as-Saʿdī) folgen später – dafür ist eine geeignete Datenquelle nötig.
+        Kurzreferenz zum Lernen. Tafsīr pro Ayah (as-Saʿdī arabisch, Ibn Kathīr englisch) findest du
+        im Reader über das Tafsir-Symbol. Die automatische Farb-Einfärbung direkt im Text folgt später,
+        sobald eine geprüfte Datenquelle feststeht.
       </p>
     </AppLayout>
   );
