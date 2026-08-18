@@ -27,6 +27,7 @@ import {
   Book,
   MessagesSquare,
   Scale,
+  Gauge,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
@@ -41,6 +42,7 @@ const ITEMS = {
   checkin: { to: '/checkin', label: 'Einchecken', icon: QrCode },
   unterricht: { to: '/unterricht', label: 'Unterricht', icon: Users2 },
   klassenliste: { to: '/klassenliste', label: 'Klassenliste', icon: Users2 },
+  leitung: { to: '/leitung', label: 'Leitung', icon: Gauge },
   kalender: { to: '/kalender', label: 'Kalender', icon: CalendarDays },
   anwesenheit: { to: '/anwesenheit', label: 'Anwesenheit', icon: CalendarCheck },
   abwesenheit: { to: '/abwesenheit', label: 'Abwesenheit melden', icon: CalendarX },
@@ -74,7 +76,7 @@ function navForRole(role) {
       return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'strafen', 'berichte', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'super_admin':
     case 'leitung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'strafen', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'leitung', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'strafen', 'benachrichtigungen', 'dbzonline', 'konto');
     default:
       return k('dashboard', 'benachrichtigungen', 'konto');
   }

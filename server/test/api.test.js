@@ -354,6 +354,21 @@ test('Klassenliste: Kennzahlen je Schüler, nur für Verwalter', async () => {
   assert.equal((await student('GET', '/classes/class_3/roster')).status, 403);
 });
 
+test('Leitungs-Überblick: Kennzahlen aggregiert, nur für Leitung/Admin', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const r = await leitung('GET', '/leadership/overview');
+  assert.equal(r.status, 200);
+  assert.ok(r.data.counts.students >= 1, 'Schülerzahl');
+  assert.ok(Array.isArray(r.data.classes) && r.data.classes.some((c) => c.id === 'class_3'));
+  for (const key of ['pendingApprovals', 'openMoney', 'openPages', 'openCount']) {
+    assert.ok(key in r.data.penalties, `Feld ${key} fehlt`);
+  }
+
+  // Lehrer (kein Admin) darf nicht.
+  const teacher = await loginAs('lehrer@dbz.de');
+  assert.equal((await teacher('GET', '/leadership/overview')).status, 403);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

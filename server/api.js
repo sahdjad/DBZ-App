@@ -834,6 +834,53 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
   res.json({ class: { id: klass.id, name: klass.name }, rows });
 });
 
+// Schulweite Übersicht für die Leitung: Kennzahlen, offene Freigaben und eine
+// Aufstellung je Klasse. Bündelt Anwesenheit, Strafen und Registrierungen.
+router.get('/leadership/overview', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
+  const users = db.all('users');
+  const students = users.filter((u) => u.role === ROLES.SCHUELER);
+  const classes = db.all('classes');
+  const penalties = db.all('penalties');
+  const openPen = penalties.filter((p) => p.status === 'approved');
+  const rateOf = (s) => {
+    const a = attendanceStats(s.id);
+    return a.sessions ? ((a.present + a.late) / a.sessions) * 100 : null;
+  };
+
+  const counts = {
+    classes: classes.length,
+    students: students.length,
+    parents: users.filter((u) => u.role === ROLES.ELTERN).length,
+    teachers: users.filter((u) => [ROLES.KLASSENLEHRER, ROLES.VERTRETUNG].includes(u.role)).length,
+    pendingUsers: users.filter((u) => u.status === 'pending').length,
+  };
+  const penaltySummary = {
+    pendingApprovals: penalties.filter((p) => p.status === 'pending').length,
+    openCount: openPen.length,
+    openMoney: openPen.filter((p) => p.type === 'money').reduce((x, p) => x + p.amount, 0),
+    openPages: openPen.filter((p) => p.type === 'pages').reduce((x, p) => x + p.amount, 0),
+  };
+  const classRows = classes
+    .map((c) => {
+      const cs = students.filter((s) => (s.classIds || []).includes(c.id));
+      const rates = cs.map(rateOf).filter((r) => r !== null);
+      const cids = new Set(cs.map((s) => s.id));
+      const cp = openPen.filter((p) => cids.has(p.studentId));
+      return {
+        id: c.id,
+        name: c.name,
+        students: cs.length,
+        attendanceRate: rates.length ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null,
+        openMoney: cp.filter((p) => p.type === 'money').reduce((x, p) => x + p.amount, 0),
+        openPages: cp.filter((p) => p.type === 'pages').reduce((x, p) => x + p.amount, 0),
+        unexcused: cs.reduce((x, s) => x + attendanceStats(s.id).unexcused, 0),
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+
+  res.json({ counts, penalties: penaltySummary, classes: classRows });
+});
+
 // =============================================================================
 // Kalender / Stundenplan
 // =============================================================================
