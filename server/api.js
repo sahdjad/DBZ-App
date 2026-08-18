@@ -2125,6 +2125,63 @@ function messageContacts(user) {
 }
 const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId);
 
+// Erlaubte Reaktionen (bewusst kleine, passende Auswahl).
+const MSG_REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
+
+function msgKind(mime = '') {
+  if (mime.startsWith('image')) return 'image';
+  if (mime.startsWith('audio')) return 'audio';
+  return 'file';
+}
+
+/** Kurzvorschau einer Nachricht für die Thread-Liste. */
+function msgPreview(m) {
+  if (!m) return '';
+  if (m.body) return m.body.slice(0, 80);
+  if (m.file) return m.file.kind === 'image' ? '📷 Bild' : m.file.kind === 'audio' ? '🎤 Sprachnachricht' : '📎 Datei';
+  return '';
+}
+
+/** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
+function messageView(m) {
+  const file = m.file
+    ? { kind: m.file.kind, originalName: m.file.originalName, mediaType: m.file.mediaType, size: m.file.size }
+    : null;
+  return {
+    id: m.id,
+    senderId: m.senderId,
+    senderName: m.senderName,
+    body: m.body || '',
+    createdAt: m.createdAt,
+    file,
+    reactions: m.reactions || {},
+  };
+}
+
+/** Baut eine neue Nachricht (inkl. optionaler Datei) aus dem Request. */
+async function buildMessage(req) {
+  const now = new Date().toISOString();
+  const msg = {
+    id: newId('msg'),
+    senderId: req.user.id,
+    senderName: req.user.name,
+    body: (req.body?.body || '').trim(),
+    createdAt: now,
+    reactions: {},
+  };
+  if (req.file) {
+    await persistUpload(req.file);
+    msg.file = {
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      mediaType: req.file.mimetype,
+      size: req.file.size,
+      kind: msgKind(req.file.mimetype),
+    };
+  }
+  return msg;
+}
+
 function threadListView(t, userId) {
   const otherId = t.participantIds.find((id) => id !== userId);
   const last = t.messages[t.messages.length - 1] || null;
@@ -2133,7 +2190,7 @@ function threadListView(t, userId) {
   return {
     id: t.id,
     otherName: t.participantNames[otherId] || 'Unbekannt',
-    lastBody: last ? last.body.slice(0, 80) : '',
+    lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
     unread,
   };
@@ -2152,19 +2209,19 @@ router.get('/threads', requireAuth, (req, res) => {
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
 });
 
-router.post('/threads', requireAuth, (req, res) => {
-  const { recipientId, body } = req.body || {};
+router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
+  const { recipientId } = req.body || {};
   const recipient = findUserById(recipientId);
   if (!recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
   if (!canMessage(req.user, recipientId)) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
-  if (!body || !body.trim()) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
 
-  const now = new Date().toISOString();
+  const msg = await buildMessage(req);
+  const now = msg.createdAt;
   // Bestehenden Direkt-Thread wiederverwenden
   let t = db.all('threads').find(
     (x) => x.participantIds.length === 2 && x.participantIds.includes(req.user.id) && x.participantIds.includes(recipientId),
   );
-  const msg = { id: newId('msg'), senderId: req.user.id, senderName: req.user.name, body: body.trim(), createdAt: now };
   if (!t) {
     t = {
       id: newId('thread'),
@@ -2182,7 +2239,7 @@ router.post('/threads', requireAuth, (req, res) => {
     t.reads[req.user.id] = now;
     db.commit();
   }
-  notify(recipientId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msg.body.slice(0, 100), deepLink: '/nachrichten' });
+  notify(recipientId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: '/nachrichten' });
   res.json({ threadId: t.id });
 });
 
@@ -2194,24 +2251,54 @@ router.get('/threads/:id', requireAuth, (req, res) => {
   db.commit();
   const otherId = t.participantIds.find((id) => id !== req.user.id);
   res.json({
-    thread: { id: t.id, otherName: t.participantNames[otherId], messages: t.messages, meId: req.user.id },
+    thread: { id: t.id, otherName: t.participantNames[otherId], messages: t.messages.map(messageView), meId: req.user.id },
   });
 });
 
-router.post('/threads/:id/messages', requireAuth, (req, res) => {
+router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (req, res) => {
   const t = byId('threads', req.params.id);
   if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const { body } = req.body || {};
-  if (!body || !body.trim()) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
-  const now = new Date().toISOString();
-  const msg = { id: newId('msg'), senderId: req.user.id, senderName: req.user.name, body: body.trim(), createdAt: now };
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  const msg = await buildMessage(req);
   t.messages.push(msg);
-  t.lastMessageAt = now;
-  t.reads[req.user.id] = now;
+  t.lastMessageAt = msg.createdAt;
+  t.reads = t.reads || {};
+  t.reads[req.user.id] = msg.createdAt;
   db.commit();
   const otherId = t.participantIds.find((id) => id !== req.user.id);
-  notify(otherId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msg.body.slice(0, 100), deepLink: '/nachrichten' });
-  res.json({ message: msg });
+  notify(otherId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: '/nachrichten' });
+  res.json({ message: messageView(msg) });
+});
+
+// Anhang einer Nachricht herunterladen (nur Thread-Teilnehmer).
+router.get('/threads/:id/messages/:mid/file', requireAuth, async (req, res) => {
+  const t = byId('threads', req.params.id);
+  if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const m = t.messages.find((x) => x.id === req.params.mid);
+  if (!m || !m.file) return res.status(404).json({ error: 'Anhang fehlt' });
+  const buf = await readFile(m.file.filename);
+  if (!buf) return res.status(404).json({ error: 'Anhang fehlt' });
+  res.setHeader('Content-Type', m.file.mediaType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(m.file.originalName)}"`);
+  res.end(buf);
+});
+
+// Reaktion auf eine Nachricht setzen/entfernen (umschalten).
+router.post('/threads/:id/messages/:mid/react', requireAuth, (req, res) => {
+  const t = byId('threads', req.params.id);
+  if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const emoji = String(req.body?.emoji || '');
+  if (!MSG_REACTIONS.includes(emoji)) return res.status(400).json({ error: 'Ungültige Reaktion' });
+  const m = t.messages.find((x) => x.id === req.params.mid);
+  if (!m) return res.status(404).json({ error: 'Nachricht nicht gefunden' });
+  m.reactions = m.reactions || {};
+  const set = new Set(m.reactions[emoji] || []);
+  if (set.has(req.user.id)) set.delete(req.user.id);
+  else set.add(req.user.id);
+  if (set.size) m.reactions[emoji] = [...set];
+  else delete m.reactions[emoji];
+  db.commit();
+  res.json({ reactions: m.reactions });
 });
 
 // =============================================================================

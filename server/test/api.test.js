@@ -290,6 +290,53 @@ test('Familien-Code: Fremde (anderes Elternteil) bekommt den Code eines Kindes n
   assert.equal((await parent('GET', '/students/user_yusuf/family-code')).status, 403);
 });
 
+test('Nachrichten: Bild-Anhang senden & abrufen, Reaktion umschalten, Fremde gesperrt', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+
+  // Thread mit Bild-Anhang starten (multipart).
+  const form = new FormData();
+  form.set('recipientId', 'user_yusuf');
+  form.set('body', 'Schau dir das an');
+  form.set('file', new Blob([Buffer.from('PNGDATA')], { type: 'image/png' }), 'bild.png');
+  const res = await fetch(base + '/api/threads', {
+    method: 'POST',
+    headers: { cookie: await cookieFor('lehrer@dbz.de') },
+    body: form,
+  });
+  assert.equal(res.status, 200);
+  const { threadId } = await res.json();
+
+  // Nachricht mit Datei erscheint; interner Dateiname wird NICHT mitgesendet.
+  const th = await teacher('GET', `/threads/${threadId}`);
+  const msg = th.data.thread.messages.find((m) => m.file);
+  assert.ok(msg && msg.file.kind === 'image');
+  assert.equal(msg.file.filename, undefined);
+
+  // Anhang ist für Teilnehmer abrufbar …
+  const dl = await fetch(base + `/api/threads/${threadId}/messages/${msg.id}/file`, {
+    headers: { cookie: await cookieFor('lehrer@dbz.de') },
+  });
+  assert.equal(dl.status, 200);
+  // … aber nicht für Fremde.
+  const forbidden = await fetch(base + `/api/threads/${threadId}/messages/${msg.id}/file`, {
+    headers: { cookie: await cookieFor('sprecher@dbz.de') },
+  });
+  assert.equal(forbidden.status, 403);
+
+  // Reaktion setzen und wieder entfernen (umschalten).
+  const r1 = await teacher('POST', `/threads/${threadId}/messages/${msg.id}/react`, { emoji: '👍' });
+  assert.ok(Array.isArray(r1.data.reactions['👍']) && r1.data.reactions['👍'].length === 1);
+  const r2 = await teacher('POST', `/threads/${threadId}/messages/${msg.id}/react`, { emoji: '👍' });
+  assert.equal(r2.data.reactions['👍'], undefined);
+  // Ungültige Reaktion wird abgelehnt.
+  assert.equal((await teacher('POST', `/threads/${threadId}/messages/${msg.id}/react`, { emoji: '💣' })).status, 400);
+
+  // Reine Textnachricht (JSON) funktioniert weiterhin.
+  const textMsg = await teacher('POST', `/threads/${threadId}/messages`, { body: 'nur Text' });
+  assert.equal(textMsg.status, 200);
+  assert.equal(textMsg.data.message.body, 'nur Text');
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');
