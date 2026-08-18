@@ -892,8 +892,8 @@ router.get('/calendar', requireAuth, (req, res) => {
   const to = (req.query.to || from).slice(0, 10);
   const fromD = new Date(`${from}T00:00:00`);
   let toD = new Date(`${to}T23:59:59`);
-  // Sicherheitslimit: höchstens ~70 Tage berechnen
-  const maxTo = new Date(fromD.getTime() + 70 * 86400000);
+  // Sicherheitslimit: höchstens ~1 Jahr berechnen (für die Jahresansicht)
+  const maxTo = new Date(fromD.getTime() + 372 * 86400000);
   if (toD > maxTo) toD = maxTo;
 
   const classes = visibleClasses(req.user);
@@ -939,8 +939,111 @@ router.get('/calendar', requireAuth, (req, res) => {
     db.all('assignments').filter((a) => canManageClass(req.user, a.classId)).forEach((a) => add(a, a.dueAt));
   }
 
+  // Persönliche Termine (nur eigene) inkl. Wiederholung
+  for (const ev of db.all('events').filter((e) => e.userId === req.user.id)) {
+    for (const occ of expandEvent(ev, fromD, toD)) {
+      events.push({
+        id: ev.id,
+        date: occ,
+        type: 'personal',
+        title: ev.title,
+        time: ev.allDay ? '' : [ev.startTime, ev.endTime].filter(Boolean).join('–'),
+        startTime: ev.startTime || null,
+        endTime: ev.endTime || null,
+        allDay: !!ev.allDay,
+        category: ev.category || 'other',
+        note: ev.note || '',
+        recurring: !!(ev.recurrence && ev.recurrence.freq),
+      });
+    }
+  }
+
   events.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || ''));
   res.json({ events });
+});
+
+// --- Persönliche Kalendertermine --------------------------------------------
+
+const EVENT_CATS = ['dbz', 'personal', 'school', 'work', 'sport', 'other'];
+
+/** Expandiert einen Termin (inkl. Wiederholung) zu den Vorkommen im Bereich. */
+function expandEvent(ev, fromD, toD) {
+  const base = new Date(`${ev.date}T00:00:00`);
+  const rec = ev.recurrence && ev.recurrence.freq ? ev.recurrence : null;
+  const out = [];
+  if (!rec) {
+    if (base >= fromD && base <= toD) out.push(ev.date);
+    return out;
+  }
+  const until = rec.until ? new Date(`${rec.until}T23:59:59`) : toD;
+  const end = until < toD ? until : toD;
+  let cap = 0;
+  for (const d = new Date(base); d <= end && cap < 400; cap++) {
+    if (d >= fromD) out.push(d.toISOString().slice(0, 10));
+    if (rec.freq === 'daily') d.setDate(d.getDate() + 1);
+    else if (rec.freq === 'weekly') d.setDate(d.getDate() + 7);
+    else if (rec.freq === 'monthly') d.setMonth(d.getMonth() + 1);
+    else break;
+  }
+  return out;
+}
+
+function normalizeRecurrence(r) {
+  if (r && ['daily', 'weekly', 'monthly'].includes(r.freq)) {
+    return { freq: r.freq, until: /^\d{4}-\d{2}-\d{2}$/.test(r.until || '') ? r.until : null };
+  }
+  return null;
+}
+
+router.get('/events', requireAuth, (req, res) => {
+  const list = db.all('events').filter((e) => e.userId === req.user.id).sort((a, b) => a.date.localeCompare(b.date));
+  res.json({ events: list });
+});
+
+router.post('/events', requireAuth, (req, res) => {
+  const { title, date, startTime, endTime, allDay, category, note, recurrence } = req.body || {};
+  if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ error: 'Gültiges Datum erforderlich' });
+  const ev = {
+    id: newId('evt'),
+    userId: req.user.id,
+    title: title.trim(),
+    date,
+    allDay: !!allDay,
+    startTime: allDay ? null : startTime || null,
+    endTime: allDay ? null : endTime || null,
+    category: EVENT_CATS.includes(category) ? category : 'other',
+    note: (note || '').trim(),
+    recurrence: normalizeRecurrence(recurrence),
+    createdAt: new Date().toISOString(),
+  };
+  db.insert('events', ev);
+  res.json({ event: ev });
+});
+
+router.patch('/events/:id', requireAuth, (req, res) => {
+  const ev = byId('events', req.params.id);
+  if (!ev || ev.userId !== req.user.id) return res.status(404).json({ error: 'Termin nicht gefunden' });
+  const b = req.body || {};
+  if (b.title !== undefined) ev.title = String(b.title).trim() || ev.title;
+  if (b.date !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(b.date)) ev.date = b.date;
+  if (b.allDay !== undefined) ev.allDay = !!b.allDay;
+  if (b.startTime !== undefined) ev.startTime = ev.allDay ? null : b.startTime || null;
+  if (b.endTime !== undefined) ev.endTime = ev.allDay ? null : b.endTime || null;
+  if (b.category !== undefined && EVENT_CATS.includes(b.category)) ev.category = b.category;
+  if (b.note !== undefined) ev.note = String(b.note).trim();
+  if (b.recurrence !== undefined) ev.recurrence = normalizeRecurrence(b.recurrence);
+  db.commit();
+  res.json({ event: ev });
+});
+
+router.delete('/events/:id', requireAuth, (req, res) => {
+  const list = db.all('events');
+  const idx = list.findIndex((e) => e.id === req.params.id && e.userId === req.user.id);
+  if (idx < 0) return res.status(404).json({ error: 'Termin nicht gefunden' });
+  list.splice(idx, 1);
+  db.commit();
+  res.json({ ok: true });
 });
 
 // =============================================================================

@@ -369,6 +369,34 @@ test('Leitungs-Überblick: Kennzahlen aggregiert, nur für Leitung/Admin', async
   assert.equal((await teacher('GET', '/leadership/overview')).status, 403);
 });
 
+test('Kalender: eigener Termin mit Wiederholung erscheint, ist privat, editier-/löschbar', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const create = await student('POST', '/events', {
+    title: 'Fußball', date: '2026-09-01', allDay: false, startTime: '17:00', endTime: '18:30',
+    category: 'sport', recurrence: { freq: 'weekly', until: '2026-09-30' },
+  });
+  assert.equal(create.status, 200);
+  const id = create.data.event.id;
+
+  // Im Kalender-Bereich als mehrere Vorkommen (wöchentlich) sichtbar.
+  const cal = await student('GET', '/calendar?from=2026-09-01&to=2026-09-30');
+  const mine = cal.data.events.filter((e) => e.type === 'personal' && e.id === id);
+  assert.ok(mine.length >= 4, 'mind. 4 wöchentliche Vorkommen');
+  assert.equal(mine[0].category, 'sport');
+
+  // Privat: ein anderer Nutzer sieht den Termin nicht.
+  const other = await loginAs('lehrer@dbz.de');
+  const calOther = await other('GET', '/calendar?from=2026-09-01&to=2026-09-30');
+  assert.ok(!calOther.data.events.some((e) => e.id === id));
+  // … und darf ihn nicht löschen.
+  assert.equal((await other('DELETE', `/events/${id}`)).status, 404);
+
+  // Bearbeiten & löschen durch den Besitzer.
+  const patched = await student('PATCH', `/events/${id}`, { title: 'Fußballtraining' });
+  assert.equal(patched.data.event.title, 'Fußballtraining');
+  assert.equal((await student('DELETE', `/events/${id}`)).status, 200);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

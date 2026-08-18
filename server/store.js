@@ -50,6 +50,7 @@ const emptyDb = () => ({
   protocols: [], // class_protocols
   behavior_records: [],
   penalties: [], // Strafen (Seiten/Geld): Klassensprecher erfasst -> Lehrer genehmigt
+  events: [], // persönliche Kalendertermine (pro Nutzer)
   quran_goals: [],
   recitation_attempts: [],
   exams: [],
