@@ -397,6 +397,22 @@ test('Kalender: eigener Termin mit Wiederholung erscheint, ist privat, editier-/
   assert.equal((await student('DELETE', `/events/${id}`)).status, 200);
 });
 
+test("Qur'an: Ayah-Notiz setzen legt Lesezeichen an und ist privat", async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const set = await student('POST', '/quran/notes', { surah: 1, ayah: 2, note: 'Ghunnah beachten' });
+  assert.equal(set.status, 200);
+  assert.equal(set.data.bookmark.note, 'Ghunnah beachten');
+
+  // Notiz erscheint in den eigenen Lesezeichen.
+  const me = await student('GET', '/quran/me');
+  assert.ok(me.data.bookmarks.some((b) => b.surah === 1 && b.ayah === 2 && b.note === 'Ghunnah beachten'));
+
+  // Ein anderer Nutzer sieht die Notiz nicht.
+  const other = await loginAs('lehrer@dbz.de');
+  const meOther = await other('GET', '/quran/me');
+  assert.ok(!meOther.data.bookmarks.some((b) => b.note === 'Ghunnah beachten'));
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

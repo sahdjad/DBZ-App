@@ -1747,6 +1747,22 @@ router.delete('/quran/bookmarks/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Ayah-Notiz setzen (z. B. Tajwid-Fehler). Legt bei Bedarf ein Lesezeichen an
+// (Upsert nach Sure+Ayah); leere Notiz entfernt nur den Text, nicht das Zeichen.
+router.post('/quran/notes', requireAuth, (req, res) => {
+  const { surah, ayah, note } = req.body || {};
+  if (!surahByN(surah) || !ayah) return res.status(400).json({ error: 'Ungültige Angabe' });
+  const s = quranState(req.user.id);
+  let b = s.bookmarks.find((x) => x.surah === Number(surah) && x.ayah === Number(ayah));
+  if (!b) {
+    b = { id: newId('bm'), surah: Number(surah), ayah: Number(ayah), note: '', createdAt: new Date().toISOString() };
+    s.bookmarks.unshift(b);
+  }
+  b.note = String(note || '').trim();
+  db.commit();
+  res.json({ bookmark: { ...b, surahName: surahByN(b.surah)?.name } });
+});
+
 router.get('/quran/surah/:n', requireAuth, async (req, res) => {
   try {
     const data = await getSurah(req.params.n, {

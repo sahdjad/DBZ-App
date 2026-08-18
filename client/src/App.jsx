@@ -28,6 +28,7 @@ import Pruefungen from './pages/Pruefungen.jsx';
 import Pruefung from './pages/Pruefung.jsx';
 import Hifz from './pages/Hifz.jsx';
 import QuranReader from './pages/QuranReader.jsx';
+import Tadschwid from './pages/Tadschwid.jsx';
 import Protokolle from './pages/Protokolle.jsx';
 import Ankuendigungen from './pages/Ankuendigungen.jsx';
 import Materialien from './pages/Materialien.jsx';
@@ -84,6 +85,7 @@ export default function App() {
       <Route path="/pruefung/:id" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefung /></Protected>} />
       <Route path="/hifz" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Hifz /></Protected>} />
       <Route path="/quran" element={<Protected><QuranReader /></Protected>} />
+      <Route path="/tadschwid" element={<Protected><Tadschwid /></Protected>} />
       <Route path="/protokolle" element={<Protected><Protokolle /></Protected>} />
       <Route path="/ankuendigungen" element={<Protected><Ankuendigungen /></Protected>} />
       <Route path="/materialien" element={<Protected><Materialien /></Protected>} />
