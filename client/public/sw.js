@@ -5,7 +5,7 @@
  * - Navigationen (HTML) network-first mit Cache-Fallback (App startet offline).
  * - Statische Assets (JS/CSS/Icons) cache-first (schnell, spart Daten).
  */
-const CACHE = 'dbz-cache-v1';
+const CACHE = 'dbz-cache-v3';
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {

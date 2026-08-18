@@ -25,6 +25,18 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Offline-Shell). Im Dev-Modus deaktiviert, damit HMR nicht gestört wird.
 if (import.meta.env.PROD && 'serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then((reg) => {
+      // Regelmäßig nach einer neueren Version schauen.
+      reg.update?.();
+      setInterval(() => reg.update?.(), 60 * 60 * 1000);
+    }).catch(() => {});
+  });
+  // Sobald ein neuer Service Worker die Kontrolle übernimmt, einmalig neu laden,
+  // damit die Nutzer nie auf einer veralteten (gecachten) Version festhängen.
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
   });
 }

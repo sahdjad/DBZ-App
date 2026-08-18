@@ -141,26 +141,35 @@ main,
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(21, 101, 63, 0.28);
+  background: rgba(21, 101, 63, 0.16); /* im Ruhezustand fast unsichtbar */
   background-clip: padding-box;
   border: 4px solid transparent; /* macht den Balken dünn – innerhalb der Spur */
   border-radius: 999px;
-  transition: background-color 0.25s ease, border-width 0.2s ease;
+  transition: background-color 0.35s ease, border-width 0.2s ease;
 }
 ::-webkit-scrollbar-thumb:hover {
+  background: rgba(21, 101, 63, 0.55);
+  background-clip: padding-box;
+  border-width: 3px;
+}
+/* Beim aktiven Scrollen deutlich sichtbar & etwas breiter … */
+html.is-scrolling::-webkit-scrollbar-thumb {
   background: rgba(21, 101, 63, 0.5);
   background-clip: padding-box;
-  border-width: 3px;
+  border-width: 2px;
 }
-html.is-scrolling::-webkit-scrollbar-thumb {
-  background: rgba(21, 101, 63, 0.46);
-  background-clip: padding-box;
-  border-width: 3px;
-}
-html.at-edge::-webkit-scrollbar-thumb {
-  background: rgba(21, 101, 63, 0.16);
+/* … am oberen/unteren Ende nimmt sie sich sanft zurück. */
+html.is-scrolling.at-edge::-webkit-scrollbar-thumb {
+  background: rgba(21, 101, 63, 0.24);
   background-clip: padding-box;
   border-width: 4px;
+}
+
+/* Weiches „Abfedern" am Seitenrand (funktioniert auch in Chrome/Desktop) –
+   die JS-Logik in lib/scroll.js verschiebt <main> minimal und lässt es
+   zurückfedern. */
+main {
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
