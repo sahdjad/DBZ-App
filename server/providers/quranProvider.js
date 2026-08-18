@@ -106,6 +106,8 @@ export async function getSurah(n, { translation = ED_TRANSLATION, reciter = ED_A
     number: num,
     name: meta.name,
     ayahCount: meta.ayat,
+    // Offenbarungsort aus der Quelle (Meccan/Medinan) – für die Sura-Info.
+    revelationType: arabicE?.revelationType || null,
     bismillah: num !== 1 && num !== 9, // Al-Fatihah enthält Basmala als Ayah, At-Tawbah hat keine
     translationName: transE?.edition?.name || translation,
     reciterName: audioE?.edition?.englishName || reciter,

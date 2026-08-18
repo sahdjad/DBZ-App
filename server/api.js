@@ -1462,6 +1462,20 @@ router.get('/behavior', requireAuth, (req, res) => {
 
 router.get('/quran/surahs', requireAuth, (_req, res) => res.json({ surahs: listSurahs() }));
 
+// Auswählbare Rezitatoren (AlQuran-Cloud-Audio-Editionen).
+const RECITERS = [
+  { id: 'ar.alafasy', name: 'Mishary Al-Afasy' },
+  { id: 'ar.husary', name: 'Mahmoud Al-Husary' },
+  { id: 'ar.minshawi', name: 'Muhammad Al-Minshawi' },
+  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
+  { id: 'ar.abdurrahmaansudais', name: 'Abdurrahman As-Sudais' },
+  { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
+  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shatri' },
+  { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify' },
+  { id: 'ar.saoodshuraym', name: 'Saud Ash-Shuraim' },
+];
+router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
+
 // Persönlicher Qur'an-Zustand: zuletzt gelesen + Lesezeichen.
 function quranState(userId) {
   let s = db.all('quran_marks').find((x) => x.userId === userId);

@@ -82,29 +82,41 @@ function SurahList({ surahs, marks, onSelect, onMarksChanged }) {
   );
 }
 
+const REPEATS = [1, 3, 5, 10, 'inf'];
+const repLabel = (r) => (r === 'inf' ? '∞' : `${r}×`);
+const placeLabel = (t) => (t === 'Meccan' ? 'Mekkanisch' : t === 'Medinan' ? 'Medinensisch' : null);
+
 function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [reciters, setReciters] = useState([]);
+  const [reciter, setReciter] = useState('ar.alafasy');
+  const [mode, setMode] = useState('single'); // single | continuous | range
   const [repeat, setRepeat] = useState(1);
-  const [playing, setPlaying] = useState(null);
-  const [marked, setMarked] = useState(new Set()); // Ayah-Nummern mit Lesezeichen
+  const [range, setRange] = useState({ from: 1, to: 7 });
+  const [playingIdx, setPlayingIdx] = useState(null);
+  const [marked, setMarked] = useState(new Set());
   const audioRef = useRef(null);
-  const remainingRef = useRef(0);
+  const stateRef = useRef({ stopped: true, start: 0, end: 0, left: 0 });
 
-  const load = () => {
+  useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
+
+  const load = (rec) => {
     setError(null); setData(null);
-    api.get(`/quran/surah/${n}`).then((d) => setData(d.surah)).catch((e) => setError(e.message));
+    api.get(`/quran/surah/${n}?reciter=${rec || reciter}`)
+      .then((d) => { setData(d.surah); setRange({ from: 1, to: d.surah.ayahCount }); })
+      .catch((e) => setError(e.message));
   };
   useEffect(() => {
-    load();
-    stop();
+    stop(); load(reciter);
     api.post('/quran/last-read', { surah: n }).then(onMarksChanged).catch(() => {});
     api.get('/quran/me').then((m) => setMarked(new Set(m.bookmarks.filter((b) => b.surah === Number(n)).map((b) => b.ayah)))).catch(() => {});
     // eslint-disable-next-line
   }, [n]);
+  // Rezitator gewechselt -> neu laden
+  useEffect(() => { if (data) { stop(); load(reciter); } /* eslint-disable-next-line */ }, [reciter]);
 
-  // Zu gemerkter Ayah springen
   useEffect(() => {
     if (data && targetAyah) {
       const el = document.getElementById(`ayah-${targetAyah}`);
@@ -113,24 +125,51 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   }, [data, targetAyah]);
 
   function stop() {
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-    remainingRef.current = 0; setPlaying(null);
+    stateRef.current.stopped = true;
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.onended = null; audioRef.current = null; }
+    setPlayingIdx(null);
   }
-  const play = (idx, url) => {
-    if (!url) return;
-    if (playing === idx) { stop(); return; }
-    stop();
-    const audio = new Audio(url);
-    audioRef.current = audio; remainingRef.current = repeat;
-    audio.onended = () => {
-      remainingRef.current -= 1;
-      if (remainingRef.current > 0 && audioRef.current === audio) { audio.currentTime = 0; audio.play(); }
-      else setPlaying(null);
-    };
-    audio.onerror = () => { toast.push('Audio konnte nicht geladen werden', 'error'); setPlaying(null); };
-    audio.play().then(() => setPlaying(idx)).catch(() => setPlaying(null));
-  };
   useEffect(() => () => stop(), []);
+
+  function playIdx(i) {
+    const st = stateRef.current;
+    const ay = data.ayahs[i];
+    if (!ay?.audio) { // fehlende Audio überspringen
+      if (i < st.end) return playIdx(i + 1);
+      return afterRun();
+    }
+    const audio = new Audio(ay.audio);
+    audioRef.current = audio;
+    setPlayingIdx(i);
+    audio.onended = () => {
+      if (st.stopped || audioRef.current !== audio) return;
+      if (i < st.end) playIdx(i + 1);
+      else afterRun();
+    };
+    audio.onerror = () => { toast.push('Audio konnte nicht geladen werden', 'error'); stop(); };
+    audio.play().catch(() => stop());
+  }
+  function afterRun() {
+    const st = stateRef.current;
+    if (st.left === Infinity || st.left > 1) { if (st.left !== Infinity) st.left -= 1; playIdx(st.start); }
+    else stop();
+  }
+  function startFrom(idx) {
+    stop();
+    let start = idx, end = idx;
+    if (mode === 'continuous') { start = idx; end = data.ayahs.length - 1; }
+    else if (mode === 'range') {
+      const f = Math.max(1, Math.min(Number(range.from) || 1, data.ayahCount));
+      const t = Math.max(f, Math.min(Number(range.to) || f, data.ayahCount));
+      start = f - 1; end = t - 1;
+    }
+    stateRef.current = { stopped: false, start, end, left: repeat === 'inf' ? Infinity : repeat };
+    playIdx(start);
+  }
+  const onAyahPlay = (idx) => {
+    if (playingIdx === idx && !stateRef.current.stopped) { stop(); return; }
+    startFrom(mode === 'range' ? (Math.max(1, Number(range.from) || 1) - 1) : idx);
+  };
 
   const toggleBookmark = async (ayah) => {
     try {
@@ -139,6 +178,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       onMarksChanged();
     } catch (err) { toast.push(err.message, 'error'); }
   };
+
+  const MODES = [['single', 'Einzeln'], ['continuous', 'Weiterlaufen'], ['range', 'Bereich']];
 
   return (
     <div>
@@ -149,7 +190,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       {error ? (
         <Card className="p-8 text-center">
           <p className="text-status-absent mb-4">{error}</p>
-          <Button variant="outline" onClick={load}><RotateCcw size={16} /> Erneut versuchen</Button>
+          <Button variant="outline" onClick={() => load(reciter)}><RotateCcw size={16} /> Erneut versuchen</Button>
         </Card>
       ) : !data ? (
         <Spinner label="Sure wird geladen …" />
@@ -157,19 +198,69 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
         <>
           <Card className="p-5 mb-4 text-center hero-atmosphere">
             <div className="font-arabic text-3xl text-ivory">{data.name}</div>
-            <div className="text-xs text-sage-muted mt-2">{data.ayahCount} Ayat · {data.translationName} · Rezitation: {data.reciterName}</div>
-            <div className="mt-3 inline-flex items-center gap-2 text-xs text-sage">
-              Wiederholung:
-              {[1, 3, 5, 10].map((r) => (
-                <button key={r} onClick={() => setRepeat(r)}
-                  className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{r}×</button>
-              ))}
+            <div className="text-xs text-sage-muted mt-2">
+              Sure {data.number} · {data.ayahCount} Ayat{placeLabel(data.revelationType) ? ` · ${placeLabel(data.revelationType)}` : ''} · {data.translationName}
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 items-center text-xs text-sage">
+              {/* Rezitator */}
+              <label className="flex items-center gap-2">
+                <span className="text-sage-muted">Rezitator</span>
+                <select className="input py-1.5 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
+                  {(reciters.length ? reciters : [{ id: reciter, name: data.reciterName }]).map((r) => (
+                    <option key={r.id} value={r.id}>{r.name}</option>
+                  ))}
+                </select>
+              </label>
+
+              {/* Modus */}
+              <div className="inline-flex items-center gap-1">
+                {MODES.map(([v, l]) => (
+                  <button key={v} onClick={() => setMode(v)}
+                    className={['px-2.5 py-1 rounded-md border', mode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{l}</button>
+                ))}
+              </div>
+
+              {/* Wiederholung */}
+              <div className="inline-flex items-center gap-1">
+                <span className="text-sage-muted mr-1">Wiederholung</span>
+                {REPEATS.map((r) => (
+                  <button key={r} onClick={() => setRepeat(r)}
+                    className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{repLabel(r)}</button>
+                ))}
+              </div>
+
+              {/* Bereich */}
+              {mode === 'range' && (
+                <div className="inline-flex items-center gap-2 flex-wrap justify-center">
+                  <span className="text-sage-muted">von</span>
+                  <input type="number" min={1} max={data.ayahCount} className="input py-1 w-16 text-center" value={range.from}
+                    onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
+                  <span className="text-sage-muted">bis</span>
+                  <input type="number" min={1} max={data.ayahCount} className="input py-1 w-16 text-center" value={range.to}
+                    onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
+                  <Button size="sm" onClick={() => startFrom((Math.max(1, Number(range.from) || 1)) - 1)}>
+                    {playingIdx !== null ? <><Pause size={14} /> Läuft…</> : <><Play size={14} /> Abspielen</>}
+                  </Button>
+                </div>
+              )}
+              {mode !== 'range' && (
+                <div className="inline-flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => startFrom(0)}><Play size={14} /> Ab Anfang</Button>
+                  {playingIdx !== null && <Button size="sm" variant="ghost" onClick={stop}><Pause size={14} /> Stopp</Button>}
+                </div>
+              )}
+              <p className="text-[11px] text-sage-muted max-w-xs">
+                {mode === 'single' && 'Spielt nur die getippte Ayah.'}
+                {mode === 'continuous' && 'Läuft ab der getippten Ayah automatisch weiter bis zum Ende.'}
+                {mode === 'range' && 'Spielt den Bereich in Schleife – ideal zum Auswendiglernen.'}
+              </p>
             </div>
           </Card>
 
           <div className="space-y-3">
             {data.ayahs.map((a, idx) => (
-              <Card key={a.n} id={`ayah-${a.n}`} className="p-4">
+              <Card key={a.n} id={`ayah-${a.n}`} className={`p-4 ${playingIdx === idx ? 'border-mint/50 bg-mint/[0.04]' : ''}`}>
                 <div className="flex items-start justify-between gap-3">
                   <span className="grid place-items-center h-7 w-7 rounded-full bg-mint/15 text-mint font-mono text-xs shrink-0">{a.n}</span>
                   <div className="flex items-center gap-3 shrink-0">
@@ -177,8 +268,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                       {marked.has(a.n) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
                     </button>
                     {a.audio && (
-                      <button onClick={() => play(idx, a.audio)} className="text-mint hover:text-mint-light" aria-label="Abspielen">
-                        {playing === idx ? <Pause size={20} /> : <Play size={20} />}
+                      <button onClick={() => onAyahPlay(idx)} className="text-mint hover:text-mint-light" aria-label="Abspielen">
+                        {playingIdx === idx ? <Pause size={20} /> : <Play size={20} />}
                       </button>
                     )}
                   </div>
