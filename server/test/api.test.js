@@ -337,6 +337,23 @@ test('Nachrichten: Bild-Anhang senden & abrufen, Reaktion umschalten, Fremde ges
   assert.equal(textMsg.data.message.body, 'nur Text');
 });
 
+test('Klassenliste: Kennzahlen je Schüler, nur für Verwalter', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const r = await teacher('GET', '/classes/class_3/roster');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.class.id, 'class_3');
+  const yusuf = r.data.rows.find((x) => x.id === 'user_yusuf');
+  assert.ok(yusuf, 'Yusuf in der Liste');
+  // erwartete Kennzahl-Felder vorhanden
+  for (const key of ['attendanceRate', 'unexcused', 'openAssignments', 'overdueAssignments', 'penaltyMoney', 'penaltyPages', 'negativeBehavior']) {
+    assert.ok(key in yusuf, `Feld ${key} fehlt`);
+  }
+
+  // Schüler dürfen die Klassenliste nicht abrufen.
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('GET', '/classes/class_3/roster')).status, 403);
+});
+
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
   const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');

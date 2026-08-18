@@ -40,6 +40,7 @@ const ITEMS = {
   aufgaben: { to: '/aufgaben', label: 'Aufgaben', icon: BookOpen },
   checkin: { to: '/checkin', label: 'Einchecken', icon: QrCode },
   unterricht: { to: '/unterricht', label: 'Unterricht', icon: Users2 },
+  klassenliste: { to: '/klassenliste', label: 'Klassenliste', icon: Users2 },
   kalender: { to: '/kalender', label: 'Kalender', icon: CalendarDays },
   anwesenheit: { to: '/anwesenheit', label: 'Anwesenheit', icon: CalendarCheck },
   abwesenheit: { to: '/abwesenheit', label: 'Abwesenheit melden', icon: CalendarX },
@@ -68,12 +69,12 @@ function navForRole(role) {
       return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'protokolle', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'abwesenheit', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'klassenlehrer':
     case 'vertretung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'unterricht', 'aufgaben', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'korrektur', 'entschuldigungen', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'unterricht', 'klassenliste', 'aufgaben', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'korrektur', 'entschuldigungen', 'anwesenheit', 'verhalten', 'strafen', 'berichte', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'eltern':
       return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'strafen', 'berichte', 'benachrichtigungen', 'dbzonline', 'konto');
     case 'super_admin':
     case 'leitung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'admin', 'strafen', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'strafen', 'benachrichtigungen', 'dbzonline', 'konto');
     default:
       return k('dashboard', 'benachrichtigungen', 'konto');
   }

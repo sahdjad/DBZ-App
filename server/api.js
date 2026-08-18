@@ -778,6 +778,62 @@ router.get('/classes/:id/attendance-overview', requireAuth, (req, res) => {
   res.json({ rows });
 });
 
+// Klassenliste mit Kennzahlen (Verwalter/Leitung): Anwesenheit, offene Aufgaben,
+// offene Strafen und negative Verhaltensvermerke je Schüler – für einen schnellen
+// Überblick und Sprung ins Schülerprofil.
+router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const students = db
+    .all('users')
+    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(klass.id));
+  const assignments = db.all('assignments');
+  const submissions = db.all('submissions');
+  const penalties = db.all('penalties');
+  const behavior = db.all('behavior_records');
+  const now = Date.now();
+
+  const rows = students.map((s) => {
+    const att = attendanceStats(s.id);
+    const attendanceRate = att.sessions ? Math.round(((att.present + att.late) / att.sessions) * 100) : null;
+
+    let openAssignments = 0;
+    let overdueAssignments = 0;
+    for (const a of assignments) {
+      if (!targetsFor(a).includes(s.id)) continue;
+      const sub = submissions.find((x) => x.assignmentId === a.id && x.studentId === s.id);
+      const done = sub && ['submitted', 'passed'].includes(sub.status);
+      if (done) continue;
+      openAssignments += 1;
+      const due = effectiveDue(a, s.id);
+      if (due && new Date(due).getTime() < now) overdueAssignments += 1;
+    }
+
+    const openPen = penalties.filter((p) => p.studentId === s.id && p.status === 'approved');
+    const penaltyMoney = openPen.filter((p) => p.type === 'money').reduce((x, p) => x + p.amount, 0);
+    const penaltyPages = openPen.filter((p) => p.type === 'pages').reduce((x, p) => x + p.amount, 0);
+    const negativeBehavior = behavior.filter((b) => b.studentId === s.id && b.tone === 'negative').length;
+
+    return {
+      id: s.id,
+      name: s.name,
+      attendanceRate,
+      sessions: att.sessions,
+      unexcused: att.unexcused,
+      totalMinutesLate: att.totalMinutesLate,
+      openAssignments,
+      overdueAssignments,
+      penaltyMoney,
+      penaltyPages,
+      negativeBehavior,
+    };
+  });
+  rows.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  res.json({ class: { id: klass.id, name: klass.name }, rows });
+});
+
 // =============================================================================
 // Kalender / Stundenplan
 // =============================================================================

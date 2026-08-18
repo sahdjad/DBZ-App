@@ -18,6 +18,7 @@ import Entschuldigungen from './pages/Entschuldigungen.jsx';
 import Korrektur from './pages/Korrektur.jsx';
 import Verhalten from './pages/Verhalten.jsx';
 import Strafen from './pages/Strafen.jsx';
+import Klassenliste from './pages/Klassenliste.jsx';
 import StudentProfil from './pages/StudentProfil.jsx';
 import Kalender from './pages/Kalender.jsx';
 import Berichte from './pages/Berichte.jsx';
@@ -72,6 +73,7 @@ export default function App() {
       <Route path="/korrektur" element={<Protected roles={MANAGERS}><Korrektur /></Protected>} />
       <Route path="/verhalten" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Verhalten /></Protected>} />
       <Route path="/strafen" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Strafen /></Protected>} />
+      <Route path="/klassenliste" element={<Protected roles={MANAGERS}><Klassenliste /></Protected>} />
       <Route path="/profil/:id" element={<Protected><StudentProfil /></Protected>} />
       <Route path="/kalender" element={<Protected><Kalender /></Protected>} />
       <Route path="/berichte" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Berichte /></Protected>} />
