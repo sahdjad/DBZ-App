@@ -63,11 +63,15 @@ Steht dort `"file"`, sind die Variablen noch nicht (korrekt) gesetzt.
 
 ## Hinweise
 
-- **Nur Textdaten** (Nutzer, Anwesenheit, Hausaufgaben, Prüfungen, Nachrichten …)
-  werden dauerhaft gespeichert. **Hochgeladene Audio-Dateien** liegen weiterhin lokal
-  und sind nach einem Neustart weg – dafür kommt als nächster Schritt der
-  Supabase-Datei-Speicher (Storage).
+- **Textdaten** (Nutzer, Anwesenheit, Hausaufgaben, Prüfungen, Nachrichten …) werden
+  dauerhaft in der Tabelle `app_state` gespeichert.
+- **Hochgeladene Dateien** (Audio-Aufnahmen, PDFs, Bilder) werden dauerhaft in einem
+  privaten **Supabase-Storage-Bucket** (`uploads`) gespeichert. Der Bucket wird beim
+  Serverstart automatisch angelegt – **kein zusätzlicher Schritt nötig**. Die lokale
+  Platte dient nur noch als schneller Zwischenspeicher; Quelle der Wahrheit ist Supabase.
+  Dateien sind nie öffentlich abrufbar – der Zugriff läuft ausschließlich über die
+  autorisierten App-Routen.
 - Die App bündelt Schreibvorgänge und speichert im Hintergrund; beim Herunterfahren
   (Redeploy) wird der letzte Stand noch gesichert.
 - Optionale Variablen: `SUPABASE_TABLE` (Standard `app_state`),
-  `SUPABASE_ROW_ID` (Standard `dbz`).
+  `SUPABASE_ROW_ID` (Standard `dbz`), `SUPABASE_BUCKET` (Standard `uploads`).

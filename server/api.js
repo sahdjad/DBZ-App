@@ -9,6 +9,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
 import { db, newId, UPLOAD_DIR } from './store.js';
+import { persistUpload, readFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
   ROLES,
@@ -1124,7 +1125,7 @@ router.post(
   requireAuth,
   requireRole(ROLES.SCHUELER),
   upload.array('files', 5),
-  (req, res) => {
+  async (req, res) => {
     const a = byId('assignments', req.params.id);
     if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
     if (!targetsFor(a).includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1143,6 +1144,8 @@ router.post(
         error: 'Diese Abgabe ist gesperrt. Bitte deine Lehrkraft, sie zurückzusetzen oder die Frist zu verlängern.',
       });
 
+    // Dateien dauerhaft sichern (Supabase Storage), bevor wir bestätigen.
+    await Promise.all((req.files || []).map((f) => persistUpload(f)));
     const files = (req.files || []).map((f) => ({
       id: newId('subfile'),
       filename: f.filename,
@@ -1191,7 +1194,7 @@ router.post(
 );
 
 // Datei einer Abgabe herunterladen (autorisiert; signierter Zugriff simuliert).
-router.get('/submissions/:id/file/:fileId', requireAuth, (req, res) => {
+router.get('/submissions/:id/file/:fileId', requireAuth, async (req, res) => {
   const sub = byId('submissions', req.params.id);
   if (!sub) return res.status(404).json({ error: 'Nicht gefunden' });
   const student = findUserById(sub.studentId);
@@ -1201,12 +1204,12 @@ router.get('/submissions/:id/file/:fileId', requireAuth, (req, res) => {
     canViewStudent(req.user, student);
   if (!allowed) return res.status(403).json({ error: 'Kein Zugriff' });
   const file = sub.files.find((f) => f.id === req.params.fileId);
-  if (!file) return res.status(404).json({ error: 'Datei fehlt' });
-  const full = path.join(UPLOAD_DIR, file.filename);
-  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei fehlt' });
+  if (!file || file.deleted) return res.status(404).json({ error: 'Datei fehlt' });
+  const buf = await readFile(file.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
   res.setHeader('Content-Type', file.mediaType || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.originalName)}"`);
-  fs.createReadStream(full).pipe(res);
+  res.end(buf);
 });
 
 // Korrekturqueue einer Klasse (Verwalter).
@@ -2235,7 +2238,7 @@ function materialView(m) {
   };
 }
 
-router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), (req, res) => {
+router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
   const { title, description, materialType, classId, subjectId, url, body } = req.body || {};
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
   const type = ['file', 'link', 'note'].includes(materialType) ? materialType : 'note';
@@ -2265,6 +2268,7 @@ router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.singl
   };
   if (type === 'file') {
     if (!req.file) return res.status(400).json({ error: 'Bitte eine Datei hochladen' });
+    await persistUpload(req.file); // dauerhaft in Supabase Storage sichern
     m.fileRef = { filename: req.file.filename, originalName: req.file.originalname, mediaType: req.file.mimetype, size: req.file.size };
   }
   if (type === 'link' && !m.url) return res.status(400).json({ error: 'Bitte einen Link angeben' });
@@ -2282,15 +2286,15 @@ router.get('/materials', requireAuth, (req, res) => {
   res.json({ materials: list });
 });
 
-router.get('/materials/:id/file', requireAuth, (req, res) => {
+router.get('/materials/:id/file', requireAuth, async (req, res) => {
   const m = byId('materials', req.params.id);
   if (!m || m.materialType !== 'file' || !m.fileRef) return res.status(404).json({ error: 'Nicht gefunden' });
   if (!canSeeMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const full = path.join(UPLOAD_DIR, m.fileRef.filename);
-  if (!fs.existsSync(full)) return res.status(404).json({ error: 'Datei fehlt' });
+  const buf = await readFile(m.fileRef.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
   res.setHeader('Content-Type', m.fileRef.mediaType || 'application/octet-stream');
   res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(m.fileRef.originalName)}"`);
-  fs.createReadStream(full).pipe(res);
+  res.end(buf);
 });
 
 router.delete('/materials/:id', requireAuth, (req, res) => {

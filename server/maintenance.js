@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db, UPLOAD_DIR } from './store.js';
+import { deleteFile } from './files.js';
 
 const KEEP_BACKUPS = 14;
 
@@ -45,6 +46,7 @@ export function runAudioRetention() {
       if (!(f.mediaType || '').startsWith('audio')) continue;
       try {
         fs.rmSync(path.join(UPLOAD_DIR, f.filename), { force: true });
+        deleteFile(f.filename); // auch aus Supabase entfernen (best-effort, async)
         f.deleted = true;
         f.deletedAt = new Date().toISOString();
         deleted++;

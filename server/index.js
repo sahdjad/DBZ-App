@@ -5,6 +5,7 @@ import { createApp } from './app.js';
 import { seed } from './seed.js';
 import { scheduleMaintenance } from './maintenance.js';
 import { initStore, flushStore } from './store.js';
+import { ensureFileBucket } from './files.js';
 
 const PORT = process.env.PORT || 4000;
 
@@ -23,6 +24,7 @@ if (process.env.NODE_ENV === 'production') {
 // Datenbestand aus dem aktiven Backend (Supabase oder lokale Datei) laden,
 // bevor irgendein Code darauf zugreift.
 await initStore();
+await ensureFileBucket(); // Datei-Bucket (Supabase Storage) sicherstellen
 await seed();
 const app = createApp();
 
