@@ -425,6 +425,14 @@ test("Qur'an: Tafsir-Ausgaben verfügbar, ungültige Ayah abgewiesen", async () 
   assert.equal(bad.status, 404);
   // Tadschwid: ungültige Sure ebenfalls 404 (ohne externen Abruf).
   assert.equal((await student('GET', '/quran/tajweed/999')).status, 404);
+
+  // Rezitatoren: nur solche mit durchgehender Datei + Zeitmarken.
+  const recs = await student('GET', '/quran/reciters');
+  assert.equal(recs.status, 200);
+  assert.ok(recs.data.reciters.some((r) => r.id === 'ar.alafasy'));
+  assert.ok(recs.data.reciters.length >= 5);
+  // Durchgehendes Audio: ungültige Sure -> 404 (ohne externen Abruf).
+  assert.equal((await student('GET', '/quran/audio/999')).status, 404);
 });
 
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {

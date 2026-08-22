@@ -35,6 +35,7 @@ import { SURAHS, surahByN, ayahSpan } from './quran.js';
 import { listSurahs, getSurah } from './providers/quranProvider.js';
 import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { getTajweedSurah } from './providers/tajweedProvider.js';
+import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -1681,20 +1682,25 @@ router.get('/behavior', requireAuth, (req, res) => {
 
 router.get('/quran/surahs', requireAuth, (_req, res) => res.json({ surahs: listSurahs() }));
 
-// Auswählbare Rezitatoren (AlQuran-Cloud-Audio-Editionen).
-const RECITERS = [
-  { id: 'ar.husary', name: 'Mahmoud Al-Husary' },
-  { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
-  { id: 'ar.abdurrahmaansudais', name: 'Abdurrahman As-Sudais' },
-  { id: 'ar.saoodshuraym', name: 'Saud Ash-Shuraim' },
-  { id: 'ar.saadalghamdi', name: "Sa'ad Al-Ghamdi" },
-  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shatri' },
-  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
-  { id: 'ar.minshawi', name: 'Muhammad Al-Minshawi' },
-  { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify' },
-  { id: 'ar.alafasy', name: 'Mishary Al-Afasy' },
-];
+// Auswählbare Rezitatoren. Nur Rezitatoren mit durchgehender Sure-Aufnahme UND
+// Ayah-Zeitmarken (quran.com) – so ist die lückenlose Wiedergabe für jede
+// Auswahl gleich hochwertig.
+const RECITERS = CHAPTER_RECITERS.map((r) => ({ id: r.id, name: r.name }));
 router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
+
+// Durchgehende Audiodatei einer Sure + Ayah-Zeitmarken (für lückenlose
+// Wiedergabe, Geschwindigkeit, Bereich/Wiederholung und Hervorhebung).
+router.get('/quran/audio/:n', requireAuth, async (req, res) => {
+  try {
+    const data = await getChapterAudio(req.params.n, req.query.reciter);
+    res.json({ audio: data });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Sure nicht gefunden' });
+    if (err.code === 'PROVIDER_UNAVAILABLE')
+      return res.status(503).json({ error: 'Audio konnte nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.' });
+    res.status(500).json({ error: 'Serverfehler beim Laden des Audios' });
+  }
+});
 
 // Persönlicher Qur'an-Zustand: zuletzt gelesen + Lesezeichen.
 function quranState(userId) {

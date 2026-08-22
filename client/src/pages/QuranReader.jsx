@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -153,12 +153,20 @@ const REPEATS = [1, 3, 5, 10, 'inf'];
 const repLabel = (r) => (r === 'inf' ? '∞' : `${r}×`);
 const placeLabel = (t) => (t === 'Meccan' ? 'Mekkanisch' : t === 'Medinan' ? 'Medinensisch' : null);
 
+// Abspielgeschwindigkeiten (Standard 1×). Tonhöhe bleibt dank preservesPitch
+// natürlich. Deutsche Schreibweise mit Komma.
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+const spLabel = (s) => `${String(s).replace('.', ',')}×`;
+
 function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [reciters, setReciters] = useState([]);
   const [reciter, setReciter] = useState('ar.alafasy');
+  const [audio, setAudio] = useState(null); // { url, ayahs:[{n,from,to}] }
+  const [audioErr, setAudioErr] = useState(null);
+  const [speed, setSpeed] = useState(1);
   const [mode, setMode] = useState('single'); // single | continuous | range
   const [repeat, setRepeat] = useState(1);
   const [range, setRange] = useState({ from: 1, to: 7 });
@@ -170,20 +178,33 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const [tafsirOpen, setTafsirOpen] = useState(null); // Ayah-Nummer
   const [tafsirEd, setTafsirEd] = useState('saadi'); // saadi | ibnkathir
   const [tafsir, setTafsir] = useState({}); // `${ed}:${ayah}` -> {loading|text|error}
-  const audioRef = useRef(null);
-  const preloadRef = useRef(null); // vorgeladene nächste Ayah (für nahtlose Wiedergabe)
-  const stateRef = useRef({ stopped: true, start: 0, end: 0, left: 0 });
+
+  // EINE durchgehende Audiodatei je Sure + Ayah-Zeitmarken -> echte lückenlose
+  // Rezitation. Es wird nur gesprungen (Bereich/Wiederholung/Hervorhebung),
+  // nie neu gestartet. Geschwindigkeit über playbackRate (preservesPitch).
+  const audioRef = useRef(null); // einziges <audio>-Element
+  const winRef = useRef({ stopped: true, startMs: 0, endMs: 0, repsLeft: 1 });
+  const speedRef = useRef(1);
+  const playingIdxRef = useRef(null);
+  useEffect(() => { playingIdxRef.current = playingIdx; }, [playingIdx]);
+  useEffect(() => { speedRef.current = speed; if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed]);
 
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
 
-  const load = (rec) => {
+  const load = () => {
     setError(null); setData(null);
-    api.get(`/quran/surah/${n}?reciter=${rec || reciter}`)
+    api.get(`/quran/surah/${n}`)
       .then((d) => { setData(d.surah); setRange({ from: 1, to: d.surah.ayahCount }); })
       .catch((e) => setError(e.message));
   };
+  const loadAudio = (rec) => {
+    setAudioErr(null); setAudio(null);
+    api.get(`/quran/audio/${n}?reciter=${rec || reciter}`)
+      .then((d) => setAudio(d.audio))
+      .catch((e) => setAudioErr(e.message));
+  };
   useEffect(() => {
-    stop(); load(reciter); setTajweed(null);
+    stop(); load(); loadAudio(reciter); setTajweed(null);
     api.post('/quran/last-read', { surah: n }).then(onMarksChanged).catch(() => {});
     api.get('/quran/me').then((m) => {
       const mine = m.bookmarks.filter((b) => b.surah === Number(n));
@@ -192,8 +213,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
     }).catch(() => {});
     // eslint-disable-next-line
   }, [n]);
-  // Rezitator gewechselt -> neu laden
-  useEffect(() => { if (data) { stop(); load(reciter); } /* eslint-disable-next-line */ }, [reciter]);
+  // Rezitator gewechselt -> nur Audio neu laden (Text bleibt).
+  useEffect(() => { stop(); loadAudio(reciter); /* eslint-disable-next-line */ }, [reciter]);
 
   useEffect(() => {
     if (data && targetAyah) {
@@ -202,67 +223,79 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
     }
   }, [data, targetAyah]);
 
+  // Audio-Element aufbauen, sobald die Sure-Datei bekannt ist. Ein einziges
+  // Element wird über die gesamte Sure wiederverwendet.
+  useEffect(() => {
+    if (!audio?.url) return undefined;
+    const a = new Audio();
+    a.preload = 'auto';
+    try { a.preservesPitch = true; a.mozPreservesPitch = true; a.webkitPreservesPitch = true; } catch { /* egal */ }
+    a.playbackRate = speedRef.current;
+    a.src = audio.url;
+    a.ontimeupdate = onTimeUpdate;
+    a.onerror = () => { setAudioErr('Audio konnte nicht geladen werden.'); stop(); };
+    audioRef.current = a;
+    return () => { a.pause(); a.ontimeupdate = null; a.src = ''; if (audioRef.current === a) audioRef.current = null; };
+    // eslint-disable-next-line
+  }, [audio?.url]);
+  useEffect(() => () => { const a = audioRef.current; if (a) { a.pause(); a.src = ''; } }, []);
+
+  function idxByTime(tMs) {
+    const ay = audio?.ayahs; if (!ay?.length) return null;
+    for (let k = 0; k < ay.length; k++) if (tMs >= ay[k].from && tMs < ay[k].to) return ay[k].n - 1;
+    if (tMs >= ay[ay.length - 1].from) return ay[ay.length - 1].n - 1;
+    return ay[0].n - 1;
+  }
+
+  // Läuft ~4×/s: Hervorhebung nachziehen und am Fensterende stoppen/wiederholen.
+  function onTimeUpdate() {
+    const a = audioRef.current; const win = winRef.current;
+    if (!a || win.stopped) return;
+    const t = a.currentTime * 1000;
+    const idx = idxByTime(t);
+    if (idx != null && idx !== playingIdxRef.current) { playingIdxRef.current = idx; setPlayingIdx(idx); }
+    if (t >= win.endMs - 15) {
+      if (win.repsLeft === Infinity || win.repsLeft > 1) {
+        if (win.repsLeft !== Infinity) win.repsLeft -= 1;
+        a.currentTime = win.startMs / 1000; // Segment erneut ab Start
+      } else {
+        stop();
+      }
+    }
+  }
+
   function stop() {
-    stateRef.current.stopped = true;
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.onended = null; audioRef.current = null; }
-    if (preloadRef.current) { preloadRef.current.src = ''; preloadRef.current = null; }
+    winRef.current.stopped = true;
+    const a = audioRef.current; if (a) a.pause();
+    playingIdxRef.current = null;
     setPlayingIdx(null);
   }
-  useEffect(() => () => stop(), []);
 
-  // Nächste Ayah im Voraus laden, damit der Übergang ohne hörbare Pause klappt.
-  function preloadNext(i) {
-    const st = stateRef.current;
-    const ni = i + 1;
-    if (ni > st.end || !data.ayahs[ni]?.audio) { preloadRef.current = null; return; }
-    const nx = new Audio(data.ayahs[ni].audio);
-    nx.preload = 'auto';
-    nx.__idx = ni;
-    nx.load();
-    preloadRef.current = nx;
-  }
+  const ayTiming = (nn) => audio?.ayahs?.find((x) => x.n === nn);
 
-  function playIdx(i) {
-    const st = stateRef.current;
-    const ay = data.ayahs[i];
-    if (!ay?.audio) { // fehlende Audio überspringen
-      if (i < st.end) return playIdx(i + 1);
-      return afterRun();
-    }
-    // bereits vorgeladenes Element nutzen (nahtlos), sonst neu erstellen
-    let audio = preloadRef.current && preloadRef.current.__idx === i ? preloadRef.current : new Audio(ay.audio);
-    audio.__idx = i;
-    audioRef.current = audio;
-    setPlayingIdx(i);
-    preloadNext(i); // schon während der Wiedergabe die nächste Ayah puffern
-    audio.onended = () => {
-      if (st.stopped || audioRef.current !== audio) return;
-      if (i < st.end) playIdx(i + 1);
-      else afterRun();
-    };
-    audio.onerror = () => { toast.push('Audio konnte nicht geladen werden', 'error'); stop(); };
-    audio.play().catch(() => stop());
-  }
-  function afterRun() {
-    const st = stateRef.current;
-    if (st.left === Infinity || st.left > 1) { if (st.left !== Infinity) st.left -= 1; playIdx(st.start); }
-    else stop();
-  }
   function startFrom(idx) {
-    stop();
-    let start = idx, end = idx;
-    if (mode === 'continuous') { start = idx; end = data.ayahs.length - 1; }
+    const a = audioRef.current;
+    if (!audio) { toast.push('Audio wird noch geladen …'); return; }
+    if (!a) return;
+    let startN, endN;
+    if (mode === 'continuous') { startN = idx + 1; endN = audio.ayahs[audio.ayahs.length - 1].n; }
     else if (mode === 'range') {
       const f = Math.max(1, Math.min(Number(range.from) || 1, data.ayahCount));
       const t = Math.max(f, Math.min(Number(range.to) || f, data.ayahCount));
-      start = f - 1; end = t - 1;
-    }
-    stateRef.current = { stopped: false, start, end, left: repeat === 'inf' ? Infinity : repeat };
-    playIdx(start);
+      startN = f; endN = t;
+    } else { startN = idx + 1; endN = idx + 1; }
+    const s = ayTiming(startN); const e = ayTiming(endN);
+    if (!s || !e) { toast.push('Für diese Ayah liegen keine Audio-Zeitmarken vor.'); return; }
+    winRef.current = { stopped: false, startMs: s.from, endMs: e.to, repsLeft: repeat === 'inf' ? Infinity : repeat };
+    a.playbackRate = speedRef.current;
+    try { a.currentTime = s.from / 1000; } catch { /* wird beim Laden erneut gesetzt */ }
+    playingIdxRef.current = startN - 1;
+    setPlayingIdx(startN - 1);
+    a.play().catch(() => stop());
   }
   const onAyahPlay = (idx) => {
-    if (playingIdx === idx && !stateRef.current.stopped) { stop(); return; }
-    startFrom(mode === 'range' ? (Math.max(1, Number(range.from) || 1) - 1) : idx);
+    if (playingIdx === idx && !winRef.current.stopped) { stop(); return; }
+    startFrom(idx);
   };
 
   const toggleBookmark = async (ayah) => {
@@ -320,7 +353,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       {error ? (
         <Card className="p-8 text-center">
           <p className="text-status-absent mb-4">{error}</p>
-          <Button variant="outline" onClick={() => load(reciter)}><RotateCcw size={16} /> Erneut versuchen</Button>
+          <Button variant="outline" onClick={() => load()}><RotateCcw size={16} /> Erneut versuchen</Button>
         </Card>
       ) : !data ? (
         <Spinner label="Sure wird geladen …" />
@@ -371,6 +404,15 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                 ))}
               </div>
 
+              {/* Geschwindigkeit (Tonhöhe bleibt natürlich) */}
+              <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                <span className="text-sage-muted mr-1 inline-flex items-center gap-1"><Gauge size={13} /> Tempo</span>
+                {SPEEDS.map((s) => (
+                  <button key={s} onClick={() => setSpeed(s)}
+                    className={['px-2 py-1 rounded-md border tabular-nums', speed === s ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{spLabel(s)}</button>
+                ))}
+              </div>
+
               {/* Bereich */}
               {mode === 'range' && (
                 <div className="inline-flex items-center gap-2 flex-wrap justify-center">
@@ -396,6 +438,13 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                 {mode === 'continuous' && 'Läuft ab der getippten Ayah automatisch weiter bis zum Ende.'}
                 {mode === 'range' && 'Spielt den Bereich in Schleife – ideal zum Auswendiglernen.'}
               </p>
+              {audioErr ? (
+                <button onClick={() => loadAudio(reciter)} className="text-[11px] text-status-absent inline-flex items-center gap-1">
+                  <RotateCcw size={12} /> Audio erneut laden
+                </button>
+              ) : !audio ? (
+                <p className="text-[11px] text-sage-muted">Rezitation wird vorbereitet …</p>
+              ) : null}
             </div>
           </Card>
 
@@ -474,7 +523,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                       <button onClick={() => toggleBookmark(a.n)} className={marked.has(a.n) ? 'text-mint-light' : 'text-sage-muted hover:text-ivory'} aria-label="Lesezeichen">
                         {marked.has(a.n) ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}
                       </button>
-                      {a.audio && (
+                      {audio && (
                         <button onClick={() => onAyahPlay(idx)} className="text-mint hover:text-mint-light" aria-label="Abspielen">
                           {playingIdx === idx ? <Pause size={20} /> : <Play size={20} />}
                         </button>
