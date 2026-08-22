@@ -2268,6 +2268,32 @@ function reportData(studentId) {
   };
 }
 
+// --- Zeugnisnoten (Fachnoten + Durchschnitt) ---------------------------------
+function emptyGrades() {
+  return SUBJECTS.map((s) => ({ subject: s.id, grade: null }));
+}
+// Grades mit allen aktuellen Fächern abgleichen (neue Fächer ergänzen, Reihenfolge halten).
+function normalizeGrades(existing) {
+  const by = new Map((existing || []).map((g) => [String(g.subject), g.grade]));
+  return SUBJECTS.map((s) => {
+    const v = by.get(s.id);
+    const num = Number(v);
+    const grade = v == null || v === '' || Number.isNaN(num) ? null : Math.min(6, Math.max(1, num));
+    return { subject: s.id, grade };
+  });
+}
+function averageOf(grades) {
+  const vals = (grades || []).map((g) => g.grade).filter((v) => typeof v === 'number' && v >= 1 && v <= 6);
+  if (!vals.length) return null;
+  return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100;
+}
+// Bericht für die Ausgabe anreichern: berechneter Ø + effektiver Ø (Override greift).
+function reportView(r) {
+  const average = averageOf(r.grades);
+  const override = typeof r.averageOverride === 'number' ? r.averageOverride : null;
+  return { ...r, grades: r.grades || emptyGrades(), average, averageOverride: override, effectiveAverage: override != null ? override : average };
+}
+
 router.get('/report-periods', requireAuth, requireRole(CLASS_MANAGERS), (_req, res) => {
   res.json({ periods: db.all('report_periods') });
 });
@@ -2308,6 +2334,8 @@ router.post('/reports', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => 
       periodId,
       periodName: period.name,
       data,
+      grades: emptyGrades(),
+      averageOverride: null,
       teacherComment: '',
       status: 'draft',
       createdBy: req.user.id,
@@ -2316,19 +2344,26 @@ router.post('/reports', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => 
     };
     db.insert('student_reports', r);
   } else {
-    r.data = data; // Kennzahlen neu berechnen
+    r.data = data; // Kennzahlen neu berechnen (Fachnoten bleiben erhalten)
+    r.grades = normalizeGrades(r.grades);
     db.commit();
   }
   audit(req.user.id, 'report.generate', 'report', r.id);
-  res.json({ report: r });
+  res.json({ report: reportView(r) });
 });
 
 router.patch('/reports/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const r = byId('student_reports', req.params.id);
   if (!r) return res.status(404).json({ error: 'Bericht nicht gefunden' });
   if (!canManageClass(req.user, r.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const { teacherComment, status } = req.body || {};
+  const { teacherComment, status, grades, averageOverride } = req.body || {};
   if (teacherComment !== undefined) r.teacherComment = teacherComment;
+  if (Array.isArray(grades)) r.grades = normalizeGrades(grades);
+  if (averageOverride !== undefined) {
+    const num = Number(averageOverride);
+    r.averageOverride = averageOverride === null || averageOverride === '' || Number.isNaN(num)
+      ? null : Math.min(6, Math.max(1, Math.round(num * 100) / 100));
+  }
   if (status === 'draft' || status === 'released') {
     const wasReleased = r.status === 'released';
     r.status = status;
@@ -2356,7 +2391,7 @@ router.patch('/reports/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res
   }
   db.commit();
   audit(req.user.id, 'report.update', 'report', r.id, null, { status: r.status });
-  res.json({ report: r });
+  res.json({ report: reportView(r) });
 });
 
 router.get('/reports', requireAuth, (req, res) => {
@@ -2368,7 +2403,31 @@ router.get('/reports', requireAuth, (req, res) => {
     list = list.filter((r) => (req.user.childIds || []).includes(r.studentId) && r.status === 'released');
   else list = [];
   list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  res.json({ reports: list });
+  res.json({ reports: list.map(reportView) });
+});
+
+// Klassenübersicht (Leitung/Lehrkraft): alle Schüler einer Periode mit Ø-Note.
+router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { periodId, classId } = req.query;
+  if (!periodId || !byId('report_periods', periodId)) return res.status(400).json({ error: 'Periode erforderlich' });
+  const classes = visibleClasses(req.user).filter((c) => canManageClass(req.user, c.id) && (!classId || c.id === classId));
+  const reports = db.all('student_reports');
+  const rows = [];
+  for (const c of classes) {
+    db.all('users')
+      .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(c.id))
+      .forEach((s) => {
+        const r = reports.find((x) => x.studentId === s.id && x.periodId === periodId);
+        const v = r ? reportView(r) : null;
+        rows.push({
+          studentId: s.id, studentName: s.name, classId: c.id, className: c.name,
+          reportId: r?.id || null, status: r?.status || null,
+          average: v?.average ?? null, averageOverride: v?.averageOverride ?? null, effectiveAverage: v?.effectiveAverage ?? null,
+        });
+      });
+  }
+  rows.sort((a, b) => a.className.localeCompare(b.className) || a.studentName.localeCompare(b.studentName));
+  res.json({ rows });
 });
 
 router.get('/reports/:id', requireAuth, (req, res) => {
@@ -2379,7 +2438,7 @@ router.get('/reports/:id', requireAuth, (req, res) => {
     (req.user.id === r.studentId && r.status === 'released') ||
     (req.user.role === ROLES.ELTERN && (req.user.childIds || []).includes(r.studentId) && r.status === 'released');
   if (!ok) return res.status(403).json({ error: 'Kein Zugriff' });
-  res.json({ report: r });
+  res.json({ report: reportView(r) });
 });
 
 // =============================================================================

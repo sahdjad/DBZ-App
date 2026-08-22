@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { Printer, ArrowLeft, BookMarked } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { Button, Spinner } from '../components/ui.jsx';
+import { gradeLabel, avgLabel } from '../lib/grades.js';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'long' }) : '');
 const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
@@ -11,11 +12,13 @@ export default function BerichtDruck() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [report, setReport] = useState(null);
+  const [subjects, setSubjects] = useState([]);
   const [org, setOrg] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     api.get(`/reports/${id}`).then((d) => setReport(d.report)).catch((e) => setError(e.message));
+    api.get('/subjects').then((d) => setSubjects(d.subjects)).catch(() => {});
     api.get('/org').then((d) => setOrg(d.org)).catch(() => {});
   }, [id]);
 
@@ -71,6 +74,33 @@ export default function BerichtDruck() {
             </div>
           </div>
 
+          {/* Fachnoten + Gesamtdurchschnitt */}
+          {(() => {
+            const graded = (report.grades || []).filter((g) => g.grade != null);
+            if (!graded.length && report.effectiveAverage == null) return null;
+            const nameOf = (gid) => subjects.find((s) => s.id === gid)?.name || gid;
+            return (
+              <div className="mb-6">
+                <div className="text-xs uppercase tracking-wide text-[#132a1e]/50 mb-2">Noten</div>
+                <table className="w-full text-sm border-collapse">
+                  <tbody>
+                    {graded.map((g) => (
+                      <tr key={g.subject} className="border-b border-[#0f3d24]/10">
+                        <td className="py-2 pr-4">{nameOf(g.subject)}</td>
+                        <td className="py-2 text-right font-semibold tabular-nums w-24">{gradeLabel(g.grade)}</td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 border-[#0f3d24]/30">
+                      <td className="py-2 pr-4 font-semibold">Gesamtdurchschnitt</td>
+                      <td className="py-2 text-right font-bold text-lg tabular-nums text-[#0f3d24]">{avgLabel(report.effectiveAverage)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          <div className="text-xs uppercase tracking-wide text-[#132a1e]/50 mb-2">Kennzahlen</div>
           <table className="w-full text-sm border-collapse">
             <tbody>
               {rows.map(([label, value]) => (

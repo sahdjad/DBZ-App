@@ -55,7 +55,7 @@ const ITEMS = {
   hifz: { to: '/hifz', label: "Hifz & Muraja'ah", icon: Star },
   materialien: { to: '/materialien', label: 'Materialien', icon: FolderOpen },
   pruefungen: { to: '/pruefungen', label: 'Prüfungen', icon: GraduationCap },
-  berichte: { to: '/berichte', label: 'Berichte', icon: FileText },
+  berichte: { to: '/berichte', label: 'Zeugnisse', icon: FileText },
   protokolle: { to: '/protokolle', label: 'Protokolle', icon: ClipboardList },
   admin: { to: '/admin', label: 'Verwaltung', icon: UserCog },
   benachrichtigungen: { to: '/benachrichtigungen', label: 'Benachrichtigungen', icon: Bell },

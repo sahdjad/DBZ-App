@@ -137,6 +137,42 @@ test('Badges je Kategorie + Nachricht zurückrufen (serverseitige Rollenprüfung
   assert.equal(th.messages[0].body, '');
 });
 
+test('Zeugnis: Fachnoten, überschreibbarer Durchschnitt und Klassenübersicht', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+
+  const per = await leitung('POST', '/report-periods', { name: 'Testhalbjahr' });
+  assert.equal(per.status, 200);
+  const periodId = per.data.period.id;
+
+  const rep = await teacher('POST', '/reports', { studentId, periodId });
+  assert.equal(rep.status, 200);
+  const rid = rep.data.report.id;
+  assert.ok(Array.isArray(rep.data.report.grades));
+
+  // Noten: Qur'an=2, Tajwid=1 -> Durchschnitt 1,5.
+  const patched = await teacher('PATCH', `/reports/${rid}`, { grades: [{ subject: 'quran', grade: 2 }, { subject: 'tajwid', grade: 1 }] });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.data.report.average, 1.5);
+  assert.equal(patched.data.report.effectiveAverage, 1.5);
+
+  // Durchschnitt überschreiben -> effektiv 2,0; berechneter bleibt 1,5.
+  const ov = await teacher('PATCH', `/reports/${rid}`, { averageOverride: 2 });
+  assert.equal(ov.data.report.effectiveAverage, 2);
+  assert.equal(ov.data.report.average, 1.5);
+
+  // Klassenübersicht (Lehrkraft) enthält den Schüler mit Ø 2,0.
+  const ovw = await teacher('GET', `/reports/overview?periodId=${periodId}`);
+  assert.equal(ovw.status, 200);
+  const row = ovw.data.rows.find((r) => r.studentId === studentId);
+  assert.ok(row && row.effectiveAverage === 2);
+
+  // Schüler darf die Klassenübersicht NICHT abrufen.
+  assert.equal((await student('GET', `/reports/overview?periodId=${periodId}`)).status, 403);
+});
+
 test('falsches Passwort wird abgelehnt', async () => {
   const c = client();
   const r = await c('POST', '/auth/login', { email: 'schueler@dbz.de', password: 'falsch' });

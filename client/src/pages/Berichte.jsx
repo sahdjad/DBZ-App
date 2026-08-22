@@ -1,24 +1,50 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, ChevronLeft, Printer } from 'lucide-react';
+import { FileText, ChevronLeft, Printer, GraduationCap, Table2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { GRADE_OPTIONS, gradeLabel, avgLabel } from '../lib/grades.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : '');
 const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
+const subjectName = (subjects, id) => subjects.find((s) => s.id === id)?.name || id;
 
 export default function Berichte() {
   const { user } = useAuth();
-  return <AppLayout title="Berichte">{MANAGER.includes(user.role) ? <ManagerView /> : <ReadView role={user.role} />}</AppLayout>;
+  return <AppLayout title="Zeugnisse">{MANAGER.includes(user.role) ? <ManagerView /> : <ReadView role={user.role} />}</AppLayout>;
 }
 
-function ReportView({ report }) {
+// Fachnoten + Durchschnitt (Anzeige).
+function GradesTable({ grades, subjects, effectiveAverage, averageOverride }) {
+  const withGrades = (grades || []).filter((g) => g.grade != null);
+  if (!withGrades.length && effectiveAverage == null) return null;
+  return (
+    <div className="rounded-lg border border-line bg-subtle p-4">
+      <div className="text-sm text-ivory mb-2 inline-flex items-center gap-1.5"><GraduationCap size={15} /> Fachnoten</div>
+      <div className="divide-y divide-line">
+        {withGrades.map((g) => (
+          <div key={g.subject} className="py-1.5 flex items-center justify-between text-sm">
+            <span className="text-sage">{subjectName(subjects, g.subject)}</span>
+            <span className="text-ivory font-mono">{gradeLabel(g.grade)}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between">
+        <span className="text-sm text-ivory">Gesamtdurchschnitt{averageOverride != null ? ' (angepasst)' : ''}</span>
+        <span className="text-lg font-mono text-mint-light">{avgLabel(effectiveAverage)}</span>
+      </div>
+    </div>
+  );
+}
+
+function ReportView({ report, subjects = [] }) {
   const d = report.data;
   return (
     <div className="space-y-4">
+      <GradesTable grades={report.grades} subjects={subjects} effectiveAverage={report.effectiveAverage} averageOverride={report.averageOverride} />
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Stat label="Anwesenheitsquote" value={`${rate(d.attendance)}%`} />
         <Stat label="Verspätungen" value={d.attendance.late} />
@@ -37,6 +63,46 @@ function ReportView({ report }) {
   );
 }
 
+// Noten-Editor (Lehrkraft): Fachnote je Fach + berechneter Ø + Override.
+function GradesEditor({ subjects, grades, onChange, computedAvg, override, onOverride }) {
+  const setGrade = (subject, value) => {
+    const v = value === '' ? null : Number(value);
+    onChange((subjects || []).map((s) => {
+      const cur = grades.find((g) => g.subject === s.id);
+      return s.id === subject ? { subject: s.id, grade: v } : { subject: s.id, grade: cur ? cur.grade : null };
+    }));
+  };
+  const gradeOf = (id) => grades.find((g) => g.subject === id)?.grade ?? '';
+  return (
+    <div className="rounded-lg border border-line p-4">
+      <div className="text-sm text-ivory mb-3 inline-flex items-center gap-1.5"><GraduationCap size={16} /> Fachnoten</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {subjects.map((s) => (
+          <label key={s.id} className="flex items-center justify-between gap-2">
+            <span className="text-sm text-sage">{s.name}</span>
+            <select className="input w-28 py-1.5 text-sm" value={gradeOf(s.id)} onChange={(e) => setGrade(s.id, e.target.value)}>
+              <option value="">–</option>
+              {GRADE_OPTIONS.map((g) => <option key={g} value={g}>{gradeLabel(g)}</option>)}
+            </select>
+          </label>
+        ))}
+      </div>
+      <div className="mt-4 pt-3 border-t border-line flex flex-wrap items-center justify-between gap-3">
+        <div className="text-sm">
+          <span className="text-sage-muted">Berechneter Durchschnitt: </span>
+          <span className="font-mono text-ivory">{avgLabel(computedAvg)}</span>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-sage">Ø überschreiben</span>
+          <input type="number" min={1} max={6} step={0.1} className="input w-24 py-1.5 text-sm text-center"
+            placeholder="auto" value={override ?? ''} onChange={(e) => onOverride(e.target.value === '' ? null : Number(e.target.value))} />
+        </label>
+      </div>
+      <p className="text-[11px] text-sage-muted mt-2">Leer lassen = automatischer Durchschnitt. Ein eingetragener Wert überschreibt ihn im Zeugnis.</p>
+    </div>
+  );
+}
+
 function Stat({ label, value, tone = 'mint' }) {
   const colors = { mint: 'text-mint-light', late: 'text-status-late', absent: 'text-status-absent' };
   return (
@@ -48,6 +114,11 @@ function Stat({ label, value, tone = 'mint' }) {
 }
 
 // --- Lehrer/Verwaltung -------------------------------------------------------
+const liveAverage = (grades) => {
+  const vals = (grades || []).map((g) => g.grade).filter((v) => typeof v === 'number');
+  return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
+};
+
 function ManagerView() {
   const toast = useToast();
   const [periods, setPeriods] = useState([]);
@@ -56,14 +127,19 @@ function ManagerView() {
   const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
   const [reports, setReports] = useState([]);
+  const [subjects, setSubjects] = useState([]);
   const [active, setActive] = useState(null);
   const [comment, setComment] = useState('');
+  const [grades, setGrades] = useState([]);
+  const [override, setOverride] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState('students'); // students | overview
 
   const loadReports = () => api.get('/reports').then((d) => setReports(d.reports));
   useEffect(() => {
     api.get('/report-periods').then((d) => { setPeriods(d.periods); setPeriodId(d.periods[0]?.id || ''); });
     api.get('/classes').then((d) => { setClasses(d.classes); setClassId(d.classes[0]?.id || ''); });
+    api.get('/subjects').then((d) => setSubjects(d.subjects)).catch(() => {});
     loadReports();
   }, []);
   useEffect(() => {
@@ -75,6 +151,8 @@ function ManagerView() {
       const { report } = await api.post('/reports', { studentId, periodId });
       setActive(report);
       setComment(report.teacherComment || '');
+      setGrades(report.grades || []);
+      setOverride(report.averageOverride ?? null);
       loadReports();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -84,9 +162,11 @@ function ManagerView() {
   const save = async (status) => {
     setBusy(true);
     try {
-      const { report } = await api.patch(`/reports/${active.id}`, { teacherComment: comment, status });
+      const { report } = await api.patch(`/reports/${active.id}`, { teacherComment: comment, grades, averageOverride: override, status });
       setActive(report);
-      toast.push(status === 'released' ? 'Bericht freigegeben' : 'Entwurf gespeichert', 'success');
+      setGrades(report.grades || []);
+      setOverride(report.averageOverride ?? null);
+      toast.push(status === 'released' ? 'Zeugnis freigegeben' : 'Entwurf gespeichert', 'success');
       loadReports();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -98,6 +178,7 @@ function ManagerView() {
   const statusOf = (studentId) => reports.find((r) => r.studentId === studentId && r.periodId === periodId)?.status;
 
   if (active) {
+    const computedAvg = liveAverage(grades);
     return (
       <div>
         <button onClick={() => setActive(null)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
@@ -111,7 +192,8 @@ function ManagerView() {
             action={<StatusBadge status={active.status === 'released' ? 'approved' : 'draft'} />}
           />
           <div className="p-4 space-y-4">
-            <ReportView report={{ ...active, teacherComment: '' }} />
+            <GradesEditor subjects={subjects} grades={grades} onChange={setGrades} computedAvg={computedAvg} override={override} onOverride={setOverride} />
+            <ReportView report={{ ...active, teacherComment: '', grades: [] }} subjects={subjects} />
             <label className="block">
               <span className="text-sm text-sage">Kommentar der Lehrkraft</span>
               <textarea className="input mt-1" rows={4} value={comment} onChange={(e) => setComment(e.target.value)} />
@@ -129,7 +211,7 @@ function ManagerView() {
 
   return (
     <div className="space-y-4">
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         <select className="input w-auto" value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
           {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
@@ -138,25 +220,83 @@ function ManagerView() {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-      </div>
-      <Card className="p-5">
-        <CardHeader title="Schüler" subtitle="Bericht erstellen oder öffnen" icon={FileText} />
-        <div className="divide-y divide-line">
-          {students.map((s) => (
-            <div key={s.id} className="py-3 flex items-center justify-between gap-3">
-              <span className="text-ivory">{s.name}</span>
-              <div className="flex items-center gap-2">
-                {statusOf(s.id) && <StatusBadge status={statusOf(s.id) === 'released' ? 'approved' : 'draft'} />}
-                <Button size="sm" variant="outline" onClick={() => openReport(s.id)}>
-                  {statusOf(s.id) ? 'Öffnen' : 'Erstellen'}
-                </Button>
-              </div>
-            </div>
-          ))}
-          {students.length === 0 && <p className="p-4 text-sage-muted text-sm">Keine Schüler in dieser Klasse.</p>}
+        <div className="ml-auto inline-flex rounded-lg border border-line overflow-hidden">
+          <button onClick={() => setTab('students')} className={`px-3 py-1.5 text-sm ${tab === 'students' ? 'bg-mint/10 text-mint-light' : 'text-sage-muted'}`}>Schüler</button>
+          <button onClick={() => setTab('overview')} className={`px-3 py-1.5 text-sm inline-flex items-center gap-1 ${tab === 'overview' ? 'bg-mint/10 text-mint-light' : 'text-sage-muted'}`}><Table2 size={14} /> Klassenübersicht</button>
         </div>
-      </Card>
+      </div>
+
+      {tab === 'overview' ? (
+        <ClassOverview periodId={periodId} classId={classes.length > 1 ? classId : ''} onOpen={openReport} />
+      ) : (
+        <Card className="p-5">
+          <CardHeader title="Schüler" subtitle="Zeugnis erstellen oder öffnen" icon={FileText} />
+          <div className="divide-y divide-line">
+            {students.map((s) => (
+              <div key={s.id} className="py-3 flex items-center justify-between gap-3">
+                <span className="text-ivory">{s.name}</span>
+                <div className="flex items-center gap-2">
+                  {statusOf(s.id) && <StatusBadge status={statusOf(s.id) === 'released' ? 'approved' : 'draft'} />}
+                  <Button size="sm" variant="outline" onClick={() => openReport(s.id)}>
+                    {statusOf(s.id) ? 'Öffnen' : 'Erstellen'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            {students.length === 0 && <p className="p-4 text-sage-muted text-sm">Keine Schüler in dieser Klasse.</p>}
+          </div>
+        </Card>
+      )}
     </div>
+  );
+}
+
+// Klassenübersicht (Leitung/Lehrkraft): alle Schüler mit Ø-Note + Status.
+function ClassOverview({ periodId, classId, onOpen }) {
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    if (!periodId) return;
+    const q = new URLSearchParams({ periodId, ...(classId ? { classId } : {}) });
+    api.get(`/reports/overview?${q}`).then((d) => setRows(d.rows)).catch(() => setRows([]));
+  }, [periodId, classId]);
+
+  if (!rows) return <Spinner />;
+  if (!rows.length) return <Card className="p-6 text-sage-muted text-sm">Keine Schüler für diese Auswahl.</Card>;
+  const withAvg = rows.filter((r) => r.effectiveAverage != null);
+  const classAvg = withAvg.length ? Math.round((withAvg.reduce((a, r) => a + r.effectiveAverage, 0) / withAvg.length) * 100) / 100 : null;
+
+  return (
+    <Card className="p-5">
+      <CardHeader title="Klassenübersicht" subtitle={`Ø der Klasse: ${avgLabel(classAvg)}`} icon={Table2} />
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-sage-muted border-b border-line">
+              <th className="py-2 font-medium">Schüler/in</th>
+              <th className="py-2 font-medium">Klasse</th>
+              <th className="py-2 font-medium text-center">Ø-Note</th>
+              <th className="py-2 font-medium text-center">Status</th>
+              <th className="py-2" />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {rows.map((r) => (
+              <tr key={r.studentId}>
+                <td className="py-2 text-ivory">{r.studentName}</td>
+                <td className="py-2 text-sage-muted">{r.className}</td>
+                <td className="py-2 text-center font-mono text-ivory">{avgLabel(r.effectiveAverage)}</td>
+                <td className="py-2 text-center">
+                  {r.status ? <StatusBadge status={r.status === 'released' ? 'approved' : 'draft'} /> : <span className="text-sage-muted">–</span>}
+                </td>
+                <td className="py-2 text-right">
+                  <Button size="sm" variant="ghost" onClick={() => onOpen(r.studentId)}>{r.status ? 'Öffnen' : 'Erstellen'}</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }
 
@@ -164,8 +304,12 @@ function ManagerView() {
 function ReadView() {
   const [reports, setReports] = useState(null);
   const [active, setActive] = useState(null);
+  const [subjects, setSubjects] = useState([]);
 
-  useEffect(() => { api.get('/reports').then((d) => setReports(d.reports)); }, []);
+  useEffect(() => {
+    api.get('/reports').then((d) => setReports(d.reports));
+    api.get('/subjects').then((d) => setSubjects(d.subjects)).catch(() => {});
+  }, []);
 
   if (active) {
     return (
@@ -180,7 +324,7 @@ function ReadView() {
             icon={FileText}
             action={<Button as={Link} to={`/bericht/${active.id}/druck`} variant="outline" size="sm"><Printer size={16} /> PDF</Button>}
           />
-          <div className="p-4"><ReportView report={active} /></div>
+          <div className="p-4"><ReportView report={active} subjects={subjects} /></div>
         </Card>
       </div>
     );
