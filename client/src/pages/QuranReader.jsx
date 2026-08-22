@@ -7,6 +7,31 @@ import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.js
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
+// Tadschwid-Regel -> Farbe (Konvention wie quran.com). Die Regel-Namen kommen
+// ausgeschrieben aus der Datenquelle, daher sind die Farben eindeutig.
+const TAJWEED_COLORS = {
+  ham_wasl: '#9AA0A6', slnt: '#9AA0A6', laam_shamsiyah: '#9AA0A6',
+  madda_normal: '#537FFF', madda_permissible: '#4050FF', madda_necessary: '#000EBC', madda_obligatory: '#2144C1',
+  ikhafa: '#9400A8', ikhafa_shafawi: '#D500B7',
+  idgham_shafawi: '#58B800', idgham_ghunnah: '#169200', idgham_wo_ghunnah: '#169200',
+  idgham_mutajanisayn: '#A1A1A1', idgham_mutaqaribayn: '#A1A1A1',
+  iqlab: '#26BFFD', ghunnah: '#FF7E1E', qalqalah: '#DD0008',
+};
+const TAJWEED_LEGEND = [
+  ['#DD0008', 'Qalqala'], ['#FF7E1E', 'Ghunna'], ['#169200', 'Idghām'],
+  ['#26BFFD', 'Iqlāb'], ['#9400A8', 'Ikhfāʼ'], ['#537FFF', 'Madd'], ['#9AA0A6', 'Stumm/Verbindung'],
+];
+
+// Wandelt den Tadschwid-HTML der Quelle in sichere, eingefärbte Spans um.
+// Erlaubt nur eigene <span>-Elemente – kein fremdes HTML.
+function tajweedToHtml(html) {
+  return (html || '')
+    .replace(/<span class=["']?end["']?>(.*?)<\/span>/g, (m, num) => `<span class="qend">﴿${num}﴾</span>`)
+    .replace(/<tajweed class=["']?([a-z_]+)["']?>/g, (m, cls) => `<span style="color:${TAJWEED_COLORS[cls] || 'inherit'}">`)
+    .replace(/<\/tajweed>/g, '</span>')
+    .replace(/<(?!\/?span)[^>]*>/g, ''); // alles andere entfernen
+}
+
 function TafsirPanel({ data, edition, onEdition }) {
   const EDS = [['saadi', 'as-Saʿdī · عربي'], ['ibnkathir', 'Ibn Kathīr · EN']];
   return (
@@ -140,7 +165,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const [playingIdx, setPlayingIdx] = useState(null);
   const [marked, setMarked] = useState(new Set());
   const [notes, setNotes] = useState({}); // ayah -> Notiztext
-  const [readMode, setReadMode] = useState('study'); // study | mushaf
+  const [readMode, setReadMode] = useState('study'); // study | mushaf | tajweed
+  const [tajweed, setTajweed] = useState(null); // {loading|ayahs|error}
   const [tafsirOpen, setTafsirOpen] = useState(null); // Ayah-Nummer
   const [tafsirEd, setTafsirEd] = useState('saadi'); // saadi | ibnkathir
   const [tafsir, setTafsir] = useState({}); // `${ed}:${ayah}` -> {loading|text|error}
@@ -156,7 +182,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       .catch((e) => setError(e.message));
   };
   useEffect(() => {
-    stop(); load(reciter);
+    stop(); load(reciter); setTajweed(null);
     api.post('/quran/last-read', { surah: n }).then(onMarksChanged).catch(() => {});
     api.get('/quran/me').then((m) => {
       const mine = m.bookmarks.filter((b) => b.surah === Number(n));
@@ -257,6 +283,15 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   };
   const changeEdition = (ed) => { setTafsirEd(ed); if (tafsirOpen) loadTafsir(tafsirOpen, ed); };
 
+  const ensureTajweed = () => {
+    if (tajweed && !tajweed.error) return;
+    setTajweed({ loading: true });
+    api.get(`/quran/tajweed/${n}`)
+      .then((d) => setTajweed({ ayahs: d.surah.ayahs }))
+      .catch((err) => setTajweed({ error: err.message }));
+  };
+  const chooseView = (v) => { setReadMode(v); if (v === 'tajweed') ensureTajweed(); };
+
   const MODES = [['single', 'Einzeln'], ['continuous', 'Weiterlaufen'], ['range', 'Bereich']];
 
   return (
@@ -291,13 +326,13 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                 </select>
               </label>
 
-              {/* Ansicht: Studieren (mit Übersetzung) / Mushaf (nur Arabisch) */}
-              <div className="inline-flex items-center gap-1">
+              {/* Ansicht: Lernen (mit Übersetzung) / Mushaf (Lesen) / Tadschwid (farbig) */}
+              <div className="inline-flex items-center gap-1 flex-wrap justify-center">
                 <span className="text-sage-muted mr-1">Ansicht</span>
-                {[['study', 'Studieren'], ['mushaf', 'Mushaf']].map(([v, l]) => (
-                  <button key={v} onClick={() => setReadMode(v)}
+                {[['study', 'Lernen', BookOpenText], ['mushaf', 'Mushaf', ScrollText], ['tajweed', 'Tadschwid', Palette]].map(([v, l, Icon]) => (
+                  <button key={v} onClick={() => chooseView(v)}
                     className={['px-2.5 py-1 rounded-md border inline-flex items-center gap-1', readMode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>
-                    {v === 'mushaf' ? <ScrollText size={13} /> : <BookOpenText size={13} />}{l}
+                    <Icon size={13} />{l}
                   </button>
                 ))}
               </div>
@@ -347,7 +382,46 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
             </div>
           </Card>
 
-          {readMode === 'mushaf' ? (
+          {readMode === 'tajweed' ? (
+            <Card className="p-5 sm:p-7">
+              {/* Farb-Legende */}
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-5 text-[11px]">
+                {TAJWEED_LEGEND.map(([c, l]) => (
+                  <span key={l} className="inline-flex items-center gap-1 text-sage-muted">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}
+                  </span>
+                ))}
+              </div>
+              {!tajweed || tajweed.loading ? (
+                <Spinner label="Tadschwid-Text wird geladen …" />
+              ) : tajweed.error ? (
+                <div className="text-center">
+                  <p className="text-status-absent mb-3">{tajweed.error}</p>
+                  <Button variant="outline" onClick={ensureTajweed}><RotateCcw size={16} /> Erneut versuchen</Button>
+                </div>
+              ) : (
+                <>
+                  {data.bismillah && (
+                    <p dir="rtl" className="font-arabic text-2xl text-center text-sage mb-4">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
+                  )}
+                  <p dir="rtl" className="font-arabic text-ivory text-justify" style={{ fontSize: '1.95rem', lineHeight: 2.5 }}>
+                    {tajweed.ayahs.map((a, idx) => (
+                      <span
+                        key={a.n}
+                        id={`ayah-${a.n}`}
+                        onClick={() => onAyahPlay(idx)}
+                        className={`cursor-pointer rounded ${playingIdx === idx ? 'bg-mint/20' : ''}`}
+                        dangerouslySetInnerHTML={{ __html: tajweedToHtml(a.html) + ' ' }}
+                      />
+                    ))}
+                  </p>
+                  <p className="text-[11px] text-sage-muted mt-4 text-center">
+                    Farben zeigen die Tadschwid-Regeln. Tippe auf eine Ayah zum Abspielen · <Link to="/tadschwid" className="text-mint-light hover:underline">Regeln erklärt</Link>
+                  </p>
+                </>
+              )}
+            </Card>
+          ) : readMode === 'mushaf' ? (
             <Card className="p-5 sm:p-7">
               {data.bismillah && (
                 <p dir="rtl" className="font-arabic text-2xl text-center text-sage mb-4">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>

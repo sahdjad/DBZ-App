@@ -111,6 +111,14 @@
     background-size: cover;
     background-position: center;
   }
+
+  /* Ayah-Endmarke in der Tadschwid-Ansicht (theme-fähiges Grün) */
+  .qend {
+    color: rgb(var(--c-mint));
+    margin: 0 0.25rem;
+    font-size: 0.72em;
+    user-select: none;
+  }
 }
 
 /* Druck: nur das Dokument, sauberes A4-Layout */

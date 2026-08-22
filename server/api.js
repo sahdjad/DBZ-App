@@ -34,6 +34,7 @@ import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIE
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
 import { listSurahs, getSurah } from './providers/quranProvider.js';
 import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
+import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -1762,6 +1763,19 @@ router.post('/quran/notes', requireAuth, (req, res) => {
   b.note = String(note || '').trim();
   db.commit();
   res.json({ bookmark: { ...b, surahName: surahByN(b.surah)?.name } });
+});
+
+// Tadschwid-Text (farbig markiert) einer Sure inkl. Seiten-/Juzʼ-Nummer.
+router.get('/quran/tajweed/:n', requireAuth, async (req, res) => {
+  try {
+    const data = await getTajweedSurah(req.params.n);
+    res.json({ surah: data });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Sure nicht gefunden' });
+    if (err.code === 'PROVIDER_UNAVAILABLE')
+      return res.status(503).json({ error: 'Tadschwid-Text konnte nicht geladen werden. Bitte später erneut versuchen.' });
+    res.status(500).json({ error: 'Serverfehler beim Laden des Tadschwid-Texts' });
+  }
 });
 
 // Tafsir-Ausgaben (as-Saʿdī arabisch, Ibn Kathīr englisch) und Inhalt pro Ayah.

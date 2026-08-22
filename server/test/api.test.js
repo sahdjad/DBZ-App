@@ -423,6 +423,8 @@ test("Qur'an: Tafsir-Ausgaben verfügbar, ungültige Ayah abgewiesen", async () 
   // Ungültige Sure -> 404 (ohne externen Abruf).
   const bad = await student('GET', '/quran/tafsir/999/1');
   assert.equal(bad.status, 404);
+  // Tadschwid: ungültige Sure ebenfalls 404 (ohne externen Abruf).
+  assert.equal((await student('GET', '/quran/tajweed/999')).status, 404);
 });
 
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
