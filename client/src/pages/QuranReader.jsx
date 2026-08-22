@@ -7,6 +7,11 @@ import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.js
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
+// Entfernt NUR die „Null"-Zeichen für stumme Buchstaben (U+06DF/U+06E0), die
+// in der Mushaf-Schrift als große gefüllte Punkte erscheinen. Buchstaben,
+// Vokalzeichen, Sukun und Ayah-Zeichen bleiben unangetastet.
+const cleanQuran = (s) => (s || '').replace(/[۟۠]/g, '');
+
 // Tadschwid-Regel -> Farbe (Konvention wie quran.com). Die Regel-Namen kommen
 // ausgeschrieben aus der Datenquelle, daher sind die Farben eindeutig.
 const TAJWEED_COLORS = {
@@ -26,6 +31,7 @@ const TAJWEED_LEGEND = [
 // Erlaubt nur eigene <span>-Elemente – kein fremdes HTML.
 function tajweedToHtml(html) {
   return (html || '')
+    .replace(/[۟۠]/g, '') // überproportionale „Null"-Punkte (stumme Buchstaben) entfernen
     .replace(/<span class=["']?end["']?>(.*?)<\/span>/g, (m, num) => `<span class="qend">﴿${num}﴾</span>`)
     .replace(/<tajweed class=["']?([a-z_]+)["']?>/g, (m, cls) => `<span style="color:${TAJWEED_COLORS[cls] || 'inherit'}">`)
     .replace(/<\/tajweed>/g, '</span>')
@@ -562,7 +568,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
                     onClick={() => onAyahPlay(idx)}
                     className={`cursor-pointer rounded ${playingIdx === idx ? 'bg-mint/20' : ''}`}
                   >
-                    {a.arabic}
+                    {cleanQuran(a.arabic)}
                     <span className="text-mint mx-1 select-none" style={{ fontSize: '1.4rem' }}>﴿{toArabicNum(a.n)}﴾</span>{' '}
                   </span>
                 ))}
@@ -592,7 +598,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
                       )}
                     </div>
                   </div>
-                  <p dir="rtl" className="font-arabic text-2xl leading-loose text-ivory mt-2">{a.arabic}</p>
+                  <p dir="rtl" className="font-arabic text-2xl leading-loose text-ivory mt-2">{cleanQuran(a.arabic)}</p>
                   {a.translation && <p className="text-sage text-sm mt-3">{a.translation}</p>}
                   {notes[a.n] && (
                     <p className="text-xs text-mint-light bg-mint/10 rounded-lg px-3 py-2 mt-3 flex items-start gap-2">
@@ -911,7 +917,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
                 {line.words.map((w, i) => (
                   <span key={i} onClick={() => tapWord(w.v)}
                     className={`mushaf-word ${playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
-                    {w.t}{' '}
+                    {cleanQuran(w.t)}{' '}
                   </span>
                 ))}
               </p>

@@ -3,7 +3,8 @@
 // Minderjährigendaten verarbeitet, ist dies Produktionsanforderung.
 
 // CSP: Alles nur von der eigenen Herkunft; Ausnahmen:
-// - media-src erlaubt das Rezitator-Audio-CDN (Qur'an-Reader, <audio> im Browser)
+// - media-src erlaubt die Rezitator-Audio-CDNs (Qur'an-Reader, <audio> im Browser):
+//   quranicaudio.com (durchgehende Sure-Aufnahmen) und islamic.network (Reserve)
 // - style-src 'unsafe-inline' für React-Inline-Styles (z. B. Fortschrittsbalken)
 const CSP = [
   "default-src 'self'",
@@ -17,7 +18,7 @@ const CSP = [
   "script-src 'self'",
   "worker-src 'self'",
   "connect-src 'self'",
-  'media-src \'self\' https://cdn.islamic.network',
+  "media-src 'self' https://download.quranicaudio.com https://*.quranicaudio.com https://cdn.islamic.network",
 ].join('; ');
 
 export function securityHeaders(req, res, next) {
