@@ -161,6 +161,34 @@ test('Notenvorschlag: gute Daten -> gute Note, schlechte Daten -> schlechte Note
   assert.equal(none.available, false);
 });
 
+test('Aktivitäten fließen in den Leistungsstand ein + Monatsfilter', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const sid = (await student('GET', '/auth/me')).data.user.id;
+
+  const act = await teacher('POST', '/activities', { studentId: sid, title: 'Vokabelquiz', category: 'spiel', points: 9, maxPoints: 10 });
+  assert.equal(act.status, 200);
+  assert.equal(act.data.activity.percent, 90);
+
+  const now = new Date();
+  const cm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const st = await teacher('GET', `/students/${sid}/standing?month=${cm}`);
+  assert.equal(st.data.data.activities.scoredCount, 1);
+  assert.equal(st.data.data.activities.avgPercent, 90);
+  const dim = st.data.standing.dimensions.find((d) => d.key === 'activities');
+  assert.ok(dim && dim.grade != null, 'Aktivitäten liefern einen Notenbeitrag');
+
+  // Lange zurückliegender Monat -> keine Aktivität im Fenster.
+  const past = await teacher('GET', `/students/${sid}/standing?month=2000-01`);
+  assert.equal(past.data.data.activities.count, 0);
+
+  // Schüler sieht die eigene Aktivität (Leseansicht) und kann keine anlegen.
+  const mine = await student('GET', '/activities');
+  assert.equal(mine.status, 200);
+  assert.ok(mine.data.activities.some((a) => a.title === 'Vokabelquiz'));
+  assert.equal((await student('POST', '/activities', { studentId: sid, title: 'X' })).status, 403);
+});
+
 test('Notenvorschlag-Endpunkt: nur Lehrkraft/Leitung, nicht Schüler', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const student = await loginAs('schueler@dbz.de');

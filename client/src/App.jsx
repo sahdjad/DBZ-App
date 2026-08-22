@@ -23,6 +23,7 @@ import Leitung from './pages/Leitung.jsx';
 import StudentProfil from './pages/StudentProfil.jsx';
 import Kalender from './pages/Kalender.jsx';
 import Berichte from './pages/Berichte.jsx';
+import Aktivitaeten from './pages/Aktivitaeten.jsx';
 import BerichtDruck from './pages/BerichtDruck.jsx';
 import Pruefungen from './pages/Pruefungen.jsx';
 import Pruefung from './pages/Pruefung.jsx';
@@ -80,6 +81,7 @@ export default function App() {
       <Route path="/profil/:id" element={<Protected><StudentProfil /></Protected>} />
       <Route path="/kalender" element={<Protected><Kalender /></Protected>} />
       <Route path="/berichte" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Berichte /></Protected>} />
+      <Route path="/aktivitaeten" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Aktivitaeten /></Protected>} />
       <Route path="/bericht/:id/druck" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><BerichtDruck /></Protected>} />
       <Route path="/pruefungen" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefungen /></Protected>} />
       <Route path="/pruefung/:id" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefung /></Protected>} />

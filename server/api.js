@@ -691,8 +691,20 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
 });
 
 // Anwesenheitsstatistik eines Schülers.
-function attendanceStats(studentId) {
-  const recs = db.all('attendance').filter((a) => a.studentId === studentId);
+// Datumsvergleich (nur Tag) für optionale Zeitfenster { from, to } (YYYY-MM-DD).
+function inWindow(iso, win) {
+  if (!win) return true;
+  const d = String(iso || '').slice(0, 10);
+  if (!d) return false;
+  if (win.from && d < win.from) return false;
+  if (win.to && d > win.to) return false;
+  return true;
+}
+
+function attendanceStats(studentId, win) {
+  const sdate = win ? new Map(db.all('sessions').map((s) => [s.id, s.date])) : null;
+  const recs = db.all('attendance').filter((a) => a.studentId === studentId
+    && (!win || inWindow(sdate.get(a.sessionId) || a.checkInAt || a.updatedAt, win)));
   const count = (st) => recs.filter((a) => a.status === st).length;
   const lateMinutes = recs.filter((a) => a.status === 'late').map((a) => a.minutesLate || 0);
   return {
@@ -2247,9 +2259,10 @@ router.post('/attempts/:id/grade', requireAuth, requireRole(CLASS_MANAGERS), (re
 // Berichte / Zeugnisse
 // =============================================================================
 
-// Aggregiert Kennzahlen eines Schülers für einen Bericht.
-function reportData(studentId) {
-  const asgs = studentAssignments(studentId);
+// Aggregiert Kennzahlen eines Schülers – optional für ein Zeitfenster
+// { from, to } (z. B. Monatsauswertung). Ohne Fenster: gesamter Zeitraum.
+function reportData(studentId, win) {
+  const asgs = studentAssignments(studentId).filter((a) => !win || inWindow(a.dueAt, win));
   const hw = { total: asgs.length, passed: 0, submitted: 0, revision: 0, missed: 0, open: 0 };
   asgs.forEach((a) => {
     if (a.status === 'passed') hw.passed++;
@@ -2258,26 +2271,46 @@ function reportData(studentId) {
     else if (a.status === 'missed') hw.missed++;
     else hw.open++;
   });
-  const beh = db.all('behavior_records').filter((r) => r.studentId === studentId);
-  const attempts = db.all('exam_attempts').filter((a) => a.studentId === studentId && a.status === 'released' && typeof a.percent === 'number');
+  const beh = db.all('behavior_records').filter((r) => r.studentId === studentId && (!win || inWindow(r.createdAt, win)));
+  const attempts = db.all('exam_attempts').filter((a) => a.studentId === studentId && a.status === 'released' && typeof a.percent === 'number' && (!win || inWindow(a.releasedAt, win)));
   const exams = attempts.length
     ? { count: attempts.length, avgPercent: Math.round(attempts.reduce((s, a) => s + a.percent, 0) / attempts.length) }
     : { count: 0, avgPercent: 0 };
+  // Aktivitäten/Spiele & sonstige Rückgaben des Schülers.
+  const acts = db.all('activities').filter((a) => a.studentId === studentId && (!win || inWindow(a.createdAt, win)));
+  const scored = acts.filter((a) => a.countsForGrade !== false && typeof a.points === 'number' && typeof a.maxPoints === 'number' && a.maxPoints > 0);
+  const activities = {
+    count: acts.length,
+    scoredCount: scored.length,
+    avgPercent: scored.length ? Math.round(scored.reduce((s, a) => s + (a.points / a.maxPoints) * 100, 0) / scored.length) : 0,
+  };
   return {
-    attendance: attendanceStats(studentId),
+    attendance: attendanceStats(studentId, win),
     homework: hw,
     behavior: {
       positive: beh.filter((r) => r.tone === 'positive').length,
       hinweis: beh.filter((r) => r.tone === 'negative').length,
     },
     exams,
+    activities,
   };
 }
 
-// Live-Leistungsstand + Notenvorschlag eines Schülers (immer aus aktuellen Daten).
-function studentStanding(studentId) {
-  const data = reportData(studentId);
-  return { data, standing: computeStanding(data) };
+// Live-Leistungsstand + Notenvorschlag eines Schülers (immer aus aktuellen
+// Daten), optional für ein Zeitfenster (Monatsauswertung).
+function studentStanding(studentId, win) {
+  const data = reportData(studentId, win);
+  return { data, standing: computeStanding(data), window: win || null };
+}
+// Zeitfenster aus Query lesen: ?month=YYYY-MM oder ?from=YYYY-MM-DD&to=YYYY-MM-DD.
+function winFromQuery(q) {
+  if (q.month && /^\d{4}-\d{2}$/.test(q.month)) {
+    const [y, m] = q.month.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return { from: `${q.month}-01`, to: `${q.month}-${String(last).padStart(2, '0')}` };
+  }
+  if (q.from || q.to) return { from: q.from || null, to: q.to || null };
+  return null;
 }
 
 // --- Zeugnisnoten (Fachnoten + Durchschnitt) ---------------------------------
@@ -2424,7 +2457,7 @@ router.get('/students/:id/standing', requireAuth, requireRole(CLASS_MANAGERS), (
   const student = findUserById(req.params.id);
   if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
-  res.json(studentStanding(req.params.id));
+  res.json(studentStanding(req.params.id, winFromQuery(req.query)));
 });
 
 // Klassenübersicht (Leitung/Lehrkraft): alle Schüler einer Periode mit Ø-Note.
@@ -2432,6 +2465,7 @@ router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, 
   const { periodId, classId } = req.query;
   if (!periodId || !byId('report_periods', periodId)) return res.status(400).json({ error: 'Periode erforderlich' });
   const classes = visibleClasses(req.user).filter((c) => canManageClass(req.user, c.id) && (!classId || c.id === classId));
+  const win = winFromQuery(req.query);
   const reports = db.all('student_reports');
   const rows = [];
   for (const c of classes) {
@@ -2440,7 +2474,7 @@ router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, 
       .forEach((s) => {
         const r = reports.find((x) => x.studentId === s.id && x.periodId === periodId);
         const v = r ? reportView(r) : null;
-        const st = studentStanding(s.id).standing;
+        const st = studentStanding(s.id, win).standing;
         rows.push({
           studentId: s.id, studentName: s.name, classId: c.id, className: c.name,
           reportId: r?.id || null, status: r?.status || null,
@@ -2451,6 +2485,78 @@ router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, 
   }
   rows.sort((a, b) => a.className.localeCompare(b.className) || a.studentName.localeCompare(b.studentName));
   res.json({ rows });
+});
+
+// =============================================================================
+// Aktivitäten & Spiele (alles, was der Schüler in der App zurückgibt)
+// =============================================================================
+const ACTIVITY_CATEGORIES = ['spiel', 'aktivitaet', 'abgabe', 'sonstiges'];
+
+function activityView(a) {
+  const pct = typeof a.points === 'number' && typeof a.maxPoints === 'number' && a.maxPoints > 0
+    ? Math.round((a.points / a.maxPoints) * 100) : null;
+  return { ...a, percent: pct };
+}
+
+router.post('/activities', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { studentId, title, category, points, maxPoints, countsForGrade, note } = req.body || {};
+  const student = findUserById(studentId);
+  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  const classId = (student.classIds || [])[0];
+  if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
+  const mp = maxPoints === '' || maxPoints == null ? null : Math.max(0, Number(maxPoints) || 0);
+  const p = points === '' || points == null ? null : Math.max(0, Number(points) || 0);
+  const a = {
+    id: newId('act'),
+    studentId,
+    studentName: student.name,
+    classId,
+    title: title.trim(),
+    category: ACTIVITY_CATEGORIES.includes(category) ? category : 'aktivitaet',
+    points: p,
+    maxPoints: mp,
+    countsForGrade: countsForGrade !== false, // Standard: zählt zur Note
+    note: (note || '').trim(),
+    createdBy: req.user.id,
+    createdByName: req.user.name,
+    createdAt: new Date().toISOString(),
+  };
+  db.insert('activities', a);
+  audit(req.user.id, 'activity.create', 'activity', a.id);
+  res.json({ activity: activityView(a) });
+});
+
+router.get('/activities', requireAuth, (req, res) => {
+  const win = winFromQuery(req.query);
+  let list = db.all('activities');
+  const sid = req.query.studentId;
+  if (sid) {
+    const student = findUserById(sid);
+    if (!student || !canViewStudent(req.user, student)) return res.status(403).json({ error: 'Kein Zugriff' });
+    list = list.filter((a) => a.studentId === sid);
+  } else if (req.user.role === ROLES.SCHUELER || req.user.role === ROLES.KLASSENSPRECHER) {
+    list = list.filter((a) => a.studentId === req.user.id);
+  } else if (req.user.role === ROLES.ELTERN) {
+    list = list.filter((a) => (req.user.childIds || []).includes(a.studentId));
+  } else if (isClassManager(req.user)) {
+    list = list.filter((a) => canManageClass(req.user, a.classId));
+  } else {
+    list = [];
+  }
+  list = list.filter((a) => inWindow(a.createdAt, win)).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
+  res.json({ activities: list.map(activityView) });
+});
+
+router.delete('/activities/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const list = db.all('activities');
+  const idx = list.findIndex((a) => a.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (list[idx].createdBy !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const [removed] = list.splice(idx, 1);
+  db.commit();
+  audit(req.user.id, 'activity.delete', 'activity', removed.id);
+  res.json({ ok: true });
 });
 
 router.get('/reports/:id', requireAuth, (req, res) => {

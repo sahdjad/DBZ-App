@@ -103,7 +103,7 @@ export function notify(userId, { type, level = 'info', title, body, deepLink = n
 // wird je Bereich eine Qualität 0–100 und daraus ein Notenvorschlag (1–6)
 // abgeleitet. Es sind NUR Vorschläge – die Lehrkraft entscheidet endgültig.
 
-export const STANDING_WEIGHTS = { homework: 0.4, attendance: 0.3, behavior: 0.15, exams: 0.15 };
+export const STANDING_WEIGHTS = { homework: 0.35, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15 };
 
 function qHomework(hw) {
   if (!hw || !hw.total) return null;
@@ -128,6 +128,10 @@ function qExams(ex) {
   if (!ex || !ex.count) return null;
   return Math.max(0, Math.min(100, Math.round(ex.avgPercent)));
 }
+function qActivities(ac) {
+  if (!ac || !ac.scoredCount) return null; // nur bewertete Aktivitäten fließen in die Note
+  return Math.max(0, Math.min(100, Math.round(ac.avgPercent)));
+}
 const qualityToGrade = (q) => Math.round((1 + ((100 - q) / 100) * 5) * 10) / 10; // 100->1,0 ; 0->6,0
 const toHalfGrade = (g) => Math.max(1, Math.min(6, Math.round(g * 2) / 2));
 
@@ -142,6 +146,8 @@ export function computeStanding(data) {
       detail: data.behavior ? `${data.behavior.positive} positiv · ${data.behavior.hinweis} Hinweise` : '–' },
     { key: 'exams', label: 'Prüfungen', quality: qExams(data.exams),
       detail: data.exams?.count ? `${data.exams.count} Prüfungen · Ø ${data.exams.avgPercent}%` : 'keine benoteten Prüfungen' },
+    { key: 'activities', label: 'Aktivitäten', quality: qActivities(data.activities),
+      detail: data.activities?.count ? `${data.activities.count} Einträge · ${data.activities.scoredCount} bewertet · Ø ${data.activities.avgPercent}%` : 'keine Aktivitäten' },
   ].map((d) => ({ ...d, grade: d.quality != null ? qualityToGrade(d.quality) : null }));
 
   const active = dims.filter((d) => d.quality != null);

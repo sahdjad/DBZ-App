@@ -12,6 +12,18 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyl
 const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
 const subjectName = (subjects, id) => subjects.find((s) => s.id === id)?.name || id;
 
+// Monatsauswahl für die Auswertung (Gesamt + letzte 6 Monate).
+function monthOptions() {
+  const opts = [{ value: '', label: 'Gesamter Zeitraum' }];
+  const now = new Date();
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    opts.push({ value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) });
+  }
+  return opts;
+}
+const MONTHS = monthOptions();
+
 export default function Berichte() {
   const { user } = useAuth();
   return <AppLayout title="Zeugnisse">{MANAGER.includes(user.role) ? <ManagerView /> : <ReadView role={user.role} />}</AppLayout>;
@@ -166,8 +178,16 @@ function ManagerView() {
   const [standing, setStanding] = useState(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('students'); // students | overview
+  const [month, setMonth] = useState(''); // '' = Gesamt, sonst YYYY-MM
 
   const loadReports = () => api.get('/reports').then((d) => setReports(d.reports));
+  const loadStanding = (studentId, m = month) => {
+    setStanding(null);
+    const q = m ? `?month=${m}` : '';
+    api.get(`/students/${studentId}/standing${q}`).then((d) => setStanding(d.standing)).catch(() => {});
+  };
+  // Monat gewechselt & Bericht offen -> Leistungsstand für den Monat neu laden.
+  useEffect(() => { if (active) loadStanding(active.studentId); /* eslint-disable-next-line */ }, [month]);
   useEffect(() => {
     api.get('/report-periods').then((d) => { setPeriods(d.periods); setPeriodId(d.periods[0]?.id || ''); });
     api.get('/classes').then((d) => { setClasses(d.classes); setClassId(d.classes[0]?.id || ''); });
@@ -185,8 +205,7 @@ function ManagerView() {
       setComment(report.teacherComment || '');
       setGrades(report.grades || []);
       setOverride(report.averageOverride ?? null);
-      setStanding(null);
-      api.get(`/students/${studentId}/standing`).then((d) => setStanding(d.standing)).catch(() => {});
+      loadStanding(studentId);
       loadReports();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -226,6 +245,12 @@ function ManagerView() {
             action={<StatusBadge status={active.status === 'released' ? 'approved' : 'draft'} />}
           />
           <div className="p-4 space-y-4">
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-sage-muted">Auswertungs­zeitraum:</span>
+              <select className="input w-auto py-1.5 text-sm" value={month} onChange={(e) => setMonth(e.target.value)}>
+                {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              </select>
+            </div>
             <StandingPanel standing={standing} onApplyAverage={(g) => setOverride(g)} />
             <GradesEditor subjects={subjects} grades={grades} onChange={setGrades} computedAvg={computedAvg} override={override} onOverride={setOverride} />
             <ReportView report={{ ...active, teacherComment: '', grades: [] }} subjects={subjects} />
@@ -255,6 +280,11 @@ function ManagerView() {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
+        {tab === 'overview' && (
+          <select className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} title="Auswertungszeitraum">
+            {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+          </select>
+        )}
         <div className="ml-auto inline-flex rounded-lg border border-line overflow-hidden">
           <button onClick={() => setTab('students')} className={`px-3 py-1.5 text-sm ${tab === 'students' ? 'bg-mint/10 text-mint-light' : 'text-sage-muted'}`}>Schüler</button>
           <button onClick={() => setTab('overview')} className={`px-3 py-1.5 text-sm inline-flex items-center gap-1 ${tab === 'overview' ? 'bg-mint/10 text-mint-light' : 'text-sage-muted'}`}><Table2 size={14} /> Klassenübersicht</button>
@@ -262,7 +292,7 @@ function ManagerView() {
       </div>
 
       {tab === 'overview' ? (
-        <ClassOverview periodId={periodId} classId={classes.length > 1 ? classId : ''} onOpen={openReport} />
+        <ClassOverview periodId={periodId} classId={classes.length > 1 ? classId : ''} month={month} onOpen={openReport} />
       ) : (
         <Card className="p-5">
           <CardHeader title="Schüler" subtitle="Zeugnis erstellen oder öffnen" icon={FileText} />
@@ -287,13 +317,13 @@ function ManagerView() {
 }
 
 // Klassenübersicht (Leitung/Lehrkraft): alle Schüler mit Ø-Note + Status.
-function ClassOverview({ periodId, classId, onOpen }) {
+function ClassOverview({ periodId, classId, month, onOpen }) {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     if (!periodId) return;
-    const q = new URLSearchParams({ periodId, ...(classId ? { classId } : {}) });
+    const q = new URLSearchParams({ periodId, ...(classId ? { classId } : {}), ...(month ? { month } : {}) });
     api.get(`/reports/overview?${q}`).then((d) => setRows(d.rows)).catch(() => setRows([]));
-  }, [periodId, classId]);
+  }, [periodId, classId, month]);
 
   if (!rows) return <Spinner />;
   if (!rows.length) return <Card className="p-6 text-sage-muted text-sm">Keine Schüler für diese Auswahl.</Card>;
