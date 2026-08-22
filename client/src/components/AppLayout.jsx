@@ -84,11 +84,21 @@ function navForRole(role) {
 }
 
 function Brand() {
+  const [logoOk, setLogoOk] = useState(true);
   return (
     <div className="flex items-center gap-3 px-5 py-5">
-      <span className="grid place-items-center h-10 w-10 rounded-lg bg-mint/15 border border-mint/25 text-mint">
-        <BookMarked size={22} strokeWidth={1.75} aria-hidden="true" />
-      </span>
+      {logoOk ? (
+        <img
+          src="/logo.png"
+          alt="DBZ"
+          className="h-10 w-10 rounded-lg object-contain bg-white"
+          onError={() => setLogoOk(false)}
+        />
+      ) : (
+        <span className="grid place-items-center h-10 w-10 rounded-lg bg-mint/15 border border-mint/25 text-mint">
+          <BookMarked size={22} strokeWidth={1.75} aria-hidden="true" />
+        </span>
+      )}
       <div className="leading-tight">
         <div className="font-display text-lg text-ivory">DBZ</div>
         <div className="text-[11px] font-mono uppercase tracking-widest text-sage-muted">

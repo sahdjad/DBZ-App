@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BookMarked, LogIn, Download } from 'lucide-react';
+import { LogIn, Download } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Button, Card, useToast } from '../components/ui.jsx';
 
@@ -21,6 +21,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [logoOk, setLogoOk] = useState(true);
 
   useEffect(() => {
     const handler = (e) => {
@@ -57,30 +58,41 @@ export default function Login() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-bg">
-      {/* Markenseite */}
-      <div className="hidden lg:flex flex-col justify-between p-12 hero-atmosphere border-r border-black/10">
-        <div className="flex items-center gap-3">
-          <span className="grid place-items-center h-11 w-11 rounded-lg bg-mint/15 border border-mint/25 text-mint">
-            <BookMarked size={24} strokeWidth={1.75} />
-          </span>
+      {/* Markenseite mit Startbild (Klassenfoto) + grünem Overlay */}
+      <div className="relative hidden lg:flex flex-col justify-between p-12 overflow-hidden border-r border-black/10">
+        <div className="absolute inset-0 hero-atmosphere" />
+        <img
+          src="/hero.jpg"
+          alt=""
+          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0B1F14]/92 via-[#0B1F14]/60 to-[#15653F]/30" />
+
+        <div className="relative z-10 flex items-center gap-3">
+          {logoOk ? (
+            <img src="/logo.png" alt="DBZ" className="h-12 w-12 rounded-lg object-contain bg-white/90 p-0.5" onError={() => setLogoOk(false)} />
+          ) : (
+            <span className="grid place-items-center h-12 w-12 rounded-lg bg-white/15 border border-white/25 text-white font-display text-xl">د</span>
+          )}
           <div className="leading-tight">
-            <div className="font-display text-xl text-ivory">Deen Bildungszentrum</div>
-            <div className="text-[11px] font-mono uppercase tracking-widest text-sage-muted">DBZ-App</div>
+            <div className="font-display text-xl text-white">Deen Bildungszentrum</div>
+            <div className="text-[11px] font-mono uppercase tracking-widest text-white/70">DBZ-App</div>
           </div>
         </div>
-        <div className="max-w-md">
-          <p className="font-arabic text-3xl text-mint-light mb-4" dir="rtl">
+        <div className="relative z-10 max-w-md">
+          <p className="font-arabic text-3xl text-white mb-4" dir="rtl">
             بسم الله الرحمن الرحيم
           </p>
-          <h2 className="font-display text-3xl text-ivory leading-tight mb-3">
+          <h2 className="font-display text-3xl text-white leading-tight mb-3">
             Die digitale Schulplattform des DBZ
           </h2>
-          <p className="text-sage">
+          <p className="text-white/85">
             Anwesenheit, Hausaufgaben, Qur'an-Fortschritt und Kommunikation – strukturiert,
-            privat und an einem Ort. Pilot für Klasse 3.
+            privat und an einem Ort.
           </p>
         </div>
-        <p className="text-xs text-sage-muted">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
+        <p className="relative z-10 text-xs text-white/70">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
       </div>
 
       {/* Login-Formular */}
