@@ -1,22 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, SmilePlus, FileText } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, SmilePlus, FileText, Undo2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+const RECALL_ROLES = ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'];
+// Badges/Zähler in der Navigation neu berechnen lassen.
+const refreshBadges = () => window.dispatchEvent(new Event('dbz:notifications'));
 
 export default function Nachrichten() {
-  const [view, setView] = useState('list'); // list | thread | new
+  const { threadId } = useParams();
+  const navigate = useNavigate();
+  const [view, setView] = useState(threadId ? 'thread' : 'list'); // list | thread | new
   const [threads, setThreads] = useState(null);
-  const [activeId, setActiveId] = useState(null);
+  const [activeId, setActiveId] = useState(threadId || null);
 
-  const loadThreads = () => api.get('/threads').then((d) => setThreads(d.threads));
+  const loadThreads = () => api.get('/threads').then((d) => { setThreads(d.threads); refreshBadges(); });
   useEffect(() => { loadThreads(); }, []);
+  // Deep-Link aus einer Push-Benachrichtigung: direkt den Thread öffnen.
+  useEffect(() => { if (threadId) { setActiveId(threadId); setView('thread'); } }, [threadId]);
 
   const openThread = (id) => { setActiveId(id); setView('thread'); };
+  const backToList = () => { setView('list'); loadThreads(); if (threadId) navigate('/nachrichten'); };
 
   return (
     <AppLayout title="Nachrichten">
@@ -49,7 +59,7 @@ export default function Nachrichten() {
       )}
 
       {view === 'new' && <NewThread onCancel={() => setView('list')} onOpen={(id) => { loadThreads(); openThread(id); }} />}
-      {view === 'thread' && <ThreadView id={activeId} onBack={() => { setView('list'); loadThreads(); }} />}
+      {view === 'thread' && <ThreadView id={activeId} onBack={backToList} />}
     </AppLayout>
   );
 }
@@ -219,11 +229,14 @@ function Attachment({ threadId, m }) {
 
 function ThreadView({ id, onBack }) {
   const toast = useToast();
+  const { user } = useAuth();
+  const canRecall = RECALL_ROLES.includes(user?.role);
   const [data, setData] = useState(null);
   const [picker, setPicker] = useState(null); // messageId, für Reaktions-Auswahl
   const bottomRef = useRef(null);
 
-  const load = () => api.get(`/threads/${id}`).then((d) => setData(d.thread));
+  // Das Öffnen markiert den Thread als gelesen -> Zähler/Badges aktualisieren.
+  const load = () => api.get(`/threads/${id}`).then((d) => { setData(d.thread); refreshBadges(); });
   useEffect(() => {
     load();
     const t = setInterval(load, 6000); // leichte Live-Aktualisierung
@@ -254,6 +267,16 @@ function ThreadView({ id, onBack }) {
     }
   };
 
+  const recall = async (mid) => {
+    if (!window.confirm('Diese Nachricht wirklich zurückrufen? Empfänger sehen dann nur einen Hinweis.')) return;
+    try {
+      await api.post(`/threads/${id}/messages/${mid}/recall`, {});
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
   if (!data) return <Spinner />;
   const meId = data.meId;
 
@@ -269,6 +292,16 @@ function ThreadView({ id, onBack }) {
         {data.messages.map((m) => {
           const mine = m.senderId === meId;
           const reactionEntries = Object.entries(m.reactions || {}).filter(([, ids]) => ids.length);
+          if (m.recalled) {
+            return (
+              <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+                <div className="max-w-[85%] rounded-2xl px-3.5 py-2 bg-subtle border border-dashed border-line text-sage-muted italic text-sm flex items-center gap-2">
+                  <Undo2 size={14} /> Diese Nachricht wurde zurückgerufen
+                </div>
+                <div className="text-[10px] mt-1 text-sage-muted">{fmt(m.createdAt)}</div>
+              </div>
+            );
+          }
           return (
             <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
               <div className="group flex items-end gap-1.5 max-w-[85%]">
@@ -280,6 +313,12 @@ function ThreadView({ id, onBack }) {
                 </div>
                 {!mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
               </div>
+
+              {mine && canRecall && (
+                <button onClick={() => recall(m.id)} className="mt-1 text-[11px] text-sage-muted hover:text-status-absent inline-flex items-center gap-1">
+                  <Undo2 size={12} /> Zurückrufen
+                </button>
+              )}
 
               {picker === m.id && (
                 <div className="mt-1 flex gap-1 bg-card border border-line rounded-full px-2 py-1 shadow-soft">

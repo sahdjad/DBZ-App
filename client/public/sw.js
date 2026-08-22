@@ -56,7 +56,16 @@ self.addEventListener('push', (event) => {
     renotify: !!data.tag,
     data: { url: data.url || null },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    await self.registration.showNotification(title, options);
+    // App-Symbol-Badge (Home-Bildschirm) direkt aktualisieren.
+    if (typeof data.badge === 'number') {
+      try { if (data.badge > 0) await self.navigator.setAppBadge?.(data.badge); else await self.navigator.clearAppBadge?.(); } catch { /* egal */ }
+    }
+    // Offene App-Fenster informieren -> Zähler live neu berechnen.
+    const clientsArr = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const c of clientsArr) c.postMessage({ type: 'dbz:push' });
+  })());
 });
 
 self.addEventListener('notificationclick', (event) => {

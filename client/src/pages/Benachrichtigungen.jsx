@@ -33,7 +33,7 @@ export default function Benachrichtigungen() {
           Keine Benachrichtigungen.
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="grid gap-2 lg:grid-cols-2 items-start">
           {items.map((n) => (
             <Card
               key={n.id}

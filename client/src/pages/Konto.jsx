@@ -30,8 +30,10 @@ export default function Konto() {
 
   return (
     <AppLayout title="Konto">
-      <div className="max-w-md space-y-4">
-        <Card className="p-5">
+      {/* Handy: eine Spalte (kompakt, untereinander). Tablet/Desktop: zwei
+          Spalten, damit die Breite genutzt wird und keine überlange Seite entsteht. */}
+      <div className="max-w-4xl grid gap-4 sm:grid-cols-2 items-start">
+        <Card className="p-5 sm:col-span-2">
           <CardHeader title="Mein Konto" icon={UserCog} />
           <div className="p-4">
             <div className="flex items-center gap-4 mb-5">
@@ -225,22 +227,43 @@ function ThemeCard() {
   );
 }
 
-// Push-Benachrichtigungen für dieses Gerät ein-/ausschalten.
+// Rollen, die Benachrichtigungen selbst ausschalten dürfen. Für Schüler/Eltern
+// sind Benachrichtigungen verpflichtend aktiv und können nicht deaktiviert werden.
+const CAN_DISABLE_PUSH = ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'];
+
+// Push-Benachrichtigungen für dieses Gerät.
 function NotificationsCard() {
   const toast = useToast();
+  const { user } = useAuth();
+  const canDisable = CAN_DISABLE_PUSH.includes(user?.role);
   const [state, setState] = useState(null); // { supported, subscribed, permission }
   const [busy, setBusy] = useState(false);
   const iosHint = iosNeedsInstall();
 
-  useEffect(() => { getPushState().then(setState).catch(() => setState({ supported: false })); }, []);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      let s = await getPushState().catch(() => ({ supported: false }));
+      // Standard: Benachrichtigungen AN. Ist die Erlaubnis bereits erteilt, aber
+      // noch kein Abo aktiv, wird still automatisch angemeldet.
+      if (s.supported && s.permission === 'granted' && !s.subscribed) {
+        try { await enablePush(); s = await getPushState(); } catch { /* egal */ }
+      }
+      if (alive) setState(s);
+    })();
+    return () => { alive = false; };
+  }, []);
 
-  const toggle = async () => {
+  const enable = async () => {
     setBusy(true);
-    try {
-      if (state?.subscribed) { await disablePush(); toast.push('Benachrichtigungen ausgeschaltet'); }
-      else { await enablePush(); toast.push('Benachrichtigungen aktiviert'); }
-      setState(await getPushState());
-    } catch (err) { toast.push(err.message, 'error'); }
+    try { await enablePush(); toast.push('Benachrichtigungen aktiviert'); setState(await getPushState()); }
+    catch (err) { toast.push(err.message, 'error'); }
+    finally { setBusy(false); }
+  };
+  const disable = async () => {
+    setBusy(true);
+    try { await disablePush(); toast.push('Benachrichtigungen ausgeschaltet'); setState(await getPushState()); }
+    catch (err) { toast.push(err.message, 'error'); }
     finally { setBusy(false); }
   };
 
@@ -258,17 +281,25 @@ function NotificationsCard() {
           </p>
         ) : state.permission === 'denied' ? (
           <p className="text-sm text-status-absent">
-            Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen des Browsers wieder erlauben.
+            Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen des Browsers wieder erlauben – sie sind für dein Konto vorgesehen.
           </p>
+        ) : state.subscribed ? (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-ivory text-sm">Aktiviert auf diesem Gerät</div>
+              <div className="text-xs text-sage-muted">{canDisable ? 'Auch wenn die App geschlossen ist.' : 'Für dein Konto verpflichtend – auch bei geschlossener App.'}</div>
+            </div>
+            {canDisable && (
+              <Button size="sm" variant="outline" onClick={disable} disabled={busy}><BellOff size={16} /> Aus</Button>
+            )}
+          </div>
         ) : (
           <div className="flex items-center justify-between gap-3">
             <div>
-              <div className="text-ivory text-sm">{state.subscribed ? 'Aktiviert auf diesem Gerät' : 'Auf diesem Gerät aktivieren'}</div>
-              <div className="text-xs text-sage-muted">Auch wenn die App geschlossen ist.</div>
+              <div className="text-ivory text-sm">Auf diesem Gerät aktivieren</div>
+              <div className="text-xs text-sage-muted">Einmalig erlauben – danach bleibst du auf dem Laufenden.</div>
             </div>
-            <Button size="sm" variant={state.subscribed ? 'outline' : 'primary'} onClick={toggle} disabled={busy}>
-              {state.subscribed ? <><BellOff size={16} /> Aus</> : <><Bell size={16} /> An</>}
-            </Button>
+            <Button size="sm" onClick={enable} disabled={busy}><Bell size={16} /> An</Button>
           </div>
         )}
       </div>

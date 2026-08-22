@@ -29,6 +29,7 @@ import {
   verifyQrToken,
   audit,
   notify,
+  markNotificationsRead,
 } from './domain.js';
 import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
@@ -2428,6 +2429,9 @@ function msgPreview(m) {
 
 /** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
 function messageView(m) {
+  if (m.recalled) {
+    return { id: m.id, senderId: m.senderId, senderName: m.senderName, body: '', createdAt: m.createdAt, file: null, reactions: {}, recalled: true };
+  }
   const file = m.file
     ? { kind: m.file.kind, originalName: m.file.originalName, mediaType: m.file.mediaType, size: m.file.size }
     : null;
@@ -2439,6 +2443,7 @@ function messageView(m) {
     createdAt: m.createdAt,
     file,
     reactions: m.reactions || {},
+    recalled: false,
   };
 }
 
@@ -2523,7 +2528,7 @@ router.post('/threads', requireAuth, upload.single('file'), async (req, res) => 
     t.reads[req.user.id] = now;
     db.commit();
   }
-  notify(recipientId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: '/nachrichten' });
+  notify(recipientId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
   res.json({ threadId: t.id });
 });
 
@@ -2532,6 +2537,8 @@ router.get('/threads/:id', requireAuth, (req, res) => {
   if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   t.reads = t.reads || {};
   t.reads[req.user.id] = new Date().toISOString();
+  // Zugehörige Nachrichten-Benachrichtigungen als gelesen markieren (Badges/Zähler).
+  markNotificationsRead(req.user.id, (n) => n.type === 'message' && n.groupId === t.id);
   db.commit();
   const otherId = t.participantIds.find((id) => id !== req.user.id);
   res.json({
@@ -2550,7 +2557,7 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   t.reads[req.user.id] = msg.createdAt;
   db.commit();
   const otherId = t.participantIds.find((id) => id !== req.user.id);
-  notify(otherId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: '/nachrichten' });
+  notify(otherId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
   res.json({ message: messageView(msg) });
 });
 
@@ -2583,6 +2590,39 @@ router.post('/threads/:id/messages/:mid/react', requireAuth, (req, res) => {
   else delete m.reactions[emoji];
   db.commit();
   res.json({ reactions: m.reactions });
+});
+
+// Nachricht zurückrufen – nur berechtigte Rollen (Lehrer/Leitung/Admin), nie
+// Schüler/Eltern. Serverseitig geprüft. Die eigene Nachricht wird durch einen
+// neutralen Hinweis ersetzt und offene Zähler/Badges der Empfänger aktualisiert.
+router.post('/threads/:id/messages/:mid/recall', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const t = byId('threads', req.params.id);
+  if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const m = t.messages.find((x) => x.id === req.params.mid);
+  if (!m) return res.status(404).json({ error: 'Nachricht nicht gefunden' });
+  if (m.recalled) return res.json({ message: messageView(m) });
+  if (m.senderId !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: 'Nur eigene Nachrichten können zurückgerufen werden' });
+  m.recalled = true;
+  m.recalledAt = new Date().toISOString();
+  m.body = '';
+  m.file = null;
+  m.reactions = {};
+  // Ungelesene Benachrichtigung zu dieser Nachricht bei allen Empfängern entfernen.
+  const notes = db.all('notifications');
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i].refId === m.id) notes.splice(i, 1);
+  db.commit();
+  audit(req.user.id, 'message.recall', 'thread', t.id);
+  res.json({ message: messageView(m) });
+});
+
+// Ungelesen-Zähler je Kategorie (für Navigations-Badges + App-Symbol-Badge).
+router.get('/badges', requireAuth, (req, res) => {
+  const mine = db.all('notifications').filter((n) => n.userId === req.user.id && !n.read);
+  res.json({
+    messages: mine.filter((n) => n.type === 'message').length,
+    announcements: mine.filter((n) => n.type === 'announcement').length,
+    total: mine.length,
+  });
 });
 
 // =============================================================================
@@ -3060,6 +3100,8 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
         title: `Ankündigung: ${a.title}`,
         body: a.body.slice(0, 140),
         deepLink: '/ankuendigungen',
+        refId: a.id,
+        groupId: a.id,
       }),
     );
   res.json({ announcement: announcementView(a) });
@@ -3071,6 +3113,8 @@ router.get('/announcements', requireAuth, (req, res) => {
     .filter((a) => canSeeAnnouncement(req.user, a))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .map(announcementView);
+  // Ankündigungen gelten als gelesen, sobald die Liste geöffnet wird.
+  if (markNotificationsRead(req.user.id, (n) => n.type === 'announcement')) db.commit();
   res.json({ announcements: list });
 });
 
@@ -3081,6 +3125,9 @@ router.delete('/announcements/:id', requireAuth, (req, res) => {
   if (list[idx].authorId !== req.user.id && !isAdmin(req.user))
     return res.status(403).json({ error: 'Kein Zugriff' });
   const [removed] = list.splice(idx, 1);
+  // Zugehörige Benachrichtigungen aller Empfänger entfernen (Zähler/Badges).
+  const notes = db.all('notifications');
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i].refId === removed.id) notes.splice(i, 1);
   db.commit();
   audit(req.user.id, 'announcement.delete', 'announcement', removed.id);
   res.json({ ok: true });

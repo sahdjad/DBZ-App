@@ -90,6 +90,7 @@ export default function App() {
       <Route path="/ankuendigungen" element={<Protected><Ankuendigungen /></Protected>} />
       <Route path="/materialien" element={<Protected><Materialien /></Protected>} />
       <Route path="/nachrichten" element={<Protected><Nachrichten /></Protected>} />
+      <Route path="/nachrichten/:threadId" element={<Protected><Nachrichten /></Protected>} />
       <Route path="/benachrichtigungen" element={<Protected><Benachrichtigungen /></Protected>} />
       <Route path="/dbz-online" element={<Protected><DbzOnline /></Protected>} />
       <Route path="/konto" element={<Protected><Konto /></Protected>} />

@@ -107,6 +107,36 @@ test('Push: Nutzlast ist für den Browser entschlüsselbar (RFC 8291)', async ()
   assert.equal(pt.toString('utf8'), msg);
 });
 
+test('Badges je Kategorie + Nachricht zurückrufen (serverseitige Rollenprüfung)', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const recipientId = (await student('GET', '/auth/me')).data.user.id;
+
+  // Lehrer schreibt dem Schüler -> ungelesen-Zähler beim Schüler.
+  const send = await teacher('POST', '/threads', { recipientId, body: 'Test Nachricht' });
+  assert.equal(send.status, 200);
+  const threadId = send.data.threadId;
+  let b = (await student('GET', '/badges')).data;
+  assert.ok(b.messages >= 1 && b.total >= 1, 'Schüler hat ungelesene Nachricht');
+
+  const mid = (await teacher('GET', `/threads/${threadId}`)).data.thread.messages[0].id;
+
+  // Schüler darf NICHT zurückrufen (serverseitig 403).
+  assert.equal((await student('POST', `/threads/${threadId}/messages/${mid}/recall`, {})).status, 403);
+
+  // Lehrer ruft eigene Nachricht zurück -> ersetzt + Zähler des Schülers sinkt.
+  const rec = await teacher('POST', `/threads/${threadId}/messages/${mid}/recall`, {});
+  assert.equal(rec.status, 200);
+  assert.equal(rec.data.message.recalled, true);
+  b = (await student('GET', '/badges')).data;
+  assert.equal(b.messages, 0, 'Zurückgerufene Nachricht zählt nicht mehr');
+
+  // Empfänger sieht statt Inhalt nur den Zurückgerufen-Zustand.
+  const th = (await student('GET', `/threads/${threadId}`)).data.thread;
+  assert.equal(th.messages[0].recalled, true);
+  assert.equal(th.messages[0].body, '');
+});
+
 test('falsches Passwort wird abgelehnt', async () => {
   const c = client();
   const r = await c('POST', '/auth/login', { email: 'schueler@dbz.de', password: 'falsch' });

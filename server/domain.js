@@ -75,7 +75,7 @@ export function audit(actorId, action, entityType, entityId, before, after) {
 /** Legt eine In-App-Benachrichtigung an (DBZ-Inbox = Quelle der Wahrheit).
  *  Zusätzlich wird – falls das Gerät ein Push-Abo hat – eine Browser-
  *  Benachrichtigung ausgelöst (bestleistungsbasiert, blockiert nie). */
-export function notify(userId, { type, level = 'info', title, body, deepLink = null }) {
+export function notify(userId, { type, level = 'info', title, body, deepLink = null, refId = null, groupId = null }) {
   const note = db.insert('notifications', {
     id: newId('note'),
     userId,
@@ -84,10 +84,24 @@ export function notify(userId, { type, level = 'info', title, body, deepLink = n
     title,
     body,
     deepLink,
+    refId, // konkretes Objekt (z. B. Nachrichten-ID, Ankündigungs-ID)
+    groupId, // Gruppierung (z. B. Thread-ID) – zum gemeinsamen „gelesen" markieren
     read: false,
     createdAt: new Date().toISOString(),
   });
+  // Ungelesen-Gesamtzahl dieses Nutzers -> App-Symbol-Badge im Push.
+  const badge = db.all('notifications').filter((n) => n.userId === userId && !n.read).length;
   // Fire-and-forget: Push nie im Anfrage-Pfad abwarten.
-  pushToUser(userId, { title, body: body || '', url: deepLink || null, tag: type }).catch(() => {});
+  pushToUser(userId, { title, body: body || '', url: deepLink || null, tag: type, badge }).catch(() => {});
   return note;
+}
+
+/** Markiert Benachrichtigungen eines Nutzers als gelesen (nach Filter). Gibt die
+ *  Anzahl der geänderten Einträge zurück. Aufrufer committet selbst. */
+export function markNotificationsRead(userId, predicate) {
+  let changed = 0;
+  for (const n of db.all('notifications')) {
+    if (n.userId === userId && !n.read && predicate(n)) { n.read = true; changed++; }
+  }
+  return changed;
 }

@@ -40,4 +40,8 @@ if (import.meta.env.PROD && 'serviceWorker' in navigator) {
     reloaded = true;
     window.location.reload();
   });
+  // Push-Meldung vom Service Worker -> Zähler/Badges in der App live erneuern.
+  navigator.serviceWorker.addEventListener('message', (e) => {
+    if (e.data?.type === 'dbz:push') window.dispatchEvent(new Event('dbz:notifications'));
+  });
 }

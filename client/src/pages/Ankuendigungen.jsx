@@ -19,7 +19,8 @@ export default function Ankuendigungen() {
   const [list, setList] = useState(null);
   const [showForm, setShowForm] = useState(false);
 
-  const load = () => api.get('/announcements').then((d) => setList(d.announcements));
+  // Das Öffnen markiert Ankündigungen als gelesen -> Badges/Zähler aktualisieren.
+  const load = () => api.get('/announcements').then((d) => { setList(d.announcements); window.dispatchEvent(new Event('dbz:notifications')); });
   useEffect(() => { load(); }, []);
 
   const remove = async (id) => {
@@ -44,7 +45,7 @@ export default function Ankuendigungen() {
           Noch keine Ankündigungen.
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="grid gap-3 lg:grid-cols-2 items-start">
           {list.map((a) => (
             <Card key={a.id} className={`p-5 ${a.priority === 'high' ? 'border-status-late/40' : ''}`}>
               <div className="flex items-start justify-between gap-3">
