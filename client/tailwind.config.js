@@ -35,7 +35,8 @@ export default {
         display: ['Fraunces', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
         sans: ['"Hanken Grotesk"', 'system-ui', '-apple-system', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
-        arabic: ['Amiri', '"Noto Naskh Arabic"', '"Geeza Pro"', '"Times New Roman"', 'serif'],
+        arabic: ['"Amiri Quran"', 'Amiri', '"Noto Naskh Arabic"', '"Geeza Pro"', '"Times New Roman"', 'serif'],
+        mushaf: ['"Amiri Quran"', 'Amiri', '"Noto Naskh Arabic"', '"Geeza Pro"', 'serif'],
       },
       borderRadius: {
         lg: '0.75rem',

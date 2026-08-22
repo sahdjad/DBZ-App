@@ -36,6 +36,7 @@ import { listSurahs, getSurah } from './providers/quranProvider.js';
 import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
+import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -1699,6 +1700,29 @@ router.get('/quran/audio/:n', requireAuth, async (req, res) => {
     if (err.code === 'PROVIDER_UNAVAILABLE')
       return res.status(503).json({ error: 'Audio konnte nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.' });
     res.status(500).json({ error: 'Serverfehler beim Laden des Audios' });
+  }
+});
+
+// Klassische Medina-Mushaf-Seite (1..604) als Zeilenstruktur.
+router.get('/quran/page/:p', requireAuth, async (req, res) => {
+  try {
+    const data = await getMushafPage(req.params.p);
+    res.json({ page: data });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Seite nicht gefunden' });
+    if (err.code === 'PROVIDER_UNAVAILABLE')
+      return res.status(503).json({ error: 'Mushaf-Seite konnte nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.' });
+    res.status(500).json({ error: 'Serverfehler beim Laden der Mushaf-Seite' });
+  }
+});
+
+// Startseite einer Sure (Sprung aus der Surenliste in die Seitenansicht).
+router.get('/quran/surah-page/:n', requireAuth, async (req, res) => {
+  try {
+    const page = await surahStartPage(req.params.n);
+    res.json({ page });
+  } catch {
+    res.status(503).json({ error: 'Seitenzuordnung nicht verfügbar' });
   }
 });
 

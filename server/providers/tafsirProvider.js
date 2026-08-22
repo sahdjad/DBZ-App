@@ -10,9 +10,13 @@ import path from 'node:path';
 const BASE = process.env.TAFSIR_API_BASE || 'https://api.quran.com/api/v4';
 
 // Verfügbare, geprüfte Ausgaben.
+// Hinweis zu 'de': Ein deutscher *Tafsir* ist frei nicht verfügbar. Wir bieten
+// daher eine deutschsprachige, sinngemäße *Übersetzung der Ayah* (Bubenheim) –
+// im Frontend klar als Übersetzung (kein Tafsir) gekennzeichnet.
 export const TAFSIR_EDITIONS = {
   saadi: { id: 91, name: 'as-Saʿdī', language: 'ar', dir: 'rtl' },
   ibnkathir: { id: 169, name: 'Ibn Kathīr (gekürzt)', language: 'en', dir: 'ltr' },
+  de: { id: 27, name: 'Deutsch · Bubenheim', language: 'de', dir: 'ltr', kind: 'translation' },
 };
 
 const CACHE_DIR = path.join(
@@ -40,7 +44,7 @@ function writeDisk(key, data) {
 }
 
 export function listTafsirEditions() {
-  return Object.entries(TAFSIR_EDITIONS).map(([key, e]) => ({ key, name: e.name, language: e.language }));
+  return Object.entries(TAFSIR_EDITIONS).map(([key, e]) => ({ key, name: e.name, language: e.language, kind: e.kind || 'tafsir' }));
 }
 
 /**
@@ -64,7 +68,10 @@ export async function getTafsir(surah, ayah, editionKey = 'saadi') {
     return disk;
   }
 
-  const url = `${BASE}/tafsirs/${ed.id}/by_ayah/${s}:${a}`;
+  // Tafsir -> tafsirs-Endpunkt; Übersetzung (de) -> verses-Endpunkt.
+  const url = ed.kind === 'translation'
+    ? `${BASE}/verses/by_key/${s}:${a}?translations=${ed.id}`
+    : `${BASE}/tafsirs/${ed.id}/by_ayah/${s}:${a}`;
   let json;
   try {
     const ctrl = new AbortController();
@@ -80,6 +87,9 @@ export async function getTafsir(surah, ayah, editionKey = 'saadi') {
     throw e;
   }
 
+  const text = ed.kind === 'translation'
+    ? (json?.verse?.translations?.[0]?.text || '')
+    : (json?.tafsir?.text || '');
   const data = {
     surah: s,
     ayah: a,
@@ -87,7 +97,8 @@ export async function getTafsir(surah, ayah, editionKey = 'saadi') {
     editionName: ed.name,
     language: ed.language,
     dir: ed.dir,
-    text: json?.tafsir?.text || '',
+    kind: ed.kind || 'tafsir',
+    text,
   };
   memo.set(key, data);
   writeDisk(key, data);
