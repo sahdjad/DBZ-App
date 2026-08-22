@@ -1683,15 +1683,16 @@ router.get('/quran/surahs', requireAuth, (_req, res) => res.json({ surahs: listS
 
 // Auswählbare Rezitatoren (AlQuran-Cloud-Audio-Editionen).
 const RECITERS = [
-  { id: 'ar.alafasy', name: 'Mishary Al-Afasy' },
   { id: 'ar.husary', name: 'Mahmoud Al-Husary' },
-  { id: 'ar.minshawi', name: 'Muhammad Al-Minshawi' },
-  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
-  { id: 'ar.abdurrahmaansudais', name: 'Abdurrahman As-Sudais' },
   { id: 'ar.abdulbasitmurattal', name: 'Abdul Basit (Murattal)' },
-  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shatri' },
-  { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify' },
+  { id: 'ar.abdurrahmaansudais', name: 'Abdurrahman As-Sudais' },
   { id: 'ar.saoodshuraym', name: 'Saud Ash-Shuraim' },
+  { id: 'ar.saadalghamdi', name: "Sa'ad Al-Ghamdi" },
+  { id: 'ar.shaatree', name: 'Abu Bakr Ash-Shatri' },
+  { id: 'ar.mahermuaiqly', name: 'Maher Al-Muaiqly' },
+  { id: 'ar.minshawi', name: 'Muhammad Al-Minshawi' },
+  { id: 'ar.hudhaify', name: 'Ali Al-Hudhaify' },
+  { id: 'ar.alafasy', name: 'Mishary Al-Afasy' },
 ];
 router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
 

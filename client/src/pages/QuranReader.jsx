@@ -171,6 +171,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   const [tafsirEd, setTafsirEd] = useState('saadi'); // saadi | ibnkathir
   const [tafsir, setTafsir] = useState({}); // `${ed}:${ayah}` -> {loading|text|error}
   const audioRef = useRef(null);
+  const preloadRef = useRef(null); // vorgeladene nächste Ayah (für nahtlose Wiedergabe)
   const stateRef = useRef({ stopped: true, start: 0, end: 0, left: 0 });
 
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
@@ -204,9 +205,22 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
   function stop() {
     stateRef.current.stopped = true;
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.onended = null; audioRef.current = null; }
+    if (preloadRef.current) { preloadRef.current.src = ''; preloadRef.current = null; }
     setPlayingIdx(null);
   }
   useEffect(() => () => stop(), []);
+
+  // Nächste Ayah im Voraus laden, damit der Übergang ohne hörbare Pause klappt.
+  function preloadNext(i) {
+    const st = stateRef.current;
+    const ni = i + 1;
+    if (ni > st.end || !data.ayahs[ni]?.audio) { preloadRef.current = null; return; }
+    const nx = new Audio(data.ayahs[ni].audio);
+    nx.preload = 'auto';
+    nx.__idx = ni;
+    nx.load();
+    preloadRef.current = nx;
+  }
 
   function playIdx(i) {
     const st = stateRef.current;
@@ -215,9 +229,12 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
       if (i < st.end) return playIdx(i + 1);
       return afterRun();
     }
-    const audio = new Audio(ay.audio);
+    // bereits vorgeladenes Element nutzen (nahtlos), sonst neu erstellen
+    let audio = preloadRef.current && preloadRef.current.__idx === i ? preloadRef.current : new Audio(ay.audio);
+    audio.__idx = i;
     audioRef.current = audio;
     setPlayingIdx(i);
+    preloadNext(i); // schon während der Wiedergabe die nächste Ayah puffern
     audio.onended = () => {
       if (st.stopped || audioRef.current !== audio) return;
       if (i < st.end) playIdx(i + 1);
