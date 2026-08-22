@@ -95,8 +95,9 @@ export default function QuranReader() {
         <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null}
           onBack={() => { setPageView(null); loadMarks(); }} onMarksChanged={loadMarks} />
       ) : selected ? (
-        <SurahView n={selected.n} targetAyah={selected.ayah} onBack={() => { setSelected(null); loadMarks(); }}
-          onMarksChanged={loadMarks} onOpenPages={(surah) => openPages({ surah })} />
+        <SurahView n={selected.n} targetAyah={selected.ayah} surahs={surahs} onBack={() => { setSelected(null); loadMarks(); }}
+          onMarksChanged={loadMarks} onOpenPages={(surah) => openPages({ surah })}
+          onChangeSurah={(nn) => setSelected({ n: nn, ayah: null })} />
       ) : (
         <SurahList surahs={surahs} marks={marks} onSelect={(n, ayah) => setSelected({ n, ayah: ayah || null })}
           onOpenPages={() => openPages()} onMarksChanged={loadMarks} />
@@ -190,7 +191,7 @@ const JUZ_START_PAGE = [1, 22, 42, 62, 82, 102, 121, 142, 162, 182, 201, 222, 24
 const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 const spLabel = (s) => `${String(s).replace('.', ',')}×`;
 
-function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
+function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages, onChangeSurah }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -201,6 +202,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
   const [speed, setSpeed] = useState(1);
   const [mode, setMode] = useState('continuous'); // continuous (Standard) | single | range
   const [settingsOpen, setSettingsOpen] = useState(false); // Wiedergabe-Menü ein/aus
+  const [endAction, setEndAction] = useState('stop'); // was nach der Sure passiert: stop | next | repeat
   const [repeat, setRepeat] = useState(1);
   const [range, setRange] = useState({ from: 1, to: 7 });
   const [playingIdx, setPlayingIdx] = useState(null);
@@ -220,9 +222,18 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
   const speedRef = useRef(1);
   const playingIdxRef = useRef(null);
   const didMountReciter = useRef(false);
+  const endActionRef = useRef('stop');
+  const autoPlayRef = useRef(false); // beim Sure-Wechsel automatisch weiterspielen
   const [playState, setPlayState] = useState('stopped'); // stopped | playing | paused
   useEffect(() => { playingIdxRef.current = playingIdx; }, [playingIdx]);
+  useEffect(() => { endActionRef.current = endAction; }, [endAction]);
   useEffect(() => { speedRef.current = speed; if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed]);
+
+  const goPrevSurah = () => { if (Number(n) > 1) { stop(); onChangeSurah(Number(n) - 1); } };
+  const goNextSurah = (autoplay) => {
+    if (Number(n) < 114) { if (autoplay) autoPlayRef.current = true; stop(); onChangeSurah(Number(n) + 1); }
+    else stop();
+  };
 
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
 
@@ -272,6 +283,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     a.playbackRate = speedRef.current;
     if (a.getAttribute('src') !== audio.url) { a.setAttribute('src', audio.url); a.load(); }
     setAudioErr(null);
+    // Bei „Nach der Sure -> Weiter": neue Sure automatisch ab Anfang starten.
+    if (autoPlayRef.current) { autoPlayRef.current = false; startFrom(0); }
     // eslint-disable-next-line
   }, [audio?.url]);
 
@@ -290,12 +303,19 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     const idx = idxByTime(t);
     if (idx != null && idx !== playingIdxRef.current) { playingIdxRef.current = idx; setPlayingIdx(idx); }
     if (t >= win.endMs - 15) {
+      // 1) Segment-Wiederholungen (Einzeln/Bereich) zuerst.
       if (win.repsLeft === Infinity || win.repsLeft > 1) {
         if (win.repsLeft !== Infinity) win.repsLeft -= 1;
         a.currentTime = win.startMs / 1000; // Segment erneut ab Start
-      } else {
-        stop();
+        return;
       }
+      // 2) Wenn die Sure zu Ende gelaufen ist: „Nach der Sure"-Aktion.
+      if (win.cont) {
+        const act = endActionRef.current;
+        if (act === 'repeat') { const first = audio.ayahs[0].from; win.startMs = first; a.currentTime = first / 1000; return; }
+        if (act === 'next') { goNextSurah(true); return; }
+      }
+      stop();
     }
   }
 
@@ -329,7 +349,8 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     } else { startN = idx + 1; endN = idx + 1; }
     const s = ayTiming(startN); const e = ayTiming(endN);
     if (!s || !e) { toast.push('Für diese Ayah liegen keine Audio-Zeitmarken vor.'); return; }
-    winRef.current = { stopped: false, startMs: s.from, endMs: e.to, repsLeft: repeat === 'inf' ? Infinity : repeat };
+    const cont = mode === 'continuous' && endN === audio.ayahs[audio.ayahs.length - 1].n;
+    winRef.current = { stopped: false, startMs: s.from, endMs: e.to, repsLeft: repeat === 'inf' ? Infinity : repeat, cont };
     a.playbackRate = speedRef.current;
     const doSeek = () => { try { a.currentTime = s.from / 1000; } catch { /* egal */ } };
     if (a.readyState >= 1) doSeek(); else a.addEventListener('loadedmetadata', doSeek, { once: true });
@@ -423,10 +444,23 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
       ) : (
         <>
           <Card className="p-5 mb-4 text-center hero-atmosphere">
-            <div className="font-arabic text-3xl text-ivory">{data.name}</div>
+            {/* Sure-Navigation: vorherige / nächste + Auswahl */}
+            <div className="flex items-center justify-center gap-3">
+              <button onClick={goPrevSurah} disabled={Number(n) <= 1} aria-label="Vorherige Sure"
+                className="p-2 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40"><ChevronLeft size={18} /></button>
+              <div className="font-arabic text-3xl text-ivory leading-tight">{data.name}</div>
+              <button onClick={() => goNextSurah(false)} disabled={Number(n) >= 114} aria-label="Nächste Sure"
+                className="p-2 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40"><ChevronRight size={18} /></button>
+            </div>
             <div className="text-xs text-sage-muted mt-2">
               Sure {data.number} · {data.ayahCount} Ayat{placeLabel(data.revelationType) ? ` · ${placeLabel(data.revelationType)}` : ''} · {data.translationName}
             </div>
+            {surahs && (
+              <select value={n} onChange={(e) => { stop(); onChangeSurah(Number(e.target.value)); }}
+                className="input py-1 w-auto text-sm mt-3 mx-auto">
+                {surahs.map((s) => <option key={s.n} value={s.n}>{s.n}. {s.name}</option>)}
+              </select>
+            )}
 
             <div className="mt-4 flex flex-col gap-3 items-center text-xs text-sage">
               {/* Ansicht: Lernen (mit Übersetzung) / Mushaf (Seiten) / Tadschwid (farbig) */}
@@ -480,6 +514,15 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
                     ))}
                   </div>
 
+                  {/* Was passiert, wenn die Sure zu Ende rezitiert ist */}
+                  <div className="inline-flex items-center gap-1 flex-wrap justify-center">
+                    <span className="text-sage-muted mr-1">Nach der Sure</span>
+                    {[['stop', 'Stopp'], ['next', 'Nächste Sure'], ['repeat', 'Wiederholen']].map(([v, l]) => (
+                      <button key={v} onClick={() => setEndAction(v)}
+                        className={['px-2.5 py-1 rounded-md border', endAction === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{l}</button>
+                    ))}
+                  </div>
+
                   <div className="inline-flex items-center gap-1 flex-wrap justify-center">
                     <span className="text-sage-muted mr-1">Wiederholung</span>
                     {REPEATS.map((r) => (
@@ -507,9 +550,11 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
                     </div>
                   )}
                   <p className="text-[11px] text-sage-muted max-w-xs text-center">
-                    {mode === 'continuous' && 'Standard: läuft ab der getippten Ayah automatisch weiter bis zum Ende.'}
+                    {mode === 'continuous' && 'Standard: läuft ab der getippten Ayah automatisch weiter bis zum Ende der Sure.'}
                     {mode === 'single' && 'Spielt nur die getippte Ayah.'}
                     {mode === 'range' && 'Spielt den eingestellten Bereich in Schleife – ideal zum Auswendiglernen.'}
+                    {mode === 'continuous' && endAction === 'next' && ' Danach geht es automatisch mit der nächsten Sure weiter.'}
+                    {mode === 'continuous' && endAction === 'repeat' && ' Danach wird die Sure von vorne wiederholt.'}
                   </p>
                 </div>
               )}
