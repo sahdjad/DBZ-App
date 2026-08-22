@@ -30,6 +30,7 @@ import {
   audit,
   notify,
   markNotificationsRead,
+  computeStanding,
 } from './domain.js';
 import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
@@ -2258,6 +2259,10 @@ function reportData(studentId) {
     else hw.open++;
   });
   const beh = db.all('behavior_records').filter((r) => r.studentId === studentId);
+  const attempts = db.all('exam_attempts').filter((a) => a.studentId === studentId && a.status === 'released' && typeof a.percent === 'number');
+  const exams = attempts.length
+    ? { count: attempts.length, avgPercent: Math.round(attempts.reduce((s, a) => s + a.percent, 0) / attempts.length) }
+    : { count: 0, avgPercent: 0 };
   return {
     attendance: attendanceStats(studentId),
     homework: hw,
@@ -2265,7 +2270,14 @@ function reportData(studentId) {
       positive: beh.filter((r) => r.tone === 'positive').length,
       hinweis: beh.filter((r) => r.tone === 'negative').length,
     },
+    exams,
   };
+}
+
+// Live-Leistungsstand + Notenvorschlag eines Schülers (immer aus aktuellen Daten).
+function studentStanding(studentId) {
+  const data = reportData(studentId);
+  return { data, standing: computeStanding(data) };
 }
 
 // --- Zeugnisnoten (Fachnoten + Durchschnitt) ---------------------------------
@@ -2406,6 +2418,15 @@ router.get('/reports', requireAuth, (req, res) => {
   res.json({ reports: list.map(reportView) });
 });
 
+// Live-Leistungsstand + Notenvorschlag eines Schülers (aktualisiert sich
+// automatisch aus den aktuellen Daten). Nur Lehrkraft/Leitung der Klasse.
+router.get('/students/:id/standing', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const student = findUserById(req.params.id);
+  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
+  res.json(studentStanding(req.params.id));
+});
+
 // Klassenübersicht (Leitung/Lehrkraft): alle Schüler einer Periode mit Ø-Note.
 router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const { periodId, classId } = req.query;
@@ -2419,10 +2440,12 @@ router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, 
       .forEach((s) => {
         const r = reports.find((x) => x.studentId === s.id && x.periodId === periodId);
         const v = r ? reportView(r) : null;
+        const st = studentStanding(s.id).standing;
         rows.push({
           studentId: s.id, studentName: s.name, classId: c.id, className: c.name,
           reportId: r?.id || null, status: r?.status || null,
           average: v?.average ?? null, averageOverride: v?.averageOverride ?? null, effectiveAverage: v?.effectiveAverage ?? null,
+          suggestedGrade: st.suggestedGradeHalf ?? null,
         });
       });
   }

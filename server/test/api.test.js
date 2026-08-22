@@ -137,6 +137,41 @@ test('Badges je Kategorie + Nachricht zurückrufen (serverseitige Rollenprüfung
   assert.equal(th.messages[0].body, '');
 });
 
+test('Notenvorschlag: gute Daten -> gute Note, schlechte Daten -> schlechte Note', async () => {
+  const { computeStanding } = await import('../domain.js');
+  const good = computeStanding({
+    homework: { total: 10, passed: 10, submitted: 0, revision: 0, missed: 0, open: 0 },
+    attendance: { sessions: 20, present: 20, late: 0, excused: 0, unexcused: 0 },
+    behavior: { positive: 3, hinweis: 0 },
+    exams: { count: 2, avgPercent: 95 },
+  });
+  assert.equal(good.available, true);
+  assert.ok(good.suggestedGrade <= 1.5, `gute Note erwartet, war ${good.suggestedGrade}`);
+
+  const bad = computeStanding({
+    homework: { total: 10, passed: 0, submitted: 0, revision: 0, missed: 10, open: 0 },
+    attendance: { sessions: 20, present: 8, late: 2, excused: 2, unexcused: 8 },
+    behavior: { positive: 0, hinweis: 4 },
+    exams: { count: 1, avgPercent: 25 },
+  });
+  assert.ok(bad.suggestedGrade >= 4.5, `schlechte Note erwartet, war ${bad.suggestedGrade}`);
+
+  // Ohne Daten: kein Vorschlag.
+  const none = computeStanding({ homework: { total: 0 }, attendance: { sessions: 0 }, behavior: {}, exams: { count: 0 } });
+  assert.equal(none.available, false);
+});
+
+test('Notenvorschlag-Endpunkt: nur Lehrkraft/Leitung, nicht Schüler', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+  const st = await teacher('GET', `/students/${studentId}/standing`);
+  assert.equal(st.status, 200);
+  assert.ok('standing' in st.data && 'data' in st.data);
+  // Schüler darf den Vorschlag nicht abrufen.
+  assert.equal((await student('GET', `/students/${studentId}/standing`)).status, 403);
+});
+
 test('Zeugnis: Fachnoten, überschreibbarer Durchschnitt und Klassenübersicht', async () => {
   const leitung = await loginAs('leitung@dbz.de');
   const teacher = await loginAs('lehrer@dbz.de');

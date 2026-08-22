@@ -96,6 +96,73 @@ export function notify(userId, { type, level = 'info', title, body, deepLink = n
   return note;
 }
 
+// =============================================================================
+// Automatischer Leistungsstand / Notenvorschlag (rein, testbar)
+// =============================================================================
+// Aus gesammelten Kennzahlen (Hausaufgaben, Anwesenheit, Verhalten, Prüfungen)
+// wird je Bereich eine Qualität 0–100 und daraus ein Notenvorschlag (1–6)
+// abgeleitet. Es sind NUR Vorschläge – die Lehrkraft entscheidet endgültig.
+
+export const STANDING_WEIGHTS = { homework: 0.4, attendance: 0.3, behavior: 0.15, exams: 0.15 };
+
+function qHomework(hw) {
+  if (!hw || !hw.total) return null;
+  const considered = hw.passed + hw.submitted + hw.revision + hw.missed; // fällige/bearbeitete
+  if (!considered) return null;
+  // bestanden=100, abgegeben(offen)=80, Nachbesserung=55, verpasst=0
+  return Math.round((hw.passed * 100 + hw.submitted * 80 + hw.revision * 55) / considered);
+}
+function qAttendance(at) {
+  if (!at || !at.sessions) return null;
+  let score = ((at.present + at.late) / at.sessions) * 100;
+  score -= (at.unexcused / at.sessions) * 40; // unentschuldigt wiegt schwer
+  score -= (at.late / at.sessions) * 8; // Verspätung leicht
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+function qBehavior(b) {
+  const total = (b?.positive || 0) + (b?.hinweis || 0);
+  if (!total) return null;
+  return Math.max(0, Math.min(100, Math.round(75 + b.positive * 8 - b.hinweis * 15)));
+}
+function qExams(ex) {
+  if (!ex || !ex.count) return null;
+  return Math.max(0, Math.min(100, Math.round(ex.avgPercent)));
+}
+const qualityToGrade = (q) => Math.round((1 + ((100 - q) / 100) * 5) * 10) / 10; // 100->1,0 ; 0->6,0
+const toHalfGrade = (g) => Math.max(1, Math.min(6, Math.round(g * 2) / 2));
+
+/** Berechnet Leistungsstand + Notenvorschlag aus aggregierten Kennzahlen. */
+export function computeStanding(data) {
+  const dims = [
+    { key: 'homework', label: 'Hausaufgaben', quality: qHomework(data.homework),
+      detail: data.homework ? `${data.homework.passed}/${data.homework.total} bestanden · ${data.homework.missed} verpasst` : '–' },
+    { key: 'attendance', label: 'Anwesenheit', quality: qAttendance(data.attendance),
+      detail: data.attendance ? `${data.attendance.unexcused} unentschuldigt · ${data.attendance.late} verspätet` : '–' },
+    { key: 'behavior', label: 'Verhalten', quality: qBehavior(data.behavior),
+      detail: data.behavior ? `${data.behavior.positive} positiv · ${data.behavior.hinweis} Hinweise` : '–' },
+    { key: 'exams', label: 'Prüfungen', quality: qExams(data.exams),
+      detail: data.exams?.count ? `${data.exams.count} Prüfungen · Ø ${data.exams.avgPercent}%` : 'keine benoteten Prüfungen' },
+  ].map((d) => ({ ...d, grade: d.quality != null ? qualityToGrade(d.quality) : null }));
+
+  const active = dims.filter((d) => d.quality != null);
+  if (!active.length) {
+    return { available: false, dimensions: dims, overallQuality: null, suggestedGrade: null, suggestedGradeHalf: null, summary: 'Noch zu wenig Daten für einen Notenvorschlag.' };
+  }
+  const wsum = active.reduce((s, d) => s + STANDING_WEIGHTS[d.key], 0);
+  const overallQuality = Math.round(active.reduce((s, d) => s + d.quality * (STANDING_WEIGHTS[d.key] / wsum), 0));
+  const suggestedGrade = qualityToGrade(overallQuality);
+
+  // Kurze Begründung: schwächster und stärkster Bereich.
+  const sorted = [...active].sort((a, b) => a.quality - b.quality);
+  const weak = sorted[0];
+  const strong = sorted[sorted.length - 1];
+  let summary = `Vorschlag auf Basis von ${active.map((d) => d.label).join(', ')}.`;
+  if (weak && weak.quality < 60) summary += ` Schwerpunkt zum Verbessern: ${weak.label} (${weak.detail}).`;
+  if (strong && strong.quality >= 80 && strong !== weak) summary += ` Stark: ${strong.label}.`;
+
+  return { available: true, dimensions: dims, overallQuality, suggestedGrade, suggestedGradeHalf: toHalfGrade(suggestedGrade), summary };
+}
+
 /** Markiert Benachrichtigungen eines Nutzers als gelesen (nach Filter). Gibt die
  *  Anzahl der geänderten Einträge zurück. Aufrufer committet selbst. */
 export function markNotificationsRead(userId, predicate) {

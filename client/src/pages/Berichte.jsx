@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, ChevronLeft, Printer, GraduationCap, Table2 } from 'lucide-react';
+import { FileText, ChevronLeft, Printer, GraduationCap, Table2, Sparkles, Wand2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -114,6 +114,37 @@ function Stat({ label, value, tone = 'mint' }) {
 }
 
 // --- Lehrer/Verwaltung -------------------------------------------------------
+// Automatischer Leistungsstand + Notenvorschlag (nur Vorschlag – Lehrkraft entscheidet).
+function StandingPanel({ standing, onApplyAverage }) {
+  if (!standing) return null;
+  if (!standing.available) {
+    return <div className="rounded-lg border border-line bg-subtle p-4 text-sm text-sage-muted inline-flex items-center gap-2"><Sparkles size={15} /> {standing.summary}</div>;
+  }
+  return (
+    <div className="rounded-lg border border-mint/30 bg-mint/[0.05] p-4">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div className="text-sm text-ivory inline-flex items-center gap-1.5"><Sparkles size={16} className="text-mint-light" /> Automatischer Notenvorschlag</div>
+        <div className="text-right leading-none">
+          <div className="text-2xl font-mono text-mint-light">{gradeLabel(standing.suggestedGradeHalf)}</div>
+          <div className="text-[10px] text-sage-muted mt-0.5">rechnerisch {avgLabel(standing.suggestedGrade)}</div>
+        </div>
+      </div>
+      <div className="grid gap-1.5 sm:grid-cols-2">
+        {standing.dimensions.filter((d) => d.grade != null).map((d) => (
+          <div key={d.key} className="flex items-start justify-between gap-2 text-xs">
+            <span className="text-sage min-w-0"><span className="text-ivory">{d.label}</span> · {d.detail}</span>
+            <span className="font-mono text-ivory shrink-0">{avgLabel(d.grade)}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-sage-muted mt-3">{standing.summary} Der Vorschlag ist unverbindlich – du entscheidest.</p>
+      <div className="mt-3">
+        <Button size="sm" variant="outline" onClick={() => onApplyAverage(standing.suggestedGradeHalf)}><Wand2 size={14} /> Als Gesamt-Ø übernehmen</Button>
+      </div>
+    </div>
+  );
+}
+
 const liveAverage = (grades) => {
   const vals = (grades || []).map((g) => g.grade).filter((v) => typeof v === 'number');
   return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 100) / 100 : null;
@@ -132,6 +163,7 @@ function ManagerView() {
   const [comment, setComment] = useState('');
   const [grades, setGrades] = useState([]);
   const [override, setOverride] = useState(null);
+  const [standing, setStanding] = useState(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('students'); // students | overview
 
@@ -153,6 +185,8 @@ function ManagerView() {
       setComment(report.teacherComment || '');
       setGrades(report.grades || []);
       setOverride(report.averageOverride ?? null);
+      setStanding(null);
+      api.get(`/students/${studentId}/standing`).then((d) => setStanding(d.standing)).catch(() => {});
       loadReports();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -192,6 +226,7 @@ function ManagerView() {
             action={<StatusBadge status={active.status === 'released' ? 'approved' : 'draft'} />}
           />
           <div className="p-4 space-y-4">
+            <StandingPanel standing={standing} onApplyAverage={(g) => setOverride(g)} />
             <GradesEditor subjects={subjects} grades={grades} onChange={setGrades} computedAvg={computedAvg} override={override} onOverride={setOverride} />
             <ReportView report={{ ...active, teacherComment: '', grades: [] }} subjects={subjects} />
             <label className="block">
@@ -274,6 +309,7 @@ function ClassOverview({ periodId, classId, onOpen }) {
             <tr className="text-left text-sage-muted border-b border-line">
               <th className="py-2 font-medium">Schüler/in</th>
               <th className="py-2 font-medium">Klasse</th>
+              <th className="py-2 font-medium text-center">Vorschlag</th>
               <th className="py-2 font-medium text-center">Ø-Note</th>
               <th className="py-2 font-medium text-center">Status</th>
               <th className="py-2" />
@@ -284,6 +320,7 @@ function ClassOverview({ periodId, classId, onOpen }) {
               <tr key={r.studentId}>
                 <td className="py-2 text-ivory">{r.studentName}</td>
                 <td className="py-2 text-sage-muted">{r.className}</td>
+                <td className="py-2 text-center font-mono text-mint-light" title="Automatischer Notenvorschlag">{gradeLabel(r.suggestedGrade)}</td>
                 <td className="py-2 text-center font-mono text-ivory">{avgLabel(r.effectiveAverage)}</td>
                 <td className="py-2 text-center">
                   {r.status ? <StatusBadge status={r.status === 'released' ? 'approved' : 'draft'} /> : <span className="text-sage-muted">–</span>}
