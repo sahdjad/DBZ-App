@@ -9,9 +9,9 @@
  * - Navigationen (HTML) network-first mit Cache-Fallback (App startet offline).
  * - Statische Assets inkl. Qur'an-Schrift cache-first (schnell, offline da).
  */
-const CACHE = 'dbz-cache-v4'; // App-Shell + statische Assets (wird bei Updates ersetzt)
+const CACHE = 'dbz-cache-v5'; // App-Shell + statische Assets (wird bei Updates ersetzt)
 const DATA = 'dbz-quran-v1'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/AmiriQuran.woff2'];
+const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

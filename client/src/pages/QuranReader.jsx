@@ -209,11 +209,12 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
   // EINE durchgehende Audiodatei je Sure + Ayah-Zeitmarken -> echte lückenlose
   // Rezitation. Es wird nur gesprungen (Bereich/Wiederholung/Hervorhebung),
   // nie neu gestartet. Geschwindigkeit über playbackRate (preservesPitch).
-  const audioRef = useRef(null); // einziges <audio>-Element
+  const audioRef = useRef(null); // in-DOM <audio> (siehe JSX unten) – iOS-tauglich
   const winRef = useRef({ stopped: true, startMs: 0, endMs: 0, repsLeft: 1 });
   const speedRef = useRef(1);
   const playingIdxRef = useRef(null);
   const didMountReciter = useRef(false);
+  const [playState, setPlayState] = useState('stopped'); // stopped | playing | paused
   useEffect(() => { playingIdxRef.current = playingIdx; }, [playingIdx]);
   useEffect(() => { speedRef.current = speed; if (audioRef.current) audioRef.current.playbackRate = speed; }, [speed]);
 
@@ -256,28 +257,17 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     }
   }, [data, targetAyah]);
 
-  // EIN Audio-Element über die gesamte Lebensdauer wiederverwenden. Beim
-  // Wechsel der Sure/Rezitators nur die Quelle (src) tauschen – NICHT das
-  // Element neu aufbauen und NICHT src='' setzen (das würde fälschlich einen
-  // Fehler auslösen). Der Fehler-Handler greift nur bei echten Medienfehlern.
+  // Quelle setzen, sobald die Sure-Audiodatei bekannt ist (Element steht als
+  // echtes <audio> im DOM – wichtig für iOS/Safari). Nur src tauschen.
   useEffect(() => {
-    if (!audio?.url) return;
-    let a = audioRef.current;
-    if (!a) {
-      a = new Audio();
-      audioRef.current = a;
-      a.preload = 'auto';
-      a.ontimeupdate = onTimeUpdate;
-      a.onerror = () => { if (a.src && a.error) { setAudioErr('Audio konnte nicht geladen werden.'); stop(); } };
-    }
+    const a = audioRef.current;
+    if (!a || !audio?.url) return;
     try { a.preservesPitch = true; a.mozPreservesPitch = true; a.webkitPreservesPitch = true; } catch { /* egal */ }
     a.playbackRate = speedRef.current;
-    if (a.src !== audio.url) a.src = audio.url;
+    if (a.getAttribute('src') !== audio.url) { a.setAttribute('src', audio.url); a.load(); }
     setAudioErr(null);
     // eslint-disable-next-line
   }, [audio?.url]);
-  // Nur beim endgültigen Verlassen aufräumen (Handler vorher lösen).
-  useEffect(() => () => { const a = audioRef.current; if (a) { a.onerror = null; a.ontimeupdate = null; a.pause(); a.src = ''; audioRef.current = null; } }, []);
 
   function idxByTime(tMs) {
     const ay = audio?.ayahs; if (!ay?.length) return null;
@@ -308,10 +298,18 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     const a = audioRef.current; if (a) a.pause();
     playingIdxRef.current = null;
     setPlayingIdx(null);
+    setPlayState('stopped');
+  }
+  // Echter Medienfehler (nicht das Zurücksetzen der Quelle).
+  function onAudioError() {
+    const a = audioRef.current;
+    if (a && a.getAttribute('src') && a.error) { setAudioErr(`Audio-Fehler (Code ${a.error.code})`); stop(); }
   }
 
   const ayTiming = (nn) => audio?.ayahs?.find((x) => x.n === nn);
 
+  // Wiedergabe ab einer Ayah starten. WICHTIG (iOS): play() wird synchron im
+  // Klick aufgerufen; die Zeitmarke wird gesetzt, sobald die Metadaten da sind.
   function startFrom(idx) {
     const a = audioRef.current;
     if (!audio) { toast.push('Audio wird noch geladen …'); return; }
@@ -327,19 +325,25 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
     if (!s || !e) { toast.push('Für diese Ayah liegen keine Audio-Zeitmarken vor.'); return; }
     winRef.current = { stopped: false, startMs: s.from, endMs: e.to, repsLeft: repeat === 'inf' ? Infinity : repeat };
     a.playbackRate = speedRef.current;
-    try { a.currentTime = s.from / 1000; } catch { /* wird beim Laden erneut gesetzt */ }
+    const doSeek = () => { try { a.currentTime = s.from / 1000; } catch { /* egal */ } };
+    if (a.readyState >= 1) doSeek(); else a.addEventListener('loadedmetadata', doSeek, { once: true });
     playingIdxRef.current = startN - 1;
     setPlayingIdx(startN - 1);
-    a.play().catch(() => stop());
+    const p = a.play();
+    if (p && p.catch) p.catch((err) => { setAudioErr('Wiedergabe nicht möglich: ' + (err?.name || err?.message || 'Fehler')); stop(); });
   }
   const onAyahPlay = (idx) => {
-    if (playingIdx === idx && !winRef.current.stopped) { stop(); return; }
+    const a = audioRef.current;
+    if (playingIdx === idx && !winRef.current.stopped) { // gleiche Ayah -> Pause/Weiter
+      if (a && !a.paused) a.pause(); else a?.play().catch(() => {});
+      return;
+    }
     startFrom(idx);
   };
-  // Ein Hauptknopf: startet die Wiedergabe (fortlaufend im Standardmodus) bzw.
-  // stoppt sie. Im Bereichsmodus ab dem eingestellten Start.
+  // Hauptknopf: startet (fortlaufend im Standardmodus), pausiert und setzt fort.
   const primaryPlay = () => {
-    if (playingIdx !== null && !winRef.current.stopped) { stop(); return; }
+    const a = audioRef.current;
+    if (a && !winRef.current.stopped) { if (a.paused) a.play().catch(() => {}); else a.pause(); return; }
     startFrom(mode === 'range' ? (Math.max(1, Number(range.from) || 1) - 1) : 0);
   };
 
@@ -391,6 +395,14 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
 
   return (
     <div>
+      {/* Echtes <audio> im DOM (iOS/Safari-tauglich). Wiedergabe wird per Ref
+          gesteuert; play() läuft synchron im Antippen. */}
+      <audio ref={audioRef} preload="auto" playsInline className="hidden"
+        onTimeUpdate={onTimeUpdate}
+        onPlay={() => setPlayState('playing')}
+        onPause={() => { if (!winRef.current.stopped) setPlayState('paused'); }}
+        onEnded={() => stop()}
+        onError={onAudioError} />
       <button onClick={() => { stop(); onBack(); }} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Alle Suren
       </button>
@@ -426,8 +438,9 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged, onOpenPages }) {
                   fortlaufend weiter) + EIN Menü für alle weiteren Einstellungen. */}
               <div className="inline-flex items-center gap-2 flex-wrap justify-center">
                 <Button size="sm" onClick={primaryPlay} disabled={!audio}>
-                  {playingIdx !== null && !winRef.current.stopped ? <><Pause size={15} /> Stopp</> : <><Play size={15} /> Abspielen</>}
+                  {playState === 'playing' ? <><Pause size={15} /> Pause</> : playState === 'paused' ? <><Play size={15} /> Weiter</> : <><Play size={15} /> Abspielen</>}
                 </Button>
+                {playState !== 'stopped' && <Button size="sm" variant="ghost" onClick={stop}><X size={14} /> Stopp</Button>}
                 <button onClick={() => setSettingsOpen((o) => !o)}
                   className={['inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border', settingsOpen ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage'].join(' ')}>
                   <SlidersHorizontal size={14} /> Wiedergabe <ChevronDown size={13} className={settingsOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
@@ -619,8 +632,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [tafsir, setTafsir] = useState({}); // `${ed}:${s:a}` -> {…}
   const [showTafsir, setShowTafsir] = useState(false);
   const [jump, setJump] = useState('');
+  const [elPaused, setElPaused] = useState(false);
 
-  const elRef = useRef(null); // einziges <audio>
+  const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
   const audioCache = useRef(new Map()); // surah -> {url,ayahs}
   const winRef = useRef({ stopped: true });
   const speedRef = useRef(1);
@@ -650,20 +664,34 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     api.get('/quran/me').then((m) => setMarked(new Set((m.bookmarks || []).map((b) => `${b.surah}:${b.ayah}`)))).catch(() => {});
   }, []);
 
+  // Audio der Sure(n) auf der Seite im Voraus laden -> beim Antippen kann play()
+  // synchron im Klick laufen (wichtig für iOS/Safari), ohne Warten.
+  const prefetchPageAudio = (sarr) => (sarr || []).forEach((su) => { ensureAudio(su).catch(() => {}); });
+
+  const pageDataCache = useRef(new Map()); // Seiten-Daten für flüssiges Blättern
+  const fetchPageData = (p) => api.get(`/quran/page/${p}`).then((d) => { pageDataCache.current.set(p, d.page); return d.page; });
+  const prefetchNeighbors = (p) => [p - 1, p + 1].forEach((q) => {
+    if (q >= 1 && q <= 604 && !pageDataCache.current.has(q)) fetchPageData(q).then((pg) => prefetchPageAudio(pg.surahs)).catch(() => {});
+  });
+  const applyPage = (pg) => {
+    setData(pg);
+    prefetchPageAudio(pg?.surahs);
+    if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
+  };
   const loadPage = (p) => {
-    setError(null); setData(null);
-    api.get(`/quran/page/${p}`).then((d) => {
-      setData(d.page);
-      if (d.page?.surahs?.[0]) api.post('/quran/last-read', { surah: d.page.surahs[0] }).then(onMarksChanged).catch(() => {});
-    }).catch((e) => setError(e.message));
+    setError(null);
+    const cached = pageDataCache.current.get(p);
+    if (cached) { applyPage(cached); prefetchNeighbors(p); return; }
+    setData(null);
+    fetchPageData(p).then((pg) => { applyPage(pg); prefetchNeighbors(p); }).catch((e) => setError(e.message));
   };
   useEffect(() => { if (page != null) { stopAudio(); setSheetKey(null); setShowTafsir(false); loadPage(page); localStorage.setItem('dbz-mushaf-page', String(page)); window.scrollTo?.({ top: 0 }); } /* eslint-disable-next-line */ }, [page]);
-  useEffect(() => () => { const a = elRef.current; if (a) { a.onerror = null; a.ontimeupdate = null; a.pause(); a.src = ''; } }, []);
-  // Rezitatorwechsel: Cache leeren, laufende Wiedergabe stoppen, Audioquelle
-  // zurücksetzen (sonst behielte das Element die alte Rezitator-Datei).
-  useEffect(() => { audioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; /* eslint-disable-next-line */ }, [reciter]);
+  useEffect(() => () => { const a = elRef.current; if (a) { a.pause(); } }, []);
+  // Rezitatorwechsel: Cache leeren, Wiedergabe stoppen, Quelle zurücksetzen,
+  // Audio der aktuellen Seite erneut vorladen.
+  useEffect(() => { audioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; if (data) prefetchPageAudio(data.surahs); /* eslint-disable-next-line */ }, [reciter]);
 
-  function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); }
+  function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); setElPaused(false); }
 
   async function ensureAudio(surah) {
     if (audioCache.current.has(surah)) return audioCache.current.get(surah);
@@ -684,27 +712,37 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     if (t >= win.endMs - 15) stopAudio();
   }
 
-  async function playFrom(verseKey) {
+  // Startet die Wiedergabe mit bereits vorliegenden Audiodaten (synchron -> iOS).
+  function playWith(ad, verseKey) {
     const [s, a] = verseKey.split(':').map(Number);
-    let ad;
-    try { ad = await ensureAudio(s); } catch { toast.push('Audio konnte nicht geladen werden', 'error'); return; }
     const st = ad.ayahs.find((x) => x.n === a); const last = ad.ayahs[ad.ayahs.length - 1];
     if (!st || !last) { toast.push('Keine Audio-Zeitmarken für diese Ayah'); return; }
-    let el = elRef.current;
-    if (!el) { el = new Audio(); elRef.current = el; el.ontimeupdate = onTimeUpdate; el.onerror = () => stopAudio(); }
+    const el = elRef.current; if (!el) return;
     if (el.__surah !== s) {
-      el.__surah = s; el.src = ad.url;
+      el.__surah = s; el.setAttribute('src', ad.url); el.load();
       try { el.preservesPitch = true; el.mozPreservesPitch = true; el.webkitPreservesPitch = true; } catch { /* egal */ }
     }
     el.playbackRate = speedRef.current;
     winRef.current = { stopped: false, surah: s, ayahs: ad.ayahs, endMs: last.to };
-    try { el.currentTime = st.from / 1000; } catch { /* egal */ }
+    const doSeek = () => { try { el.currentTime = st.from / 1000; } catch { /* egal */ } };
+    if (el.readyState >= 1) doSeek(); else el.addEventListener('loadedmetadata', doSeek, { once: true });
     playingKeyRef.current = verseKey; setPlayingKey(verseKey);
-    el.play().catch(() => stopAudio());
+    const p = el.play();
+    if (p && p.catch) p.catch((err) => { toast.push('Wiedergabe nicht möglich: ' + (err?.name || 'Fehler'), 'error'); stopAudio(); });
+  }
+  function playFrom(verseKey) {
+    const s = Number(verseKey.split(':')[0]);
+    const cached = audioCache.current.get(s);
+    if (cached) { playWith(cached, verseKey); return; } // Normalfall: bereits vorgeladen
+    ensureAudio(s).then((ad) => playWith(ad, verseKey)).catch(() => toast.push('Audio konnte nicht geladen werden', 'error'));
   }
 
   const tapWord = (verseKey) => { setSheetKey(verseKey); setShowTafsir(false); };
-  const onPlaySheet = (verseKey) => { if (playingKey === verseKey && !winRef.current.stopped) stopAudio(); else playFrom(verseKey); };
+  const onPlaySheet = (verseKey) => {
+    const el = elRef.current;
+    if (playingKey === verseKey && !winRef.current.stopped) { if (el && !el.paused) el.pause(); else el?.play().catch(() => {}); return; }
+    playFrom(verseKey);
+  };
 
   const toggleBookmark = async (verseKey) => {
     const [s, a] = verseKey.split(':').map(Number);
@@ -738,8 +776,82 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const goto = (p) => setPage(clampPage(p));
   const doJump = () => { const p = Number(jump); if (p >= 1 && p <= 604) { goto(p); setJump(''); } else toast.push('Seite 1–604 eingeben'); };
 
+  // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
+  const pageElRef = useRef(null);
+  const dragRef = useRef({ active: false, x0: 0, y0: 0, dx: 0, horiz: false });
+  const flipDirRef = useRef(null); // 'next' | 'prev' – für die Einblend-Animation
+  const reduceRef = useRef(false);
+  useEffect(() => { reduceRef.current = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }, []);
+
+  const pageWidth = () => pageElRef.current?.offsetWidth || 320;
+  function setFlip(dx, animate) {
+    const el = pageElRef.current; if (!el) return;
+    el.style.transition = animate && !reduceRef.current ? 'transform .32s cubic-bezier(.22,.61,.36,1), box-shadow .32s' : 'none';
+    const frac = Math.max(-1, Math.min(1, dx / pageWidth()));
+    el.style.transformOrigin = dx < 0 ? 'left center' : 'right center';
+    el.style.transform = `translateX(${dx}px) rotateY(${frac * -16}deg)`;
+    el.style.boxShadow = Math.abs(frac) > 0.02 ? `0 24px 60px rgba(0,0,0,${0.12 + 0.3 * Math.abs(frac)})` : '';
+  }
+  function commitFlip(dir) {
+    const el = pageElRef.current; const w = pageWidth();
+    flipDirRef.current = dir;
+    if (reduceRef.current) { goto(dir === 'next' ? page + 1 : page - 1); return; }
+    el.style.transition = 'transform .28s ease-in, box-shadow .28s';
+    el.style.transformOrigin = dir === 'next' ? 'left center' : 'right center';
+    el.style.transform = `translateX(${dir === 'next' ? -w * 1.15 : w * 1.15}px) rotateY(${dir === 'next' ? -24 : 24}deg)`;
+    el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.42)';
+    setTimeout(() => goto(dir === 'next' ? page + 1 : page - 1), 230);
+  }
+  // Nach dem Seitenwechsel: neue Seite hereinziehen (Gegenrichtung).
+  useEffect(() => {
+    const el = pageElRef.current; if (!el || !data) return;
+    const dir = flipDirRef.current; flipDirRef.current = null;
+    if (!dir || reduceRef.current) { el.style.transition = 'none'; el.style.transform = ''; el.style.boxShadow = ''; return; }
+    const w = el.offsetWidth || 320;
+    el.style.transition = 'none';
+    el.style.transformOrigin = dir === 'next' ? 'right center' : 'left center';
+    el.style.transform = `translateX(${dir === 'next' ? w * 0.5 : -w * 0.5}px) rotateY(${dir === 'next' ? 14 : -14}deg)`;
+    el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.28)';
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform .3s cubic-bezier(.22,.61,.36,1), box-shadow .3s';
+      el.style.transform = 'translateX(0) rotateY(0)'; el.style.boxShadow = '';
+    });
+  }, [data]);
+
+  function onPointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    dragRef.current = { active: true, x0: e.clientX, y0: e.clientY, dx: 0, horiz: false };
+  }
+  function onPointerMove(e) {
+    const d = dragRef.current; if (!d.active) return;
+    const dx = e.clientX - d.x0; const dy = e.clientY - d.y0;
+    if (!d.horiz) {
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      d.horiz = Math.abs(dx) > Math.abs(dy);
+      if (!d.horiz) { d.active = false; return; } // vertikal -> normales Scrollen
+    }
+    let ddx = dx;
+    if ((page <= 1 && dx > 0) || (page >= 604 && dx < 0)) ddx = dx * 0.25; // an Rändern zäher
+    d.dx = ddx; setFlip(ddx, false);
+  }
+  function onPointerUp() {
+    const d = dragRef.current; if (!d.active) return; d.active = false;
+    if (!d.horiz) return;
+    const threshold = Math.min(90, pageWidth() * 0.18);
+    if (d.dx <= -threshold && page < 604) commitFlip('next');
+    else if (d.dx >= threshold && page > 1) commitFlip('prev');
+    else setFlip(0, true); // zurückfedern
+  }
+
   return (
     <div>
+      {/* Echtes <audio> im DOM (iOS/Safari-tauglich). */}
+      <audio ref={elRef} preload="auto" playsInline className="hidden"
+        onTimeUpdate={onTimeUpdate}
+        onPlay={() => setElPaused(false)}
+        onPause={() => { if (!winRef.current.stopped) setElPaused(true); }}
+        onEnded={() => stopAudio()}
+        onError={() => { const a = elRef.current; if (a && a.getAttribute('src') && a.error) { toast.push('Audio-Fehler (Code ' + a.error.code + ')', 'error'); stopAudio(); } }} />
       <button onClick={() => { stopAudio(); onBack(); }} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zur Übersicht
       </button>
@@ -784,7 +896,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : !data ? (
         <Spinner label="Mushaf-Seite wird geladen …" />
       ) : (
-        <div className="mushaf-page rounded-2xl p-5 sm:p-8 font-mushaf" style={{ fontSize: 'clamp(1.35rem, 4.6vw, 1.9rem)' }}>
+        <div style={{ perspective: '1600px', touchAction: 'pan-y', overflowX: 'hidden' }}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+        <div ref={pageElRef} className="mushaf-page rounded-2xl p-5 sm:p-8 font-mushaf" style={{ fontSize: 'clamp(1.35rem, 4.6vw, 1.9rem)', willChange: 'transform' }}>
           {data.lines.map((line) => (
             <div key={line.n}>
               {(headerByLine[line.n] || []).map((h) => (
@@ -803,7 +917,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
               </p>
             </div>
           ))}
-          <p className="text-[11px] text-sage-muted mt-6 text-center font-sans">Tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
+          <p className="text-[11px] text-sage-muted mt-6 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
+        </div>
         </div>
       )}
 
@@ -816,7 +931,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button size="sm" onClick={() => onPlaySheet(sheetKey)}>
-              {playingKey === sheetKey && !winRef.current.stopped ? <><Pause size={14} /> Stopp</> : <><Play size={14} /> Abspielen</>}
+              {playingKey === sheetKey && !winRef.current.stopped
+                ? (elPaused ? <><Play size={14} /> Weiter</> : <><Pause size={14} /> Pause</>)
+                : <><Play size={14} /> Abspielen</>}
             </Button>
             <Button size="sm" variant={showTafsir ? 'primary' : 'outline'} onClick={() => (showTafsir ? setShowTafsir(false) : openTafsir(sheetKey))}>
               <FileText size={14} /> Tafsir &amp; Übersetzung

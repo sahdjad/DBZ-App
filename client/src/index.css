@@ -8,16 +8,15 @@
   --hero-image: none;
 }
 
-/* Authentische Qur'an-Schrift (Amiri Quran, OFL) – lokal eingebunden, damit
-   sie auch offline sofort verfügbar ist. Ersetzt die bisherige Schrift. */
+/* Authentische Madinah-Mushaf-Schrift: KFGQPC Uthmanic HAFS (Uthman Taha) –
+   genau die Schrift des gedruckten Medina-/Ayah-Mushaf. Lokal eingebunden,
+   damit sie auch offline sofort verfügbar ist. */
 @font-face {
-  font-family: 'Amiri Quran';
+  font-family: 'Uthmanic Hafs';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/AmiriQuran.woff2') format('woff2');
-  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+200C-200E, U+2010-2011,
-    U+204F, U+2E41, U+FB50-FDFF, U+FE70-FE74, U+FE76-FEFC;
+  src: url('/fonts/UthmanicHafs.woff2') format('woff2');
 }
 
 /* --- Farb-Themes (als RGB-Kanäle für Tailwind-Alpha) --------------------------
