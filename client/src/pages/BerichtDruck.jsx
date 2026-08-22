@@ -36,6 +36,8 @@ export default function BerichtDruck() {
     ['Ø Verspätung (Minuten)', d.attendance.avgMinutesLate],
     ['Hausaufgaben bestanden', `${d.homework.passed} / ${d.homework.total}`],
     ['Hausaufgaben verpasst', d.homework.missed],
+    ['Eingereichte Audios', d.audios?.count ?? 0],
+    ['Aktivitäten / Spiele', d.activities?.count ?? 0],
     ['Positive Vermerke', d.behavior.positive],
     ['Hinweise (Verhalten)', d.behavior.hinweis],
   ];

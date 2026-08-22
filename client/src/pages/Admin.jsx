@@ -288,26 +288,70 @@ function SettingsTab() {
       toast.push('Einstellungen gespeichert', 'success');
     } catch (err) { toast.push(err.message, 'error'); }
   };
+  const saveWeights = async () => {
+    try {
+      await api.patch('/org', { gradeWeights: org.gradeWeights });
+      toast.push('Notengewichte gespeichert', 'success');
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
   if (!org) return <Spinner />;
   return (
-    <Card className="p-5 max-w-xl">
-      <CardHeader title="Organisation & Social Links" subtitle="Ohne neues Release änderbar" icon={Settings} />
-      <form onSubmit={save} className="p-4 space-y-3">
-        <Input label="Name der Organisation" value={org.name} onChange={(v) => setOrg({ ...org, name: v })} />
-        <Input label="Verspätungsgrenze (Minuten)" type="number" value={org.lateAfterMinutes} onChange={(v) => setOrg({ ...org, lateAfterMinutes: v })} />
-        <label className="block">
-          <span className="text-sm text-sage">Audio-Aufbewahrung (Tage, 0 = deaktiviert)</span>
-          <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />
-          <span className="text-xs text-sage-muted">Audio-Abgaben werden nach dieser Frist automatisch gelöscht (Bewertung bleibt). 0 lässt alles unangetastet.</span>
-        </label>
-        {['youtube', 'instagram', 'tiktok'].map((k) => (
-          <Input key={k} label={k[0].toUpperCase() + k.slice(1)} value={org.socialLinks?.[k] || ''} onChange={(v) => setOrg({ ...org, socialLinks: { ...org.socialLinks, [k]: v } })} />
-        ))}
-        <div className="flex gap-2 flex-wrap">
-          <Button type="submit">Speichern</Button>
-          <Button as="a" href="/api/admin/backup.json" variant="outline" type="button"><Download size={18} /> Backup herunterladen</Button>
-        </div>
-      </form>
+    <div className="grid gap-4 lg:grid-cols-2 items-start">
+      <Card className="p-5">
+        <CardHeader title="Organisation & Social Links" subtitle="Ohne neues Release änderbar" icon={Settings} />
+        <form onSubmit={save} className="p-4 space-y-3">
+          <Input label="Name der Organisation" value={org.name} onChange={(v) => setOrg({ ...org, name: v })} />
+          <Input label="Verspätungsgrenze (Minuten)" type="number" value={org.lateAfterMinutes} onChange={(v) => setOrg({ ...org, lateAfterMinutes: v })} />
+          <label className="block">
+            <span className="text-sm text-sage">Audio-Aufbewahrung (Tage, 0 = deaktiviert)</span>
+            <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />
+            <span className="text-xs text-sage-muted">Audio-Abgaben werden nach dieser Frist automatisch gelöscht (Bewertung bleibt). 0 lässt alles unangetastet.</span>
+          </label>
+          {['youtube', 'instagram', 'tiktok'].map((k) => (
+            <Input key={k} label={k[0].toUpperCase() + k.slice(1)} value={org.socialLinks?.[k] || ''} onChange={(v) => setOrg({ ...org, socialLinks: { ...org.socialLinks, [k]: v } })} />
+          ))}
+          <div className="flex gap-2 flex-wrap">
+            <Button type="submit">Speichern</Button>
+            <Button as="a" href="/api/admin/backup.json" variant="outline" type="button"><Download size={18} /> Backup herunterladen</Button>
+          </div>
+        </form>
+      </Card>
+
+      <GradeWeightsCard weights={org.gradeWeights} onChange={(w) => setOrg({ ...org, gradeWeights: w })} onSave={saveWeights} />
+    </div>
+  );
+}
+
+// Gewichte für den automatischen Notenvorschlag (in Prozent bearbeitbar).
+const WEIGHT_FIELDS = [
+  ['homework', 'Hausaufgaben'], ['attendance', 'Anwesenheit'], ['exams', 'Prüfungen'],
+  ['activities', 'Aktivitäten'], ['behavior', 'Verhalten'],
+];
+function GradeWeightsCard({ weights, onChange, onSave }) {
+  const w = weights || {};
+  const sum = WEIGHT_FIELDS.reduce((s, [k]) => s + (Number(w[k]) || 0), 0);
+  const set = (k, pct) => onChange({ ...w, [k]: Math.max(0, Math.min(100, Number(pct) || 0)) / 100 });
+  return (
+    <Card className="p-5">
+      <CardHeader title="Notengewichte" subtitle="Wie stark jeder Bereich in den Notenvorschlag einfließt" icon={Settings} />
+      <div className="p-4 space-y-2">
+        {WEIGHT_FIELDS.map(([k, label]) => {
+          const pct = Math.round((Number(w[k]) || 0) * 100);
+          const share = sum > 0 ? Math.round(((Number(w[k]) || 0) / sum) * 100) : 0;
+          return (
+            <div key={k} className="flex items-center gap-3">
+              <span className="text-sm text-sage w-32 shrink-0">{label}</span>
+              <input type="range" min={0} max={100} value={pct} onChange={(e) => set(k, e.target.value)} className="flex-1" />
+              <input type="number" min={0} max={100} value={pct} onChange={(e) => set(k, e.target.value)} className="input w-20 py-1.5 text-sm text-center" />
+              <span className="text-xs text-sage-muted w-14 text-right">= {share}%</span>
+            </div>
+          );
+        })}
+        <p className="text-[11px] text-sage-muted mt-2">
+          Die Werte werden automatisch ins Verhältnis gesetzt (aktuelle Summe {Math.round(sum * 100)}%). Bereiche ohne Daten werden fair auf die übrigen verteilt. Es bleibt ein Vorschlag – die Lehrkraft entscheidet.
+        </p>
+        <Button onClick={onSave} disabled={sum <= 0}>Speichern</Button>
+      </div>
     </Card>
   );
 }

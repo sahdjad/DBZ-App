@@ -31,6 +31,7 @@ import {
   notify,
   markNotificationsRead,
   computeStanding,
+  STANDING_WEIGHTS,
 } from './domain.js';
 import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
@@ -63,6 +64,15 @@ const findUserByEmail = (email) =>
   db.all('users').find((u) => u.email.toLowerCase() === (email || '').toLowerCase()) || null;
 const findClass = (id) => byId('classes', id);
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
+// Gewichte für den Notenvorschlag: nur bekannte, positive Werte übernehmen,
+// sonst Standard. Normalisierung übernimmt die Engine (proportional).
+const WEIGHT_KEYS = Object.keys(STANDING_WEIGHTS);
+function gradeWeights() {
+  const w = org().gradeWeights || {};
+  const out = {};
+  for (const k of WEIGHT_KEYS) out[k] = typeof w[k] === 'number' && w[k] >= 0 ? w[k] : STANDING_WEIGHTS[k];
+  return out;
+}
 
 /** Öffentlich sichtbare Nutzerfelder (nie passwordHash oder Familien-Code). */
 function publicUser(u) {
@@ -403,6 +413,7 @@ router.get('/org', requireAuth, (_req, res) => {
       socialLinks: o.socialLinks,
       lateAfterMinutes: o.lateAfterMinutes,
       audioRetentionDays: o.audioRetentionDays ?? 0,
+      gradeWeights: gradeWeights(),
     },
   });
 });
@@ -411,11 +422,16 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
   const o = db.all('organizations')[0];
   if (!o) return res.status(404).json({ error: 'Organisation nicht gefunden' });
   const before = JSON.parse(JSON.stringify(o));
-  const { socialLinks, lateAfterMinutes, name, audioRetentionDays } = req.body || {};
+  const { socialLinks, lateAfterMinutes, name, audioRetentionDays, gradeWeights: gw } = req.body || {};
   if (socialLinks && typeof socialLinks === 'object') o.socialLinks = { ...o.socialLinks, ...socialLinks };
   if (Number.isFinite(lateAfterMinutes)) o.lateAfterMinutes = Math.max(0, Math.min(60, lateAfterMinutes));
   if (Number.isFinite(audioRetentionDays)) o.audioRetentionDays = Math.max(0, Math.min(3650, audioRetentionDays));
   if (name && name.trim()) o.name = name.trim();
+  if (gw && typeof gw === 'object') {
+    const next = { ...gradeWeights() };
+    for (const k of WEIGHT_KEYS) if (typeof gw[k] === 'number' && gw[k] >= 0 && gw[k] <= 1) next[k] = Math.round(gw[k] * 100) / 100;
+    if (WEIGHT_KEYS.some((k) => next[k] > 0)) o.gradeWeights = next; // mind. ein Gewicht > 0
+  }
   db.commit();
   audit(req.user.id, 'org.update', 'organization', o.id, before, o);
   res.json({ ok: true });
@@ -2284,6 +2300,9 @@ function reportData(studentId, win) {
     scoredCount: scored.length,
     avgPercent: scored.length ? Math.round(scored.reduce((s, a) => s + (a.points / a.maxPoints) * 100, 0) / scored.length) : 0,
   };
+  // Eingereichte Audios (Sprach-/Rezitations-Abgaben) – eigene Kennzahl.
+  const subs = db.all('submissions').filter((s) => s.studentId === studentId && (!win || inWindow(s.submittedAt, win)));
+  const audios = { count: subs.filter((s) => (s.files || []).some((f) => String(f.mediaType || '').startsWith('audio'))).length };
   return {
     attendance: attendanceStats(studentId, win),
     homework: hw,
@@ -2293,6 +2312,7 @@ function reportData(studentId, win) {
     },
     exams,
     activities,
+    audios,
   };
 }
 
@@ -2300,7 +2320,7 @@ function reportData(studentId, win) {
 // Daten), optional für ein Zeitfenster (Monatsauswertung).
 function studentStanding(studentId, win) {
   const data = reportData(studentId, win);
-  return { data, standing: computeStanding(data), window: win || null };
+  return { data, standing: computeStanding(data, gradeWeights()), window: win || null };
 }
 // Zeitfenster aus Query lesen: ?month=YYYY-MM oder ?from=YYYY-MM-DD&to=YYYY-MM-DD.
 function winFromQuery(q) {

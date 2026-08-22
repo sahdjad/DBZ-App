@@ -189,6 +189,19 @@ test('Aktivitäten fließen in den Leistungsstand ein + Monatsfilter', async () 
   assert.equal((await student('POST', '/activities', { studentId: sid, title: 'X' })).status, 403);
 });
 
+test('Notengewichte im Admin einstellbar (nur Leitung/Admin)', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  // Lehrkraft (kein Admin/Leitung) darf die Gewichte NICHT ändern.
+  assert.equal((await teacher('PATCH', '/org', { gradeWeights: { homework: 1 } })).status, 403);
+  // Leitung setzt neue Gewichte -> werden gespeichert und zurückgegeben.
+  const r = await leitung('PATCH', '/org', { gradeWeights: { homework: 0.5, attendance: 0.2, behavior: 0.1, exams: 0.1, activities: 0.1 } });
+  assert.equal(r.status, 200);
+  const org = (await leitung('GET', '/org')).data.org;
+  assert.equal(org.gradeWeights.homework, 0.5);
+  assert.equal(org.gradeWeights.attendance, 0.2);
+});
+
 test('Notenvorschlag-Endpunkt: nur Lehrkraft/Leitung, nicht Schüler', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const student = await loginAs('schueler@dbz.de');

@@ -135,8 +135,10 @@ function qActivities(ac) {
 const qualityToGrade = (q) => Math.round((1 + ((100 - q) / 100) * 5) * 10) / 10; // 100->1,0 ; 0->6,0
 const toHalfGrade = (g) => Math.max(1, Math.min(6, Math.round(g * 2) / 2));
 
-/** Berechnet Leistungsstand + Notenvorschlag aus aggregierten Kennzahlen. */
-export function computeStanding(data) {
+/** Berechnet Leistungsstand + Notenvorschlag aus aggregierten Kennzahlen.
+ *  weights (optional) überschreibt die Standard-Gewichte (Admin-Einstellung). */
+export function computeStanding(data, weights) {
+  const W = { ...STANDING_WEIGHTS, ...(weights || {}) };
   const dims = [
     { key: 'homework', label: 'Hausaufgaben', quality: qHomework(data.homework),
       detail: data.homework ? `${data.homework.passed}/${data.homework.total} bestanden · ${data.homework.missed} verpasst` : '–' },
@@ -154,8 +156,8 @@ export function computeStanding(data) {
   if (!active.length) {
     return { available: false, dimensions: dims, overallQuality: null, suggestedGrade: null, suggestedGradeHalf: null, summary: 'Noch zu wenig Daten für einen Notenvorschlag.' };
   }
-  const wsum = active.reduce((s, d) => s + STANDING_WEIGHTS[d.key], 0);
-  const overallQuality = Math.round(active.reduce((s, d) => s + d.quality * (STANDING_WEIGHTS[d.key] / wsum), 0));
+  const wsum = active.reduce((s, d) => s + (W[d.key] || 0), 0) || 1;
+  const overallQuality = Math.round(active.reduce((s, d) => s + d.quality * ((W[d.key] || 0) / wsum), 0));
   const suggestedGrade = qualityToGrade(overallQuality);
 
   // Kurze Begründung: schwächster und stärkster Bereich.

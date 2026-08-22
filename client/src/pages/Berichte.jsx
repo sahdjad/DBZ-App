@@ -63,6 +63,8 @@ function ReportView({ report, subjects = [] }) {
         <Stat label="Unentschuldigt" value={d.attendance.unexcused} tone={d.attendance.unexcused ? 'absent' : 'mint'} />
         <Stat label="Aufgaben bestanden" value={`${d.homework.passed}/${d.homework.total}`} />
         <Stat label="Verpasste Aufgaben" value={d.homework.missed} tone={d.homework.missed ? 'late' : 'mint'} />
+        <Stat label="Eingereichte Audios" value={d.audios?.count ?? 0} />
+        <Stat label="Aktivitäten / Spiele" value={d.activities?.count ?? 0} />
         <Stat label="Verhalten (+ / Hinweis)" value={`${d.behavior.positive} / ${d.behavior.hinweis}`} />
       </div>
       {report.teacherComment && (

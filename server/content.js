@@ -33,6 +33,8 @@ export const DEFAULT_ORG = {
   // Aufbewahrung von Audio-Abgaben in Tagen (docs/DATA_RETENTION.md).
   // 0 = deaktiviert (Standard, bis das DBZ die Frist organisatorisch festlegt).
   audioRetentionDays: 0,
+  // Gewichte für den automatischen Notenvorschlag (im Admin einstellbar).
+  gradeWeights: { homework: 0.35, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15 },
   socialLinks: {
     youtube: 'https://www.youtube.com/channel/UChiz3gfEtMvqb6pFkeZir6Q',
     instagram: 'https://www.instagram.com/deen.bildungszentrum/',
