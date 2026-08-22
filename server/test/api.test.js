@@ -58,6 +58,55 @@ async function loginAs(email) {
   return c;
 }
 
+test('Push: Status liefert Schlüssel, An-/Abmelden funktioniert', async () => {
+  const c = await loginAs('schueler@dbz.de');
+  const st = await c('GET', '/push/status');
+  assert.equal(st.status, 200);
+  assert.equal(st.data.enabled, true);
+  assert.equal(Buffer.from(st.data.publicKey.replace(/-/g, '+').replace(/_/g, '/'), 'base64').length, 65, 'VAPID-Public = 65 Byte P-256-Punkt');
+  assert.equal(st.data.subscribed, false);
+
+  // Anmelden mit einem gültigen (simulierten) Browser-Abo.
+  const crypto = await import('node:crypto');
+  const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+  const b64 = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const sub = { endpoint: 'https://example.com/push/abc', keys: { p256dh: b64(ecdh.getPublicKey()), auth: b64(crypto.randomBytes(16)) } };
+  assert.equal((await c('POST', '/push/subscribe', { subscription: sub })).status, 200);
+  assert.equal((await c('GET', '/push/status')).data.subscribed, true);
+
+  // Ungültiges Abo -> 400.
+  assert.equal((await c('POST', '/push/subscribe', { subscription: { endpoint: 'x' } })).status, 400);
+
+  // Abmelden.
+  assert.equal((await c('POST', '/push/unsubscribe', { endpoint: sub.endpoint })).status, 200);
+  assert.equal((await c('GET', '/push/status')).data.subscribed, false);
+});
+
+test('Push: Nutzlast ist für den Browser entschlüsselbar (RFC 8291)', async () => {
+  const crypto = await import('node:crypto');
+  const { encryptPayload } = await import('../webpush.js');
+  const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+  const uaPub = ecdh.getPublicKey();
+  const auth = crypto.randomBytes(16);
+  const b64 = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const msg = JSON.stringify({ title: 'DBZ', body: 'Test ✓', url: '/nachrichten' });
+  const body = encryptPayload(Buffer.from(msg, 'utf8'), b64(uaPub), b64(auth));
+
+  const salt = body.subarray(0, 16);
+  const idlen = body[20];
+  const asPub = body.subarray(21, 21 + idlen);
+  const ct = body.subarray(21 + idlen);
+  const shared = ecdh.computeSecret(asPub);
+  const ikm = Buffer.from(crypto.hkdfSync('sha256', shared, auth, Buffer.concat([Buffer.from('WebPush: info\0'), uaPub, asPub]), 32));
+  const cek = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: aes128gcm\0'), 16));
+  const nonce = Buffer.from(crypto.hkdfSync('sha256', ikm, salt, Buffer.from('Content-Encoding: nonce\0'), 12));
+  const dec = crypto.createDecipheriv('aes-128-gcm', cek, nonce);
+  dec.setAuthTag(ct.subarray(ct.length - 16));
+  let pt = Buffer.concat([dec.update(ct.subarray(0, ct.length - 16)), dec.final()]);
+  let i = pt.length - 1; while (i >= 0 && pt[i] === 0) i--; if (pt[i] === 2) i--; pt = pt.subarray(0, i + 1);
+  assert.equal(pt.toString('utf8'), msg);
+});
+
 test('falsches Passwort wird abgelehnt', async () => {
   const c = client();
   const r = await c('POST', '/auth/login', { email: 'schueler@dbz.de', password: 'falsch' });

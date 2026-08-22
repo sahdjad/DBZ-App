@@ -3,6 +3,7 @@
 
 import crypto from 'crypto';
 import { db, newId } from './store.js';
+import { pushToUser } from './webpush.js';
 
 // --- Anwesenheit / Verspätung ------------------------------------------------
 
@@ -71,9 +72,11 @@ export function audit(actorId, action, entityType, entityId, before, after) {
 
 // --- Benachrichtigungen ------------------------------------------------------
 
-/** Legt eine In-App-Benachrichtigung an (DBZ-Inbox = Quelle der Wahrheit). */
+/** Legt eine In-App-Benachrichtigung an (DBZ-Inbox = Quelle der Wahrheit).
+ *  Zusätzlich wird – falls das Gerät ein Push-Abo hat – eine Browser-
+ *  Benachrichtigung ausgelöst (bestleistungsbasiert, blockiert nie). */
 export function notify(userId, { type, level = 'info', title, body, deepLink = null }) {
-  return db.insert('notifications', {
+  const note = db.insert('notifications', {
     id: newId('note'),
     userId,
     type,
@@ -84,4 +87,7 @@ export function notify(userId, { type, level = 'info', title, body, deepLink = n
     read: false,
     createdAt: new Date().toISOString(),
   });
+  // Fire-and-forget: Push nie im Anfrage-Pfad abwarten.
+  pushToUser(userId, { title, body: body || '', url: deepLink || null, tag: type }).catch(() => {});
+  return note;
 }

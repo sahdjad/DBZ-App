@@ -37,6 +37,7 @@ import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
 import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
+import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -3111,6 +3112,33 @@ router.post('/notifications/:id/read', requireAuth, (req, res) => {
   if (!n || n.userId !== req.user.id) return res.status(404).json({ error: 'Nicht gefunden' });
   n.read = true;
   db.commit();
+  res.json({ ok: true });
+});
+
+// =============================================================================
+// Push-Benachrichtigungen (Browser/Handy) – Abo-Verwaltung
+// =============================================================================
+
+// Öffentlicher VAPID-Schlüssel + ob Push serverseitig verfügbar ist.
+router.get('/push/status', requireAuth, (req, res) => {
+  const enabled = pushConfigured();
+  res.json({
+    enabled,
+    publicKey: enabled ? getPublicKeyB64() : null,
+    subscribed: hasSubscription(req.user.id),
+  });
+});
+
+// Gerät für Push anmelden (Browser-Subscription speichern).
+router.post('/push/subscribe', requireAuth, (req, res) => {
+  const rec = saveSubscription(req.user.id, req.body?.subscription);
+  if (!rec) return res.status(400).json({ error: 'Ungültige Push-Anmeldung' });
+  res.json({ ok: true });
+});
+
+// Gerät abmelden.
+router.post('/push/unsubscribe', requireAuth, (req, res) => {
+  removeSubscription(req.body?.endpoint);
   res.json({ ok: true });
 });
 

@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon } from 'lucide-react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { getThemePref, setThemePref } from '../lib/theme.js';
+import { getPushState, enablePush, disablePush, iosNeedsInstall } from '../lib/push.js';
 
 const LINKABLE = ['schueler', 'klassensprecher'];
 
@@ -51,6 +52,7 @@ export default function Konto() {
         </Card>
 
         <ThemeCard />
+        <NotificationsCard />
 
         {user.role === 'eltern' && <ParentChildrenCard />}
         {LINKABLE.includes(user.role) && <FamilyCodeCard />}
@@ -218,6 +220,57 @@ function ThemeCard() {
           ))}
         </div>
         <p className="text-[11px] text-sage-muted mt-3">„Dunkel" ist ein warmes, augenschonendes Grün. „System" folgt automatisch der Einstellung deines Geräts.</p>
+      </div>
+    </Card>
+  );
+}
+
+// Push-Benachrichtigungen für dieses Gerät ein-/ausschalten.
+function NotificationsCard() {
+  const toast = useToast();
+  const [state, setState] = useState(null); // { supported, subscribed, permission }
+  const [busy, setBusy] = useState(false);
+  const iosHint = iosNeedsInstall();
+
+  useEffect(() => { getPushState().then(setState).catch(() => setState({ supported: false })); }, []);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (state?.subscribed) { await disablePush(); toast.push('Benachrichtigungen ausgeschaltet'); }
+      else { await enablePush(); toast.push('Benachrichtigungen aktiviert'); }
+      setState(await getPushState());
+    } catch (err) { toast.push(err.message, 'error'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Card className="p-5">
+      <CardHeader title="Benachrichtigungen" subtitle="Neue Nachrichten, Ankündigungen, Hausaufgaben & Termine" icon={Bell} />
+      <div className="p-4">
+        {!state ? (
+          <p className="text-sm text-sage-muted">Wird geprüft …</p>
+        ) : !state.supported ? (
+          <p className="text-sm text-sage-muted">
+            {iosHint
+              ? 'Auf iPhone/iPad: Öffne die App über „Teilen → Zum Home-Bildschirm", dann sind Benachrichtigungen möglich.'
+              : 'Dieses Gerät bzw. dieser Browser unterstützt keine Push-Benachrichtigungen.'}
+          </p>
+        ) : state.permission === 'denied' ? (
+          <p className="text-sm text-status-absent">
+            Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen des Browsers wieder erlauben.
+          </p>
+        ) : (
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-ivory text-sm">{state.subscribed ? 'Aktiviert auf diesem Gerät' : 'Auf diesem Gerät aktivieren'}</div>
+              <div className="text-xs text-sage-muted">Auch wenn die App geschlossen ist.</div>
+            </div>
+            <Button size="sm" variant={state.subscribed ? 'outline' : 'primary'} onClick={toggle} disabled={busy}>
+              {state.subscribed ? <><BellOff size={16} /> Aus</> : <><Bell size={16} /> An</>}
+            </Button>
+          </div>
+        )}
       </div>
     </Card>
   );
