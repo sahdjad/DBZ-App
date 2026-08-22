@@ -4,10 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
-import { initScrollFeel } from './lib/scroll.js';
 import './index.css';
-
-initScrollFeel();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
+import { attachScrollFeel } from '../lib/scroll.js';
 import {
   LayoutDashboard,
   BookOpen,
@@ -133,6 +134,11 @@ export default function AppLayout({ children, title }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(0);
+  const scrollRef = useRef(null);
+
+  // Eigener Scroll-Bereich für den Hauptinhalt (unabhängig von der Seitenleiste)
+  // mit weichem Verhalten & Rand-Abfedern.
+  useEffect(() => attachScrollFeel(scrollRef.current), []);
 
   useEffect(() => {
     let alive = true;
@@ -177,9 +183,9 @@ export default function AppLayout({ children, title }) {
   );
 
   return (
-    <div className="min-h-screen flex bg-bg">
-      {/* Desktop-Sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 sticky top-0 h-screen">{Sidebar}</aside>
+    <div className="app-h flex bg-bg overflow-hidden">
+      {/* Desktop-Sidebar – eigener, fester Bereich (scrollt nicht mit dem Inhalt) */}
+      <aside className="hidden lg:flex w-64 shrink-0 app-h">{Sidebar}</aside>
 
       {/* Mobile-Drawer */}
       {open && (
@@ -189,9 +195,9 @@ export default function AppLayout({ children, title }) {
         </div>
       )}
 
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* Topbar */}
-        <header className="sticky top-0 z-30 flex items-center gap-3 px-4 lg:px-8 py-4 bg-bg/85 backdrop-blur border-b border-black/10">
+      <div className="flex-1 min-w-0 flex flex-col app-h">
+        {/* Topbar – fest oben, außerhalb des Scroll-Bereichs */}
+        <header className="shrink-0 flex items-center gap-3 px-4 lg:px-8 py-4 bg-sidebar border-b border-black/10">
           <button
             className="lg:hidden text-sage hover:text-ivory"
             onClick={() => setOpen(true)}
@@ -210,7 +216,11 @@ export default function AppLayout({ children, title }) {
           </NavLink>
         </header>
 
-        <main className="flex-1 px-4 lg:px-8 py-6 max-w-6xl w-full mx-auto">{children}</main>
+        {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
+            mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
+        <main ref={scrollRef} className="dbz-scroll flex-1 overflow-y-auto overscroll-contain">
+          <div className="px-4 lg:px-8 py-6 max-w-6xl w-full mx-auto pb-28 lg:pb-12">{children}</div>
+        </main>
       </div>
 
       {/* Mobile-Bottom-Nav für schnellen Zugriff */}
