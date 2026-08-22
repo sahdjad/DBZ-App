@@ -86,7 +86,7 @@ export default function Leitung() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-sage-muted border-b border-black/10">
+                <tr className="text-left text-sage-muted border-b border-line">
                   <th className="py-3 px-4 font-medium">Klasse</th>
                   <th className="py-3 px-3 font-medium text-center">Schüler</th>
                   <th className="py-3 px-3 font-medium text-center">Anw.</th>
@@ -96,7 +96,7 @@ export default function Leitung() {
               </thead>
               <tbody>
                 {classes.map((c) => (
-                  <tr key={c.id} onClick={() => navigate('/klassenliste')} className="border-b border-black/5 last:border-0 hover:bg-hover cursor-pointer">
+                  <tr key={c.id} onClick={() => navigate('/klassenliste')} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
                     <td className="py-3 px-4 text-ivory whitespace-nowrap">{c.name}</td>
                     <td className="py-3 px-3 text-center font-mono">{c.students}</td>
                     <td className={`py-3 px-3 text-center font-mono ${rateColor(c.attendanceRate)}`}>{c.attendanceRate === null ? '–' : `${c.attendanceRate}%`}</td>

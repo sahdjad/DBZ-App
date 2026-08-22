@@ -40,7 +40,7 @@ export default function Benachrichtigungen() {
               onClick={() => openNotification(n, navigate)}
               className={`p-4 flex items-start gap-3 cursor-pointer hover:bg-hover transition ${n.read ? '' : 'border-mint/30'}`}
             >
-              <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${n.read ? 'bg-black/15' : dot[n.level] || 'bg-mint'}`} />
+              <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${n.read ? 'bg-subtle' : dot[n.level] || 'bg-mint'}`} />
               <div className="min-w-0 flex-1">
                 <div className="text-ivory">{n.title}</div>
                 <div className="text-sm text-sage">{n.body}</div>

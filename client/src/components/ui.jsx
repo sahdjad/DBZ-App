@@ -22,10 +22,10 @@ export function Button({
   };
   const variants = {
     primary:
-      'bg-mint text-sidebar border border-mint-light/40 hover:bg-mint-light shadow-[0_0_0_1px_rgba(134,210,172,0.15)]',
+      'bg-mint text-onaccent border border-mint-light/40 hover:bg-mint-light shadow-[0_0_0_1px_rgba(134,210,172,0.15)]',
     outline:
-      'border border-black/15 text-ivory bg-white/0 hover:bg-black/[0.05] hover:border-black/20',
-    ghost: 'text-sage hover:text-ivory hover:bg-black/[0.05]',
+      'border border-line text-ivory bg-white/0 hover:bg-subtle hover:border-line',
+    ghost: 'text-sage hover:text-ivory hover:bg-subtle',
     danger: 'border border-status-absent/40 text-status-absent hover:bg-status-absent/10',
   };
   return (
@@ -40,7 +40,7 @@ export function Card({ className = '', children, ...props }) {
   return (
     <div
       className={cx(
-        'bg-card border border-black/10 rounded-xl transition-all duration-300',
+        'bg-card border border-line rounded-xl transition-all duration-300',
         className,
       )}
       {...props}
@@ -52,7 +52,7 @@ export function Card({ className = '', children, ...props }) {
 
 export function CardHeader({ title, subtitle, icon: Icon, action }) {
   return (
-    <div className="flex items-start justify-between gap-4 p-5 border-b border-black/10">
+    <div className="flex items-start justify-between gap-4 p-5 border-b border-line">
       <div className="flex items-start gap-3">
         {Icon && (
           <span className="mt-0.5 text-mint">
@@ -78,7 +78,7 @@ export function Badge({ tone = 'mint', children, className = '' }) {
     incomplete: 'bg-status-incomplete/15 text-status-incomplete border-status-incomplete/30',
     excused: 'bg-status-excused/15 text-status-excused border-status-excused/30',
     absent: 'bg-status-absent/15 text-status-absent border-status-absent/30',
-    neutral: 'bg-black/[0.05] text-sage border-black/10',
+    neutral: 'bg-subtle text-sage border-line',
   };
   return (
     <span
@@ -97,7 +97,7 @@ export function Badge({ tone = 'mint', children, className = '' }) {
 export function Progress({ value = 0, className = '' }) {
   return (
     <div
-      className={cx('h-2 rounded-full bg-black/10 overflow-hidden', className)}
+      className={cx('h-2 rounded-full bg-subtle overflow-hidden', className)}
       role="progressbar"
       aria-valuenow={value}
       aria-valuemin={0}
@@ -152,7 +152,7 @@ export function Avatar({ name = '', size = 40 }) {
     .toUpperCase();
   return (
     <div
-      className="rounded-full bg-moss border border-black/10 text-mint-light font-mono font-semibold flex items-center justify-center shrink-0"
+      className="rounded-full bg-moss border border-line text-mint-light font-mono font-semibold flex items-center justify-center shrink-0"
       style={{ width: size, height: size, fontSize: size * 0.36 }}
       aria-hidden="true"
     >
@@ -187,7 +187,7 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               role="status"
-              className="animate-fade-up bg-card border border-black/10 rounded-lg p-3.5 flex items-start gap-3 shadow-lg"
+              className="animate-fade-up bg-card border border-line rounded-lg p-3.5 flex items-start gap-3 shadow-lg"
             >
               <Icon size={18} className={cx('mt-0.5 shrink-0', color)} aria-hidden="true" />
               <p className="text-sm text-sage flex-1">{t.message}</p>
@@ -266,7 +266,7 @@ export function Reveal({ children, className = '', delay = 0 }) {
 export function Spinner({ label = 'Lädt …' }) {
   return (
     <div className="flex items-center justify-center gap-3 py-16 text-sage-muted" role="status">
-      <span className="h-5 w-5 rounded-full border-2 border-black/15 border-t-mint animate-spin" />
+      <span className="h-5 w-5 rounded-full border-2 border-line border-t-mint animate-spin" />
       <span className="text-sm">{label}</span>
     </div>
   );

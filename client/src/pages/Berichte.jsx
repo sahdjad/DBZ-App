@@ -28,7 +28,7 @@ function ReportView({ report }) {
         <Stat label="Verhalten (+ / Hinweis)" value={`${d.behavior.positive} / ${d.behavior.hinweis}`} />
       </div>
       {report.teacherComment && (
-        <div className="rounded-lg border border-black/10 bg-black/[0.03] p-4">
+        <div className="rounded-lg border border-line bg-subtle p-4">
           <div className="text-sm text-ivory mb-1">Kommentar der Lehrkraft</div>
           <p className="text-sage whitespace-pre-line">{report.teacherComment}</p>
         </div>
@@ -40,7 +40,7 @@ function ReportView({ report }) {
 function Stat({ label, value, tone = 'mint' }) {
   const colors = { mint: 'text-mint-light', late: 'text-status-late', absent: 'text-status-absent' };
   return (
-    <div className="rounded-lg border border-black/10 bg-black/[0.03] p-4">
+    <div className="rounded-lg border border-line bg-subtle p-4">
       <div className={`font-mono text-xl ${colors[tone] || colors.mint}`}>{value}</div>
       <div className="text-xs text-sage-muted mt-1">{label}</div>
     </div>
@@ -141,7 +141,7 @@ function ManagerView() {
       </div>
       <Card className="p-5">
         <CardHeader title="Schüler" subtitle="Bericht erstellen oder öffnen" icon={FileText} />
-        <div className="divide-y divide-black/5">
+        <div className="divide-y divide-line">
           {students.map((s) => (
             <div key={s.id} className="py-3 flex items-center justify-between gap-3">
               <span className="text-ivory">{s.name}</span>

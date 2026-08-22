@@ -8,6 +8,51 @@
   --hero-image: none;
 }
 
+/* --- Farb-Themes (als RGB-Kanäle für Tailwind-Alpha) --------------------------
+   Hell = weiß mit Dunkelgrün. Dunkel = warmes, augenschonendes Dunkelgrün
+   (gedämpfte Kontraste, cremeweiße statt greller Schrift). */
+:root {
+  --c-bg: 244 248 245;
+  --c-sidebar: 255 255 255;
+  --c-card: 255 255 255;
+  --c-moss: 220 231 225;
+  --c-hover: 231 241 235;
+  --c-line: 223 232 227;
+  --c-subtle: 240 245 242;
+  --c-onaccent: 255 255 255;
+  --c-mint: 21 101 63;
+  --c-mint-light: 30 138 86;
+  --c-ivory: 15 42 30;
+  --c-sage: 57 73 63;
+  --c-sage-muted: 104 120 110;
+  --c-present: 30 138 86;
+  --c-late: 169 120 26;
+  --c-excused: 60 107 158;
+  --c-absent: 188 82 56;
+  color-scheme: light;
+}
+
+.dark {
+  --c-bg: 20 28 24; /* #141C18 warmes Dunkelgrün */
+  --c-sidebar: 25 35 29; /* #19231D */
+  --c-card: 28 39 32; /* #1C2720 */
+  --c-moss: 52 66 57;
+  --c-hover: 36 49 41; /* sanftes Überfahren */
+  --c-line: 52 66 57; /* dezente Rahmen */
+  --c-subtle: 33 45 38;
+  --c-onaccent: 245 250 247;
+  --c-mint: 74 170 116; /* etwas heller für Kontrast auf Dunkel */
+  --c-mint-light: 118 200 156;
+  --c-ivory: 233 242 235; /* cremeweiße Überschriften (nicht grell) */
+  --c-sage: 190 205 196; /* weicher heller Fließtext */
+  --c-sage-muted: 138 155 145;
+  --c-present: 74 190 128;
+  --c-late: 210 165 84;
+  --c-excused: 122 168 216;
+  --c-absent: 224 130 104;
+  color-scheme: dark;
+}
+
 @layer base {
   html {
     scroll-behavior: smooth;
@@ -39,7 +84,7 @@
 @layer components {
   /* Einheitliches Formularfeld (Inputs, Selects, Textareas) */
   .input {
-    @apply w-full rounded-lg bg-card border border-black/10 px-3 py-2.5 text-ivory placeholder:text-sage-muted;
+    @apply w-full rounded-lg bg-card border border-line px-3 py-2.5 text-ivory placeholder:text-sage-muted;
   }
   .input:focus {
     @apply outline-none border-mint/50;
@@ -52,6 +97,13 @@
       radial-gradient(1100px 520px at 78% -10%, rgba(21, 101, 63, 0.10), transparent 60%),
       radial-gradient(820px 480px at 12% 12%, rgba(30, 138, 86, 0.08), transparent 55%),
       radial-gradient(620px 620px at 50% 120%, rgba(21, 101, 63, 0.06), transparent 60%);
+  }
+  .dark .hero-atmosphere {
+    background-color: #16231d;
+    background-image:
+      radial-gradient(1100px 520px at 78% -10%, rgba(74, 170, 116, 0.12), transparent 60%),
+      radial-gradient(820px 480px at 12% 12%, rgba(30, 138, 86, 0.10), transparent 55%),
+      radial-gradient(620px 620px at 50% 120%, rgba(21, 101, 63, 0.10), transparent 60%);
   }
 
   .hero-image {

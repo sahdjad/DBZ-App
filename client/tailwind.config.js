@@ -4,27 +4,31 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Design-System „Ivory / Deep Forest" – weiß mit dunkelgrünen Akzenten (DBZ-Logo)
-        bg: '#F4F8F5', // Seitenhintergrund (sanftes Weiß)
-        sidebar: '#FFFFFF', // Navigations-/Kartenweiß & Kontrasttext auf Grün
-        card: '#FFFFFF', // Karten & Eingabefelder
-        moss: '#DCE7E1', // helle Rahmen
-        hover: '#E7F1EB', // sanftes Grün beim Überfahren
+        // Themefähig über CSS-Variablen (siehe index.css :root & .dark).
+        // Hell = „Ivory / Deep Forest"; Dunkel = augenschonendes, warmes Dunkelgrün.
+        bg: 'rgb(var(--c-bg) / <alpha-value>)', // Seitenhintergrund
+        sidebar: 'rgb(var(--c-sidebar) / <alpha-value>)', // Navigations-/Panel-Fläche
+        card: 'rgb(var(--c-card) / <alpha-value>)', // Karten & Eingabefelder
+        moss: 'rgb(var(--c-moss) / <alpha-value>)',
+        hover: 'rgb(var(--c-hover) / <alpha-value>)', // sanftes Überfahren
+        line: 'rgb(var(--c-line) / <alpha-value>)', // Rahmen & Trenner (themefähig)
+        subtle: 'rgb(var(--c-subtle) / <alpha-value>)', // dezente Flächen/Fills
+        onaccent: 'rgb(var(--c-onaccent) / <alpha-value>)', // Text auf Grün (immer hell)
         mint: {
-          DEFAULT: '#15653F', // Dunkelgrün (Akzent, Buttons, Links) – wie DBZ-Logo
-          light: '#1E8A56',
+          DEFAULT: 'rgb(var(--c-mint) / <alpha-value>)', // Akzent (DBZ-Grün)
+          light: 'rgb(var(--c-mint-light) / <alpha-value>)',
         },
-        ivory: '#0F2A1E', // Überschriften (sehr dunkles Grün)
+        ivory: 'rgb(var(--c-ivory) / <alpha-value>)', // Überschriften
         sage: {
-          DEFAULT: '#39493F', // Fließtext
-          muted: '#68786E', // gedämpft
+          DEFAULT: 'rgb(var(--c-sage) / <alpha-value>)', // Fließtext
+          muted: 'rgb(var(--c-sage-muted) / <alpha-value>)',
         },
         status: {
-          present: '#1E8A56',
-          late: '#A9781A', // Bernstein – verspätet
-          incomplete: '#A9781A',
-          excused: '#3C6B9E', // dezentes Blau – entschuldigt
-          absent: '#BC5238', // Terrakotta – unentschuldigt/abwesend
+          present: 'rgb(var(--c-present) / <alpha-value>)',
+          late: 'rgb(var(--c-late) / <alpha-value>)',
+          incomplete: 'rgb(var(--c-late) / <alpha-value>)',
+          excused: 'rgb(var(--c-excused) / <alpha-value>)',
+          absent: 'rgb(var(--c-absent) / <alpha-value>)',
         },
       },
       fontFamily: {

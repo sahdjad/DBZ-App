@@ -50,7 +50,7 @@ export default function BerichtDruck() {
       {/* A4-Dokument (weiß, druckbar) */}
       <div className="print-page mx-auto max-w-3xl bg-white text-[#132a1e] rounded-xl shadow-xl overflow-hidden">
         <div className="bg-[#0f3d24] text-white px-8 py-6 flex items-center gap-4">
-          <span className="grid place-items-center h-12 w-12 rounded-lg bg-black/10 border border-black/15">
+          <span className="grid place-items-center h-12 w-12 rounded-lg bg-subtle border border-line">
             <BookMarked size={26} />
           </span>
           <div>

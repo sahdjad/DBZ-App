@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy } from 'lucide-react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { getThemePref, setThemePref } from '../lib/theme.js';
 
 const LINKABLE = ['schueler', 'klassensprecher'];
 
@@ -48,6 +49,8 @@ export default function Konto() {
             </form>
           </div>
         </Card>
+
+        <ThemeCard />
 
         {user.role === 'eltern' && <ParentChildrenCard />}
         {LINKABLE.includes(user.role) && <FamilyCodeCard />}
@@ -103,7 +106,7 @@ function ParentChildrenCard() {
         ) : children.length === 0 ? (
           <p className="text-sm text-sage-muted">Noch kein Kind verknüpft. Gib unten den Familien-Code ein, den dein Kind (oder die Lehrkraft) dir gibt.</p>
         ) : (
-          <ul className="divide-y divide-black/5">
+          <ul className="divide-y divide-line">
             {children.map((c) => (
               <li key={c.id} className="py-2.5 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -175,12 +178,46 @@ function FamilyCodeCard() {
           <Spinner />
         ) : (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-black/5 rounded-lg px-4 py-2">{code}</span>
+            <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-subtle rounded-lg px-4 py-2">{code}</span>
             <Button size="sm" variant="outline" onClick={copy}><Copy size={16} /> Kopieren</Button>
             <Button size="sm" variant="ghost" onClick={rotate}><RefreshCw size={16} /> Neu</Button>
           </div>
         )}
         <p className="text-[11px] text-sage-muted mt-3">Nur an deine eigenen Eltern weitergeben. Bei Missbrauch einfach „Neu" drücken – der alte Code wird ungültig.</p>
+      </div>
+    </Card>
+  );
+}
+
+// Darstellung: System / Hell / Dunkel
+function ThemeCard() {
+  const [pref, setPref] = useState(getThemePref());
+  const OPTIONS = [
+    { key: 'system', label: 'System', icon: Monitor },
+    { key: 'light', label: 'Hell', icon: Sun },
+    { key: 'dark', label: 'Dunkel', icon: Moon },
+  ];
+  const choose = (k) => { setPref(k); setThemePref(k); };
+  return (
+    <Card className="p-5">
+      <CardHeader title="Darstellung" subtitle="Hell, Dunkel oder automatisch (System)" icon={Sun} />
+      <div className="p-4">
+        <div className="grid grid-cols-3 gap-2">
+          {OPTIONS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => choose(key)}
+              className={[
+                'flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-sm transition',
+                pref === key ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage hover:bg-hover',
+              ].join(' ')}
+            >
+              <Icon size={20} />
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-sage-muted mt-3">„Dunkel" ist ein warmes, augenschonendes Grün. „System" folgt automatisch der Einstellung deines Geräts.</p>
       </div>
     </Card>
   );

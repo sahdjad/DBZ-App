@@ -202,7 +202,7 @@ function ManagerView() {
       {pending.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Zu genehmigen" subtitle={`${pending.length} vom Klassensprecher erfasst`} />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {pending.map((p) => (
               <PenaltyRow
                 key={p.id}
@@ -222,7 +222,7 @@ function ManagerView() {
       {debts.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Offene Schulden je Schüler" subtitle="Zum Einzug durch die Leitung" icon={HandCoins} />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {debts.map((d) => (
               <div key={d.studentId} className="py-3 flex items-center justify-between gap-3">
                 <span className="text-ivory">{d.studentName}</span>
@@ -239,7 +239,7 @@ function ManagerView() {
 
       <Card className="p-5">
         <CardHeader title="Offene Strafen" subtitle="Genehmigt – als erledigt verbuchen, wenn bezahlt / abgegeben" />
-        <div className="divide-y divide-black/5">
+        <div className="divide-y divide-line">
           {open.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Keine offenen Strafen.</p>
           ) : (
@@ -257,7 +257,7 @@ function ManagerView() {
       {done.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Verlauf" subtitle="Erledigt & abgelehnt" />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {done.map((p) => <PenaltyRow key={p.id} p={p} />)}
           </div>
         </Card>
@@ -291,7 +291,7 @@ function SprecherView() {
       <RecordForm onCreated={load} />
       <Card className="p-5">
         <CardHeader title="Strafen der Klasse" subtitle="Vom Lehrer noch zu genehmigen bzw. bereits entschieden" />
-        <div className="divide-y divide-black/5">
+        <div className="divide-y divide-line">
           {list.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Noch keine Strafen erfasst.</p>
           ) : (
@@ -358,14 +358,14 @@ function ReadView({ role }) {
         ) : open.length === 0 ? (
           <p className="p-4 text-sage-muted text-sm">Keine offenen Strafen. 🎉</p>
         ) : (
-          <div className="divide-y divide-black/5">{open.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
+          <div className="divide-y divide-line">{open.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
         )}
       </Card>
 
       {done.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Erledigt" />
-          <div className="divide-y divide-black/5">{done.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
+          <div className="divide-y divide-line">{done.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
         </Card>
       )}
     </div>

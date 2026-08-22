@@ -153,7 +153,7 @@ function CreateExam({ onDone, onCancel }) {
               key={s.id}
               type="button"
               onClick={() => toggleTarget(s.id)}
-              className={`text-sm px-3 py-1.5 rounded-full border transition ${targetIds.includes(s.id) ? 'bg-mint text-sidebar border-mint' : 'border-black/15 text-sage hover:bg-hover'}`}
+              className={`text-sm px-3 py-1.5 rounded-full border transition ${targetIds.includes(s.id) ? 'bg-mint text-onaccent border-mint' : 'border-line text-sage hover:bg-hover'}`}
             >
               {s.name}
             </button>
@@ -208,7 +208,7 @@ function QuestionEditor({ q, index, onChange, onRemove }) {
         <div className="mt-3 space-y-2">
           {q.options.map((o, i) => (
             <div key={i} className="flex items-center gap-2">
-              <button onClick={() => toggleCorrect(i)} className={['h-6 w-6 rounded border grid place-items-center text-xs', q.correct.includes(i) ? 'bg-mint border-mint text-sidebar' : 'border-black/15 text-transparent'].join(' ')} title="Als richtig markieren">✓</button>
+              <button onClick={() => toggleCorrect(i)} className={['h-6 w-6 rounded border grid place-items-center text-xs', q.correct.includes(i) ? 'bg-mint border-mint text-onaccent' : 'border-line text-transparent'].join(' ')} title="Als richtig markieren">✓</button>
               <input className="input py-1.5" placeholder={`Option ${i + 1}`} value={o.text} onChange={(e) => onChange({ ...q, options: q.options.map((x, j) => (j === i ? { text: e.target.value } : x)) })} />
               {q.options.length > 2 && <button onClick={() => onChange({ ...q, options: q.options.filter((_, j) => j !== i), correct: q.correct.filter((c) => c !== i).map((c) => (c > i ? c - 1 : c)) })} className="text-status-absent p-1"><Trash2 size={14} /></button>}
             </div>

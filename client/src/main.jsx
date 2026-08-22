@@ -4,7 +4,11 @@ import { HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
+import { initTheme } from './lib/theme.js';
 import './index.css';
+
+// Theme (System/Hell/Dunkel) vor dem Rendern anwenden – kein Aufblitzen.
+initTheme();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

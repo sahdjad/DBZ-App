@@ -84,7 +84,7 @@ function ManagerView() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-sage-muted border-b border-black/10">
+                <tr className="text-left text-sage-muted border-b border-line">
                   <th className="p-3 font-medium">Schüler</th>
                   <th className="p-3 font-medium">Quote</th>
                   <th className="p-3 font-medium">Anw.</th>
@@ -96,7 +96,7 @@ function ManagerView() {
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-black/5">
+                  <tr key={r.id} className="border-b border-line">
                     <td className="p-3"><Link to={`/profil/${r.id}`} className="text-ivory hover:text-mint-light hover:underline">{r.name}</Link></td>
                     <td className="p-3 font-mono">{rate(r)}%</td>
                     <td className="p-3">{r.present}</td>

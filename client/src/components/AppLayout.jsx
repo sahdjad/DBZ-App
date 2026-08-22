@@ -121,15 +121,15 @@ function NavItems({ items, unread, onNavigate }) {
             [
               'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300',
               isActive
-                ? 'bg-hover text-ivory border border-black/10'
-                : 'text-sage hover:text-ivory hover:bg-black/[0.05] border border-transparent',
+                ? 'bg-hover text-ivory border border-line'
+                : 'text-sage hover:text-ivory hover:bg-subtle border border-transparent',
             ].join(' ')
           }
         >
           <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
           <span className="flex-1">{label}</span>
           {to === '/benachrichtigungen' && unread > 0 && (
-            <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-sidebar text-[11px] font-mono font-semibold">
+            <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono font-semibold">
               {unread}
             </span>
           )}
@@ -174,10 +174,10 @@ export default function AppLayout({ children, title }) {
   };
 
   const Sidebar = (
-    <div className="flex flex-col h-full bg-sidebar border-r border-black/10">
+    <div className="flex flex-col h-full bg-sidebar border-r border-line">
       <Brand />
       <NavItems items={items} unread={unread} onNavigate={() => setOpen(false)} />
-      <div className="p-3 border-t border-black/10">
+      <div className="p-3 border-t border-line">
         <div className="flex items-center gap-3 px-2 py-2">
           <Avatar name={user?.name} size={36} />
           <div className="leading-tight min-w-0 flex-1">
@@ -207,7 +207,7 @@ export default function AppLayout({ children, title }) {
 
       <div className="flex-1 min-w-0 flex flex-col app-h">
         {/* Topbar – fest oben, außerhalb des Scroll-Bereichs */}
-        <header className="shrink-0 flex items-center gap-3 px-4 lg:px-8 py-4 bg-sidebar border-b border-black/10">
+        <header className="shrink-0 flex items-center gap-3 px-4 lg:px-8 py-4 bg-sidebar border-b border-line">
           <button
             className="lg:hidden text-sage hover:text-ivory"
             onClick={() => setOpen(true)}
@@ -219,7 +219,7 @@ export default function AppLayout({ children, title }) {
           <NavLink to="/benachrichtigungen" className="relative text-sage hover:text-ivory" aria-label="Benachrichtigungen">
             <Bell size={20} />
             {unread > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 grid place-items-center rounded-full bg-mint text-sidebar text-[10px] font-mono font-semibold">
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 grid place-items-center rounded-full bg-mint text-onaccent text-[10px] font-mono font-semibold">
                 {unread}
               </span>
             )}
@@ -241,7 +241,7 @@ export default function AppLayout({ children, title }) {
 
 function MobileTabBar({ items }) {
   return (
-    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar/95 backdrop-blur border-t border-black/10 flex">
+    <nav className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar/95 backdrop-blur border-t border-line flex">
       {items.map(({ to, label, icon: Icon }) => (
         <NavLink
           key={to}

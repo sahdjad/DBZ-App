@@ -15,7 +15,7 @@ function TafsirPanel({ data, edition, onEdition }) {
         <span className="text-xs text-sage-muted mr-1 inline-flex items-center gap-1"><FileText size={13} /> Tafsir</span>
         {EDS.map(([k, l]) => (
           <button key={k} onClick={() => onEdition(k)}
-            className={['text-[11px] px-2 py-0.5 rounded-md border', edition === k ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{l}</button>
+            className={['text-[11px] px-2 py-0.5 rounded-md border', edition === k ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{l}</button>
         ))}
       </div>
       {!data || data.loading ? (
@@ -85,7 +85,7 @@ function SurahList({ surahs, marks, onSelect, onMarksChanged }) {
       {marks?.bookmarks?.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Lesezeichen" icon={Bookmark} />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {marks.bookmarks.map((b) => (
               <div key={b.id} className="py-2.5 flex items-center justify-between gap-3">
                 <button onClick={() => onSelect(b.surah, b.ayah)} className="text-left min-w-0">
@@ -104,14 +104,14 @@ function SurahList({ surahs, marks, onSelect, onMarksChanged }) {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-muted" />
           <input className="input pl-9" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <Link to="/tadschwid" className="shrink-0 inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-black/15 text-sage hover:bg-hover">
+        <Link to="/tadschwid" className="shrink-0 inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-line text-sage hover:bg-hover">
           <Palette size={16} /> Tadschwid
         </Link>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {filtered.map((s) => (
           <button key={s.n} onClick={() => onSelect(s.n)}
-            className="flex items-center gap-3 rounded-xl border border-black/10 bg-card p-3 hover:bg-hover transition text-left">
+            className="flex items-center gap-3 rounded-xl border border-line bg-card p-3 hover:bg-hover transition text-left">
             <span className="grid place-items-center h-9 w-9 rounded-lg bg-mint/15 text-mint font-mono text-sm shrink-0">{s.n}</span>
             <div className="min-w-0">
               <div className="text-ivory truncate">{s.name}</div>
@@ -296,7 +296,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                 <span className="text-sage-muted mr-1">Ansicht</span>
                 {[['study', 'Studieren'], ['mushaf', 'Mushaf']].map(([v, l]) => (
                   <button key={v} onClick={() => setReadMode(v)}
-                    className={['px-2.5 py-1 rounded-md border inline-flex items-center gap-1', readMode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>
+                    className={['px-2.5 py-1 rounded-md border inline-flex items-center gap-1', readMode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>
                     {v === 'mushaf' ? <ScrollText size={13} /> : <BookOpenText size={13} />}{l}
                   </button>
                 ))}
@@ -306,7 +306,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
               <div className="inline-flex items-center gap-1">
                 {MODES.map(([v, l]) => (
                   <button key={v} onClick={() => setMode(v)}
-                    className={['px-2.5 py-1 rounded-md border', mode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{l}</button>
+                    className={['px-2.5 py-1 rounded-md border', mode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{l}</button>
                 ))}
               </div>
 
@@ -315,7 +315,7 @@ function SurahView({ n, targetAyah, onBack, onMarksChanged }) {
                 <span className="text-sage-muted mr-1">Wiederholung</span>
                 {REPEATS.map((r) => (
                   <button key={r} onClick={() => setRepeat(r)}
-                    className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-black/15 text-sage-muted'].join(' ')}>{repLabel(r)}</button>
+                    className={['px-2 py-1 rounded-md border', repeat === r ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{repLabel(r)}</button>
                 ))}
               </div>
 

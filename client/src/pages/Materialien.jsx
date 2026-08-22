@@ -63,7 +63,7 @@ function MaterialCard({ m, canDelete, onDelete }) {
         {canDelete && <button onClick={onDelete} className="text-status-absent p-1 shrink-0" aria-label="Löschen"><Trash2 size={16} /></button>}
       </div>
       {m.description && <p className="text-sage text-sm mt-2">{m.description}</p>}
-      {m.materialType === 'note' && <p className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-black/[0.03] border border-black/10 p-3">{m.body}</p>}
+      {m.materialType === 'note' && <p className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-subtle border border-line p-3">{m.body}</p>}
       {m.materialType === 'link' && (
         <a href={m.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-mint-light text-sm hover:underline">
           Öffnen <ExternalLink size={14} />
@@ -163,7 +163,7 @@ function NewForm({ user, onDone, onCancel }) {
           <label className="block">
             <span className="text-sm text-sage">Datei (PDF/Bild, max. 25 MB)</span>
             <input type="file" accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files[0])}
-              className="mt-1 block w-full text-sm text-sage file:mr-3 file:rounded-lg file:border-0 file:bg-mint file:px-3 file:py-2 file:text-sidebar" />
+              className="mt-1 block w-full text-sm text-sage file:mr-3 file:rounded-lg file:border-0 file:bg-mint file:px-3 file:py-2 file:text-onaccent" />
           </label>
         )}
 

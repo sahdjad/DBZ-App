@@ -106,7 +106,7 @@ export default function AufgabeDetail() {
               </a>
             ))}
             {review && (
-              <div className="mt-3 rounded-lg border border-black/10 bg-black/[0.03] p-3">
+              <div className="mt-3 rounded-lg border border-line bg-subtle p-3">
                 <div className="text-sm text-ivory mb-1">Feedback der Lehrkraft</div>
                 {review.gradeLabel && <div className="text-sm text-mint-light">Bewertung: {review.gradeLabel}</div>}
                 {review.feedbackText && <p className="text-sage text-sm whitespace-pre-line mt-1">{review.feedbackText}</p>}
@@ -129,7 +129,7 @@ export default function AufgabeDetail() {
           <CardHeader title={sub ? 'Erneut abgeben / überarbeiten' : 'Abgabe'} icon={Upload} />
           <div className="p-4 space-y-4">
             {(a.type === 'audio' || a.type === 'quran' || a.type === 'mixed') && (
-              <div className="rounded-lg border border-black/10 p-4">
+              <div className="rounded-lg border border-line p-4">
                 <div className="text-sm text-sage mb-2">Audio direkt aufnehmen</div>
                 {!recording ? (
                   <Button onClick={startRec} variant="outline"><Mic size={18} /> Aufnahme starten</Button>
@@ -143,7 +143,7 @@ export default function AufgabeDetail() {
               <span className="text-sm text-sage">Datei(en) hochladen (Audio, PDF, Bild – max. 25 MB)</span>
               <input type="file" multiple accept="audio/*,application/pdf,image/*"
                      onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files)])}
-                     className="mt-1 block w-full text-sm text-sage file:mr-3 file:rounded-lg file:border-0 file:bg-mint file:px-3 file:py-2 file:text-sidebar" />
+                     className="mt-1 block w-full text-sm text-sage file:mr-3 file:rounded-lg file:border-0 file:bg-mint file:px-3 file:py-2 file:text-onaccent" />
             </label>
 
             {files.length > 0 && (

@@ -19,7 +19,7 @@ function FamilyCodeCard({ studentId }) {
     <Card className="p-5 mt-4">
       <CardHeader title="Familien-Code" subtitle="Den Eltern geben, damit sie ihr Kind verknüpfen können" icon={Users} />
       <div className="p-4">
-        {!code ? <Spinner /> : <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-black/5 rounded-lg px-4 py-2">{code}</span>}
+        {!code ? <Spinner /> : <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-subtle rounded-lg px-4 py-2">{code}</span>}
       </div>
     </Card>
   );
@@ -76,7 +76,7 @@ export default function StudentProfil() {
         {/* Aufgaben */}
         <Card className="md:col-span-2 p-5">
           <CardHeader title="Aufgaben" icon={BookOpen} />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {data.assignments.length === 0 ? (
               <p className="p-4 text-sage-muted text-sm">Keine Aufgaben.</p>
             ) : (
@@ -102,7 +102,7 @@ export default function StudentProfil() {
       {/* Verhalten */}
       <Card className="p-5 mt-4">
         <CardHeader title="Verhalten & Tarbiyah" icon={Sparkles} />
-        <div className="divide-y divide-black/5">
+        <div className="divide-y divide-line">
           {data.behavior.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Keine Vermerke.</p>
           ) : (

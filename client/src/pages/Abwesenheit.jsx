@@ -87,7 +87,7 @@ export default function Abwesenheit() {
 
         <Card className="p-5">
           <CardHeader title="Meine Meldungen" />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {!requests ? <Spinner /> : requests.length === 0 ? (
               <p className="p-4 text-sage-muted text-sm">Noch keine Meldungen.</p>
             ) : requests.map((r) => (

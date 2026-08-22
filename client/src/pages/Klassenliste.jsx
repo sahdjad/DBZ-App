@@ -63,7 +63,7 @@ export default function Klassenliste() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-sage-muted border-b border-black/10">
+                  <tr className="text-left text-sage-muted border-b border-line">
                     <th className="py-3 px-4 font-medium">Name</th>
                     <th className="py-3 px-3 font-medium text-center" title="Anwesenheitsquote">Anw.</th>
                     <th className="py-3 px-3 font-medium text-center" title="Unentschuldigte Fehltage">Unent.</th>
@@ -77,7 +77,7 @@ export default function Klassenliste() {
                     <tr
                       key={r.id}
                       onClick={() => navigate(`/profil/${r.id}`)}
-                      className="border-b border-black/5 last:border-0 hover:bg-hover cursor-pointer"
+                      className="border-b border-line last:border-0 hover:bg-hover cursor-pointer"
                     >
                       <td className="py-3 px-4 text-ivory whitespace-nowrap">{r.name}</td>
                       <td className={`py-3 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`}>

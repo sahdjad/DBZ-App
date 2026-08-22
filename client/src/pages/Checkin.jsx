@@ -73,7 +73,7 @@ export default function Checkin() {
                   </Button>
                 )}
                 <div className="flex items-center gap-3 text-xs text-sage-muted">
-                  <span className="h-px flex-1 bg-black/10" /> oder Code eingeben <span className="h-px flex-1 bg-black/10" />
+                  <span className="h-px flex-1 bg-subtle" /> oder Code eingeben <span className="h-px flex-1 bg-subtle" />
                 </div>
               </>
             )}
@@ -96,7 +96,7 @@ export default function Checkin() {
           </div>
 
           {result && (
-            <div className="p-4 border-t border-black/10 flex items-center gap-3">
+            <div className="p-4 border-t border-line flex items-center gap-3">
               <CheckCircle2 className="text-status-present" />
               <div>
                 <div className="text-ivory flex items-center gap-2">

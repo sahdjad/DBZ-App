@@ -51,7 +51,7 @@ export default function Tadschwid() {
             ['#7C3AED', 'Madd'],
             ['#334155', 'Iẓhār (deutlich)'],
           ].map(([c, l]) => (
-            <span key={l} className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border border-black/10">
+            <span key={l} className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full border border-line">
               <span className="h-3 w-3 rounded-full" style={{ background: c }} /> {l}
             </span>
           ))}
@@ -61,7 +61,7 @@ export default function Tadschwid() {
       {RULES.map((g) => (
         <Card key={g.group} className="p-5 mb-4">
           <CardHeader title={g.group} />
-          <div className="divide-y divide-black/5">
+          <div className="divide-y divide-line">
             {g.items.map((r) => (
               <div key={r.name} className="py-3 flex items-start gap-3">
                 <span className="h-3 w-3 rounded-full mt-1.5 shrink-0" style={{ background: r.color }} />

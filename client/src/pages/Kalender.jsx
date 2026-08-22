@@ -111,14 +111,14 @@ export default function Kalender() {
         {/* Kopfzeile */}
         <div className="flex flex-wrap items-center gap-2 mb-4">
           <div className="flex items-center gap-1">
-            <button onClick={() => move(-1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-black/5" aria-label="Zurück"><ChevronLeft size={20} /></button>
-            <button onClick={() => move(1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-black/5" aria-label="Weiter"><ChevronRight size={20} /></button>
+            <button onClick={() => move(-1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-subtle" aria-label="Zurück"><ChevronLeft size={20} /></button>
+            <button onClick={() => move(1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-subtle" aria-label="Weiter"><ChevronRight size={20} /></button>
           </div>
           <h2 className="font-display text-lg text-ivory capitalize mr-auto">{title}</h2>
-          <button onClick={goToday} className="text-sm px-3 py-1.5 rounded-lg border border-black/15 text-sage hover:bg-hover">Heute</button>
-          <div className="flex rounded-lg border border-black/15 overflow-hidden">
+          <button onClick={goToday} className="text-sm px-3 py-1.5 rounded-lg border border-line text-sage hover:bg-hover">Heute</button>
+          <div className="flex rounded-lg border border-line overflow-hidden">
             {[['year', 'Jahr'], ['month', 'Monat'], ['week', 'Woche'], ['day', 'Tag']].map(([v, l]) => (
-              <button key={v} onClick={() => setView(v)} className={`text-sm px-3 py-1.5 ${view === v ? 'bg-mint text-sidebar' : 'text-sage hover:bg-hover'}`}>{l}</button>
+              <button key={v} onClick={() => setView(v)} className={`text-sm px-3 py-1.5 ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
             ))}
           </div>
           <Button size="sm" onClick={() => openNew()}><Plus size={16} /> Termin</Button>
@@ -177,9 +177,9 @@ function MonthView({ cursor, today, selected, setSelected, byDate, onAdd }) {
         return (
           <button key={key(d)} onDoubleClick={() => onAdd(d)} onClick={() => setSelected(new Date(d))}
             className={['min-h-[52px] rounded-lg flex flex-col items-center py-1.5 gap-1 text-sm transition border',
-              isSel ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-black/5',
+              isSel ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-subtle',
               inMonth ? 'text-ivory' : 'text-sage-muted/50'].join(' ')}>
-            <span className={isToday ? 'h-6 w-6 grid place-items-center rounded-full bg-mint text-sidebar font-semibold' : ''}>{d.getDate()}</span>
+            <span className={isToday ? 'h-6 w-6 grid place-items-center rounded-full bg-mint text-onaccent font-semibold' : ''}>{d.getDate()}</span>
             <span className="flex flex-wrap justify-center gap-0.5 px-1">
               {evs.slice(0, 4).map((e, i) => <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: eventColor(e) }} />)}
             </span>
@@ -199,7 +199,7 @@ function WeekView({ cursor, today, byDate, onPick, onEvent }) {
         const evs = byDate[key(d)] || [];
         const isToday = sameDay(d, today);
         return (
-          <div key={key(d)} className="rounded-lg border border-black/10 p-2 min-h-[120px]">
+          <div key={key(d)} className="rounded-lg border border-line p-2 min-h-[120px]">
             <button onClick={() => onPick(d)} className="w-full text-left mb-1.5">
               <div className="text-[11px] font-mono text-sage-muted">{WEEKDAYS[mondayIndex(d)]}</div>
               <div className={`text-sm ${isToday ? 'text-mint font-semibold' : 'text-ivory'}`}>{d.getDate()}.{d.getMonth() + 1}.</div>
@@ -235,7 +235,7 @@ function YearView({ cursor, today, byDate, onPickMonth }) {
         const start = addDays(first, -mondayIndex(first));
         const cells = Array.from({ length: 42 }, (_, i) => addDays(start, i));
         return (
-          <button key={m} onClick={() => onPickMonth(m)} className="rounded-lg border border-black/10 p-2 hover:bg-hover text-left">
+          <button key={m} onClick={() => onPickMonth(m)} className="rounded-lg border border-line p-2 hover:bg-hover text-left">
             <div className="text-sm text-ivory mb-1 capitalize">{first.toLocaleDateString('de-DE', { month: 'long' })}</div>
             <div className="grid grid-cols-7 gap-0.5">
               {cells.map((d) => {
@@ -243,7 +243,7 @@ function YearView({ cursor, today, byDate, onPickMonth }) {
                 const has = (byDate[key(d)] || []).length > 0;
                 const isToday = sameDay(d, today);
                 return (
-                  <span key={key(d)} className={`h-4 grid place-items-center text-[9px] rounded ${isToday ? 'bg-mint text-sidebar' : inMonth ? 'text-sage' : 'text-sage-muted/40'}`}>
+                  <span key={key(d)} className={`h-4 grid place-items-center text-[9px] rounded ${isToday ? 'bg-mint text-onaccent' : inMonth ? 'text-sage' : 'text-sage-muted/40'}`}>
                     <span className="relative">{d.getDate()}{has && inMonth && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-mint" />}</span>
                   </span>
                 );
@@ -269,7 +269,7 @@ function EventChip({ e, onClick }) {
 function DayAgenda({ events, onEvent }) {
   if (events.length === 0) return <p className="p-4 text-sage-muted text-sm">Keine Termine an diesem Tag.</p>;
   return (
-    <div className="divide-y divide-black/5">
+    <div className="divide-y divide-line">
       {events.map((e, i) => {
         const c = eventColor(e);
         const editable = e.type === 'personal';

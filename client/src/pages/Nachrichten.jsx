@@ -40,7 +40,7 @@ export default function Nachrichten() {
                     </div>
                     <div className="text-sm text-sage-muted truncate">{t.lastBody}</div>
                   </div>
-                  {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-sidebar text-[11px] font-mono shrink-0">{t.unread}</span>}
+                  {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono shrink-0">{t.unread}</span>}
                 </Card>
               ))}
             </div>
@@ -129,9 +129,9 @@ function Composer({ onSend, autoFocus }) {
   };
 
   return (
-    <div className="p-3 border-t border-black/10">
+    <div className="p-3 border-t border-line">
       {file && (
-        <div className="mb-2 flex items-center gap-2 text-sm bg-black/5 rounded-lg px-3 py-2">
+        <div className="mb-2 flex items-center gap-2 text-sm bg-subtle rounded-lg px-3 py-2">
           <span className="text-sage">
             {pickKind(file) === 'image' ? '📷 Bild' : pickKind(file) === 'audio' ? '🎤 Sprachnachricht' : `📎 ${file.name}`}
           </span>
@@ -182,7 +182,7 @@ function NewThread({ onCancel, onOpen }) {
 
   return (
     <Card className="overflow-hidden">
-      <div className="p-4 border-b border-black/10 flex items-center gap-3">
+      <div className="p-4 border-b border-line flex items-center gap-3">
         <button onClick={onCancel} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
         <span className="text-ivory">Neue Nachricht</span>
       </div>
@@ -259,7 +259,7 @@ function ThreadView({ id, onBack }) {
 
   return (
     <Card className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 220px)', minHeight: 380 }}>
-      <div className="flex items-center gap-3 p-4 border-b border-black/10">
+      <div className="flex items-center gap-3 p-4 border-b border-line">
         <button onClick={onBack} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
         <span className="text-ivory">{data.otherName}</span>
@@ -273,16 +273,16 @@ function ThreadView({ id, onBack }) {
             <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
               <div className="group flex items-end gap-1.5 max-w-[85%]">
                 {mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
-                <div className={['rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-sidebar rounded-br-sm' : 'bg-card border border-black/10 text-sage rounded-bl-sm'].join(' ')}>
+                <div className={['rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-onaccent rounded-br-sm' : 'bg-card border border-line text-sage rounded-bl-sm'].join(' ')}>
                   {m.body && <p className="text-sm whitespace-pre-line">{m.body}</p>}
                   <Attachment threadId={id} m={m} />
-                  <div className={`text-[10px] mt-1 ${mine ? 'text-sidebar/70' : 'text-sage-muted'}`}>{fmt(m.createdAt)}</div>
+                  <div className={`text-[10px] mt-1 ${mine ? 'text-onaccent/70' : 'text-sage-muted'}`}>{fmt(m.createdAt)}</div>
                 </div>
                 {!mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
               </div>
 
               {picker === m.id && (
-                <div className="mt-1 flex gap-1 bg-card border border-black/10 rounded-full px-2 py-1 shadow-soft">
+                <div className="mt-1 flex gap-1 bg-card border border-line rounded-full px-2 py-1 shadow-soft">
                   {REACTIONS.map((e) => (
                     <button key={e} onClick={() => react(m.id, e)} className="text-lg hover:scale-125 transition">{e}</button>
                   ))}
@@ -293,7 +293,7 @@ function ThreadView({ id, onBack }) {
                 <div className="flex gap-1 mt-1">
                   {reactionEntries.map(([e, ids]) => (
                     <button key={e} onClick={() => react(m.id, e)}
-                      className={['text-xs px-2 py-0.5 rounded-full border', ids.includes(meId) ? 'bg-mint/15 border-mint/40 text-mint' : 'bg-black/5 border-black/10 text-sage-muted'].join(' ')}>
+                      className={['text-xs px-2 py-0.5 rounded-full border', ids.includes(meId) ? 'bg-mint/15 border-mint/40 text-mint' : 'bg-subtle border-line text-sage-muted'].join(' ')}>
                       {e} {ids.length}
                     </button>
                   ))}
