@@ -29,9 +29,9 @@ function RecordList({ records, showStudent }) {
   if (!records) return <Spinner />;
   if (records.length === 0) return <p className="p-4 text-sage-muted text-sm">Noch keine Vermerke.</p>;
   return (
-    <div className="divide-y divide-line">
+    <div className="grid gap-3 lg:grid-cols-2 items-start">
       {records.map((r) => (
-        <div key={r.id} className="py-3 flex items-start gap-3">
+        <div key={r.id} className="flex items-start gap-3 rounded-lg border border-line bg-subtle/40 p-3">
           <ToneIcon tone={r.tone} />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">

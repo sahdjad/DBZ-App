@@ -59,9 +59,9 @@ export default function Entschuldigungen() {
       {decided.length > 0 && (
         <Card className="p-5">
           <CardHeader title="Bearbeitet" />
-          <div className="divide-y divide-line">
+          <div className="grid gap-2 lg:grid-cols-2 items-start">
             {decided.map((r) => (
-              <div key={r.id} className="py-3 flex items-center justify-between gap-3">
+              <div key={r.id} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-subtle/40 px-3 py-2.5">
                 <div className="text-sm">
                   <span className="text-ivory">{r.studentName}</span>
                   <span className="text-sage-muted"> · {TYPE_LABEL[r.requestType]} · {r.reasonCategory}</span>

@@ -73,11 +73,11 @@ export default function Protokolle() {
 
       <Card className="p-5">
         <CardHeader title="Protokolle" subtitle="Erst nach Lehrerbestätigung offiziell" icon={ClipboardList} />
-        <div className="divide-y divide-line">
+        <div className="grid gap-3 lg:grid-cols-2 items-start">
           {!protocols ? <Spinner /> : protocols.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
           ) : protocols.map((p) => (
-            <div key={p.id} className="py-4">
+            <div key={p.id} className="rounded-lg border border-line bg-subtle/40 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-sm text-sage-muted">{fmt(p.createdAt)} · {p.protocolType}</div>
                 <StatusBadge status={p.status} />

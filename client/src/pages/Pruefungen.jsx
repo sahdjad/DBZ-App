@@ -19,9 +19,9 @@ function StudentView() {
   if (!list) return <Spinner />;
   if (!list.length) return <Card className="p-6 text-sage-muted">Aktuell sind keine Prüfungen verfügbar.</Card>;
   return (
-    <div className="space-y-3">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 items-start">
       {list.map((e) => (
-        <Link key={e.id} to={`/pruefung/${e.id}`}>
+        <Link key={e.id} to={`/pruefung/${e.id}`} className="block">
           <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-ivory truncate">{e.title}</div>
@@ -53,8 +53,9 @@ function ManagerView() {
       {list.length === 0 ? (
         <Card className="p-6 text-sage-muted">Noch keine Prüfungen erstellt.</Card>
       ) : (
-        list.map((e) => (
-          <Link key={e.id} to={`/pruefung/${e.id}`}>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 items-start">
+        {list.map((e) => (
+          <Link key={e.id} to={`/pruefung/${e.id}`} className="block">
             <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-ivory truncate">{e.title}</div>
@@ -66,7 +67,8 @@ function ManagerView() {
               </div>
             </Card>
           </Link>
-        ))
+        ))}
+        </div>
       )}
     </div>
   );

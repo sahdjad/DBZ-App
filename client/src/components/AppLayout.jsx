@@ -257,7 +257,7 @@ export default function AppLayout({ children, title }) {
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
             mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
         <main ref={scrollRef} className="dbz-scroll flex-1 overflow-y-auto overscroll-contain">
-          <div className="px-4 lg:px-8 py-6 max-w-6xl w-full mx-auto pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12">{children}</div>
+          <div className="px-4 lg:px-8 py-6 max-w-7xl w-full mx-auto pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12">{children}</div>
         </main>
       </div>
 
