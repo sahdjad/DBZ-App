@@ -284,7 +284,10 @@ function SettingsTab() {
   const save = async (e) => {
     e.preventDefault();
     try {
-      await api.patch('/org', { name: org.name, lateAfterMinutes: Number(org.lateAfterMinutes), audioRetentionDays: Number(org.audioRetentionDays), socialLinks: org.socialLinks });
+      await api.patch('/org', {
+        name: org.name, lateAfterMinutes: Number(org.lateAfterMinutes), audioRetentionDays: Number(org.audioRetentionDays), socialLinks: org.socialLinks,
+        penaltyDueDays: Number(org.penaltyDueDays), penaltySurchargePages: Number(org.penaltySurchargePages), penaltySurchargeMoney: Number(org.penaltySurchargeMoney),
+      });
       toast.push('Einstellungen gespeichert', 'success');
     } catch (err) { toast.push(err.message, 'error'); }
   };
@@ -307,6 +310,15 @@ function SettingsTab() {
             <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />
             <span className="text-xs text-sage-muted">Audio-Abgaben werden nach dieser Frist automatisch gelöscht (Bewertung bleibt). 0 lässt alles unangetastet.</span>
           </label>
+          <div className="pt-2 border-t border-line">
+            <div className="text-sm text-ivory mb-2">Strafsystem</div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input label="Frist (Tage, 0 = keine)" type="number" value={org.penaltyDueDays ?? 7} onChange={(v) => setOrg({ ...org, penaltyDueDays: v })} />
+              <Input label="Zuschlag (Seiten)" type="number" value={org.penaltySurchargePages ?? 0} onChange={(v) => setOrg({ ...org, penaltySurchargePages: v })} />
+              <Input label="Zuschlag (€)" type="number" value={org.penaltySurchargeMoney ?? 0} onChange={(v) => setOrg({ ...org, penaltySurchargeMoney: v })} />
+            </div>
+            <span className="text-xs text-sage-muted">Wird bei Fristüberschreitung einmalig auf offene Strafen aufgeschlagen.</span>
+          </div>
           {['youtube', 'instagram', 'tiktok'].map((k) => (
             <Input key={k} label={k[0].toUpperCase() + k.slice(1)} value={org.socialLinks?.[k] || ''} onChange={(v) => setOrg({ ...org, socialLinks: { ...org.socialLinks, [k]: v } })} />
           ))}
@@ -325,7 +337,7 @@ function SettingsTab() {
 // Gewichte für den automatischen Notenvorschlag (in Prozent bearbeitbar).
 const WEIGHT_FIELDS = [
   ['homework', 'Hausaufgaben'], ['attendance', 'Anwesenheit'], ['exams', 'Prüfungen'],
-  ['activities', 'Aktivitäten'], ['behavior', 'Verhalten'],
+  ['activities', 'Aktivitäten'], ['audios', 'Audios'], ['behavior', 'Verhalten'],
 ];
 function GradeWeightsCard({ weights, onChange, onSave }) {
   const w = weights || {};

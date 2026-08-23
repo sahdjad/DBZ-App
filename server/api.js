@@ -414,6 +414,9 @@ router.get('/org', requireAuth, (_req, res) => {
       lateAfterMinutes: o.lateAfterMinutes,
       audioRetentionDays: o.audioRetentionDays ?? 0,
       gradeWeights: gradeWeights(),
+      penaltyDueDays: o.penaltyDueDays ?? 7,
+      penaltySurchargePages: o.penaltySurchargePages ?? 0,
+      penaltySurchargeMoney: o.penaltySurchargeMoney ?? 0,
     },
   });
 });
@@ -427,6 +430,10 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
   if (Number.isFinite(lateAfterMinutes)) o.lateAfterMinutes = Math.max(0, Math.min(60, lateAfterMinutes));
   if (Number.isFinite(audioRetentionDays)) o.audioRetentionDays = Math.max(0, Math.min(3650, audioRetentionDays));
   if (name && name.trim()) o.name = name.trim();
+  const { penaltyDueDays, penaltySurchargePages, penaltySurchargeMoney } = req.body || {};
+  if (Number.isFinite(penaltyDueDays)) o.penaltyDueDays = Math.max(0, Math.min(365, penaltyDueDays));
+  if (Number.isFinite(penaltySurchargePages)) o.penaltySurchargePages = Math.max(0, Math.min(1000, penaltySurchargePages));
+  if (Number.isFinite(penaltySurchargeMoney)) o.penaltySurchargeMoney = Math.max(0, Math.min(1000, penaltySurchargeMoney));
   if (gw && typeof gw === 'object') {
     const next = { ...gradeWeights() };
     for (const k of WEIGHT_KEYS) if (typeof gw[k] === 'number' && gw[k] >= 0 && gw[k] <= 1) next[k] = Math.round(gw[k] * 100) / 100;
@@ -2389,7 +2396,9 @@ router.post('/reports', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => 
   if (!period) return res.status(400).json({ error: 'Berichtsperiode nicht gefunden' });
 
   let r = db.all('student_reports').find((x) => x.studentId === studentId && x.periodId === periodId);
-  const data = reportData(studentId);
+  // Kennzahlen über den Zeitraum der Periode (falls Start/Ende gesetzt), sonst gesamt.
+  const win = period.startsOn || period.endsOn ? { from: period.startsOn || null, to: period.endsOn || null } : null;
+  const data = reportData(studentId, win);
   if (!r) {
     r = {
       id: newId('rep'),
@@ -2941,6 +2950,26 @@ function penaltyText(p) {
   return p.type === 'money' ? `${p.amount} €` : `${p.amount} Seiten`;
 }
 
+// Reichert eine Strafe mit Frist-/Zuschlags-Infos an (berechnet, nicht gespeichert).
+function penaltyView(p) {
+  const o = org();
+  const today = new Date().toISOString().slice(0, 10);
+  const due = p.dueDate || null;
+  const overdue = p.status === 'approved' && !!due && today > due;
+  const surcharge = overdue ? (p.type === 'money' ? (o.penaltySurchargeMoney || 0) : (o.penaltySurchargePages || 0)) : 0;
+  return { ...p, dueDate: due, overdue, surcharge, effectiveAmount: p.amount + surcharge };
+}
+// Offene (genehmigte, nicht erledigte) Beträge einer Strafliste – Seiten & €.
+function openTotals(list) {
+  const t = { pages: 0, money: 0 };
+  for (const p of list) {
+    if (p.status !== 'approved') continue;
+    const v = penaltyView(p);
+    if (p.type === 'money') t.money += v.effectiveAmount; else t.pages += v.effectiveAmount;
+  }
+  return t;
+}
+
 /** Darf der Nutzer für diese Klasse Strafen erfassen? (Verwalter oder Klassensprecher der Klasse) */
 function canRecordPenalty(user, classId) {
   if (canManageClass(user, classId)) return true;
@@ -2979,6 +3008,9 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
 
   const isManager = canManageClass(req.user, classId);
   const now = new Date().toISOString();
+  // Frist: explizit übergeben oder Org-Standard; 0 = keine Frist.
+  const dueDays = Number.isFinite(Number(req.body?.dueInDays)) ? Math.max(0, Number(req.body.dueInDays)) : (org().penaltyDueDays || 0);
+  const dueDate = dueDays > 0 ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10) : null;
   const p = {
     id: newId('pen'),
     classId,
@@ -2987,6 +3019,7 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
     studentName: student.name,
     type,
     amount: amt,
+    dueDate,
     reason: reason.trim(),
     status: isManager ? 'approved' : 'pending',
     createdBy: req.user.id,
@@ -3025,7 +3058,7 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
         }),
       );
   }
-  res.json({ penalty: p });
+  res.json({ penalty: penaltyView(p) });
 });
 
 // Strafen auflisten (rollenabhängig gefiltert).
@@ -3046,10 +3079,32 @@ router.get('/penalties', requireAuth, (req, res) => {
   if (req.query.studentId) list = list.filter((p) => p.studentId === req.query.studentId);
   list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({
-    penalties: list,
+    penalties: list.map(penaltyView),
+    summary: openTotals(list), // offene Beträge (inkl. Zuschlag) der gefilterten Liste
     canManage: isClassManager(u),
     canRecord: isClassManager(u) || u.role === ROLES.KLASSENSPRECHER,
   });
+});
+
+// Offene-Beträge-Übersicht je Schüler (Leitung/Lehrkraft). Nur genehmigte, nicht
+// erledigte Strafen; inkl. Zuschlag bei Fristüberschreitung.
+router.get('/penalties/summary', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const classes = visibleClasses(req.user).filter((c) => canManageClass(req.user, c.id) && (!req.query.classId || c.id === req.query.classId));
+  const all = db.all('penalties');
+  const rows = [];
+  for (const c of classes) {
+    db.all('users')
+      .filter((s) => s.role === ROLES.SCHUELER && (s.classIds || []).includes(c.id))
+      .forEach((s) => {
+        const mine = all.filter((p) => p.studentId === s.id && p.classId === c.id);
+        const totals = openTotals(mine);
+        const overdue = mine.filter((p) => penaltyView(p).overdue).length;
+        if (totals.pages || totals.money || mine.length)
+          rows.push({ studentId: s.id, studentName: s.name, classId: c.id, className: c.name, openPages: totals.pages, openMoney: totals.money, overdue });
+      });
+  }
+  rows.sort((a, b) => (b.openMoney + b.openPages) - (a.openMoney + a.openPages) || a.studentName.localeCompare(b.studentName));
+  res.json({ rows });
 });
 
 // Genehmigen (Verwalter).
@@ -3116,6 +3171,22 @@ router.post('/penalties/:id/settle', requireAuth, requireRole(CLASS_MANAGERS), (
     deepLink: '/strafen',
   });
   res.json({ penalty: p });
+});
+
+// Anpassen/Umwandeln (Verwalter): Art/Höhe/Grund einer noch offenen Strafe
+// ändern – z. B. Geld in Seiten umwandeln, wenn der Schüler nicht zahlen kann.
+router.patch('/penalties/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (!['pending', 'approved'].includes(p.status)) return res.status(400).json({ error: 'Nur offene Strafen können angepasst werden' });
+  const { type, amount, reason } = req.body || {};
+  if (type && ['pages', 'money'].includes(type)) p.type = type;
+  if (amount !== undefined) { const a = Number(amount); if (a > 0) p.amount = a; }
+  if (typeof reason === 'string' && reason.trim()) p.reason = reason.trim();
+  db.commit();
+  audit(req.user.id, 'penalty.update', 'penalty', p.id);
+  notify(p.studentId, { type: 'penalty_new', level: 'info', title: 'Strafe angepasst', body: `${penaltyText(p)} – Grund: ${p.reason}`, deepLink: '/strafen' });
+  res.json({ penalty: penaltyView(p) });
 });
 
 // Löschen: eigener, noch offener Eintrag (z. B. Klassensprecher-Tippfehler) oder Admin.

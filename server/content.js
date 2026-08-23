@@ -34,7 +34,11 @@ export const DEFAULT_ORG = {
   // 0 = deaktiviert (Standard, bis das DBZ die Frist organisatorisch festlegt).
   audioRetentionDays: 0,
   // Gewichte für den automatischen Notenvorschlag (im Admin einstellbar).
-  gradeWeights: { homework: 0.35, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15 },
+  gradeWeights: { homework: 0.30, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15, audios: 0.05 },
+  // Strafsystem: Standard-Frist (Tage) und Zuschlag bei Überschreitung.
+  penaltyDueDays: 7, // 0 = keine Frist
+  penaltySurchargePages: 0, // zusätzliche Seiten bei Fristüberschreitung
+  penaltySurchargeMoney: 0, // zusätzliche € bei Fristüberschreitung
   socialLinks: {
     youtube: 'https://www.youtube.com/channel/UChiz3gfEtMvqb6pFkeZir6Q',
     instagram: 'https://www.instagram.com/deen.bildungszentrum/',

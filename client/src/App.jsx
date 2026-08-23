@@ -27,6 +27,7 @@ import Aktivitaeten from './pages/Aktivitaeten.jsx';
 import BerichtDruck from './pages/BerichtDruck.jsx';
 import Pruefungen from './pages/Pruefungen.jsx';
 import Pruefung from './pages/Pruefung.jsx';
+import PruefungDruck from './pages/PruefungDruck.jsx';
 import Hifz from './pages/Hifz.jsx';
 import QuranReader from './pages/QuranReader.jsx';
 import Tadschwid from './pages/Tadschwid.jsx';
@@ -85,6 +86,7 @@ export default function App() {
       <Route path="/bericht/:id/druck" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><BerichtDruck /></Protected>} />
       <Route path="/pruefungen" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefungen /></Protected>} />
       <Route path="/pruefung/:id" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><Pruefung /></Protected>} />
+      <Route path="/pruefung/:id/druck" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher']}><PruefungDruck /></Protected>} />
       <Route path="/hifz" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Hifz /></Protected>} />
       <Route path="/quran" element={<Protected><QuranReader /></Protected>} />
       <Route path="/tadschwid" element={<Protected><Tadschwid /></Protected>} />

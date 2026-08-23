@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink } from 'lucide-react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink, Printer } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -56,6 +56,9 @@ function StudentExam() {
           icon={GraduationCap}
           action={<Badge tone={attempt.passed ? 'present' : 'absent'}>{attempt.passed ? 'Bestanden' : 'Nicht bestanden'}</Badge>}
         />
+        <div className="px-4 pt-4">
+          <Button as={Link} to={`/pruefung/${id}/druck`} variant="outline" size="sm"><Printer size={16} /> PDF / Drucken</Button>
+        </div>
         <div className="p-4 space-y-4">
           {exam.questions.map((q, i) => {
             const myAns = (attempt.answers || []).find((a) => a.questionId === q.id) || {};

@@ -189,6 +189,29 @@ test('Aktivitäten fließen in den Leistungsstand ein + Monatsfilter', async () 
   assert.equal((await student('POST', '/activities', { studentId: sid, title: 'X' })).status, 403);
 });
 
+test('Strafen: Frist gesetzt, anpassen/umwandeln (Verwalter), Übersicht rollen-geschützt', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const sid = (await student('GET', '/auth/me')).data.user.id;
+  const classId = (await teacher('GET', '/classes')).data.classes[0].id;
+
+  const cr = await teacher('POST', '/penalties', { classId, studentId: sid, type: 'money', amount: 2, reason: 'Verspätung' });
+  assert.equal(cr.status, 200);
+  assert.ok(cr.data.penalty.dueDate, 'Frist aus Org-Standard gesetzt');
+  assert.equal(cr.data.penalty.effectiveAmount, 2);
+  const pid = cr.data.penalty.id;
+
+  // Umwandeln in Seiten (Alternative, wenn Schüler nicht zahlen kann).
+  const up = await teacher('PATCH', `/penalties/${pid}`, { type: 'pages', amount: 10 });
+  assert.equal(up.status, 200);
+  assert.equal(up.data.penalty.type, 'pages');
+  assert.equal(up.data.penalty.amount, 10);
+
+  // Übersicht offener Beträge: Lehrkraft ja, Schüler nein.
+  assert.equal((await teacher('GET', '/penalties/summary')).status, 200);
+  assert.equal((await student('GET', '/penalties/summary')).status, 403);
+});
+
 test('Notengewichte im Admin einstellbar (nur Leitung/Admin)', async () => {
   const leitung = await loginAs('leitung@dbz.de');
   const teacher = await loginAs('lehrer@dbz.de');

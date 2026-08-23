@@ -7,7 +7,9 @@ import { useAuth } from '../lib/AuthContext.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
-const penText = (p) => (p.type === 'money' ? `${p.amount} €` : `${p.amount} Seiten`);
+const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
+const penAmount = (p) => (p.effectiveAmount ?? p.amount); // inkl. Zuschlag bei Überfälligkeit
+const penText = (p) => (p.type === 'money' ? `${penAmount(p)} €` : `${penAmount(p)} Seiten`);
 
 const STATUS = {
   pending: { label: 'Wartet auf Genehmigung', tone: 'neutral' },
@@ -37,26 +39,29 @@ function debtSummary(list) {
   for (const p of list) {
     if (p.status !== 'approved') continue;
     const cur = byStudent.get(p.studentId) || { studentId: p.studentId, studentName: p.studentName, money: 0, pages: 0, count: 0 };
-    if (p.type === 'money') cur.money += p.amount;
-    else cur.pages += p.amount;
+    if (p.type === 'money') cur.money += penAmount(p);
+    else cur.pages += penAmount(p);
     cur.count += 1;
     byStudent.set(p.studentId, cur);
   }
   return [...byStudent.values()].sort((a, b) => a.studentName.localeCompare(b.studentName));
 }
 
-function TotalsBar({ list }) {
-  const money = list.filter((p) => p.status === 'approved' && p.type === 'money').reduce((s, p) => s + p.amount, 0);
-  const pages = list.filter((p) => p.status === 'approved' && p.type === 'pages').reduce((s, p) => s + p.amount, 0);
+// Kumulierte offene Summe; klickbar für die Detailübersicht.
+function TotalsBar({ list, onToggle, open }) {
+  const money = list.filter((p) => p.status === 'approved' && p.type === 'money').reduce((s, p) => s + penAmount(p), 0);
+  const pages = list.filter((p) => p.status === 'approved' && p.type === 'pages').reduce((s, p) => s + penAmount(p), 0);
+  const Wrap = onToggle ? 'button' : 'div';
   return (
-    <div className="flex flex-wrap gap-2">
+    <Wrap type={onToggle ? 'button' : undefined} onClick={onToggle} className="flex flex-wrap gap-2 items-center text-left">
       <span className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full bg-status-late/12 text-status-late">
         <HandCoins size={15} /> Offen: {money} €
       </span>
       <span className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full bg-status-late/12 text-status-late">
         <FileText size={15} /> Offen: {pages} Seiten
       </span>
-    </div>
+      {onToggle && <span className="text-xs text-mint-light underline">{open ? 'Details ausblenden' : 'Details anzeigen'}</span>}
+    </Wrap>
   );
 }
 
@@ -69,9 +74,12 @@ function PenaltyRow({ p, actions }) {
           <span className="text-ivory">{p.studentName}</span>
           <span className={`font-mono text-sm ${p.type === 'money' ? 'text-mint-light' : 'text-sage'}`}>{penText(p)}</span>
           <Badge tone={st.tone}>{st.label}</Badge>
+          {p.overdue && <Badge tone="absent">überfällig</Badge>}
+          {p.surcharge > 0 && <span className="text-[11px] text-status-absent">inkl. {p.surcharge}{p.type === 'money' ? ' €' : ' Seiten'} Zuschlag</span>}
         </div>
         <div className="text-xs text-sage-muted mt-0.5">
           Grund: {p.reason} · {fmt(p.createdAt)}
+          {p.dueDate ? ` · Frist: ${fmtDay(p.dueDate)}` : ''}
           {p.createdByName ? ` · erfasst von ${p.createdByName}` : ''}
           {p.rejectionReason ? ` · Ablehnung: ${p.rejectionReason}` : ''}
         </div>
@@ -81,12 +89,20 @@ function PenaltyRow({ p, actions }) {
   );
 }
 
+// Vorlagen für häufige Verstöße (Vorschlag – Lehrer/Sprecher kann alles anpassen).
+const TEMPLATES = [
+  { label: 'Verspätung', reason: 'Verspätung', type: 'money', amount: 2 },
+  { label: 'Stören im Unterricht', reason: 'Stören im Unterricht', type: 'pages', amount: 5 },
+  { label: 'Hausaufgaben vergessen', reason: 'Hausaufgaben vergessen', type: 'pages', amount: 5 },
+  { label: 'Fehlende Mitarbeit', reason: 'Fehlende Mitarbeit', type: 'pages', amount: 5 },
+];
+
 function RecordForm({ onCreated }) {
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
-  const [form, setForm] = useState({ studentId: '', type: 'pages', amount: 5, reason: '' });
+  const [form, setForm] = useState({ studentId: '', type: 'pages', amount: 5, reason: '', dueInDays: '' });
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -109,7 +125,9 @@ function RecordForm({ onCreated }) {
   const save = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/penalties', { ...form, classId, amount: Number(form.amount) });
+      const payload = { classId, studentId: form.studentId, type: form.type, amount: Number(form.amount), reason: form.reason };
+      if (form.dueInDays !== '') payload.dueInDays = Number(form.dueInDays);
+      await api.post('/penalties', payload);
       toast.push('Strafe erfasst', 'success');
       setForm((f) => ({ ...f, reason: '' }));
       onCreated?.();
@@ -122,6 +140,14 @@ function RecordForm({ onCreated }) {
     <Card className="p-5">
       <CardHeader title="Neue Strafe erfassen" subtitle="Seiten schreiben oder Geldstrafe" icon={Scale} />
       <form onSubmit={save} className="p-4 space-y-3">
+        {/* Vorlagen für häufige Gründe (füllen Grund/Art/Höhe vor – frei änderbar) */}
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-xs text-sage-muted self-center mr-1">Vorlage:</span>
+          {TEMPLATES.map((t) => (
+            <button key={t.label} type="button" onClick={() => setForm((f) => ({ ...f, reason: t.reason, type: t.type, amount: t.amount }))}
+              className="text-xs px-2.5 py-1 rounded-full border border-line text-sage hover:bg-hover">{t.label}</button>
+          ))}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {classes.length > 1 && (
             <label className="block sm:col-span-2">
@@ -160,6 +186,10 @@ function RecordForm({ onCreated }) {
           <span className="text-sm text-sage">Grund</span>
           <textarea className="input mt-1" rows={2} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required placeholder="z. B. Hausaufgabe wiederholt vergessen" />
         </label>
+        <label className="block sm:max-w-xs">
+          <span className="text-sm text-sage">Frist (Tage, leer = Standard)</span>
+          <input type="number" min="0" className="input mt-1" value={form.dueInDays} placeholder="Standard aus Einstellungen" onChange={(e) => setForm({ ...form, dueInDays: e.target.value })} />
+        </label>
         <Button type="submit" disabled={!form.studentId}><Plus size={18} /> Erfassen</Button>
       </form>
     </Card>
@@ -185,6 +215,23 @@ function ManagerView() {
     const reason = window.prompt('Grund der Ablehnung (optional):') ?? '';
     await act(id, 'reject', { reason });
   };
+  const patchPen = async (id, body, msg) => {
+    try { await api.patch(`/penalties/${id}`, body); toast.push(msg || 'Angepasst', 'success'); load(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  const changeAmount = (p) => {
+    const v = window.prompt(`Neue Höhe (${p.type === 'money' ? '€' : 'Seiten'}):`, String(p.amount));
+    if (v == null) return; const a = Number(v);
+    if (!(a > 0)) return toast.push('Ungültige Höhe', 'error');
+    patchPen(p.id, { amount: a }, 'Höhe angepasst');
+  };
+  const convert = (p) => {
+    const nt = p.type === 'money' ? 'pages' : 'money';
+    const v = window.prompt(`In ${nt === 'money' ? 'Geldstrafe (€)' : 'Seiten schreiben'} umwandeln – Höhe:`, nt === 'pages' ? '10' : '2');
+    if (v == null) return; const a = Number(v);
+    if (!(a > 0)) return toast.push('Ungültige Höhe', 'error');
+    patchPen(p.id, { type: nt, amount: a }, 'Umgewandelt');
+  };
 
   if (!data) return <Spinner />;
   const list = data.penalties;
@@ -209,6 +256,7 @@ function ManagerView() {
                 p={p}
                 actions={
                   <>
+                    <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>
                     <Button size="sm" onClick={() => act(p.id, 'approve')}><Check size={16} /> Genehmigen</Button>
                     <Button size="sm" variant="danger" onClick={() => reject(p.id)}><X size={16} /> Ablehnen</Button>
                   </>
@@ -247,7 +295,13 @@ function ManagerView() {
               <PenaltyRow
                 key={p.id}
                 p={p}
-                actions={<Button size="sm" variant="outline" onClick={() => act(p.id, 'settle')}><Check size={16} /> Erledigt</Button>}
+                actions={
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>
+                    <Button size="sm" variant="ghost" onClick={() => convert(p)}>{p.type === 'money' ? '→ Seiten' : '→ Geld'}</Button>
+                    <Button size="sm" variant="outline" onClick={() => act(p.id, 'settle')}><Check size={16} /> Erledigt</Button>
+                  </>
+                }
               />
             ))
           )}
@@ -338,6 +392,7 @@ function ReadView({ role }) {
     // eslint-disable-next-line
   }, [childId]);
 
+  const [showDetails, setShowDetails] = useState(false);
   const open = useMemo(() => (list || []).filter((p) => p.status === 'approved'), [list]);
   const done = useMemo(() => (list || []).filter((p) => p.status === 'settled'), [list]);
 
@@ -349,7 +404,17 @@ function ReadView({ role }) {
         </select>
       )}
 
-      {list && <TotalsBar list={list} />}
+      {list && <TotalsBar list={list} onToggle={() => setShowDetails((s) => !s)} open={showDetails} />}
+
+      {/* Detailübersicht: wann, Grund, welche Strafe, erledigt? */}
+      {showDetails && list && (
+        <Card className="p-5">
+          <CardHeader title="Detailübersicht" subtitle="Alle Strafen mit Grund, Datum und Status" icon={Scale} />
+          <div className="divide-y divide-line">
+            {list.length === 0 ? <p className="p-4 text-sage-muted text-sm">Keine Einträge.</p> : list.map((p) => <PenaltyRow key={p.id} p={p} />)}
+          </div>
+        </Card>
+      )}
 
       <Card className="p-5">
         <CardHeader title={role === 'eltern' ? 'Offene Strafen' : 'Meine offenen Strafen'} icon={Scale} />

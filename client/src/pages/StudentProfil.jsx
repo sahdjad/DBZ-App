@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, CalendarCheck, BookOpen, Sparkles, ThumbsUp, AlertTriangle, Users } from 'lucide-react';
+import { ArrowLeft, CalendarCheck, BookOpen, Sparkles, ThumbsUp, AlertTriangle, Users, Scale } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Ring, StatusBadge, Badge, Spinner } from '../components/ui.jsx';
@@ -125,6 +125,42 @@ export default function StudentProfil() {
           )}
         </div>
       </Card>
+
+      {/* Strafen: offene (inkl. Zuschlag) + erledigte, mit Herkunft */}
+      {MANAGER.includes(user.role) && <ProfilePenalties studentId={id} />}
     </AppLayout>
+  );
+}
+
+function ProfilePenalties({ studentId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => { api.get(`/penalties?studentId=${studentId}`).then(setData).catch(() => setData({ penalties: [] })); }, [studentId]);
+  if (!data) return null;
+  const list = data.penalties || [];
+  const s = data.summary || { pages: 0, money: 0 };
+  const open = list.filter((p) => p.status === 'approved');
+  const done = list.filter((p) => p.status === 'settled');
+  const line = (p) => (
+    <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="text-sm text-ivory">{p.type === 'money' ? `${p.effectiveAmount ?? p.amount} €` : `${p.effectiveAmount ?? p.amount} Seiten`}
+          {p.overdue && <span className="ml-2 text-[11px] text-status-absent">überfällig</span>}
+        </div>
+        <div className="text-xs text-sage-muted">Grund: {p.reason} · {fmt(p.createdAt)}{p.createdByName ? ` · von ${p.createdByName}` : ''}</div>
+      </div>
+      <span className={`text-[11px] px-2 py-0.5 rounded-full ${p.status === 'settled' ? 'bg-status-present/15 text-status-present' : 'bg-status-late/15 text-status-late'}`}>{p.status === 'settled' ? 'erledigt' : 'offen'}</span>
+    </div>
+  );
+  return (
+    <Card className="p-5 mt-4">
+      <CardHeader title="Strafen" subtitle={`Offen: ${s.money} € · ${s.pages} Seiten`} icon={Scale} />
+      <div className="divide-y divide-line">
+        {open.length === 0 && done.length === 0 ? (
+          <p className="p-4 text-sage-muted text-sm">Keine Strafen.</p>
+        ) : (
+          [...open, ...done].map(line)
+        )}
+      </div>
+    </Card>
   );
 }
