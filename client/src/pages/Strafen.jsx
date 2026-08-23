@@ -14,6 +14,7 @@ const penText = (p) => (p.type === 'money' ? `${penAmount(p)} €` : `${penAmoun
 const STATUS = {
   pending: { label: 'Wartet auf Genehmigung', tone: 'neutral' },
   approved: { label: 'Offen', tone: 'late' },
+  payment_pending: { label: 'Zahlung gemeldet – wartet auf Bestätigung', tone: 'neutral' },
   settled: { label: 'Erledigt', tone: 'present' },
   rejected: { label: 'Abgelehnt', tone: 'neutral' },
 };
@@ -236,6 +237,7 @@ function ManagerView() {
   if (!data) return <Spinner />;
   const list = data.penalties;
   const pending = list.filter((p) => p.status === 'pending');
+  const payReq = list.filter((p) => p.status === 'payment_pending');
   const open = list.filter((p) => p.status === 'approved');
   const done = list.filter((p) => p.status === 'settled' || p.status === 'rejected');
   const debts = debtSummary(list);
@@ -259,6 +261,26 @@ function ManagerView() {
                     <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>
                     <Button size="sm" onClick={() => act(p.id, 'approve')}><Check size={16} /> Genehmigen</Button>
                     <Button size="sm" variant="danger" onClick={() => reject(p.id)}><X size={16} /> Ablehnen</Button>
+                  </>
+                }
+              />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {payReq.length > 0 && (
+        <Card className="p-5 border-mint/30">
+          <CardHeader title="Zahlungsanfragen" subtitle={`${payReq.length} Schüler melden eine Zahlung/Erledigung`} icon={HandCoins} />
+          <div className="divide-y divide-line">
+            {payReq.map((p) => (
+              <PenaltyRow
+                key={p.id}
+                p={p}
+                actions={
+                  <>
+                    <Button size="sm" onClick={() => act(p.id, 'confirm-payment')}><Check size={16} /> Bestätigen</Button>
+                    <Button size="sm" variant="danger" onClick={() => act(p.id, 'decline-payment')}><X size={16} /> Ablehnen</Button>
                   </>
                 }
               />
@@ -368,9 +390,18 @@ function SprecherView() {
 }
 
 function ReadView({ role }) {
+  const toast = useToast();
   const [list, setList] = useState(null);
   const [children, setChildren] = useState([]);
   const [childId, setChildId] = useState('');
+  const reload = () => {
+    if (role === 'eltern' && childId) api.get(`/penalties?studentId=${childId}`).then((d) => setList(d.penalties));
+    else if (role !== 'eltern') api.get('/penalties').then((d) => setList(d.penalties));
+  };
+  const reportPaid = async (id) => {
+    try { await api.post(`/penalties/${id}/request-payment`, {}); toast.push('An die Lehrkraft gemeldet – wartet auf Bestätigung', 'success'); reload(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
 
   useEffect(() => {
     if (role === 'eltern') {
@@ -393,7 +424,7 @@ function ReadView({ role }) {
   }, [childId]);
 
   const [showDetails, setShowDetails] = useState(false);
-  const open = useMemo(() => (list || []).filter((p) => p.status === 'approved'), [list]);
+  const open = useMemo(() => (list || []).filter((p) => ['approved', 'payment_pending'].includes(p.status)), [list]);
   const done = useMemo(() => (list || []).filter((p) => p.status === 'settled'), [list]);
 
   return (
@@ -423,7 +454,21 @@ function ReadView({ role }) {
         ) : open.length === 0 ? (
           <p className="p-4 text-sage-muted text-sm">Keine offenen Strafen. 🎉</p>
         ) : (
-          <div className="divide-y divide-line">{open.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
+          <div className="divide-y divide-line">
+            {open.map((p) => (
+              <PenaltyRow
+                key={p.id}
+                p={p}
+                actions={role !== 'eltern' && p.status === 'approved' ? (
+                  <Button size="sm" variant="outline" onClick={() => reportPaid(p.id)}>
+                    {p.type === 'money' ? 'Als bezahlt melden' : 'Als erledigt melden'}
+                  </Button>
+                ) : role !== 'eltern' && p.status === 'payment_pending' ? (
+                  <span className="text-xs text-sage-muted self-center">wartet auf Bestätigung</span>
+                ) : null}
+              />
+            ))}
+          </div>
         )}
       </Card>
 

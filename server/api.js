@@ -2959,11 +2959,13 @@ function penaltyView(p) {
   const surcharge = overdue ? (p.type === 'money' ? (o.penaltySurchargeMoney || 0) : (o.penaltySurchargePages || 0)) : 0;
   return { ...p, dueDate: due, overdue, surcharge, effectiveAmount: p.amount + surcharge };
 }
-// Offene (genehmigte, nicht erledigte) Beträge einer Strafliste – Seiten & €.
+// Offene Beträge einer Strafliste – Seiten & €. Gemeldete, aber noch nicht vom
+// Lehrer bestätigte Zahlungen (payment_pending) zählen weiterhin als offen.
+const OPEN_STATES = ['approved', 'payment_pending'];
 function openTotals(list) {
   const t = { pages: 0, money: 0 };
   for (const p of list) {
-    if (p.status !== 'approved') continue;
+    if (!OPEN_STATES.includes(p.status)) continue;
     const v = penaltyView(p);
     if (p.type === 'money') t.money += v.effectiveAmount; else t.pages += v.effectiveAmount;
   }
@@ -3070,9 +3072,9 @@ router.get('/penalties', requireAuth, (req, res) => {
   else if (TEACHING_ROLES.includes(u.role)) list = all.filter((p) => (u.classIds || []).includes(p.classId));
   else if (u.role === ROLES.KLASSENSPRECHER) list = all.filter((p) => (u.classIds || []).includes(p.classId));
   else if (u.role === ROLES.SCHUELER)
-    list = all.filter((p) => p.studentId === u.id && ['approved', 'settled'].includes(p.status));
+    list = all.filter((p) => p.studentId === u.id && ['approved', 'payment_pending', 'settled'].includes(p.status));
   else if (u.role === ROLES.ELTERN)
-    list = all.filter((p) => (u.childIds || []).includes(p.studentId) && ['approved', 'settled'].includes(p.status));
+    list = all.filter((p) => (u.childIds || []).includes(p.studentId) && ['approved', 'payment_pending', 'settled'].includes(p.status));
   else list = [];
 
   if (req.query.classId) list = list.filter((p) => p.classId === req.query.classId);
@@ -3186,6 +3188,58 @@ router.patch('/penalties/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, r
   db.commit();
   audit(req.user.id, 'penalty.update', 'penalty', p.id);
   notify(p.studentId, { type: 'penalty_new', level: 'info', title: 'Strafe angepasst', body: `${penaltyText(p)} – Grund: ${p.reason}`, deepLink: '/strafen' });
+  res.json({ penalty: penaltyView(p) });
+});
+
+// Schüler meldet eine Zahlung/Erledigung -> Anfrage an die Lehrkraft (noch NICHT
+// offiziell erledigt). Nur der betroffene Schüler, nur genehmigte Strafen.
+router.post('/penalties/:id/request-payment', requireAuth, (req, res) => {
+  const p = byId('penalties', req.params.id);
+  if (!p) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (p.studentId !== req.user.id) return res.status(403).json({ error: 'Nur eigene Strafen können gemeldet werden' });
+  if (p.status !== 'approved') return res.status(400).json({ error: 'Nur offene Strafen können gemeldet werden' });
+  p.status = 'payment_pending';
+  p.paymentRequestedAt = new Date().toISOString();
+  p.paymentRequestedBy = req.user.id;
+  db.commit();
+  audit(req.user.id, 'penalty.request_payment', 'penalty', p.id);
+  db.all('users')
+    .filter((u) => canManageClass(u, p.classId) && !isAdmin(u))
+    .forEach((t) => notify(t.id, {
+      type: 'penalty_payment_request', level: 'info',
+      title: 'Zahlung zu bestätigen',
+      body: `${p.studentName} meldet ${penaltyText(p)} als bezahlt/erledigt.`,
+      deepLink: '/strafen', refId: p.id,
+    }));
+  res.json({ penalty: penaltyView(p) });
+});
+
+// Lehrkraft bestätigt die gemeldete Zahlung -> offiziell erledigt.
+router.post('/penalties/:id/confirm-payment', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (p.status !== 'payment_pending') return res.status(400).json({ error: 'Keine offene Zahlungsmeldung' });
+  p.status = 'settled';
+  p.settledBy = req.user.id;
+  p.settledByName = req.user.name;
+  p.settledAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'penalty.confirm_payment', 'penalty', p.id);
+  notify(p.studentId, { type: 'penalty_settled', level: 'success', title: 'Zahlung bestätigt', body: `${penaltyText(p)} wurde als erledigt bestätigt.`, deepLink: '/strafen' });
+  res.json({ penalty: penaltyView(p) });
+});
+
+// Lehrkraft lehnt die gemeldete Zahlung ab -> zurück auf offen.
+router.post('/penalties/:id/decline-payment', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const p = penaltyForManager(req, res);
+  if (!p) return;
+  if (p.status !== 'payment_pending') return res.status(400).json({ error: 'Keine offene Zahlungsmeldung' });
+  p.status = 'approved';
+  p.paymentRequestedAt = null;
+  p.paymentRequestedBy = null;
+  db.commit();
+  audit(req.user.id, 'penalty.decline_payment', 'penalty', p.id);
+  notify(p.studentId, { type: 'penalty_new', level: 'warning', title: 'Zahlung nicht bestätigt', body: `${penaltyText(p)} ist weiterhin offen.`, deepLink: '/strafen' });
   res.json({ penalty: penaltyView(p) });
 });
 

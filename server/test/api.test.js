@@ -212,6 +212,28 @@ test('Strafen: Frist gesetzt, anpassen/umwandeln (Verwalter), Übersicht rollen-
   assert.equal((await student('GET', '/penalties/summary')).status, 403);
 });
 
+test('Strafen: Schüler meldet Zahlung, Lehrkraft bestätigt (Freigabe-Workflow)', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const sid = (await student('GET', '/auth/me')).data.user.id;
+  const classId = (await teacher('GET', '/classes')).data.classes[0].id;
+  const pid = (await teacher('POST', '/penalties', { classId, studentId: sid, type: 'money', amount: 5, reason: 'Zahlungstest' })).data.penalty.id;
+
+  // Schüler meldet bezahlt -> payment_pending, zählt weiterhin als offen.
+  const rq = await student('POST', `/penalties/${pid}/request-payment`, {});
+  assert.equal(rq.status, 200);
+  assert.equal(rq.data.penalty.status, 'payment_pending');
+  assert.ok((await student('GET', '/penalties')).data.summary.money >= 5);
+
+  // Nur der eigene Schüler darf melden (Lehrkraft nicht).
+  assert.equal((await teacher('POST', `/penalties/${pid}/request-payment`, {})).status, 403);
+
+  // Lehrkraft bestätigt -> offiziell erledigt.
+  const cf = await teacher('POST', `/penalties/${pid}/confirm-payment`, {});
+  assert.equal(cf.status, 200);
+  assert.equal(cf.data.penalty.status, 'settled');
+});
+
 test('Notengewichte im Admin einstellbar (nur Leitung/Admin)', async () => {
   const leitung = await loginAs('leitung@dbz.de');
   const teacher = await loginAs('lehrer@dbz.de');
