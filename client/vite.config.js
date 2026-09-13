@@ -16,5 +16,15 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Geteilte Bibliotheken in einen stabilen, langlebig cachebaren Chunk
+        // auslagern (ändert sich selten -> Nutzer laden ihn nur einmal).
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-icons': ['lucide-react'],
+        },
+      },
+    },
   },
 });
