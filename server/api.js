@@ -1096,6 +1096,8 @@ router.get('/absence-reasons', requireAuth, (_req, res) => res.json({ reasons: A
 
 router.post('/absence-requests', requireAuth, (req, res) => {
   const { studentId, classId, requestType, reasonCategory, comment, sessionDate } = req.body || {};
+  if (!comment || comment.trim().length < 30)
+    return res.status(400).json({ error: 'Bitte eine Begründung mit mindestens 30 Zeichen angeben.' });
   // Schüler stellt für sich; Eltern für ihr Kind.
   let targetStudentId = req.user.id;
   if (req.user.role === ROLES.ELTERN) {
@@ -1443,6 +1445,31 @@ router.post(
 );
 
 // Datei einer Abgabe herunterladen (autorisiert; signierter Zugriff simuliert).
+// Buffer mit HTTP-Range-Unterstützung ausliefern – nötig, damit Safari/iOS
+// <audio>/<video> abspielt (Safari verlangt 206 Partial Content).
+function sendBufferWithRange(req, res, buf, mediaType, originalName) {
+  const total = buf.length;
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Type', mediaType || 'application/octet-stream');
+  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(originalName || 'datei')}"`);
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  const range = req.headers.range;
+  if (range) {
+    const m = /bytes=(\d*)-(\d*)/.exec(range);
+    let start = m && m[1] ? parseInt(m[1], 10) : 0;
+    let end = m && m[2] ? parseInt(m[2], 10) : total - 1;
+    if (Number.isNaN(start)) start = 0;
+    if (Number.isNaN(end) || end >= total) end = total - 1;
+    if (start > end || start >= total) { res.status(416); res.setHeader('Content-Range', `bytes */${total}`); return res.end(); }
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${total}`);
+    res.setHeader('Content-Length', end - start + 1);
+    return res.end(buf.subarray(start, end + 1));
+  }
+  res.setHeader('Content-Length', total);
+  return res.end(buf);
+}
+
 router.get('/submissions/:id/file/:fileId', requireAuth, async (req, res) => {
   const sub = byId('submissions', req.params.id);
   if (!sub) return res.status(404).json({ error: 'Nicht gefunden' });
@@ -1456,9 +1483,7 @@ router.get('/submissions/:id/file/:fileId', requireAuth, async (req, res) => {
   if (!file || file.deleted) return res.status(404).json({ error: 'Datei fehlt' });
   const buf = await readFile(file.filename);
   if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
-  res.setHeader('Content-Type', file.mediaType || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.originalName)}"`);
-  res.end(buf);
+  return sendBufferWithRange(req, res, buf, file.mediaType, file.originalName);
 });
 
 // Korrekturqueue einer Klasse (Verwalter).
@@ -2786,9 +2811,7 @@ router.get('/threads/:id/messages/:mid/file', requireAuth, async (req, res) => {
   if (!m || !m.file) return res.status(404).json({ error: 'Anhang fehlt' });
   const buf = await readFile(m.file.filename);
   if (!buf) return res.status(404).json({ error: 'Anhang fehlt' });
-  res.setHeader('Content-Type', m.file.mediaType || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(m.file.originalName)}"`);
-  res.end(buf);
+  return sendBufferWithRange(req, res, buf, m.file.mediaType, m.file.originalName);
 });
 
 // Reaktion auf eine Nachricht setzen/entfernen (umschalten).
@@ -2921,9 +2944,7 @@ router.get('/materials/:id/file', requireAuth, async (req, res) => {
   if (!canSeeMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
   const buf = await readFile(m.fileRef.filename);
   if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
-  res.setHeader('Content-Type', m.fileRef.mediaType || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(m.fileRef.originalName)}"`);
-  res.end(buf);
+  return sendBufferWithRange(req, res, buf, m.fileRef.mediaType, m.fileRef.originalName);
 });
 
 router.delete('/materials/:id', requireAuth, (req, res) => {

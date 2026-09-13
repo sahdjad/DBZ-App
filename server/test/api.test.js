@@ -344,7 +344,7 @@ test('Abwesenheitsantrag: Schüler stellt, kann ihn nicht selbst genehmigen, Leh
   const create = await student('POST', '/absence-requests', {
     requestType: 'absent',
     reasonCategory: 'krankheit',
-    comment: 'Erkältung',
+    comment: 'Assalamu alaikum, mein Kind ist heute krank (Erkältung) und kann leider nicht am Unterricht teilnehmen.',
   });
   assert.equal(create.status, 200);
   const id = create.data.request.id;
@@ -673,7 +673,11 @@ test("Qur'an: Tafsir-Ausgaben verfügbar, ungültige Ayah abgewiesen", async () 
 
 test('Kalender: Schüler sieht Unterrichtstermine und Hausaufgaben-Frist', async () => {
   const student = await loginAs('schueler@dbz.de');
-  const r = await student('GET', '/calendar?from=2026-08-01&to=2026-08-31');
+  // Fenster dynamisch (dieser + nächster Monat), da der Seed relativ zu heute plant.
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString().slice(0, 10);
+  const to = new Date(now.getFullYear(), now.getMonth() + 2, 0).toISOString().slice(0, 10);
+  const r = await student('GET', `/calendar?from=${from}&to=${to}`);
   assert.equal(r.status, 200);
   assert.ok(r.data.events.some((e) => e.type === 'lesson'), 'mind. ein Unterrichtstermin');
   assert.ok(r.data.events.some((e) => e.type === 'deadline'), 'mind. eine Frist');

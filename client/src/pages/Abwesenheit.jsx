@@ -33,12 +33,17 @@ export default function Abwesenheit() {
     }
   }, []);
 
+  const [touched, setTouched] = useState(false);
+  const commentTooShort = (form.comment || '').trim().length < 30;
   const submit = async (e) => {
     e.preventDefault();
+    setTouched(true);
+    if (commentTooShort) { toast.push('Bitte eine kurze Begründung mit mindestens 30 Zeichen angeben.', 'error'); return; }
     try {
       await api.post('/absence-requests', form);
       toast.push('Antrag gesendet', 'success');
       setForm((f) => ({ ...f, comment: '' }));
+      setTouched(false);
       load();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -78,10 +83,22 @@ export default function Abwesenheit() {
               </label>
             </div>
             <label className="block">
-              <span className="text-sm text-sage">Kommentar (optional)</span>
-              <textarea className="input mt-1" rows={2} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} />
+              <span className="text-sm text-sage">Begründung <span className="text-status-absent">*</span> (mind. 30 Zeichen)</span>
+              <textarea
+                className={`input mt-1 ${touched && commentTooShort ? 'border-status-absent ring-1 ring-status-absent' : ''}`}
+                rows={3}
+                value={form.comment}
+                onChange={(e) => setForm({ ...form, comment: e.target.value })}
+                placeholder="z. B. Assalamu alaikum, mein Kind ist heute krank und kann leider nicht kommen …"
+              />
+              <div className="flex justify-between mt-1">
+                {touched && commentTooShort
+                  ? <span className="text-[11px] text-status-absent">Bitte mindestens 30 Zeichen – der Antrag kann sonst nicht gesendet werden.</span>
+                  : <span className="text-[11px] text-sage-muted">Kurze, höfliche Begründung.</span>}
+                <span className={`text-[11px] ${commentTooShort ? 'text-status-absent' : 'text-sage-muted'}`}>{(form.comment || '').trim().length}/30</span>
+              </div>
             </label>
-            <Button type="submit"><Send size={18} /> Antrag senden</Button>
+            <Button type="submit" disabled={commentTooShort}><Send size={18} /> Antrag senden</Button>
           </form>
         </Card>
 

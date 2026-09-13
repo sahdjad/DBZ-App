@@ -28,12 +28,16 @@ export default function AufgabeDetail() {
   const startRec = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const rec = new MediaRecorder(stream);
+      // Vom Browser unterstütztes Format wählen (Safari/iOS kann kein webm!).
+      const pick = ['audio/mp4', 'audio/aac', 'audio/webm'].find((t) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported?.(t));
+      const rec = pick ? new MediaRecorder(stream, { mimeType: pick }) : new MediaRecorder(stream);
       chunksRef.current = [];
       rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
       rec.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-        const file = new File([blob], `aufnahme-${Date.now()}.webm`, { type: 'audio/webm' });
+        const type = (rec.mimeType || 'audio/mp4').split(';')[0];
+        const ext = type.includes('mp4') || type.includes('aac') || type.includes('m4a') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
+        const blob = new Blob(chunksRef.current, { type });
+        const file = new File([blob], `aufnahme-${Date.now()}.${ext}`, { type });
         setFiles((f) => [...f, file]);
         stream.getTracks().forEach((t) => t.stop());
       };

@@ -72,7 +72,7 @@ export default function Protokolle() {
       )}
 
       <Card className="p-5">
-        <CardHeader title="Protokolle" subtitle="Erst nach Lehrerbestätigung offiziell" icon={ClipboardList} />
+        <CardHeader title="Protokolle" icon={ClipboardList} />
         <div className="grid gap-3 lg:grid-cols-2 items-start">
           {!protocols ? <Spinner /> : protocols.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
