@@ -137,6 +137,41 @@ test('Badges je Kategorie + Nachricht zurückrufen (serverseitige Rollenprüfung
   assert.equal(th.messages[0].body, '');
 });
 
+test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Gruppenthread)', async () => {
+  // Zweite Lehrkraft (Vertretung) derselben Klasse anlegen.
+  const admin = await loginAs('admin@dbz.de');
+  const created = await admin('POST', '/admin/users', {
+    name: 'Ustadha Maryam', email: `co-${Date.now()}@dbz.de`, password: 'demo1234',
+    role: 'vertretung', classIds: ['class_3'],
+  });
+  assert.equal(created.status, 200);
+  const coTeacherEmail = created.data.user.email;
+
+  const student = await loginAs('schueler@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const teacherId = (await teacher('GET', '/auth/me')).data.user.id;
+
+  // Schüler schreibt EINER Lehrkraft -> Thread umfasst beide Lehrkräfte.
+  const send = await student('POST', '/threads', { recipientId: teacherId, body: 'Assalamu alaikum, eine Frage zur Hausaufgabe.' });
+  assert.equal(send.status, 200);
+  const threadId = send.data.threadId;
+  const thr = (await student('GET', `/threads/${threadId}`)).data.thread;
+  assert.equal(thr.group, true, 'Thread ist ein Gruppenthread');
+
+  // Beide Lehrkräfte sehen den Thread und können ihn öffnen.
+  const coTeacher = await loginAs(coTeacherEmail);
+  const coThreads = (await coTeacher('GET', '/threads')).data.threads;
+  assert.ok(coThreads.some((t) => t.id === threadId), 'Co-Lehrkraft sieht den Thread');
+
+  // Co-Lehrkraft antwortet -> Schüler UND die erste Lehrkraft sehen die Antwort.
+  const reply = await coTeacher('POST', `/threads/${threadId}/messages`, { body: 'Wa alaikum salam, gerne!' });
+  assert.equal(reply.status, 200);
+  const studentView = (await student('GET', `/threads/${threadId}`)).data.thread;
+  assert.ok(studentView.messages.some((m) => m.body === 'Wa alaikum salam, gerne!'), 'Schüler sieht die Antwort der Co-Lehrkraft');
+  const firstTeacherBadges = (await teacher('GET', '/badges')).data;
+  assert.ok(firstTeacherBadges.messages >= 1, 'Erste Lehrkraft wird über die Antwort benachrichtigt');
+});
+
 test('Notenvorschlag: gute Daten -> gute Note, schlechte Daten -> schlechte Note', async () => {
   const { computeStanding } = await import('../domain.js');
   const good = computeStanding({

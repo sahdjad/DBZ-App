@@ -26,6 +26,7 @@ function FamilyCodeCard({ studentId }) {
 }
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : 'offen');
+const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : '–');
 const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
 
 export default function StudentProfil() {
@@ -66,6 +67,7 @@ export default function StudentProfil() {
               <div>Verspätet: <span className="text-ivory">{a.late}</span></div>
               <div>Entschuldigt: <span className="text-ivory">{a.excused}</span></div>
               <div>Unentschuldigt: <span className="text-ivory">{a.unexcused}</span></div>
+              <div>Versp. gesamt: <span className="text-ivory">{a.totalMinutesLate || 0} Min</span></div>
             </div>
           </div>
           <div className="px-4 pb-4 text-xs text-sage-muted">
@@ -96,6 +98,29 @@ export default function StudentProfil() {
           </div>
         </Card>
       </div>
+
+      {/* Verspätungen & Fehlzeiten im Einzelnachweis (wann genau, wie viele Minuten) */}
+      {(a.records || []).some((r) => r.status !== 'present') && (
+        <Card className="p-5 mt-4">
+          <CardHeader title="Verspätungen & Fehlzeiten" subtitle="Wann genau und wie viele Minuten" icon={CalendarCheck} />
+          <ul className="divide-y divide-line">
+            {a.records.filter((r) => r.status !== 'present').map((r, i) => (
+              <li key={i} className="py-2.5 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-ivory text-sm">{fmtDay(r.date)}</div>
+                  {r.note && <div className="text-[11px] text-sage-muted">{r.note}</div>}
+                </div>
+                <div className="flex items-center gap-3">
+                  {r.status === 'late' && r.minutesLate > 0 && (
+                    <span className="font-mono text-status-late text-sm">{r.minutesLate} Min</span>
+                  )}
+                  <StatusBadge status={r.status} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {MANAGER.includes(user.role) && <FamilyCodeCard studentId={id} />}
 

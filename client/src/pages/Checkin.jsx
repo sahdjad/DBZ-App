@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { QrCode, CheckCircle2, Camera, Keyboard } from 'lucide-react';
+import { QrCode, CheckCircle2, Camera, Keyboard, Clock } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, useToast } from '../components/ui.jsx';
@@ -97,13 +97,20 @@ export default function Checkin() {
 
           {result && (
             <div className="p-4 border-t border-line flex items-center gap-3">
-              <CheckCircle2 className="text-status-present" />
+              {result.status === 'late'
+                ? <Clock className="text-status-late shrink-0" />
+                : <CheckCircle2 className="text-status-present shrink-0" />}
               <div>
                 <div className="text-ivory flex items-center gap-2">
                   Status: <StatusBadge status={result.status} />
                 </div>
-                {result.minutesLate > 0 && (
-                  <div className="text-xs text-sage-muted mt-1">{result.minutesLate} Minuten verspätet</div>
+                {result.status === 'late' ? (
+                  <div className="text-xs text-sage-muted mt-1">
+                    {result.minutesLate > 0 ? `${result.minutesLate} Minuten verspätet. ` : ''}
+                    Du bist eingecheckt – der Check-in wurde als verspätet vermerkt.
+                  </div>
+                ) : (
+                  <div className="text-xs text-sage-muted mt-1">Du bist pünktlich eingecheckt, maschallah.</div>
                 )}
               </div>
             </div>

@@ -8,6 +8,8 @@ import { useAuth } from '../lib/AuthContext.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 
+const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }) : '–');
+
 export default function Anwesenheit() {
   const { user } = useAuth();
   return <AppLayout title="Anwesenheit">{MANAGER.includes(user.role) ? <ManagerView /> : <SelfView />}</AppLayout>;
@@ -22,17 +24,63 @@ function SelfView() {
   useEffect(() => { api.get('/me/attendance').then((d) => setStats(d.stats)); }, []);
   if (!stats) return <Spinner />;
   return (
-    <Card className="p-6">
-      <div className="flex items-center gap-6 flex-wrap">
-        <Ring value={rate(stats)} size={110} stroke={9} label={`${rate(stats)}%`} sublabel="Anwesend" />
-        <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
-          <Row label="Sitzungen" value={stats.sessions} />
-          <Row label="Anwesend" value={stats.present} />
-          <Row label="Verspätet" value={stats.late} />
-          <Row label="Entschuldigt" value={stats.excused} />
-          <Row label="Unentschuldigt" value={stats.unexcused} />
-          <Row label="Ø Verspätung" value={`${stats.avgMinutesLate} Min`} />
+    <div className="space-y-4">
+      <Card className="p-6">
+        <div className="flex items-center gap-6 flex-wrap">
+          <Ring value={rate(stats)} size={110} stroke={9} label={`${rate(stats)}%`} sublabel="Anwesend" />
+          <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
+            <Row label="Sitzungen" value={stats.sessions} />
+            <Row label="Anwesend" value={stats.present} />
+            <Row label="Verspätet" value={stats.late} />
+            <Row label="Entschuldigt" value={stats.excused} />
+            <Row label="Unentschuldigt" value={stats.unexcused} />
+            <Row label="Verspätung gesamt" value={`${stats.totalMinutesLate || 0} Min`} />
+          </div>
         </div>
+      </Card>
+      <AttendanceDetail records={stats.records || []} />
+    </div>
+  );
+}
+
+// Einzelnachweis: wann genau war ich verspätet/abwesend und wie viele Minuten.
+function AttendanceDetail({ records }) {
+  const [showAll, setShowAll] = useState(false);
+  const issues = records.filter((r) => r.status !== 'present');
+  const shown = showAll ? records : issues;
+  return (
+    <Card className="p-0 overflow-hidden">
+      <CardHeader
+        title="Einzelnachweis"
+        subtitle={showAll ? 'Alle Sitzungen' : 'Verspätungen & Fehlzeiten'}
+        icon={CalendarCheck}
+      />
+      <div className="p-4">
+        <div className="flex justify-end mb-3">
+          <Button variant="outline" size="sm" onClick={() => setShowAll((v) => !v)}>
+            {showAll ? 'Nur Auffälligkeiten' : 'Alle Sitzungen zeigen'}
+          </Button>
+        </div>
+        {shown.length === 0 ? (
+          <p className="text-sage-muted text-sm py-2">Keine Verspätungen oder Fehlzeiten – weiter so, maschallah! 🌟</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {shown.map((r, i) => (
+              <li key={i} className="py-2.5 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-ivory text-sm">{fmtDate(r.date)}</div>
+                  {r.note && <div className="text-[11px] text-sage-muted">{r.note}</div>}
+                </div>
+                <div className="flex items-center gap-3">
+                  {r.status === 'late' && r.minutesLate > 0 && (
+                    <span className="font-mono text-status-late text-sm">{r.minutesLate} Min</span>
+                  )}
+                  <StatusBadge status={r.status} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </Card>
   );

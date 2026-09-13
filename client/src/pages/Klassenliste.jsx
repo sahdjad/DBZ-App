@@ -67,7 +67,9 @@ export default function Klassenliste() {
                     <th className="py-3 px-4 font-medium">Name</th>
                     <th className="py-3 px-3 font-medium text-center" title="Anwesenheitsquote">Anw.</th>
                     <th className="py-3 px-3 font-medium text-center" title="Unentschuldigte Fehltage">Unent.</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Offene Aufgaben (davon überfällig)">Aufgaben</th>
+                    <th className="py-3 px-3 font-medium text-center" title="Verspätung gesamt (Minuten)">Versp.</th>
+                    <th className="py-3 px-3 font-medium text-center" title="Erledigte von gesamten Hausaufgaben">Erledigt</th>
+                    <th className="py-3 px-3 font-medium text-center" title="Offene Aufgaben (davon überfällig)">Offen</th>
                     <th className="py-3 px-3 font-medium text-center" title="Offene Strafen">Strafen</th>
                     <th className="py-3 px-3 font-medium text-center" title="Negative Verhaltensvermerke">Vermerke</th>
                   </tr>
@@ -85,6 +87,13 @@ export default function Klassenliste() {
                       </td>
                       <td className={`py-3 px-3 text-center font-mono ${r.unexcused > 0 ? 'text-status-absent' : 'text-sage-muted'}`}>
                         {r.unexcused}
+                      </td>
+                      <td className={`py-3 px-3 text-center font-mono ${r.totalMinutesLate > 0 ? 'text-status-late' : 'text-sage-muted'}`}>
+                        {r.totalMinutesLate > 0 ? `${r.totalMinutesLate}′` : '–'}
+                      </td>
+                      <td className="py-3 px-3 text-center font-mono">
+                        <span className={r.doneAssignments > 0 ? 'text-status-present' : 'text-sage-muted'}>{r.doneAssignments}</span>
+                        <span className="text-sage-muted">/{r.totalAssignments}</span>
                       </td>
                       <td className="py-3 px-3 text-center font-mono">
                         <span className={r.openAssignments > 0 ? 'text-ivory' : 'text-sage-muted'}>{r.openAssignments}</span>

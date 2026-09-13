@@ -285,7 +285,10 @@ function ThreadView({ id, onBack }) {
       <div className="flex items-center gap-3 p-4 border-b border-line">
         <button onClick={onBack} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
-        <span className="text-ivory">{data.otherName}</span>
+        <div className="min-w-0">
+          <div className="text-ivory truncate">{data.otherName}</div>
+          {data.group && <div className="text-[11px] text-sage-muted">Klassenteam · beide Lehrkräfte lesen mit</div>}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -304,6 +307,9 @@ function ThreadView({ id, onBack }) {
           }
           return (
             <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
+              {!mine && data.group && (
+                <div className="text-[11px] text-sage-muted mb-0.5 px-1">{m.senderName}</div>
+              )}
               <div className="group flex items-end gap-1.5 max-w-[85%]">
                 {mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
                 <div className={['rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-onaccent rounded-br-sm' : 'bg-card border border-line text-sage rounded-bl-sm'].join(' ')}>

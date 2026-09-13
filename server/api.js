@@ -148,22 +148,27 @@ function ensureClassCheckinCode(klass) {
  * Unterrichtszeit (ohne dass die Lehrkraft anwesend sein muss). Die Lehrkraft
  * kann das Fenster per Fernöffnung setzen/verlängern. Rückgabe { open, reason }.
  */
+// Rückgabe { open, reason, code }. `code` unterscheidet, WARUM geschlossen ist:
+//   'too_early'  -> vor dem Fenster: Check-in ablehnen (nicht zu früh einchecken)
+//   'wrong_day'  -> heute kein Unterrichtstag: ablehnen
+//   'window_over'-> Fenster vorbei: Check-in als VERSPÄTET zulassen (rot + Minuten)
+//   'ended'      -> Lehrkraft hat beendet: verspäteten Check-in ebenfalls zulassen
 function doorCheckinOpen(session) {
   const now = Date.now();
-  if (!session) return { open: false, reason: 'Heute ist kein Unterricht geplant.' };
-  if (session.status === 'ended') return { open: false, reason: 'Der Unterricht ist bereits beendet.' };
+  if (!session) return { open: false, reason: 'Heute ist kein Unterricht geplant.', code: 'no_session' };
   if (session.checkinOpenUntil && now < new Date(session.checkinOpenUntil).getTime()) return { open: true };
+  if (session.status === 'ended') return { open: false, reason: 'Der Unterricht ist bereits beendet.', code: 'ended' };
   if (session.status === 'active') return { open: true };
   // Automatisch nur am Unterrichtstag der Klasse (sonst nur manuell/aktiv geöffnet).
   const klass = findClass(session.classId);
   if (klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
-    return { open: false, reason: 'Heute ist kein Unterrichtstag dieser Klasse.' };
+    return { open: false, reason: 'Heute ist kein Unterrichtstag dieser Klasse.', code: 'wrong_day' };
   const start = new Date(session.scheduledStart).getTime();
   const EARLY_MS = 15 * 60000;
   const windowMin = org().checkinWindowMinutes || 90;
-  if (now < start - EARLY_MS) return { open: false, reason: 'Check-in öffnet automatisch kurz vor Unterrichtsbeginn.' };
+  if (now < start - EARLY_MS) return { open: false, reason: 'Check-in öffnet automatisch kurz vor Unterrichtsbeginn.', code: 'too_early' };
   if (now <= start + windowMin * 60000) return { open: true };
-  return { open: false, reason: 'Das Check-in-Fenster ist vorbei. Bitte die Lehrkraft, es zu öffnen.' };
+  return { open: false, reason: 'Das Check-in-Fenster ist vorbei – du wirst als verspätet eingetragen.', code: 'window_over' };
 }
 
 // --- Auth-Middleware ---------------------------------------------------------
@@ -602,13 +607,19 @@ router.post('/checkin', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => 
   if (!token) return res.status(400).json({ error: 'Kein QR-Code übermittelt' });
   const myClassIds = req.user.classIds || [];
   let session = null;
+  let forceLate = false; // nach Fensterende: automatisch als verspätet werten
   if (String(token).startsWith('TUR-')) {
     // Fester Tür-QR der Klasse: gültig nur im automatischen/geöffneten Zeitfenster.
     const klass = db.all('classes').find((c) => c.checkinCode === token && myClassIds.includes(c.id));
     if (!klass) return res.status(400).json({ error: 'Dieser QR-Code gehört nicht zu deiner Klasse.' });
     session = ensureTodaySession(klass);
     const win = doorCheckinOpen(session);
-    if (!win.open) return res.status(400).json({ error: win.reason });
+    if (!win.open) {
+      // Vor dem Fenster / falscher Tag: ablehnen. Fenster vorbei oder Unterricht
+      // beendet: Check-in trotzdem zulassen und automatisch als verspätet werten.
+      if (win.code === 'window_over' || win.code === 'ended') forceLate = true;
+      else return res.status(400).json({ error: win.reason });
+    }
   } else {
     // Kurzlebiger Sitzungs-Code (auf dem Lehrer-Bildschirm angezeigt).
     const active = db
@@ -626,11 +637,16 @@ router.post('/checkin', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => 
     return res.json({ status: existing.status, minutesLate: existing.minutesLate, already: true });
 
   const now = new Date().toISOString();
-  const { status, minutesLate } = attendanceStatusFor({
+  let { status, minutesLate } = attendanceStatusFor({
     checkInAt: now,
     scheduledStart: session.scheduledStart,
     lateAfterMinutes: org().lateAfterMinutes,
   });
+  if (forceLate) {
+    status = 'late';
+    // Verspätung mindestens ab der Toleranzgrenze, damit nie 0 Minuten stehen.
+    if (!minutesLate || minutesLate < 1) minutesLate = (org().lateAfterMinutes || 5) + 1;
+  }
   const rec = {
     id: newId('att'),
     sessionId: session.id,
@@ -724,13 +740,14 @@ function inWindow(iso, win) {
   return true;
 }
 
-function attendanceStats(studentId, win) {
-  const sdate = win ? new Map(db.all('sessions').map((s) => [s.id, s.date])) : null;
+function attendanceStats(studentId, win, opts = {}) {
+  const sdateMap = new Map(db.all('sessions').map((s) => [s.id, s.date]));
+  const dateOf = (a) => sdateMap.get(a.sessionId) || String(a.checkInAt || a.updatedAt || '').slice(0, 10);
   const recs = db.all('attendance').filter((a) => a.studentId === studentId
-    && (!win || inWindow(sdate.get(a.sessionId) || a.checkInAt || a.updatedAt, win)));
+    && (!win || inWindow(dateOf(a), win)));
   const count = (st) => recs.filter((a) => a.status === st).length;
   const lateMinutes = recs.filter((a) => a.status === 'late').map((a) => a.minutesLate || 0);
-  return {
+  const out = {
     sessions: recs.length,
     present: count('present'),
     late: count('late'),
@@ -743,10 +760,23 @@ function attendanceStats(studentId, win) {
     // Kumulierte Gesamt-Verspätung in Minuten (Summe über alle Sitzungen).
     totalMinutesLate: lateMinutes.reduce((a, b) => a + b, 0),
   };
+  if (opts.withRecords) {
+    // Einzelnachweis: wann genau, welcher Status, wie viele Minuten verspätet.
+    out.records = recs
+      .map((a) => ({
+        date: dateOf(a),
+        status: a.status,
+        minutesLate: a.status === 'late' ? (a.minutesLate || 0) : 0,
+        checkInAt: a.checkInAt || null,
+        note: a.note || null,
+      }))
+      .sort((x, y) => String(y.date).localeCompare(String(x.date)));
+  }
+  return out;
 }
 
 router.get('/me/attendance', requireAuth, (req, res) => {
-  res.json({ stats: attendanceStats(req.user.id) });
+  res.json({ stats: attendanceStats(req.user.id, null, { withRecords: true }) });
 });
 
 // Zusammengeführtes Schüler-/Kind-Profil (Lehrer für Klassenschüler, Eltern für
@@ -802,7 +832,7 @@ router.get('/students/:id/profile', requireAuth, (req, res) => {
       name: student.name,
       classNames: (student.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
     },
-    attendance: attendanceStats(student.id),
+    attendance: attendanceStats(student.id, null, { withRecords: true }),
     assignments: studentAssignments(student.id),
     behavior,
     viewerRole: req.user.role,
@@ -843,11 +873,14 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
 
     let openAssignments = 0;
     let overdueAssignments = 0;
+    let doneAssignments = 0;
+    let totalAssignments = 0;
     for (const a of assignments) {
       if (!targetsFor(a).includes(s.id)) continue;
+      totalAssignments += 1;
       const sub = submissions.find((x) => x.assignmentId === a.id && x.studentId === s.id);
       const done = sub && ['submitted', 'passed'].includes(sub.status);
-      if (done) continue;
+      if (done) { doneAssignments += 1; continue; }
       openAssignments += 1;
       const due = effectiveDue(a, s.id);
       if (due && new Date(due).getTime() < now) overdueAssignments += 1;
@@ -864,9 +897,12 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
       attendanceRate,
       sessions: att.sessions,
       unexcused: att.unexcused,
+      late: att.late,
       totalMinutesLate: att.totalMinutesLate,
       openAssignments,
       overdueAssignments,
+      doneAssignments,
+      totalAssignments,
       penaltyMoney,
       penaltyPages,
       negativeBehavior,
@@ -2652,6 +2688,64 @@ function messageContacts(user) {
 }
 const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId);
 
+// Alle Lehrkräfte (Klassenlehrer + Vertretung) der angegebenen Klassen.
+function classManagersOfClasses(classIds) {
+  const set = new Set(classIds);
+  return db
+    .all('users')
+    .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
+}
+
+// Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
+// eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
+// Lehrkräfte) beteiligt. So entsteht keine Isolation und beide Lehrkräfte können
+// mitlesen und antworten (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/Leitung
+// bleibt ein direktes Zweiergespräch.
+function resolveThreadParticipants(initiator, recipient) {
+  const isMgr = (u) => CLASS_MANAGERS.includes(u.role);
+  let family = null;
+  if (!isMgr(initiator) && isMgr(recipient)) family = initiator;
+  else if (isMgr(initiator) && !isMgr(recipient)) family = recipient;
+
+  let ids;
+  if (family) {
+    let classIds = [];
+    if (family.role === ROLES.SCHUELER) classIds = family.classIds || [];
+    else if (family.role === ROLES.ELTERN) {
+      const s = new Set();
+      (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => s.add(c)));
+      classIds = [...s];
+    }
+    const managers = classManagersOfClasses(classIds).map((m) => m.id);
+    // Sicherstellen, dass der ursprüngliche Empfänger/Absender dabei ist.
+    ids = [family.id, ...managers, initiator.id, recipient.id];
+  } else {
+    ids = [initiator.id, recipient.id];
+  }
+  const uniq = [...new Set(ids)];
+  const names = {};
+  uniq.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
+  return { participantIds: uniq, participantNames: names, group: uniq.length > 2 };
+}
+
+const sortedIds = (arr) => [...arr].sort().join('|');
+
+// Anzeigename eines Threads aus Sicht des Betrachters. Zweiergespräch: die
+// andere Person. Gruppengespräch: eine Lehrkraft sieht die Familienseite, die
+// Familie sieht das Lehrerteam.
+function threadTitle(t, viewer) {
+  const others = t.participantIds.filter((id) => id !== viewer.id);
+  if (others.length <= 1) return t.participantNames[others[0]] || 'Unbekannt';
+  const isMgr = CLASS_MANAGERS.includes(viewer.role);
+  const wanted = others.filter((id) => {
+    const u = findUserById(id);
+    if (!u) return false;
+    return isMgr ? !CLASS_MANAGERS.includes(u.role) : CLASS_MANAGERS.includes(u.role);
+  });
+  const ids = wanted.length ? wanted : others;
+  return ids.map((id) => t.participantNames[id]).filter(Boolean).join(', ') || 'Unbekannt';
+}
+
 // Erlaubte Reaktionen (bewusst kleine, passende Auswahl).
 const MSG_REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
 
@@ -2713,14 +2807,15 @@ async function buildMessage(req) {
   return msg;
 }
 
-function threadListView(t, userId) {
-  const otherId = t.participantIds.find((id) => id !== userId);
+function threadListView(t, viewer) {
+  const userId = viewer.id;
   const last = t.messages[t.messages.length - 1] || null;
   const readAt = t.reads?.[userId] || '';
   const unread = t.messages.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
   return {
     id: t.id,
-    otherName: t.participantNames[otherId] || 'Unbekannt',
+    otherName: threadTitle(t, viewer),
+    group: t.participantIds.length > 2,
     lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
     unread,
@@ -2736,7 +2831,7 @@ router.get('/threads', requireAuth, (req, res) => {
     .all('threads')
     .filter((t) => t.participantIds.includes(req.user.id))
     .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
-    .map((t) => threadListView(t, req.user.id));
+    .map((t) => threadListView(t, req.user));
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
 });
 
@@ -2749,15 +2844,14 @@ router.post('/threads', requireAuth, upload.single('file'), async (req, res) => 
 
   const msg = await buildMessage(req);
   const now = msg.createdAt;
-  // Bestehenden Direkt-Thread wiederverwenden
-  let t = db.all('threads').find(
-    (x) => x.participantIds.length === 2 && x.participantIds.includes(req.user.id) && x.participantIds.includes(recipientId),
-  );
+  const { participantIds, participantNames } = resolveThreadParticipants(req.user, recipient);
+  // Bestehenden Thread mit exakt derselben Teilnehmergruppe wiederverwenden.
+  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds));
   if (!t) {
     t = {
       id: newId('thread'),
-      participantIds: [req.user.id, recipientId],
-      participantNames: { [req.user.id]: req.user.name, [recipientId]: recipient.name },
+      participantIds,
+      participantNames,
       messages: [msg],
       reads: { [req.user.id]: now },
       createdAt: now,
@@ -2765,12 +2859,18 @@ router.post('/threads', requireAuth, upload.single('file'), async (req, res) => 
     };
     db.insert('threads', t);
   } else {
+    // Team/Namen aktuell halten (falls sich die Klassenzuordnung geändert hat).
+    t.participantIds = participantIds;
+    t.participantNames = { ...t.participantNames, ...participantNames };
     t.messages.push(msg);
     t.lastMessageAt = now;
+    t.reads = t.reads || {};
     t.reads[req.user.id] = now;
     db.commit();
   }
-  notify(recipientId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
+  participantIds
+    .filter((id) => id !== req.user.id)
+    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
   res.json({ threadId: t.id });
 });
 
@@ -2782,9 +2882,14 @@ router.get('/threads/:id', requireAuth, (req, res) => {
   // Zugehörige Nachrichten-Benachrichtigungen als gelesen markieren (Badges/Zähler).
   markNotificationsRead(req.user.id, (n) => n.type === 'message' && n.groupId === t.id);
   db.commit();
-  const otherId = t.participantIds.find((id) => id !== req.user.id);
   res.json({
-    thread: { id: t.id, otherName: t.participantNames[otherId], messages: t.messages.map(messageView), meId: req.user.id },
+    thread: {
+      id: t.id,
+      otherName: threadTitle(t, req.user),
+      group: t.participantIds.length > 2,
+      messages: t.messages.map(messageView),
+      meId: req.user.id,
+    },
   });
 });
 
@@ -2798,8 +2903,9 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   t.reads = t.reads || {};
   t.reads[req.user.id] = msg.createdAt;
   db.commit();
-  const otherId = t.participantIds.find((id) => id !== req.user.id);
-  notify(otherId, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
+  t.participantIds
+    .filter((id) => id !== req.user.id)
+    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
   res.json({ message: messageView(msg) });
 });
 

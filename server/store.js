@@ -69,6 +69,13 @@ const emptyDb = () => ({
 });
 
 let cache = null;
+// true, wenn Supabase konfiguriert ist, aber beim Start nicht erreichbar war.
+// Dann läuft der Server im Notmodus (lokal) weiter und schreibt NICHT nach
+// Supabase zurück, damit dort vorhandene Daten nicht überschrieben werden.
+let supabaseDegraded = false;
+export function isSupabaseDegraded() {
+  return supabaseDegraded;
+}
 
 // --- Supabase-Backend (REST/PostgREST über HTTPS) ----------------------------
 
@@ -170,11 +177,17 @@ function load() {
 }
 
 function persist() {
-  if (useSupabase) {
+  if (useSupabase && !supabaseDegraded) {
     scheduleSbFlush();
     return;
   }
-  fileSave();
+  // Datei-Modus ODER Supabase-Notmodus: lokal speichern. Im Notmodus schützt
+  // das die echten Supabase-Daten vor Überschreiben mit leerem/Demostand.
+  try {
+    fileSave();
+  } catch (err) {
+    console.error('[store] Lokales Speichern fehlgeschlagen:', err.message);
+  }
 }
 
 // --- Öffentliche API ---------------------------------------------------------
@@ -186,15 +199,42 @@ function persist() {
 export async function initStore() {
   if (cache) return cache;
   if (useSupabase) {
-    ensureDirs(); // Upload-Ordner weiterhin lokal
-    const data = await sbLoad(); // Fehler beim Laden = harter Startabbruch (Fail-Safe)
-    if (data) {
-      cache = { ...emptyDb(), ...data };
-    } else {
-      cache = emptyDb();
-      scheduleSbFlush(); // ersten Datensatz anlegen
+    ensureDirs(); // Upload-Ordner/lokaler Cache weiterhin lokal
+    // Mehrere Versuche: ein pausiertes Supabase-Free-Projekt braucht einige
+    // Sekunden zum Aufwachen, DNS-Aussetzer sind meist nur kurz.
+    let data = null;
+    let loaded = false;
+    const MAX_TRIES = 5;
+    for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+      try {
+        data = await sbLoad();
+        loaded = true;
+        break;
+      } catch (err) {
+        console.error(`[store] Supabase-Laden fehlgeschlagen (Versuch ${attempt}/${MAX_TRIES}): ${err.message}`);
+        if (attempt < MAX_TRIES) await new Promise((r) => setTimeout(r, 2000 * attempt));
+      }
     }
-    console.log('[store] Persistenz: Supabase');
+    if (loaded) {
+      if (data) {
+        cache = { ...emptyDb(), ...data };
+      } else {
+        cache = emptyDb();
+        scheduleSbFlush(); // ersten Datensatz anlegen
+      }
+      console.log('[store] Persistenz: Supabase');
+    } else {
+      // Supabase dauerhaft nicht erreichbar (häufig: pausiertes Free-Projekt).
+      // NICHT abstürzen – im Notmodus lokal weiterlaufen. Es wird bewusst NICHT
+      // nach Supabase geschrieben, damit dort vorhandene Daten erhalten bleiben.
+      supabaseDegraded = true;
+      cache = fileLoad();
+      console.error(
+        '[store] WARNUNG: Supabase nicht erreichbar – Server startet im NOTMODUS ' +
+          '(lokale, nicht dauerhafte Speicherung). Bitte das Supabase-Projekt ' +
+          'reaktivieren (Free-Projekte pausieren nach ~1 Woche Inaktivität) und neu deployen.',
+      );
+    }
   } else {
     cache = fileLoad();
     console.log('[store] Persistenz: lokale Datei');
@@ -204,8 +244,14 @@ export async function initStore() {
 
 /** Schreibt ausstehende Änderungen und wartet, bis alles gespeichert ist. */
 export async function flushStore() {
-  if (!useSupabase) {
-    if (cache) fileSave();
+  if (!useSupabase || supabaseDegraded) {
+    if (cache) {
+      try {
+        fileSave();
+      } catch (err) {
+        console.error('[store] Lokales Speichern fehlgeschlagen:', err.message);
+      }
+    }
     return;
   }
   dirty = true;
@@ -238,7 +284,8 @@ export const db = {
   },
   /** Speicher-Backend als Text (für Diagnose/Health). */
   get backend() {
-    return useSupabase ? 'supabase' : 'file';
+    if (useSupabase) return supabaseDegraded ? 'supabase-degraded' : 'supabase';
+    return 'file';
   },
   /** Pfad der Datenbankdatei (für Backups). */
   get file() {

@@ -120,7 +120,7 @@ function badgeFor(to, badges) {
 
 function NavItems({ items, badges, onNavigate }) {
   return (
-    <nav className="flex-1 px-3 space-y-1 overflow-y-auto" aria-label="Hauptmenü">
+    <nav className="dbz-scroll flex-1 px-3 pt-1 pb-6 space-y-1 overflow-y-auto overscroll-contain scroll-smooth" aria-label="Hauptmenü">
       {items.map(({ to, label, icon: Icon }) => {
         const count = badgeFor(to, badges);
         return (
@@ -205,15 +205,15 @@ export default function AppLayout({ children, title }) {
     <div className="flex flex-col h-full bg-sidebar border-r border-line">
       <Brand />
       <NavItems items={items} badges={badges} onNavigate={() => setOpen(false)} />
-      <div className="p-3 border-t border-line">
-        <div className="flex items-center gap-3 px-2 py-2">
+      <div className="shrink-0 p-3 border-t border-line bg-sidebar">
+        <div className="flex items-center gap-3 px-2 py-2.5">
           <Avatar name={user?.name} size={36} />
           <div className="leading-tight min-w-0 flex-1">
             <div className="text-sm text-ivory truncate">{user?.name}</div>
             <div className="text-[11px] text-sage-muted truncate">{user?.roleLabel}</div>
           </div>
         </div>
-        <Button variant="ghost" size="sm" className="w-full justify-start mt-1" onClick={handleLogout}>
+        <Button variant="ghost" size="sm" className="w-full justify-start mt-1.5" onClick={handleLogout}>
           <LogOut size={16} /> Abmelden
         </Button>
       </div>
