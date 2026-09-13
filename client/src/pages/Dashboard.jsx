@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Ring } from '../components/ui.jsx';
+import { useAuth } from '../lib/AuthContext.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Ring, useToast } from '../components/ui.jsx';
 import { openNotification } from '../lib/notify.js';
+import { UserRoundCog } from 'lucide-react';
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -71,6 +73,8 @@ export default function Dashboard() {
           </Card>
         </Link>
       )}
+
+      <LinkedAccountsHome />
 
       {data.role === 'schueler' && <StudentHome d={data} />}
       {data.role === 'klassensprecher' && <RepHome d={data} />}
@@ -267,6 +271,59 @@ function SharedHome({ d }) {
         </Card>
       )}
     </div>
+  );
+}
+
+// Verknüpfte Konten der Person: Benachrichtigungen aller Konten auf einen Blick,
+// mit schnellem Kontowechsel (ohne erneutes Passwort).
+function LinkedAccountsHome() {
+  const { switchAccount } = useAuth();
+  const toast = useToast();
+  const [accounts, setAccounts] = useState(null);
+  const [busy, setBusy] = useState(null);
+
+  useEffect(() => { api.get('/me/linked-accounts').then((d) => setAccounts(d.accounts)).catch(() => setAccounts([])); }, []);
+  if (!accounts || accounts.length === 0) return null;
+
+  const go = async (id) => {
+    setBusy(id);
+    try {
+      await switchAccount(id);
+      // Sauberer Neustart: gesamte App lädt mit dem gewechselten Konto neu.
+      window.location.reload();
+    } catch (err) {
+      toast.push(err.message, 'error');
+      setBusy(null);
+    }
+  };
+
+  return (
+    <Card className="p-5 mb-4 border-mint/25">
+      <CardHeader title="Weitere Konten" subtitle="Benachrichtigungen deiner verknüpften Konten" icon={UserRoundCog} />
+      <ul className="divide-y divide-line">
+        {accounts.map((a) => (
+          <li key={a.id} className="py-3 flex items-center justify-between gap-3">
+            <div className="min-w-0 flex items-center gap-3">
+              <span className="relative grid place-items-center h-10 w-10 rounded-lg bg-subtle text-sage shrink-0">
+                <Bell size={18} />
+                {a.unread > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono font-semibold">
+                    {a.unread > 99 ? '99+' : a.unread}
+                  </span>
+                )}
+              </span>
+              <div className="min-w-0">
+                <div className="text-ivory truncate">{a.name}</div>
+                <div className="text-xs text-sage-muted">{a.roleLabel} · {a.unread > 0 ? `${a.unread} ungelesen` : 'nichts Neues'}</div>
+              </div>
+            </div>
+            <Button size="sm" variant="outline" disabled={busy === a.id} onClick={() => go(a.id)}>
+              {busy === a.id ? 'Wechsle …' : 'Wechseln'}
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

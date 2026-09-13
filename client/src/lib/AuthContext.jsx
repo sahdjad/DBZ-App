@@ -45,8 +45,15 @@ export function AuthProvider({ children }) {
     return user;
   };
 
+  // Zu einem verknüpften Konto wechseln (neue Sitzung serverseitig).
+  const switchAccount = async (id) => {
+    const { user } = await api.post(`/me/switch/${id}`, {});
+    setUser(user);
+    return user;
+  };
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateName, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, register, logout, updateName, refresh, switchAccount }}>
       {children}
     </AuthContext.Provider>
   );

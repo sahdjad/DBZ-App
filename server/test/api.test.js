@@ -137,6 +137,44 @@ test('Badges je Kategorie + Nachricht zurückrufen (serverseitige Rollenprüfung
   assert.equal(th.messages[0].body, '');
 });
 
+test('Verknüpfte Konten: mit Passwort verbinden, gebündelte Badges, Wechsel ohne Passwort', async () => {
+  // Zwei eigene Konten derselben Person anlegen (Lehrkraft + Schüler).
+  const admin = await loginAs('admin@dbz.de');
+  const stamp = Date.now();
+  const acctA = (await admin('POST', '/admin/users', { name: 'Doppel-Konto A', email: `dka-${stamp}@dbz.de`, password: 'demo1234', role: 'vertretung', classIds: ['class_3'] })).data.user;
+  const acctB = (await admin('POST', '/admin/users', { name: 'Doppel-Konto B', email: `dkb-${stamp}@dbz.de`, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user;
+
+  // In Konto A einloggen und Konto B mit dessen Passwort verknüpfen.
+  const a = await loginAs(`dka-${stamp}@dbz.de`);
+  const link = await a('POST', '/me/link-account', { email: `dkb-${stamp}@dbz.de`, password: 'demo1234' });
+  assert.equal(link.status, 200);
+  assert.equal(link.data.account.id, acctB.id);
+
+  // Falsches Passwort des anderen Kontos wird abgelehnt.
+  const bad = await a('POST', '/me/link-account', { email: `dkb-${stamp}@dbz.de`, password: 'falsch' });
+  assert.equal(bad.status, 401);
+
+  // Verknüpftes Konto erscheint in der Liste.
+  const list = await a('GET', '/me/linked-accounts');
+  assert.ok(list.data.accounts.some((x) => x.id === acctB.id), 'Konto B ist verknüpft');
+
+  // Badges liefern die verknüpften Konten mit.
+  const badges = await a('GET', '/badges');
+  assert.ok(Array.isArray(badges.data.linked), 'Badges enthalten linked-Liste');
+  assert.equal(typeof badges.data.grandTotal, 'number');
+
+  // Wechsel zu Konto B ohne erneutes Passwort (Verknüpfung genügt).
+  const sw = await a('POST', `/me/switch/${acctB.id}`, {});
+  assert.equal(sw.status, 200);
+  assert.equal(sw.data.user.id, acctB.id);
+
+  // Fremdes, nicht verknüpftes Konto lässt sich NICHT anspringen.
+  const yusufId = (await (await loginAs('schueler@dbz.de'))('GET', '/auth/me')).data.user.id;
+  const c = await loginAs(`dka-${stamp}@dbz.de`);
+  const blocked = await c('POST', `/me/switch/${yusufId}`, {});
+  assert.equal(blocked.status, 403);
+});
+
 test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Gruppenthread)', async () => {
   // Zweite Lehrkraft (Vertretung) derselben Klasse anlegen.
   const admin = await loginAs('admin@dbz.de');

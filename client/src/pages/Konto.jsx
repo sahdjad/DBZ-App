@@ -59,6 +59,7 @@ export default function Konto() {
         {user.role === 'eltern' && <ParentChildrenCard />}
         {LINKABLE.includes(user.role) && <FamilyCodeCard />}
 
+        <LinkedAccountsCard />
         <PasswordCard />
       </div>
     </AppLayout>
@@ -302,6 +303,91 @@ function NotificationsCard() {
             <Button size="sm" onClick={enable} disabled={busy}><Bell size={16} /> An</Button>
           </div>
         )}
+      </div>
+    </Card>
+  );
+}
+
+// Mehrere eigene Konten (z. B. Lehrkraft UND Schüler) verknüpfen. Danach werden
+// die Benachrichtigungen aller Konten auf der Startseite gebündelt und man kann
+// ohne erneutes Passwort wechseln.
+function LinkedAccountsCard() {
+  const toast = useToast();
+  const [accounts, setAccounts] = useState(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = () => api.get('/me/linked-accounts').then((d) => setAccounts(d.accounts)).catch(() => setAccounts([]));
+  useEffect(() => { load(); }, []);
+
+  const link = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      const { account } = await api.post('/me/link-account', { email: email.trim(), password });
+      toast.push(`${account.name} verknüpft`, 'success');
+      setEmail(''); setPassword('');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const unlink = async (id, name) => {
+    if (!window.confirm(`Verknüpfung zu ${name} wirklich lösen?`)) return;
+    try {
+      await api.post('/me/unlink-account', { id });
+      toast.push('Verknüpfung gelöst', 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
+  return (
+    <Card className="p-5 sm:col-span-2">
+      <CardHeader title="Verknüpfte Konten" subtitle="Mehrere eigene Konten (z. B. als Lehrkraft und als Schüler) zusammenführen" icon={Users} />
+      <div className="p-4 space-y-4">
+        {!accounts ? (
+          <Spinner />
+        ) : accounts.length === 0 ? (
+          <p className="text-sm text-sage-muted">Noch keine weiteren Konten verknüpft. Hast du z. B. ein zweites Konto als Schüler, kannst du es unten hinzufügen – danach siehst du alle Benachrichtigungen auf der Startseite und kannst schnell wechseln.</p>
+        ) : (
+          <ul className="divide-y divide-line">
+            {accounts.map((a) => (
+              <li key={a.id} className="py-2.5 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <Avatar name={a.name} size={36} />
+                  <div className="min-w-0">
+                    <div className="text-ivory truncate">{a.name}</div>
+                    <div className="text-xs text-sage-muted">{a.roleLabel}{a.unread > 0 ? ` · ${a.unread} ungelesen` : ''}</div>
+                  </div>
+                </div>
+                <Button size="sm" variant="ghost" onClick={() => unlink(a.id, a.name)} aria-label="Verknüpfung lösen">
+                  <Unlink size={16} />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form onSubmit={link} className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm text-sage">E-Mail des anderen Kontos</span>
+              <input type="email" autoComplete="off" className="input mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="z. B. name@dbz.de" required />
+            </label>
+            <label className="block">
+              <span className="text-sm text-sage">Passwort des anderen Kontos</span>
+              <input type="password" autoComplete="off" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </label>
+          </div>
+          <Button type="submit" disabled={busy}><Link2 size={18} /> Konto verknüpfen</Button>
+          <p className="text-[11px] text-sage-muted">Zum Verknüpfen brauchst du die Zugangsdaten beider Konten – so kann niemand fremde Konten verbinden.</p>
+        </form>
       </div>
     </Card>
   );

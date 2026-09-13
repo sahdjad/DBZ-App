@@ -175,7 +175,13 @@ export default function AppLayout({ children, title }) {
     const refresh = () =>
       api
         .get('/badges')
-        .then((d) => { if (!alive) return; const b = { messages: d.messages || 0, announcements: d.announcements || 0, total: d.total || 0 }; setBadges(b); setAppBadge(b.total); })
+        .then((d) => {
+          if (!alive) return;
+          const b = { messages: d.messages || 0, announcements: d.announcements || 0, total: d.total || 0, linkedTotal: d.linkedTotal || 0, grandTotal: d.grandTotal ?? (d.total || 0) };
+          setBadges(b);
+          // App-Symbol-Badge zählt ALLE Konten der Person (auch verknüpfte).
+          setAppBadge(b.grandTotal);
+        })
         .catch(() => {});
     refresh();
     // Neu berechnen bei: Lesen/Änderung, Fensterfokus, Sichtbarkeit, Push, Intervall.

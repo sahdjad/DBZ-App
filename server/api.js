@@ -2964,10 +2964,20 @@ router.post('/threads/:id/messages/:mid/recall', requireAuth, requireRole(CLASS_
 // Ungelesen-Zähler je Kategorie (für Navigations-Badges + App-Symbol-Badge).
 router.get('/badges', requireAuth, (req, res) => {
   const mine = db.all('notifications').filter((n) => n.userId === req.user.id && !n.read);
+  // Verknüpfte Konten: deren Ungelesen-Zähler mitliefern, damit Home-Ansicht und
+  // App-Symbol-Badge ALLE Konten der Person abbilden (nicht nur das aktive).
+  const linked = (req.user.linkedAccountIds || [])
+    .map((id) => findUserById(id))
+    .filter((u) => u && u.status !== 'disabled')
+    .map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] || u.role, unread: unreadCountFor(u.id) }));
+  const linkedTotal = linked.reduce((s, a) => s + a.unread, 0);
   res.json({
     messages: mine.filter((n) => n.type === 'message').length,
     announcements: mine.filter((n) => n.type === 'announcement').length,
     total: mine.length,
+    linked,
+    linkedTotal,
+    grandTotal: mine.length + linkedTotal,
   });
 });
 
@@ -3486,6 +3496,73 @@ router.post('/family/unlink', requireAuth, requireRole(ROLES.ELTERN), (req, res)
   db.commit();
   audit(req.user.id, 'family.unlink', 'user', childId);
   res.json({ ok: true });
+});
+
+// =============================================================================
+// Verknüpfte Konten (Multi-Account): eine Person kann mehrere Rollen-Konten
+// besitzen (z. B. Lehrkraft in Klasse 3 UND Schüler in Klasse 5/6). Die Konten
+// werden mit dem jeweiligen Passwort einmalig verknüpft; danach sieht man die
+// Benachrichtigungen aller Konten und kann ohne erneutes Passwort wechseln.
+// =============================================================================
+
+function unreadCountFor(userId) {
+  return db.all('notifications').filter((n) => n.userId === userId && !n.read).length;
+}
+
+function linkedAccountView(u) {
+  return { id: u.id, name: u.name, role: u.role, roleLabel: ROLE_LABELS[u.role] || u.role, unread: unreadCountFor(u.id) };
+}
+
+// Alle mit dem aktuellen Konto verknüpften (aktiven) Konten.
+router.get('/me/linked-accounts', requireAuth, (req, res) => {
+  const ids = req.user.linkedAccountIds || [];
+  const accounts = ids
+    .map((id) => findUserById(id))
+    .filter((u) => u && u.status !== 'disabled')
+    .map(linkedAccountView);
+  res.json({ accounts });
+});
+
+// Ein weiteres eigenes Konto per E-Mail + Passwort verknüpfen (beidseitig).
+router.post('/me/link-account', requireAuth, async (req, res) => {
+  const { email, password } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'E-Mail und Passwort des anderen Kontos erforderlich' });
+  const other = findUserByEmail(email);
+  if (!other || !(await verifyPassword(password, other.passwordHash)))
+    return res.status(401).json({ error: 'E-Mail oder Passwort des anderen Kontos ist falsch' });
+  if (other.id === req.user.id) return res.status(400).json({ error: 'Das ist dasselbe Konto' });
+  if (other.status === 'disabled') return res.status(400).json({ error: 'Das andere Konto ist deaktiviert' });
+
+  req.user.linkedAccountIds = req.user.linkedAccountIds || [];
+  other.linkedAccountIds = other.linkedAccountIds || [];
+  if (!req.user.linkedAccountIds.includes(other.id)) req.user.linkedAccountIds.push(other.id);
+  if (!other.linkedAccountIds.includes(req.user.id)) other.linkedAccountIds.push(req.user.id);
+  db.commit();
+  audit(req.user.id, 'account.link', 'user', other.id);
+  res.json({ account: linkedAccountView(other) });
+});
+
+// Verknüpfung wieder lösen (beidseitig).
+router.post('/me/unlink-account', requireAuth, (req, res) => {
+  const { id } = req.body || {};
+  req.user.linkedAccountIds = (req.user.linkedAccountIds || []).filter((x) => x !== id);
+  const other = findUserById(id);
+  if (other) other.linkedAccountIds = (other.linkedAccountIds || []).filter((x) => x !== req.user.id);
+  db.commit();
+  audit(req.user.id, 'account.unlink', 'user', id);
+  res.json({ ok: true });
+});
+
+// Zu einem verknüpften Konto wechseln (ohne erneutes Passwort – die Verknüpfung
+// wurde bereits mit Passwort bestätigt). Setzt ein neues Sitzungs-Cookie.
+router.post('/me/switch/:id', requireAuth, (req, res) => {
+  if (!(req.user.linkedAccountIds || []).includes(req.params.id))
+    return res.status(403).json({ error: 'Konto ist nicht mit deinem verknüpft' });
+  const target = findUserById(req.params.id);
+  if (!target || target.status === 'disabled') return res.status(404).json({ error: 'Konto nicht verfügbar' });
+  issueToken(res, target);
+  audit(req.user.id, 'account.switch', 'user', target.id);
+  res.json({ user: publicUser(target) });
 });
 
 // =============================================================================
