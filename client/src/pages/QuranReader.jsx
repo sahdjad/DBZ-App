@@ -712,7 +712,16 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
   useEffect(() => { try { localStorage.setItem('dbz-mushaf-zoom', String(zoom)); } catch { /* egal */ } }, [zoom]);
   const changeZoom = (d) => setZoom((z) => Math.max(0.7, Math.min(3, Math.round((z + d) * 100) / 100)));
+  const [vvScale, setVvScale] = useState(1); // Finger-Zoom (Pinch) des Browsers
+  useEffect(() => {
+    const vv = window.visualViewport; if (!vv) return;
+    const on = () => setVvScale(vv.scale || 1);
+    vv.addEventListener('resize', on); vv.addEventListener('scroll', on); on();
+    return () => { vv.removeEventListener('resize', on); vv.removeEventListener('scroll', on); };
+  }, []);
+  // Beim (Button- ODER Finger-)Zoomen wird geschoben/gescrollt statt geblättert.
   const zoomed = zoom > 1.001;
+  const gestureZoom = zoomed || vvScale > 1.01;
 
   const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
   const audioCache = useRef(new Map()); // surah -> {url,ayahs}  (chapter-Rezitatoren)
@@ -1027,8 +1036,10 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
 
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (zoomed) return; // beim Hineinzoomen wird gescrollt, nicht geblättert
-    dragRef.current = { active: true, x0: e.clientX, y0: e.clientY, dx: 0, horiz: false };
+    if (gestureZoom) return; // beim (Finger-/Button-)Zoomen wird geschoben, nicht geblättert
+    dragRef.current = { active: true, x0: e.clientX, y0: e.clientY, dx: 0, horiz: false, id: e.pointerId, t0: Date.now() };
+    // Zeiger einfangen, damit die Wischgeste nicht an den Wort-Elementen verloren geht.
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* egal */ }
   }
   function onPointerMove(e) {
     const d = dragRef.current; if (!d.active) return;
@@ -1042,12 +1053,15 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     if ((page <= 1 && dx > 0) || (page >= 604 && dx < 0)) ddx = dx * 0.25; // an Rändern zäher
     d.dx = ddx; setFlip(ddx, false);
   }
-  function onPointerUp() {
+  function onPointerUp(e) {
     const d = dragRef.current; if (!d.active) return; d.active = false;
+    try { if (e && d.id != null) e.currentTarget.releasePointerCapture(d.id); } catch { /* egal */ }
     if (!d.horiz) return;
-    const threshold = Math.min(90, pageWidth() * 0.18);
-    if (d.dx <= -threshold && page < 604) commitFlip('next');
-    else if (d.dx >= threshold && page > 1) commitFlip('prev');
+    // Leichter auslösbar: kurze, schnelle Wischer (Flick) zählen auch.
+    const fast = Date.now() - (d.t0 || 0) < 300 && Math.abs(d.dx) > 24;
+    const threshold = Math.min(70, pageWidth() * 0.14);
+    if ((d.dx <= -threshold || (fast && d.dx < 0)) && page < 604) commitFlip('next');
+    else if ((d.dx >= threshold || (fast && d.dx > 0)) && page > 1) commitFlip('prev');
     else setFlip(0, true); // zurückfedern
   }
 
@@ -1125,7 +1139,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : !data || fontLoading ? (
         <Spinner label="Mushaf-Seite wird geladen …" />
       ) : (
-        <div style={{ perspective: '1600px', touchAction: zoomed ? 'pan-x pan-y' : 'pan-y', overflowX: zoomed ? 'auto' : 'hidden', direction: zoomed ? 'rtl' : undefined }}
+        <div style={{ perspective: '1600px', touchAction: gestureZoom ? 'pan-x pan-y pinch-zoom' : 'pan-y pinch-zoom', overflowX: zoomed ? 'auto' : 'hidden', direction: zoomed ? 'rtl' : undefined }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${glyph ? 'is-glyph' : ''}`}
           style={{
