@@ -1124,6 +1124,113 @@ router.delete('/events/:id', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// --- iCal-Abo: Kalender in Apple/Google/Samsung abonnieren -------------------
+// Ein geheimer, pro Nutzer eigener Link liefert einen .ics-Feed. Kalender-Apps
+// können keine Cookies senden, darum steckt die Berechtigung im Token (wie bei
+// Google/Apple). Der Link ist rotierbar.
+
+function icsEscape(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+}
+// „Floating" lokale Zeit: die Kalender-App zeigt sie in der Zeitzone des Nutzers
+// (für uns Europe/Berlin). So stimmen die Unterrichtszeiten ohne UTC-Umrechnung.
+function icsLocal(dateKey, time) {
+  const [h, m] = String(time || '00:00').split(':');
+  return `${String(dateKey).replace(/-/g, '')}T${String(h).padStart(2, '0')}${String(m || '00').padStart(2, '0')}00`;
+}
+const icsDate = (dateKey) => String(dateKey).replace(/-/g, '');
+const icsStamp = () => new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+function buildCalendarIcs(user) {
+  const today = new Date();
+  const fromD = new Date(today.getTime() - 30 * 86400000);
+  const toD = new Date(today.getTime() + 180 * 86400000);
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//DBZ-App//Kalender//DE',
+    'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    `X-WR-CALNAME:DBZ – ${icsEscape(user.name)}`, 'X-WR-TIMEZONE:Europe/Berlin',
+  ];
+  const push = ({ uid, start, end, allDay, summary, desc }) => {
+    lines.push('BEGIN:VEVENT', `UID:${uid}@dbz-app`, `DTSTAMP:${icsStamp()}`);
+    if (allDay) {
+      lines.push(`DTSTART;VALUE=DATE:${start}`);
+      if (end) lines.push(`DTEND;VALUE=DATE:${end}`);
+    } else {
+      lines.push(`DTSTART:${start}`);
+      if (end) lines.push(`DTEND:${end}`);
+    }
+    lines.push(`SUMMARY:${icsEscape(summary)}`);
+    if (desc) lines.push(`DESCRIPTION:${icsEscape(desc)}`);
+    lines.push('END:VEVENT');
+  };
+
+  // Unterricht (wöchentlicher Stundenplan, als Einzeltermine expandiert)
+  const classes = visibleClasses(user);
+  for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay();
+    const dateKey = d.toISOString().slice(0, 10);
+    for (const c of classes) {
+      if (c.weekday !== dow) continue;
+      push({ uid: `lesson-${c.id}-${dateKey}`, start: icsLocal(dateKey, c.startTime), end: icsLocal(dateKey, c.endTime), summary: `Unterricht: ${c.name}` });
+    }
+  }
+  // Persönliche Termine (inkl. Wiederholung)
+  for (const ev of db.all('events').filter((e) => e.userId === user.id)) {
+    for (const occ of expandEvent(ev, fromD, toD)) {
+      if (ev.allDay) push({ uid: `ev-${ev.id}-${occ}`, start: icsDate(occ), allDay: true, summary: ev.title, desc: ev.note });
+      else push({ uid: `ev-${ev.id}-${occ}`, start: icsLocal(occ, ev.startTime), end: ev.endTime ? icsLocal(occ, ev.endTime) : undefined, summary: ev.title, desc: ev.note });
+    }
+  }
+  // Hausaufgaben-Fristen (Ganztagestermin, Uhrzeit im Titel)
+  const addDue = (a, due, who) => {
+    if (!due) return;
+    const d = new Date(due);
+    if (d < fromD || d > toD) return;
+    const t = d.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' });
+    push({ uid: `due-${a.id}-${who || 'me'}`, start: icsDate(due.slice(0, 10)), allDay: true, summary: `Frist ${t}: ${a.title}${who ? ' · ' + who : ''}` });
+  };
+  if (user.role === ROLES.SCHUELER) db.all('assignments').filter((a) => targetsFor(a).includes(user.id)).forEach((a) => addDue(a, effectiveDue(a, user.id)));
+  else if (user.role === ROLES.ELTERN) (user.childIds || []).forEach((cid) => { const ch = findUserById(cid); db.all('assignments').filter((a) => targetsFor(a).includes(cid)).forEach((a) => addDue(a, effectiveDue(a, cid), ch?.name)); });
+  else if (isClassManager(user)) db.all('assignments').filter((a) => canManageClass(user, a.classId)).forEach((a) => addDue(a, a.dueAt));
+
+  lines.push('END:VCALENDAR');
+  return lines.join('\r\n');
+}
+
+function calendarUrls(req) {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0];
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const https = `${proto}://${host}/api/calendar/${req.user.calendarToken}.ics`;
+  return { url: https, webcal: https.replace(/^https?:/, 'webcal:') };
+}
+
+// Abo-Link anzeigen (erzeugt bei Bedarf ein Token).
+router.get('/me/calendar-token', requireAuth, (req, res) => {
+  if (!req.user.calendarToken) { req.user.calendarToken = 'cal_' + crypto.randomBytes(18).toString('base64url'); db.commit(); }
+  res.json(calendarUrls(req));
+});
+
+// Neues Token erzeugen – alte Abos werden ungültig.
+router.post('/me/calendar-token/rotate', requireAuth, (req, res) => {
+  req.user.calendarToken = 'cal_' + crypto.randomBytes(18).toString('base64url');
+  db.commit();
+  audit(req.user.id, 'calendar.token_rotate', 'user', req.user.id);
+  res.json(calendarUrls(req));
+});
+
+// Öffentlicher .ics-Feed (kein Login – Berechtigung steckt im geheimen Token).
+router.get('/calendar/:token', (req, res) => {
+  const token = String(req.params.token).replace(/\.ics$/i, '');
+  const user = token && token.startsWith('cal_')
+    ? db.all('users').find((u) => u.calendarToken === token)
+    : null;
+  if (!user || user.status === 'disabled') return res.status(404).type('text/plain').send('Nicht gefunden');
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline; filename="dbz-kalender.ics"');
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.send(buildCalendarIcs(user));
+});
+
 // =============================================================================
 // Abwesenheitsanträge
 // =============================================================================

@@ -175,6 +175,26 @@ test('Verknüpfte Konten: mit Passwort verbinden, gebündelte Badges, Wechsel oh
   assert.equal(blocked.status, 403);
 });
 
+test('Kalender-Abo: persönlicher iCal-Link liefert gültigen Feed, falsches Token 404', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const tok = await teacher('GET', '/me/calendar-token');
+  assert.equal(tok.status, 200);
+  assert.ok(/\/api\/calendar\/cal_[^/]+\.ics$/.test(tok.data.url), 'URL zeigt auf den .ics-Feed');
+  assert.ok(tok.data.webcal.startsWith('webcal:'), 'webcal-Variante vorhanden');
+
+  // Öffentlicher Feed (ohne Login) liefert gültiges iCal.
+  const feed = await fetch(tok.data.url.replace(/^https?:\/\/[^/]+/, base));
+  assert.equal(feed.status, 200);
+  assert.match(feed.headers.get('content-type') || '', /text\/calendar/);
+  const body = await feed.text();
+  assert.ok(body.startsWith('BEGIN:VCALENDAR'), 'iCal-Kopf vorhanden');
+  assert.ok(body.includes('END:VCALENDAR'), 'iCal-Ende vorhanden');
+
+  // Unbekanntes Token -> 404.
+  const bad = await fetch(base + '/api/calendar/cal_unbekannt.ics');
+  assert.equal(bad.status, 404);
+});
+
 test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Gruppenthread)', async () => {
   // Zweite Lehrkraft (Vertretung) derselben Klasse anlegen.
   const admin = await loginAs('admin@dbz.de');

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X, Rss, Copy, RefreshCw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -40,6 +40,7 @@ export default function Kalender() {
   const [selected, setSelected] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [events, setEvents] = useState(null);
   const [editing, setEditing] = useState(null); // Termin-Objekt oder {} für neu
+  const [subOpen, setSubOpen] = useState(false);
 
   // Sichtbarer Bereich je Ansicht
   const range = useMemo(() => {
@@ -121,8 +122,11 @@ export default function Kalender() {
               <button key={v} onClick={() => setView(v)} className={`text-sm px-3 py-1.5 ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
             ))}
           </div>
+          <Button size="sm" variant="outline" onClick={() => setSubOpen((v) => !v)}><Rss size={16} /> Abonnieren</Button>
           <Button size="sm" onClick={() => openNew()}><Plus size={16} /> Termin</Button>
         </div>
+
+        {subOpen && <SubscribeCard onClose={() => setSubOpen(false)} />}
 
         {!events ? <Spinner /> : (
           <>
@@ -371,6 +375,61 @@ function EventModal({ init, onClose, onSave, onDelete }) {
           <Button onClick={submit} disabled={!f.title.trim() || !f.date}>Speichern</Button>
         </div>
       </Card>
+    </div>
+  );
+}
+
+// Kalender-Abo: geheimen .ics-Link anzeigen, kopieren, in Apple/Google öffnen.
+function SubscribeCard({ onClose }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { api.get('/me/calendar-token').then(setData).catch(() => setData({ error: true })); }, []);
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(data.url); toast.push('Link kopiert', 'success'); }
+    catch { toast.push('Kopieren nicht möglich – Link bitte markieren.', 'error'); }
+  };
+  const rotate = async () => {
+    if (!window.confirm('Neuen Link erzeugen? Bereits eingerichtete Abos hören dann auf zu aktualisieren.')) return;
+    setBusy(true);
+    try { setData(await api.post('/me/calendar-token/rotate')); toast.push('Neuer Link erzeugt', 'success'); }
+    catch (err) { toast.push(err.message, 'error'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border border-mint/30 bg-subtle/40 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-ivory font-medium flex items-center gap-2"><Rss size={16} className="text-mint" /> Kalender abonnieren</div>
+          <p className="text-xs text-sage-muted mt-1 max-w-prose">
+            Unterricht, Fristen und deine Termine erscheinen automatisch in deiner Kalender-App (Apple, Google, Samsung) und aktualisieren sich von selbst.
+          </p>
+        </div>
+        <button onClick={onClose} className="text-sage hover:text-ivory" aria-label="Schließen"><X size={18} /></button>
+      </div>
+
+      {!data ? (
+        <div className="mt-3"><Spinner /></div>
+      ) : data.error ? (
+        <p className="mt-3 text-sm text-status-absent">Link konnte nicht geladen werden.</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <input readOnly value={data.url} onFocus={(e) => e.target.select()} className="input flex-1 min-w-[220px] font-mono text-xs" />
+            <Button size="sm" variant="outline" onClick={copy}><Copy size={16} /> Kopieren</Button>
+            <Button as="a" href={data.webcal} size="sm"><CalendarDays size={16} /> In Kalender öffnen</Button>
+            <Button size="sm" variant="ghost" onClick={rotate} disabled={busy}><RefreshCw size={16} /> Neu</Button>
+          </div>
+          <div className="text-[11px] text-sage-muted space-y-1">
+            <p><span className="text-sage">iPhone/iPad:</span> „In Kalender öffnen" tippen → Abonnieren. Oder: Einstellungen → Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo, Link einfügen.</p>
+            <p><span className="text-sage">Google Kalender:</span> Am Computer: Weitere Kalender → Per URL → Link einfügen.</p>
+            <p>Der Link ist persönlich – bitte nicht weitergeben. Bei Bedarf „Neu" drücken.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
