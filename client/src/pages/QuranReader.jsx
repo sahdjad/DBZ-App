@@ -1013,8 +1013,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     flipDirRef.current = dir;
     if (reduceRef.current) { goto(dir === 'next' ? page + 1 : page - 1); return; }
     el.style.transition = 'transform .28s ease-in, box-shadow .28s';
-    el.style.transformOrigin = dir === 'next' ? 'left center' : 'right center';
-    el.style.transform = `translateX(${dir === 'next' ? -w * 1.15 : w * 1.15}px) rotateY(${dir === 'next' ? -24 : 24}deg)`;
+    // Arabisch (RTL): die nächste Seite blättert nach RECHTS hinaus.
+    el.style.transformOrigin = dir === 'next' ? 'right center' : 'left center';
+    el.style.transform = `translateX(${dir === 'next' ? w * 1.15 : -w * 1.15}px) rotateY(${dir === 'next' ? 24 : -24}deg)`;
     el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.42)';
     setTimeout(() => goto(dir === 'next' ? page + 1 : page - 1), 230);
   }
@@ -1025,8 +1026,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     if (!dir || reduceRef.current) { el.style.transition = 'none'; el.style.transform = ''; el.style.boxShadow = ''; return; }
     const w = el.offsetWidth || 320;
     el.style.transition = 'none';
-    el.style.transformOrigin = dir === 'next' ? 'right center' : 'left center';
-    el.style.transform = `translateX(${dir === 'next' ? w * 0.5 : -w * 0.5}px) rotateY(${dir === 'next' ? 14 : -14}deg)`;
+    // RTL: die neue (nächste) Seite kommt von LINKS herein.
+    el.style.transformOrigin = dir === 'next' ? 'left center' : 'right center';
+    el.style.transform = `translateX(${dir === 'next' ? -w * 0.5 : w * 0.5}px) rotateY(${dir === 'next' ? -14 : 14}deg)`;
     el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.28)';
     requestAnimationFrame(() => {
       el.style.transition = 'transform .3s cubic-bezier(.22,.61,.36,1), box-shadow .3s';
@@ -1050,7 +1052,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       if (!d.horiz) { d.active = false; return; } // vertikal -> normales Scrollen
     }
     let ddx = dx;
-    if ((page <= 1 && dx > 0) || (page >= 604 && dx < 0)) ddx = dx * 0.25; // an Rändern zäher
+    // RTL: erste Seite -> Wischen nach links (prev) zäh; letzte Seite -> nach rechts (next) zäh.
+    if ((page <= 1 && dx < 0) || (page >= 604 && dx > 0)) ddx = dx * 0.25;
     d.dx = ddx; setFlip(ddx, false);
   }
   function onPointerUp(e) {
@@ -1060,8 +1063,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     // Leichter auslösbar: kurze, schnelle Wischer (Flick) zählen auch.
     const fast = Date.now() - (d.t0 || 0) < 300 && Math.abs(d.dx) > 24;
     const threshold = Math.min(70, pageWidth() * 0.14);
-    if ((d.dx <= -threshold || (fast && d.dx < 0)) && page < 604) commitFlip('next');
-    else if ((d.dx >= threshold || (fast && d.dx > 0)) && page > 1) commitFlip('prev');
+    // Arabisch (RTL): nach RECHTS wischen -> nächste Seite; nach LINKS -> vorige.
+    if ((d.dx >= threshold || (fast && d.dx > 0)) && page < 604) commitFlip('next');
+    else if ((d.dx <= -threshold || (fast && d.dx < 0)) && page > 1) commitFlip('prev');
     else setFlip(0, true); // zurückfedern
   }
 
