@@ -69,7 +69,7 @@ export async function getMushafPage(page) {
     e.code = 'NOT_FOUND';
     throw e;
   }
-  const key = `page_${p}_v2`; // v2: mit Seitenschrift-Glyphen (code_v1)
+  const key = `page_${p}_v3`; // v3: mit Seitenschrift-Glyphen (code_v1) + Tadschwid je Wort
   if (memo.has(key)) return memo.get(key);
   const disk = readDisk(key);
   if (disk) { memo.set(key, disk); return disk; }
@@ -77,7 +77,7 @@ export async function getMushafPage(page) {
   let json, chapters;
   try {
     [json, chapters] = await Promise.all([
-      fetchJson(`${BASE}/verses/by_page/${p}?words=true&word_fields=text_uthmani,code_v1,v1_page,line_number,char_type_name&fields=juz_number&per_page=60`),
+      fetchJson(`${BASE}/verses/by_page/${p}?words=true&word_fields=text_uthmani,text_uthmani_tajweed,code_v1,v1_page,line_number,char_type_name&fields=juz_number&per_page=60`),
       getChapters(),
     ]);
   } catch (err) {
@@ -109,6 +109,9 @@ export async function getMushafPage(page) {
         // g = Glyph der offiziellen Seitenschrift (KFGQPC v1). Damit füllt jede
         // Zeile die Breite exakt wie im gedruckten Mushaf (echte „Seiten").
         g: w.code_v1 || '',
+        // tj = Tadschwid-Auszeichnung je Wort (<rule class=…>) für die farbige
+        // Tadschwid-Seitenansicht (gleiche Seiten, nur eingefärbt).
+        tj: w.text_uthmani_tajweed || w.text_uthmani || '',
         e: w.char_type_name === 'end',
         v: v.verse_key,
       });

@@ -59,6 +59,20 @@ function tajweedToHtml(html) {
     .replace(/<(?!\/?span)[^>]*>/g, ''); // alles andere entfernen
 }
 
+// Tadschwid je WORT (Seitenansicht): quran.com liefert die Auszeichnung als
+// <rule class=…>…</rule>. Nur echte Regel-Klassen bekommen eine Farbe; reine
+// Darstellungs-Klassen (custom-…) bleiben ohne Farbe. Nur eigene <span>.
+function tajweedWordToHtml(html) {
+  return (html || '')
+    .replace(/[۟۠]/g, '')
+    .replace(/<rule class=["']?([a-z_-]+)["']?>/g, (m, cls) => {
+      const c = TAJWEED_COLORS[cls];
+      return c ? `<span style="color:${c}">` : '<span>';
+    })
+    .replace(/<\/rule>/g, '</span>')
+    .replace(/<(?!\/?span)[^>]*>/g, '');
+}
+
 function TafsirPanel({ data, edition, onEdition }) {
   const EDS = [['saadi', 'as-Saʿdī · عربي'], ['ibnkathir', 'Ibn Kathīr · EN'], ['de', 'Deutsch']];
   const isTrans = data && data.kind === 'translation';
@@ -113,11 +127,11 @@ export default function QuranReader() {
   return (
     <AppLayout title="Qur'an">
       {pageView ? (
-        <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null}
+        <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null} initialTajweed={!!pageView.tajweed}
           onBack={() => { setPageView(null); loadMarks(); }} onMarksChanged={loadMarks} />
       ) : selected ? (
         <SurahView n={selected.n} targetAyah={selected.ayah} surahs={surahs} onBack={() => { setSelected(null); loadMarks(); }}
-          onMarksChanged={loadMarks} onOpenPages={(surah) => openPages({ surah })}
+          onMarksChanged={loadMarks} onOpenPages={(surah, tajweed) => openPages({ surah, tajweed })}
           onChangeSurah={(nn) => setSelected({ n: nn, ayah: null })} />
       ) : (
         <SurahList surahs={surahs} marks={marks} onSelect={(n, ayah) => setSelected({ n, ayah: ayah || null })}
@@ -488,7 +502,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
               <div className="inline-flex items-center gap-1 flex-wrap justify-center">
                 <span className="text-sage-muted mr-1">Ansicht</span>
                 {[['study', 'Lernen', BookOpenText], ['mushaf', 'Mushaf', ScrollText], ['tajweed', 'Tadschwid', Palette]].map(([v, l, Icon]) => (
-                  <button key={v} onClick={() => (v === 'mushaf' ? onOpenPages(Number(n)) : chooseView(v))}
+                  <button key={v} onClick={() => (v === 'mushaf' ? onOpenPages(Number(n)) : v === 'tajweed' ? onOpenPages(Number(n), true) : chooseView(v))}
                     className={['px-2.5 py-1 rounded-md border inline-flex items-center gap-1', readMode === v ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>
                     <Icon size={13} />{l}
                   </button>
@@ -689,7 +703,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
 // =============================================================================
 const clampPage = (p) => Math.max(1, Math.min(604, p | 0));
 
-function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
+function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMarksChanged }) {
   const toast = useToast();
   const [page, setPage] = useState(null);
   const [data, setData] = useState(null);
@@ -708,6 +722,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [elPaused, setElPaused] = useState(false);
   const [glyphFs, setGlyphFs] = useState(null); // per-Seite passende Schriftgröße (px)
   const [glyphW, setGlyphW] = useState(null); // passende Seitenbreite (px) – Hochformat wie gedruckt
+  const [tajweed, setTajweed] = useState(!!initialTajweed); // farbige Tadschwid-Seitenansicht
   const [fontReady, setFontReady] = useState(true); // Seitenschrift geladen?
   const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
   useEffect(() => { try { localStorage.setItem('dbz-mushaf-zoom', String(zoom)); } catch { /* egal */ } }, [zoom]);
@@ -792,8 +807,10 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     prefetchPageAudio(pg?.surahs);
     if (pg?.font === 'v1') {
       fontPageRef.current = pg.fontPage;
-      ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); // Nachbarn vorladen
-      if (loadedFontPages.has(pg.fontPage)) setFontReady(true);
+      ensurePageFont(pg.fontPage); ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); // (Nachbarn) vorladen
+      // In der Tadschwid-Ansicht wird die farbige Schrift genutzt (keine
+      // Glyphenschrift) -> kein Warten. Sonst erst zeigen, wenn Schrift da ist.
+      if (tajweed || loadedFontPages.has(pg.fontPage)) setFontReady(true);
       else { setFontReady(false); ensurePageFont(pg.fontPage).then(() => { if (fontPageRef.current === pg.fontPage) setFontReady(true); }); }
     } else { fontPageRef.current = null; setFontReady(true); }
     if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
@@ -951,7 +968,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
   // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
   useLayoutEffect(() => {
-    if (!data || data.font !== 'v1' || !loadedFontPages.has(data.fontPage)) { setGlyphFs(null); setGlyphW(null); return; }
+    const canFit = data && (tajweed || (data.font === 'v1' && loadedFontPages.has(data.fontPage)));
+    if (!canFit) { setGlyphFs(null); setGlyphW(null); return; }
     const numLines = data.lines.length;
     const measure = () => {
       const el = pageElRef.current; if (!el) return;
@@ -990,7 +1008,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     window.addEventListener('resize', measure);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
     // eslint-disable-next-line
-  }, [data, fontReady]);
+  }, [data, fontReady, tajweed]);
 
   // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
   const pageElRef = useRef(null);
@@ -1071,8 +1089,10 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
 
   // Glyphen nur nutzen, wenn die Seitenschrift wirklich geladen ist (sonst
   // würden wirre Ersatzzeichen erscheinen) – sonst lesbarer Text-Fallback.
-  const glyph = !!(data && data.font === 'v1' && loadedFontPages.has(data.fontPage));
-  const fontLoading = !!(data && data.font === 'v1' && !fontReady);
+  // In der Tadschwid-Ansicht wird stattdessen der farbige Text gezeigt.
+  const glyph = !!(data && data.font === 'v1' && !tajweed && loadedFontPages.has(data.fontPage));
+  const pageLayout = glyph || tajweed; // volle Seiten-Layout (Blocksatz, Auto-Fit, Zoom)
+  const fontLoading = !!(data && data.font === 'v1' && !tajweed && !fontReady);
 
   return (
     <div>
@@ -1117,6 +1137,11 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
               <button onClick={() => changeZoom(0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom >= 3} aria-label="Größer"><ZoomIn size={15} /></button>
             </div>
           )}
+          <button onClick={() => setTajweed((t) => !t)}
+            className={['inline-flex items-center gap-1 px-2.5 py-1 rounded-md border', tajweed ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage'].join(' ')}
+            title="Tadschwid-Farben ein/aus">
+            <Palette size={14} /> Tadschwid
+          </button>
           <label className="flex items-center gap-1">
             <span className="text-sage-muted">Rezitator</span>
             <select className="input py-1 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
@@ -1135,6 +1160,16 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
         </div>
       </Card>
 
+      {tajweed && (
+        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-3 text-[11px]">
+          {TAJWEED_LEGEND.map(([c, l]) => (
+            <span key={l} className="inline-flex items-center gap-1 text-sage-muted">
+              <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}
+            </span>
+          ))}
+        </div>
+      )}
+
       {error ? (
         <Card className="p-8 text-center">
           <p className="text-status-absent mb-4">{error}</p>
@@ -1145,11 +1180,11 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : (
         <div style={{ perspective: '1600px', touchAction: gestureZoom ? 'pan-x pan-y pinch-zoom' : 'pan-y pinch-zoom', overflowX: zoomed ? 'auto' : 'hidden', direction: zoomed ? 'rtl' : undefined }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${glyph ? 'is-glyph' : ''}`}
+        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${pageLayout ? 'is-glyph' : ''}`}
           style={{
-            fontSize: glyph ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
-            width: glyph && glyphW ? `${glyphW * zoom}px` : undefined,
-            maxWidth: glyph ? (zoomed ? 'none' : '100%') : '44rem',
+            fontSize: pageLayout ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
+            width: pageLayout && glyphW ? `${glyphW * zoom}px` : undefined,
+            maxWidth: pageLayout ? (zoomed ? 'none' : '100%') : '44rem',
             willChange: 'transform',
           }}>
           <div className="mushaf-lines">
@@ -1162,13 +1197,21 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
                   </div>
                 ))}
                 <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
-                  {line.words.map((w, i) => (
-                    <span key={i} onClick={() => tapWord(w.v)}
-                      style={glyph && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
-                      className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
-                      {glyph && w.g ? w.g : cleanQuran(w.t)}{glyph ? '' : ' '}
-                    </span>
-                  ))}
+                  {line.words.map((w, i) => {
+                    const cls = `mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`;
+                    if (tajweed) {
+                      return w.e
+                        ? <span key={i} onClick={() => tapWord(w.v)} className={cls}>﴿{cleanQuran(w.t)}﴾</span>
+                        : <span key={i} onClick={() => tapWord(w.v)} className={cls} dangerouslySetInnerHTML={{ __html: tajweedWordToHtml(w.tj) }} />;
+                    }
+                    return (
+                      <span key={i} onClick={() => tapWord(w.v)}
+                        style={glyph && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
+                        className={cls}>
+                        {glyph && w.g ? w.g : cleanQuran(w.t)}{glyph ? '' : ' '}
+                      </span>
+                    );
+                  })}
                 </p>
               </div>
             ))}
