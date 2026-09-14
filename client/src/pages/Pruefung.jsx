@@ -1,12 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink, Printer } from 'lucide-react';
+import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink, Printer, Mic, Square, Paperclip, FileText, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { useRecorder, mmss } from '../lib/recorder.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
+
+// Datei anzeigen: Audio abspielbar, sonst als Öffnen/Download-Link.
+function FileView({ url, file }) {
+  const isAudio = String(file.mediaType || '').startsWith('audio');
+  if (isAudio) return <audio controls preload="none" className="w-full mt-1" src={url} />;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-mint-light hover:underline mt-1">
+      <FileText size={15} /> {file.originalName || 'Datei öffnen'}
+    </a>
+  );
+}
+
+// Aufgaben-Anhänge einer Prüfung (Audio/PDF) rendern.
+function ExamAttachments({ examId, files }) {
+  if (!files?.length) return null;
+  return (
+    <div className="rounded-lg border border-mint/25 bg-mint/[0.04] p-3 space-y-2">
+      <div className="text-[11px] text-sage-muted">Aufgabe</div>
+      {files.map((f) => <FileView key={f.id} file={f} url={`/api/exams/${examId}/file/${f.id}`} />)}
+    </div>
+  );
+}
 
 export default function Pruefung() {
   const { user } = useAuth();
@@ -18,6 +41,56 @@ export default function Pruefung() {
       </button>
       {MANAGER.includes(user.role) ? <ManagerExam /> : <StudentExam />}
     </AppLayout>
+  );
+}
+
+// Schüler-Antwort abgeben (Audio aufnehmen oder Datei/PDF hochladen).
+function ResponseUploader({ examId, onDone }) {
+  const toast = useToast();
+  const [files, setFiles] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  const rec = useRecorder((f, err) => { if (err) return toast.push(err.message, 'error'); if (f) setFiles((a) => [...a, f]); });
+
+  const send = async () => {
+    if (!files.length) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append('files', f));
+      await api.upload(`/exams/${examId}/response`, fd);
+      toast.push('Abgabe gesendet', 'success');
+      setFiles([]);
+      onDone();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="rounded-lg border border-line p-3 space-y-2">
+      <div className="text-sm text-sage">Deine Abgabe (Audio-Rezitation oder Datei)</div>
+      {rec.recording ? (
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-2 text-status-absent text-sm"><span className="w-2.5 h-2.5 rounded-full bg-status-absent animate-pulse" /> Aufnahme … {mmss(rec.seconds)}</span>
+          <div className="flex-1" />
+          <Button size="sm" variant="ghost" onClick={rec.cancel}>Abbrechen</Button>
+          <Button size="sm" onClick={rec.stop}><Square size={15} /> Fertig</Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={rec.start}><Mic size={15} /> Aufnehmen</Button>
+          <input ref={inputRef} type="file" accept="audio/*,application/pdf,image/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) setFiles((a) => [...a, f]); e.target.value = ''; }} />
+          <Button variant="ghost" size="sm" onClick={() => inputRef.current?.click()}><Paperclip size={15} /> Datei</Button>
+          {files.length > 0 && <Button size="sm" onClick={send} disabled={busy}><Send size={15} /> Abgeben</Button>}
+        </div>
+      )}
+      {files.map((f, i) => (
+        <div key={i} className="flex items-center gap-2 text-sm bg-subtle rounded-lg px-3 py-1.5">
+          <span className="text-sage">{f.type?.startsWith('audio') ? '🎤 Aufnahme' : `📎 ${f.name}`}</span>
+          <button className="ml-auto text-sage-muted hover:text-status-absent" onClick={() => setFiles((a) => a.filter((_, j) => j !== i))} aria-label="Entfernen"><Trash2 size={15} /></button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -52,12 +125,30 @@ function StudentExam() {
       <Card className="p-5">
         <CardHeader
           title={exam.title}
-          subtitle={`Ergebnis: ${attempt.total}/${attempt.max} Punkte (${attempt.percent}%)`}
+          subtitle={attempt.total != null ? `Ergebnis: ${attempt.total}${attempt.max ? '/' + attempt.max : ''} Punkte${typeof attempt.percent === 'number' ? ` (${attempt.percent}%)` : ''}` : 'Korrigiert'}
           icon={GraduationCap}
-          action={<Badge tone={attempt.passed ? 'present' : 'absent'}>{attempt.passed ? 'Bestanden' : 'Nicht bestanden'}</Badge>}
+          action={typeof attempt.passed === 'boolean' ? <Badge tone={attempt.passed ? 'present' : 'absent'}>{attempt.passed ? 'Bestanden' : 'Nicht bestanden'}</Badge> : null}
         />
-        <div className="px-4 pt-4">
-          <Button as={Link} to={`/pruefung/${id}/druck`} variant="outline" size="sm"><Printer size={16} /> PDF / Drucken</Button>
+        <div className="px-4 pt-4 space-y-3">
+          {exam.questions.length > 0 && <Button as={Link} to={`/pruefung/${id}/druck`} variant="outline" size="sm"><Printer size={16} /> PDF / Drucken</Button>}
+          <ExamAttachments examId={id} files={exam.files} />
+          {(attempt.responseFiles || []).length > 0 && (
+            <div className="rounded-lg border border-line p-3 space-y-1">
+              <div className="text-[11px] text-sage-muted">Deine Abgabe</div>
+              {attempt.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${attempt.id}/file/${f.id}`} />)}
+            </div>
+          )}
+          {attempt.feedback && (
+            <div className="rounded-lg border border-mint/30 bg-mint/[0.05] p-3 text-sm text-sage">
+              <span className="text-[11px] text-sage-muted block mb-1">Rückmeldung der Lehrkraft</span>{attempt.feedback}
+            </div>
+          )}
+          {attempt.correctedFile && (
+            <div className="rounded-lg border border-line p-3">
+              <div className="text-[11px] text-sage-muted">Korrigierte Datei</div>
+              <FileView file={attempt.correctedFile} url={`/api/attempts/${attempt.id}/file/${attempt.correctedFile.id}`} />
+            </div>
+          )}
         </div>
         <div className="p-4 space-y-4">
           {exam.questions.map((q, i) => {
@@ -92,10 +183,22 @@ function StudentExam() {
   // Abgegeben, wartet auf Freigabe
   if (attempt && attempt.status === 'submitted') {
     return (
-      <Card className="p-8 text-center">
-        <Clock size={32} className="mx-auto mb-3 text-status-late" />
-        <div className="text-ivory">Abgegeben</div>
-        <p className="text-sage-muted text-sm mt-1">Deine Prüfung wurde eingereicht. Das Ergebnis wird nach der Korrektur freigegeben.</p>
+      <Card className="p-5">
+        <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} />
+        <div className="p-4 space-y-3">
+          <ExamAttachments examId={id} files={exam.files} />
+          {(attempt.responseFiles || []).length > 0 && (
+            <div className="rounded-lg border border-line p-3 space-y-1">
+              <div className="text-[11px] text-sage-muted">Deine Abgabe</div>
+              {attempt.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${attempt.id}/file/${f.id}`} />)}
+            </div>
+          )}
+          <div className="text-center text-sage-muted text-sm inline-flex items-center gap-2 justify-center w-full">
+            <Clock size={18} className="text-status-late" /> Abgegeben – das Ergebnis kommt nach der Korrektur.
+          </div>
+          {/* Weitere Datei/Aufnahme nachreichen ist erlaubt. */}
+          <ResponseUploader examId={id} onDone={load} />
+        </div>
       </Card>
     );
   }
@@ -130,6 +233,10 @@ function StudentExam() {
     <Card className="p-5">
       <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} action={exam.questions.length > 0 ? <Badge tone="neutral">Bestehen ab {passPercentage}%</Badge> : null} />
       <div className="p-4 space-y-4">
+        <ExamAttachments examId={id} files={exam.files} />
+        {(exam.files?.length > 0 || exam.questions.length === 0) && !exam.link && (
+          <ResponseUploader examId={id} onDone={load} />
+        )}
         {exam.link && (
           <>
             <a href={exam.link} target="_blank" rel="noreferrer" className="block">
@@ -194,7 +301,10 @@ function ManagerExam() {
           icon={GraduationCap}
           action={<Badge tone={exam.status === 'published' ? 'present' : 'neutral'}>{exam.status === 'published' ? 'Veröffentlicht' : 'Entwurf'}</Badge>}
         />
-        {exam.status !== 'published' && <div className="p-4"><Button onClick={publish}>Veröffentlichen</Button></div>}
+        <div className="px-4 pb-4 space-y-3">
+          {exam.files?.length > 0 && <ExamAttachments examId={id} files={exam.files} />}
+          {exam.status !== 'published' && <Button onClick={publish}>Veröffentlichen</Button>}
+        </div>
       </Card>
 
       <h3 className="text-sm text-sage-muted">Abgaben ({attempts.length})</h3>
@@ -230,6 +340,12 @@ function GradeCard({ exam, att, onDone }) {
           ? <Badge tone="present">{att.total}/{att.max} freigegeben</Badge>
           : <StatusBadge status="submitted" />}
       </div>
+      {(att.responseFiles || []).length > 0 && (
+        <div className="rounded-lg border border-mint/25 bg-mint/[0.04] p-3 space-y-1 mb-3">
+          <div className="text-[11px] text-sage-muted">Abgabe des Schülers</div>
+          {att.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${att.id}/file/${f.id}`} />)}
+        </div>
+      )}
       <div className="space-y-3">
         {exam.questions.map((q, i) => {
           const a = (att.answers || []).find((x) => x.questionId === q.id) || {};
@@ -266,12 +382,57 @@ function GradeCard({ exam, att, onDone }) {
           );
         })}
       </div>
-      {att.status !== 'released' && (
+      {exam.questions.length === 0 ? (
+        <div className="mt-3"><ReturnForm att={att} onDone={onDone} /></div>
+      ) : att.status !== 'released' ? (
         <div className="flex gap-2 mt-3">
           <Button variant="outline" size="sm" onClick={() => grade(false)}>Speichern</Button>
           <Button size="sm" onClick={() => grade(true)}>Bewerten & Freigeben</Button>
         </div>
-      )}
+      ) : null}
     </Card>
+  );
+}
+
+// Korrigiert zurückgeben (Datei-/Audio-Prüfung): Punkte + Rückmeldung + optional
+// korrigierte Datei.
+function ReturnForm({ att, onDone }) {
+  const toast = useToast();
+  const [f, setF] = useState({ points: att.total ?? '', maxPoints: att.max ?? '', feedback: att.feedback ?? '' });
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  const send = async () => {
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      if (f.points !== '' && f.points != null) fd.append('points', f.points);
+      if (f.maxPoints !== '' && f.maxPoints != null) fd.append('maxPoints', f.maxPoints);
+      fd.append('feedback', f.feedback || '');
+      if (file) fd.append('file', file);
+      await api.upload(`/attempts/${att.id}/return`, fd);
+      toast.push('Korrigiert zurückgegeben', 'success');
+      onDone();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  return (
+    <div className="rounded-lg border border-line p-3 space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block"><span className="text-[11px] text-sage-muted">Punkte</span>
+          <input type="number" min={0} className="input py-1.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} /></label>
+        <label className="block"><span className="text-[11px] text-sage-muted">von (max.)</span>
+          <input type="number" min={0} className="input py-1.5" value={f.maxPoints} onChange={(e) => setF({ ...f, maxPoints: e.target.value })} /></label>
+      </div>
+      <label className="block"><span className="text-sm text-sage">Rückmeldung / Kritik</span>
+        <textarea rows={2} className="input mt-1" value={f.feedback} onChange={(e) => setF({ ...f, feedback: e.target.value })} /></label>
+      <div className="flex items-center gap-2 flex-wrap">
+        <input ref={inputRef} type="file" accept="audio/*,application/pdf,image/*" className="hidden"
+          onChange={(e) => { const x = e.target.files?.[0]; if (x) setFile(x); e.target.value = ''; }} />
+        <Button variant="ghost" size="sm" onClick={() => inputRef.current?.click()}><Paperclip size={15} /> Korrigierte Datei</Button>
+        {file && <span className="text-xs text-sage">📎 {file.name}</span>}
+        <div className="flex-1" />
+        <Button size="sm" onClick={send} disabled={busy}><Send size={15} /> Zurückgeben</Button>
+      </div>
+    </div>
   );
 }

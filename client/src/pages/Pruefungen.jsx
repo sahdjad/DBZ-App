@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { GraduationCap, Plus, Trash2 } from 'lucide-react';
+import { GraduationCap, Plus, Trash2, Mic, Square, Paperclip } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { useRecorder, mmss } from '../lib/recorder.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 
@@ -82,6 +83,9 @@ function CreateExam({ onDone, onCancel }) {
   const [targetIds, setTargetIds] = useState([]); // leer = ganze Klasse
   const [meta, setMeta] = useState({ classId: '', subjectId: '', title: '', description: '', passPercentage: 50, link: '' });
   const [questions, setQuestions] = useState([blankQuestion()]);
+  const [attach, setAttach] = useState([]); // Aufgabe als Audio/PDF (optional)
+  const fileRef = useRef(null);
+  const rec = useRecorder((f, err) => { if (err) return toast.push(err.message, 'error'); if (f) setAttach((a) => [...a, f]); });
 
   useEffect(() => {
     api.get('/classes').then((d) => { setClasses(d.classes); setMeta((m) => ({ ...m, classId: d.classes[0]?.id || '' })); });
@@ -111,6 +115,11 @@ function CreateExam({ onDone, onCancel }) {
         })),
       };
       const { exam } = await api.post('/exams', payload);
+      if (attach.length) {
+        const fd = new FormData();
+        attach.forEach((f) => fd.append('files', f));
+        await api.upload(`/exams/${exam.id}/files`, fd);
+      }
       if (publish) await api.post(`/exams/${exam.id}/publish`);
       toast.push(publish ? 'Prüfung veröffentlicht' : 'Entwurf gespeichert', 'success');
       onDone();
@@ -162,6 +171,37 @@ function CreateExam({ onDone, onCancel }) {
           ))}
         </div>
         {targetIds.length > 0 && <p className="px-4 pb-4 text-xs text-sage-muted">Nur {targetIds.length} ausgewählte{targetIds.length === 1 ? 'r Schüler' : ' Schüler'} bekommt/bekommen diese Prüfung.</p>}
+      </Card>
+
+      <Card className="p-5">
+        <CardHeader title="Aufgabe als Audio oder PDF (optional)" subtitle="Aufgabe einsprechen oder eine PDF-Klausur anhängen – auch ganz ohne Fragen möglich." icon={Mic} />
+        <div className="p-4 space-y-3">
+          {rec.recording ? (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-2 text-status-absent text-sm"><span className="w-2.5 h-2.5 rounded-full bg-status-absent animate-pulse" /> Aufnahme … {mmss(rec.seconds)}</span>
+              <div className="flex-1" />
+              <Button size="sm" variant="ghost" onClick={rec.cancel}>Abbrechen</Button>
+              <Button size="sm" onClick={rec.stop}><Square size={15} /> Fertig</Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button variant="outline" size="sm" onClick={rec.start}><Mic size={15} /> Aufgabe einsprechen</Button>
+              <input ref={fileRef} type="file" accept="audio/*,application/pdf,image/*" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) setAttach((a) => [...a, f]); e.target.value = ''; }} />
+              <Button variant="ghost" size="sm" onClick={() => fileRef.current?.click()}><Paperclip size={15} /> PDF / Datei</Button>
+            </div>
+          )}
+          {attach.length > 0 && (
+            <div className="space-y-1">
+              {attach.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm bg-subtle rounded-lg px-3 py-1.5">
+                  <span className="text-sage">{f.type?.startsWith('audio') ? '🎤 Aufnahme' : `📎 ${f.name}`}</span>
+                  <button className="ml-auto text-sage-muted hover:text-status-absent" onClick={() => setAttach((a) => a.filter((_, j) => j !== i))} aria-label="Entfernen"><Trash2 size={15} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
 
       {questions.map((q, i) => (

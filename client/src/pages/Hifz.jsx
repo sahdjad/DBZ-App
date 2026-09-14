@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
-import { BookOpen, Plus, Star } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { BookOpen, Plus, Mic, Square, Paperclip, Award, Send, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Ring, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Ring, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { useRecorder, mmss } from '../lib/recorder.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const GOAL_TYPES = { new_hifz: 'Neu auswendig', murajaah: "Muraja'ah", consolidation: 'Festigung', test: 'Prüfung' };
@@ -20,30 +21,47 @@ export default function Hifz() {
   );
 }
 
-function GoalCard({ g, surahs, onAttempt }) {
+// Bereichs-Text: bei einer einzelnen Sure nur der Name, sonst „von – bis".
+function rangeLabel(g) {
+  return g.surahFrom === g.surahTo ? g.surahFromName : `${g.surahFromName} – ${g.surahToName}`;
+}
+
+// Audio-Abgabe des Schülers – abspielbar für Schüler, Lehrkraft und Eltern.
+function RecordingPlayer({ goalId, recording }) {
+  if (!recording) return null;
+  return (
+    <div className="mt-3 rounded-lg border border-mint/25 bg-mint/[0.04] p-2.5">
+      <div className="text-[11px] text-sage-muted mb-1">🎤 Audio-Abgabe · {fmt(recording.submittedAt)}</div>
+      <audio controls preload="none" className="w-full" src={`/api/quran-goals/${goalId}/recording`} />
+    </div>
+  );
+}
+
+function GoalCard({ g, onAttempt, canGrade }) {
   const [open, setOpen] = useState(false);
   const last = g.lastAttempt;
-  const rangeLabel = `${g.surahFromName} ${g.ayahFrom} – ${g.surahToName} ${g.ayahTo}`;
   return (
     <Card className="p-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <div className="text-ivory">{rangeLabel}</div>
+          <div className="text-ivory">{rangeLabel(g)}</div>
           <div className="text-xs text-sage-muted">{GOAL_TYPES[g.goalType]} · {g.ayatCount} Ayat · fällig {fmt(g.dueAt)}</div>
         </div>
         <StatusBadge status={g.status === 'passed' ? 'passed' : 'open'} />
       </div>
+
+      <RecordingPlayer goalId={g.id} recording={g.recording} />
+
       {last && (
-        <div className="mt-2 text-xs text-sage-muted flex flex-wrap gap-3">
-          {last.tajwid != null && <span>Tajwid {last.tajwid}</span>}
-          {last.pronunciation != null && <span>Aussprache {last.pronunciation}</span>}
-          {last.fluency != null && <span>Flüssigkeit {last.fluency}</span>}
-          {last.memorization != null && <span>Hifz {last.memorization}</span>}
-          {last.errorCount != null && <span>Fehler {last.errorCount}</span>}
-          {last.note && <span className="text-sage">„{last.note}“</span>}
+        <div className="mt-2 text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
+          {last.points != null && <span className="text-mint-light font-medium">{last.points}/10 Punkte</span>}
+          {last.bonus ? <span className="inline-flex items-center gap-1 text-mint-light"><Award size={12} /> +{last.bonus}</span> : null}
+          {last.feedback && <span className="text-sage">„{last.feedback}"</span>}
+          {last.teacherName && <span className="text-sage-muted">· {last.teacherName}</span>}
         </div>
       )}
-      {onAttempt && (
+
+      {canGrade && (
         <div className="mt-3">
           {open ? (
             <AttemptForm onSubmit={async (payload) => { await onAttempt(g.id, payload); setOpen(false); }} onCancel={() => setOpen(false)} />
@@ -56,27 +74,36 @@ function GoalCard({ g, surahs, onAttempt }) {
   );
 }
 
+// Einfaches Bewertungsschema: Punkte, Extra-Punkte für Fleiß, Kritik, bestanden.
 function AttemptForm({ onSubmit, onCancel }) {
-  const [f, setF] = useState({ tajwid: '', pronunciation: '', fluency: '', memorization: '', errorCount: '', passed: true, note: '' });
+  const [f, setF] = useState({ points: '', bonus: '', feedback: '', passed: true });
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try { await onSubmit(f); } finally { setBusy(false); }
+  };
   return (
     <div className="rounded-lg border border-line p-3 space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {[['tajwid', 'Tajwid'], ['pronunciation', 'Aussprache'], ['fluency', 'Flüssigkeit'], ['memorization', 'Hifz'], ['errorCount', 'Fehler']].map(([k, l]) => (
-          <label key={k} className="block">
-            <span className="text-[11px] text-sage-muted">{l}</span>
-            <input type="number" className="input py-1.5" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />
-          </label>
-        ))}
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-[11px] text-sage-muted">Punkte (0–10)</span>
+          <input type="number" min={0} max={10} className="input py-1.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} />
+        </label>
+        <label className="block">
+          <span className="text-[11px] text-sage-muted">Extra-Punkte (Fleiß, 0–5)</span>
+          <input type="number" min={0} max={5} className="input py-1.5" value={f.bonus} onChange={(e) => setF({ ...f, bonus: e.target.value })} />
+        </label>
       </div>
       <label className="block">
-        <span className="text-sm text-sage">Notiz</span>
-        <input className="input mt-1" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
+        <span className="text-sm text-sage">Kritik / Rückmeldung</span>
+        <textarea rows={2} className="input mt-1" value={f.feedback} onChange={(e) => setF({ ...f, feedback: e.target.value })}
+          placeholder="z. B. schöne Aussprache, achte auf das Madd bei …" />
       </label>
       <label className="flex items-center gap-2 text-sm text-sage">
         <input type="checkbox" checked={f.passed} onChange={(e) => setF({ ...f, passed: e.target.checked })} /> Bestanden
       </label>
       <div className="flex gap-2">
-        <Button size="sm" onClick={() => onSubmit(f)}>Speichern</Button>
+        <Button size="sm" onClick={save} disabled={busy}>Speichern</Button>
         <Button size="sm" variant="ghost" onClick={onCancel}>Abbrechen</Button>
       </div>
     </div>
@@ -84,7 +111,6 @@ function AttemptForm({ onSubmit, onCancel }) {
 }
 
 function ProgressCard({ memorizedAyat }) {
-  // 6236 Ayat im gesamten Qur'an (Hafs)
   const pct = Math.min(100, Math.round((memorizedAyat / 6236) * 100));
   return (
     <Card className="p-5 flex items-center gap-4">
@@ -94,6 +120,72 @@ function ProgressCard({ memorizedAyat }) {
         <div className="text-sm text-sage-muted">auswendige Ayat (bestätigt)</div>
       </div>
     </Card>
+  );
+}
+
+// Mitarbeit (Rezitation): Punkte + Extra-Punkte – fließt in die Mitarbeitsnote.
+function MitarbeitCard({ m }) {
+  if (!m) return null;
+  return (
+    <Card className="p-5 flex items-center gap-4">
+      <span className="grid place-items-center h-16 w-16 rounded-xl bg-mint/15 text-mint shrink-0"><Award size={26} /></span>
+      <div>
+        <div className="font-mono text-2xl text-mint-light">{m.total}<span className="text-base text-sage-muted"> Punkte</span></div>
+        <div className="text-sm text-sage-muted">Mitarbeit (Rezitation) · {m.points} + {m.bonus} Extra · {m.count} Bewertungen</div>
+      </div>
+    </Card>
+  );
+}
+
+// --- Schüler: Audio zu Hause aufnehmen/hochladen -----------------------------
+function AudioSubmit({ goalId, onDone }) {
+  const toast = useToast();
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef(null);
+  const rec = useRecorder((f, err) => { if (err) return toast.push(err.message, 'error'); if (f) setFile(f); });
+
+  const send = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      await api.upload(`/quran-goals/${goalId}/recording`, fd);
+      toast.push('Audio abgegeben', 'success');
+      setFile(null);
+      onDone();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+
+  if (rec.recording) {
+    return (
+      <div className="mt-3 flex items-center gap-3">
+        <span className="flex items-center gap-2 text-status-absent text-sm"><span className="w-2.5 h-2.5 rounded-full bg-status-absent animate-pulse" /> Aufnahme … {mmss(rec.seconds)}</span>
+        <div className="flex-1" />
+        <Button size="sm" variant="ghost" onClick={rec.cancel}>Abbrechen</Button>
+        <Button size="sm" onClick={rec.stop}><Square size={15} /> Fertig</Button>
+      </div>
+    );
+  }
+  return (
+    <div className="mt-3">
+      <input ref={inputRef} type="file" accept="audio/*" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); e.target.value = ''; }} />
+      {file ? (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-sage inline-flex items-center gap-1">🎤 Aufnahme bereit</span>
+          <Button size="sm" onClick={send} disabled={busy}><Send size={15} /> Abgeben</Button>
+          <button className="text-sage-muted hover:text-status-absent" onClick={() => setFile(null)} aria-label="Verwerfen"><Trash2 size={16} /></button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button size="sm" variant="outline" onClick={rec.start}><Mic size={15} /> Aufnehmen</Button>
+          <Button size="sm" variant="ghost" onClick={() => inputRef.current?.click()}><Paperclip size={15} /> Datei</Button>
+          <span className="text-[11px] text-sage-muted">Rezitation aufnehmen und abgeben – die Lehrkraft hört sie an.</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -136,26 +228,43 @@ function ManagerView({ surahs }) {
         </select>
       </div>
 
-      {data && <ProgressCard memorizedAyat={data.summary.memorizedAyat} />}
+      {data && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <ProgressCard memorizedAyat={data.summary.memorizedAyat} />
+          <MitarbeitCard m={data.summary.mitarbeit} />
+        </div>
+      )}
 
       <div className="flex justify-end">
-        <Button onClick={() => setShowForm((s) => !s)}><Plus size={18} /> Neues Ziel</Button>
+        <Button onClick={() => setShowForm((s) => !s)}><Plus size={18} /> Neue Aufgabe</Button>
       </div>
       {showForm && <GoalForm surahs={surahs} onSubmit={assign} onCancel={() => setShowForm(false)} />}
 
       {!data ? <Spinner /> : data.goals.length === 0 ? (
-        <Card className="p-6 text-sage-muted">Noch keine Ziele für diesen Schüler.</Card>
-      ) : data.goals.map((g) => <GoalCard key={g.id} g={g} surahs={surahs} onAttempt={attempt} />)}
+        <Card className="p-6 text-sage-muted">Noch keine Aufgaben für diesen Schüler.</Card>
+      ) : data.goals.map((g) => <GoalCard key={g.id} g={g} onAttempt={attempt} canGrade />)}
     </div>
   );
 }
 
+// Einfaches Formular: Art + Von/Bis (nur Sure) + Fälligkeit (optional).
 function GoalForm({ surahs, onSubmit, onCancel }) {
-  const [f, setF] = useState({ goalType: 'new_hifz', surahFrom: 114, ayahFrom: 1, surahTo: 114, ayahTo: 6, dueAt: '' });
-  const submit = () => onSubmit({ ...f, dueAt: f.dueAt ? new Date(f.dueAt).toISOString() : null });
+  const [f, setF] = useState({ goalType: 'murajaah', surahFrom: 114, surahTo: 114, dueAt: '' });
+  const submit = () => {
+    // Ganze Sure(n): von Ayah 1 bis zur letzten Ayah der Ziel-Sure.
+    const toS = surahs.find((x) => x.n === Number(f.surahTo));
+    onSubmit({
+      goalType: f.goalType,
+      surahFrom: Number(f.surahFrom),
+      ayahFrom: 1,
+      surahTo: Number(f.surahTo),
+      ayahTo: toS?.ayat || 1,
+      dueAt: f.dueAt ? new Date(f.dueAt).toISOString() : null,
+    });
+  };
   return (
     <Card className="p-5">
-      <CardHeader title="Neues Qur'an-Ziel" icon={BookOpen} />
+      <CardHeader title="Neue Aufgabe" subtitle="z. B. Sure An-Nas bis Al-Aʻla wiederholen" icon={BookOpen} />
       <div className="p-4 space-y-3">
         <label className="block">
           <span className="text-sm text-sage">Art</span>
@@ -164,8 +273,18 @@ function GoalForm({ surahs, onSubmit, onCancel }) {
           </select>
         </label>
         <div className="grid grid-cols-2 gap-3">
-          <SurahAyah label="Von" surahs={surahs} surah={f.surahFrom} ayah={f.ayahFrom} onSurah={(v) => setF({ ...f, surahFrom: v })} onAyah={(v) => setF({ ...f, ayahFrom: v })} />
-          <SurahAyah label="Bis" surahs={surahs} surah={f.surahTo} ayah={f.ayahTo} onSurah={(v) => setF({ ...f, surahTo: v })} onAyah={(v) => setF({ ...f, ayahTo: v })} />
+          <label className="block">
+            <span className="text-sm text-sage">Von (Sure)</span>
+            <select className="input mt-1" value={f.surahFrom} onChange={(e) => setF({ ...f, surahFrom: Number(e.target.value) })}>
+              {surahs.map((x) => <option key={x.n} value={x.n}>{x.n}. {x.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-sm text-sage">Bis (Sure)</span>
+            <select className="input mt-1" value={f.surahTo} onChange={(e) => setF({ ...f, surahTo: Number(e.target.value) })}>
+              {surahs.map((x) => <option key={x.n} value={x.n}>{x.n}. {x.name}</option>)}
+            </select>
+          </label>
         </div>
         <label className="block">
           <span className="text-sm text-sage">Fällig bis (optional)</span>
@@ -180,28 +299,17 @@ function GoalForm({ surahs, onSubmit, onCancel }) {
   );
 }
 
-function SurahAyah({ label, surahs, surah, ayah, onSurah, onAyah }) {
-  const s = surahs.find((x) => x.n === Number(surah));
-  return (
-    <div>
-      <span className="text-sm text-sage">{label}</span>
-      <select className="input mt-1" value={surah} onChange={(e) => onSurah(Number(e.target.value))}>
-        {surahs.map((x) => <option key={x.n} value={x.n}>{x.n}. {x.name}</option>)}
-      </select>
-      <input type="number" min={1} max={s?.ayat || 300} className="input mt-1" value={ayah} onChange={(e) => onAyah(Number(e.target.value))} placeholder="Ayah" />
-    </div>
-  );
-}
-
 // --- Schüler / Eltern --------------------------------------------------------
-function ReadView({ role, surahs }) {
+function ReadView({ role }) {
   const [data, setData] = useState(null);
   const [children, setChildren] = useState([]);
   const [childId, setChildId] = useState('');
+  const isStudent = role === 'schueler';
 
+  const loadSelf = () => api.get('/quran-goals').then(setData);
   useEffect(() => {
     if (role === 'eltern') api.get('/dashboard').then((d) => { setChildren(d.children || []); setChildId(d.children?.[0]?.id || ''); });
-    else api.get('/quran-goals').then(setData);
+    else loadSelf();
   }, []);
   useEffect(() => {
     if (role === 'eltern' && childId) { setData(null); api.get(`/quran-goals?studentId=${childId}`).then(setData); }
@@ -216,10 +324,18 @@ function ReadView({ role, surahs }) {
       )}
       {!data ? <Spinner /> : (
         <>
-          <ProgressCard memorizedAyat={data.summary.memorizedAyat} />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <ProgressCard memorizedAyat={data.summary.memorizedAyat} />
+            <MitarbeitCard m={data.summary.mitarbeit} />
+          </div>
           {data.goals.length === 0 ? (
-            <Card className="p-6 text-sage-muted">Noch keine Ziele.</Card>
-          ) : data.goals.map((g) => <GoalCard key={g.id} g={g} surahs={surahs} />)}
+            <Card className="p-6 text-sage-muted">Noch keine Aufgaben.</Card>
+          ) : data.goals.map((g) => (
+            <div key={g.id}>
+              <GoalCard g={g} />
+              {isStudent && <div className="px-4 -mt-2 pb-1"><AudioSubmit goalId={g.id} onDone={loadSelf} /></div>}
+            </div>
+          ))}
         </>
       )}
     </div>

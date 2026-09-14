@@ -1194,3 +1194,71 @@ test('Mushaf-Seitenschrift: ungültige Seite 404, gültige liefert woff2', async
     assert.equal(ok.status, 502, 'ohne Netz -> 502');
   }
 });
+
+// --- Helfer für Multipart-Tests ---------------------------------------------
+async function loginCookie(email) {
+  const res = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'demo1234' }) });
+  return res.headers.get('set-cookie').split(';')[0];
+}
+async function jreq(cookie, method, path, body) {
+  const res = await fetch(base + '/api' + path, { method, headers: { cookie, ...(body ? { 'content-type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+  return { status: res.status, data };
+}
+async function upload(cookie, path, fd) {
+  const res = await fetch(base + '/api' + path, { method: 'POST', headers: { cookie }, body: fd });
+  const data = res.headers.get('content-type')?.includes('json') ? await res.json() : null;
+  return { status: res.status, data };
+}
+
+test('Hifz: einfache Bewertung (Punkte+Extra), Mitarbeit-Summe, Audio-Abgabe', async () => {
+  const t = await loginCookie('lehrer@dbz.de');
+  const created = await jreq(t, 'POST', '/quran-goals', { studentId: 'user_yusuf', goalType: 'murajaah', surahFrom: 114, ayahFrom: 1, surahTo: 114, ayahTo: 6 });
+  assert.equal(created.status, 200);
+  const goalId = created.data.goal.id;
+  const graded = await jreq(t, 'POST', `/quran-goals/${goalId}/attempt`, { points: 8, bonus: 2, feedback: 'Mashallah', passed: true });
+  assert.equal(graded.status, 200);
+  assert.equal(graded.data.attempt.points, 8);
+  assert.equal(graded.data.attempt.bonus, 2);
+  const list = await jreq(t, 'GET', '/quran-goals?studentId=user_yusuf');
+  assert.ok(list.data.summary.mitarbeit.total >= 10, 'Mitarbeit-Summe enthält Punkte+Extra');
+
+  // Schüler lädt eine Audio-Rezitation hoch (nur Audio erlaubt).
+  const s = await loginCookie('schueler@dbz.de');
+  const fd = new FormData();
+  fd.append('file', new Blob([Buffer.from('ID3audio')], { type: 'audio/mpeg' }), 'rez.mp3');
+  const up = await upload(s, `/quran-goals/${goalId}/recording`, fd);
+  assert.equal(up.status, 200);
+  assert.ok(up.data.goal.recording, 'Aufnahme gespeichert');
+  const fd2 = new FormData();
+  fd2.append('file', new Blob([Buffer.from('x')], { type: 'application/pdf' }), 'x.pdf');
+  assert.equal((await upload(s, `/quran-goals/${goalId}/recording`, fd2)).status, 400, 'nur Audio erlaubt');
+});
+
+test('Prüfung: Datei-/Audio-Prüfung ohne Fragen + Antwort + korrigiert zurück', async () => {
+  const t = await loginCookie('lehrer@dbz.de');
+  const ex = await jreq(t, 'POST', '/exams', { classId: 'class_3', title: 'Datei-Prüfung', questions: [] });
+  assert.equal(ex.status, 200, 'Prüfung ohne Fragen/Link erlaubt');
+  const examId = ex.data.exam.id;
+  const fd = new FormData();
+  fd.append('files', new Blob([Buffer.from('%PDF-1.4')], { type: 'application/pdf' }), 'klausur.pdf');
+  assert.equal((await upload(t, `/exams/${examId}/files`, fd)).status, 200);
+  assert.equal((await jreq(t, 'POST', `/exams/${examId}/publish`)).status, 200);
+
+  const s = await loginCookie('schueler@dbz.de');
+  const fr = new FormData();
+  fr.append('files', new Blob([Buffer.from('ID3')], { type: 'audio/mpeg' }), 'antwort.mp3');
+  assert.equal((await upload(s, `/exams/${examId}/response`, fr)).status, 200);
+
+  const atts = await jreq(t, 'GET', `/exams/${examId}/attempts`);
+  const att = atts.data.attempts.find((a) => a.examId === examId);
+  assert.ok(att && att.responseFiles?.length, 'Antwortdatei vorhanden');
+  const rf = new FormData();
+  rf.append('points', '8'); rf.append('maxPoints', '10'); rf.append('feedback', 'achte auf Madd');
+  assert.equal((await upload(t, `/attempts/${att.id}/return`, rf)).status, 200);
+
+  const view = await jreq(s, 'GET', `/exams/${examId}`);
+  assert.equal(view.data.attempt.status, 'released');
+  assert.equal(view.data.attempt.total, 8);
+  assert.equal(view.data.attempt.feedback, 'achte auf Madd');
+});

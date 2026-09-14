@@ -2087,12 +2087,15 @@ router.get('/surahs', requireAuth, (_req, res) => res.json({ surahs: SURAHS }));
 
 function goalView(g) {
   const attempts = db.all('recitation_attempts').filter((a) => a.goalId === g.id).sort((a, b) => b.attemptedAt.localeCompare(a.attemptedAt));
+  const rec = g.recording && !g.recording.file?.deleted ? g.recording : null;
   return {
     ...g,
     surahFromName: surahByN(g.surahFrom)?.name,
     surahToName: surahByN(g.surahTo)?.name,
     attemptCount: attempts.length,
     lastAttempt: attempts[0] || null,
+    // Nur Metadaten der Schüler-Audioabgabe (die Datei selbst kommt über die Route).
+    recording: rec ? { submittedAt: rec.submittedAt, mediaType: rec.file?.mediaType, originalName: rec.file?.originalName } : null,
   };
 }
 
@@ -2144,28 +2147,43 @@ router.get('/quran-goals', requireAuth, (req, res) => {
   const memorizedAyat = list
     .filter((g) => g.status === 'passed' && (g.goalType === 'new_hifz' || g.goalType === 'consolidation'))
     .reduce((sum, g) => sum + g.ayatCount, 0);
-  res.json({ goals: list, summary: { memorizedAyat } });
+  // Mitarbeit (Rezitation): Summe aus Punkten + Extra-Punkten aller Bewertungen –
+  // fließt in die Mitarbeitsnote / das Zeugnis ein.
+  const goalIds = new Set(list.map((g) => g.id));
+  const myAttempts = db.all('recitation_attempts').filter((a) => goalIds.has(a.goalId));
+  const points = myAttempts.reduce((s, a) => s + (Number(a.points) || 0), 0);
+  const bonus = myAttempts.reduce((s, a) => s + (Number(a.bonus) || 0), 0);
+  const mitarbeit = { points, bonus, total: points + bonus, count: myAttempts.length };
+  res.json({ goals: list, summary: { memorizedAyat, mitarbeit } });
 });
 
 router.post('/quran-goals/:id/attempt', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const goal = byId('quran_goals', req.params.id);
   if (!goal) return res.status(404).json({ error: 'Ziel nicht gefunden' });
   if (!canManageClass(req.user, goal.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const { tajwid, pronunciation, fluency, memorization, errorCount, passed, note } = req.body || {};
-  const clamp = (v) => (v === undefined || v === null || v === '' ? null : Math.max(0, Math.min(10, Number(v))));
+  // Einfaches Bewertungsschema: Punkte (0–10), Extra-Punkte für Fleiß (0–5),
+  // eine Kritik und „bestanden". (Ältere Detailfelder bleiben optional erhalten.)
+  const { points, bonus, feedback, note, passed, tajwid, pronunciation, fluency, memorization, errorCount } = req.body || {};
+  const clamp = (v, max) => (v === undefined || v === null || v === '' ? null : Math.max(0, Math.min(max, Number(v))));
+  const kritik = (feedback ?? note ?? '').toString();
   const attempt = {
     id: newId('rec'),
     goalId: goal.id,
     studentId: goal.studentId,
     teacherId: req.user.id,
+    teacherName: req.user.name,
     attemptedAt: new Date().toISOString(),
-    tajwid: clamp(tajwid),
-    pronunciation: clamp(pronunciation),
-    fluency: clamp(fluency),
-    memorization: clamp(memorization),
+    points: clamp(points, 10),
+    bonus: clamp(bonus, 5) || 0,
+    feedback: kritik,
+    note: kritik, // Abwärtskompatibilität (alte Anzeige)
+    // Optionale Detailwerte (falls doch genutzt) – Standard leer.
+    tajwid: clamp(tajwid, 10),
+    pronunciation: clamp(pronunciation, 10),
+    fluency: clamp(fluency, 10),
+    memorization: clamp(memorization, 10),
     errorCount: errorCount === '' || errorCount === undefined ? null : Math.max(0, Number(errorCount)),
     passed: !!passed,
-    note: note || '',
   };
   db.insert('recitation_attempts', attempt);
   if (passed) goal.status = 'passed';
@@ -2191,6 +2209,51 @@ router.get('/quran-goals/:id', requireAuth, (req, res) => {
   if (!ok) return res.status(403).json({ error: 'Kein Zugriff' });
   const attempts = db.all('recitation_attempts').filter((a) => a.goalId === goal.id).sort((a, b) => b.attemptedAt.localeCompare(a.attemptedAt));
   res.json({ goal: goalView(goal), attempts });
+});
+
+// Schüler lädt zu Hause eine Audio-Rezitation zum Ziel hoch (Vorarbeit). Die
+// Lehrkraft hört sie an und bewertet – oder prüft alternativ im Unterricht.
+router.post('/quran-goals/:id/recording', requireAuth, requireRole(ROLES.SCHUELER), upload.single('file'), async (req, res) => {
+  const goal = byId('quran_goals', req.params.id);
+  if (!goal) return res.status(404).json({ error: 'Ziel nicht gefunden' });
+  if (goal.studentId !== req.user.id) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!req.file) return res.status(400).json({ error: 'Bitte eine Audioaufnahme hochladen' });
+  if (!String(req.file.mimetype || '').startsWith('audio'))
+    return res.status(400).json({ error: 'Nur Audioaufnahmen sind erlaubt' });
+  await persistUpload(req.file);
+  goal.recording = {
+    file: { id: newId('recf'), filename: req.file.filename, originalName: req.file.originalname, mediaType: req.file.mimetype, size: req.file.size },
+    submittedAt: new Date().toISOString(),
+  };
+  db.commit();
+  audit(req.user.id, 'quran.recording', 'quran_goal', goal.id);
+  // Lehrkräfte der Klasse benachrichtigen.
+  db.all('users')
+    .filter((u) => canManageClass(u, goal.classId) && !isAdmin(u))
+    .forEach((t) => notify(t.id, {
+      type: 'hifz_recording',
+      level: 'info',
+      title: 'Neue Audio-Abgabe',
+      body: `${req.user.name}: ${surahByN(goal.surahFrom)?.name} – ${surahByN(goal.surahTo)?.name}`,
+      deepLink: '/hifz',
+    }));
+  res.json({ goal: goalView(goal) });
+});
+
+// Audio-Abgabe abspielen (Schüler selbst, Lehrkraft der Klasse, Eltern des Kindes).
+router.get('/quran-goals/:id/recording', requireAuth, async (req, res) => {
+  const goal = byId('quran_goals', req.params.id);
+  if (!goal || !goal.recording?.file) return res.status(404).json({ error: 'Keine Aufnahme' });
+  const student = findUserById(goal.studentId);
+  const ok =
+    goal.studentId === req.user.id ||
+    (isClassManager(req.user) && canManageClass(req.user, goal.classId)) ||
+    canViewStudent(req.user, student);
+  if (!ok) return res.status(403).json({ error: 'Kein Zugriff' });
+  const f = goal.recording.file;
+  const buf = await readFile(f.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
+  return sendBufferWithRange(req, res, buf, f.mediaType, f.originalName);
 });
 
 // =============================================================================
@@ -2220,6 +2283,10 @@ function computeScores(exam, attempt) {
 }
 
 // Prüfung ohne Lösungen (für Schüler beim Ablegen).
+function fileMeta(f) {
+  return { id: f.id, originalName: f.originalName, mediaType: f.mediaType, size: f.size };
+}
+
 function examForStudent(exam) {
   return {
     id: exam.id,
@@ -2228,6 +2295,8 @@ function examForStudent(exam) {
     link: exam.link || null,
     subjectName: findSubject(exam.subjectId)?.name || null,
     passPercentage: exam.passPercentage,
+    // Angehängte Aufgabe (Audio gesprochen / PDF-Klausur) zum Anhören/Herunterladen.
+    files: (exam.files || []).map(fileMeta),
     questions: exam.questions.map((q) => ({
       id: q.id,
       type: q.type,
@@ -2244,8 +2313,8 @@ router.post('/exams', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
   const cleanLink = typeof link === 'string' && /^https?:\/\//i.test(link.trim()) ? link.trim() : '';
   const qList = Array.isArray(questions) ? questions : [];
-  if (!cleanLink && qList.length === 0)
-    return res.status(400).json({ error: 'Mindestens eine Frage oder ein Link erforderlich' });
+  // Kein Zwang mehr zu Fragen/Link: eine Prüfung darf auch nur aus einer
+  // angehängten Aufgabe (Audio/PDF) bestehen (Dateien werden danach angehängt).
 
   const parsed = qList.map((q, i) => {
     const type = ['single', 'multi', 'text'].includes(q.type) ? q.type : 'single';
@@ -2365,12 +2434,14 @@ router.get('/exams/:id', requireAuth, (req, res) => {
     const att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
     let attempt = null;
     if (att) {
-      attempt = { id: att.id, status: att.status, answers: att.answers };
+      attempt = { id: att.id, status: att.status, answers: att.answers, responseFiles: (att.responseFiles || []).map(fileMeta) };
       if (att.status === 'released') {
         attempt.total = att.total;
         attempt.max = att.max;
         attempt.percent = att.percent;
-        attempt.passed = att.percent >= exam.passPercentage;
+        attempt.passed = typeof att.percent === 'number' ? att.percent >= exam.passPercentage : null;
+        attempt.feedback = att.feedback || '';
+        attempt.correctedFile = att.correctedFile ? fileMeta(att.correctedFile) : null;
         attempt.solutions = exam.questions.map((q) => ({ id: q.id, correct: q.correct }));
       }
     }
@@ -2476,6 +2547,98 @@ router.post('/attempts/:id/grade', requireAuth, requireRole(CLASS_MANAGERS), (re
   db.commit();
   audit(req.user.id, 'exam.grade', 'attempt', att.id, null, { released: !!req.body?.release });
   res.json({ ok: true, scores: sc });
+});
+
+// --- Datei-/Audio-Prüfungen --------------------------------------------------
+// Prüfung per Audio erstellen (Lehrer spricht die Aufgabe ein) bzw. PDF-Klausur
+// anhängen. Die Schüler hören/laden die Aufgabe, geben ggf. eine Datei ab und
+// bekommen sie korrigiert (Punkte + Rückmeldung + optional korrigierte Datei)
+// zurück – auch ohne Multiple-Choice-Fragen.
+
+// Aufgabe-Dateien an eine Prüfung anhängen (Audio/PDF).
+router.post('/exams/:id/files', requireAuth, requireRole(CLASS_MANAGERS), upload.array('files', 6), async (req, res) => {
+  const exam = byId('exams', req.params.id);
+  if (!exam) return res.status(404).json({ error: 'Prüfung nicht gefunden' });
+  if (!canManageClass(req.user, exam.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  await Promise.all((req.files || []).map((f) => persistUpload(f)));
+  const files = (req.files || []).map((f) => ({ id: newId('examf'), filename: f.filename, originalName: f.originalname, mediaType: f.mimetype, size: f.size }));
+  exam.files = [...(exam.files || []), ...files];
+  db.commit();
+  audit(req.user.id, 'exam.files', 'exam', exam.id);
+  res.json({ files: exam.files.map(fileMeta) });
+});
+
+// Aufgabe-Datei einer Prüfung ausliefern (Zielschüler oder Verwalter).
+router.get('/exams/:id/file/:fileId', requireAuth, async (req, res) => {
+  const exam = byId('exams', req.params.id);
+  if (!exam) return res.status(404).json({ error: 'Nicht gefunden' });
+  const allowed =
+    canManageClass(req.user, exam.classId) ||
+    (req.user.role === ROLES.SCHUELER && (req.user.classIds || []).includes(exam.classId) && examTargetsStudent(exam, req.user.id));
+  if (!allowed) return res.status(403).json({ error: 'Kein Zugriff' });
+  const f = (exam.files || []).find((x) => x.id === req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'Datei fehlt' });
+  const buf = await readFile(f.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
+  return sendBufferWithRange(req, res, buf, f.mediaType, f.originalName);
+});
+
+// Schüler gibt eine Datei-/Audio-Antwort ab.
+router.post('/exams/:id/response', requireAuth, requireRole(ROLES.SCHUELER), upload.array('files', 5), async (req, res) => {
+  const exam = byId('exams', req.params.id);
+  if (!exam || exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
+    return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!(req.files || []).length) return res.status(400).json({ error: 'Bitte eine Datei/Aufnahme hochladen' });
+  await Promise.all(req.files.map((f) => persistUpload(f)));
+  const files = req.files.map((f) => ({ id: newId('respf'), filename: f.filename, originalName: f.originalname, mediaType: f.mimetype, size: f.size }));
+  let att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
+  if (!att) {
+    att = { id: newId('att'), examId: exam.id, classId: exam.classId, studentId: req.user.id, studentName: req.user.name, answers: [], responseFiles: files, status: 'submitted', startedAt: new Date().toISOString(), submittedAt: new Date().toISOString(), total: null, max: null, percent: null, releasedAt: null };
+    db.insert('exam_attempts', att);
+  } else {
+    att.responseFiles = [...(att.responseFiles || []), ...files];
+    if (att.status === 'in_progress') att.status = 'submitted';
+    att.submittedAt = new Date().toISOString();
+    db.commit();
+  }
+  db.all('users').filter((u) => canManageClass(u, exam.classId) && !isAdmin(u))
+    .forEach((t) => notify(t.id, { type: 'exam_submitted', level: 'info', title: 'Prüfungs-Abgabe', body: `${req.user.name}: ${exam.title}`, deepLink: '/pruefungen' }));
+  res.json({ ok: true });
+});
+
+// Antwort-/Korrektur-Datei eines Versuchs ausliefern (Verwalter oder eigener Schüler).
+router.get('/attempts/:id/file/:fileId', requireAuth, async (req, res) => {
+  const att = byId('exam_attempts', req.params.id);
+  if (!att) return res.status(404).json({ error: 'Nicht gefunden' });
+  const ok = att.studentId === req.user.id || canManageClass(req.user, att.classId);
+  if (!ok) return res.status(403).json({ error: 'Kein Zugriff' });
+  const f = [...(att.responseFiles || []), att.correctedFile].filter(Boolean).find((x) => x.id === req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'Datei fehlt' });
+  const buf = await readFile(f.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
+  return sendBufferWithRange(req, res, buf, f.mediaType, f.originalName);
+});
+
+// Lehrer gibt korrigiert zurück: Punkte + Rückmeldung + optional korrigierte Datei.
+router.post('/attempts/:id/return', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
+  const att = byId('exam_attempts', req.params.id);
+  if (!att) return res.status(404).json({ error: 'Versuch nicht gefunden' });
+  if (!canManageClass(req.user, att.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const exam = byId('exams', att.examId);
+  const points = req.body?.points === '' || req.body?.points === undefined ? null : Math.max(0, Number(req.body.points));
+  const maxPoints = req.body?.maxPoints === '' || req.body?.maxPoints === undefined ? null : Math.max(0, Number(req.body.maxPoints));
+  if (req.file) {
+    await persistUpload(req.file);
+    att.correctedFile = { id: newId('corrf'), filename: req.file.filename, originalName: req.file.originalname, mediaType: req.file.mimetype, size: req.file.size };
+  }
+  att.feedback = (req.body?.feedback || '').toString();
+  if (points != null) { att.total = points; att.max = maxPoints != null ? maxPoints : (att.max || points); att.percent = att.max ? Math.round((points / att.max) * 100) : null; }
+  att.status = 'released';
+  att.releasedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'exam.return', 'attempt', att.id);
+  notify(att.studentId, { type: 'exam_result', level: 'info', title: 'Prüfung korrigiert', body: `${exam?.title || 'Prüfung'}${points != null ? `: ${points}${att.max ? '/' + att.max : ''} Punkte` : ''}`, deepLink: '/pruefungen' });
+  res.json({ ok: true });
 });
 
 // =============================================================================
