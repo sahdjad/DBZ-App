@@ -107,6 +107,13 @@ export async function getChapterAudio(surah, reciterId) {
     n: Number(String(t.verse_key).split(':')[1]),
     from: t.timestamp_from | 0,
     to: t.timestamp_to | 0,
+    // Wort-Zeitmarken [wortNr, startMs, endMs] für das Mitlesen (Wort leuchtet
+    // auf, während es rezitiert wird – wie bei Tarteel).
+    words: Array.isArray(t.segments)
+      ? t.segments
+          .filter((s) => Array.isArray(s) && s.length >= 3)
+          .map((s) => ({ w: s[0] | 0, from: s[s.length - 2] | 0, to: s[s.length - 1] | 0 }))
+      : [],
   }));
   const data = {
     reciter: rid,

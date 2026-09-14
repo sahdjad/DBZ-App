@@ -155,7 +155,12 @@
     line-height: 2.05;
     margin: 0;
   }
-  .mushaf-line.is-short { text-align-last: center; } /* letzte/kurze Zeilen mittig */
+  /* Kurze Zeilen (Sure-Ende, kurze Suren wie Al-Ichlas) NICHT auseinanderziehen,
+     sondern natürlich fließend zentrieren – so entstehen keine großen Lücken. */
+  .mushaf-line.is-short {
+    text-align: center;
+    text-align-last: center;
+  }
   .mushaf-word {
     cursor: pointer;
     border-radius: 6px;
@@ -163,8 +168,19 @@
     transition: background-color 0.2s ease;
   }
   .mushaf-word:hover { background: rgba(21, 101, 63, 0.10); }
-  .mushaf-word.is-active { background: rgba(21, 101, 63, 0.16); }
-  .dark .mushaf-word.is-active { background: rgba(74, 170, 116, 0.20); }
+  .mushaf-word.is-active { background: rgba(21, 101, 63, 0.10); }
+  .dark .mushaf-word.is-active { background: rgba(74, 170, 116, 0.12); }
+  /* Mitlesen: das gerade rezitierte Wort leuchtet kräftig auf (wie bei Tarteel). */
+  .mushaf-word.is-word-active {
+    background: rgba(21, 101, 63, 0.22);
+    color: #0f5136;
+    box-shadow: 0 0 0 1px rgba(21, 101, 63, 0.25);
+  }
+  .dark .mushaf-word.is-word-active {
+    background: rgba(74, 170, 116, 0.30);
+    color: #eafff3;
+    box-shadow: 0 0 0 1px rgba(74, 170, 116, 0.35);
+  }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
   /* Verzierter Sure-Kopf über dem ersten Vers einer Sure auf der Seite. */
   .mushaf-surah-head {

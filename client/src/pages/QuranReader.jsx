@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
@@ -677,6 +677,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [reciters, setReciters] = useState([]);
   const [speed, setSpeed] = useState(1);
   const [playingKey, setPlayingKey] = useState(null); // "surah:ayah"
+  const [playingWord, setPlayingWord] = useState(null); // "surah:ayah#wortNr" (Mitlesen)
   const [sheetKey, setSheetKey] = useState(null); // ausgewählte Ayah (Aktionsleiste)
   const [marked, setMarked] = useState(new Set()); // "s:a"
   const [tafsirEd, setTafsirEd] = useState('de');
@@ -690,8 +691,25 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const winRef = useRef({ stopped: true });
   const speedRef = useRef(1);
   const playingKeyRef = useRef(null);
+  const playingWordRef = useRef(null);
   useEffect(() => { playingKeyRef.current = playingKey; }, [playingKey]);
+  useEffect(() => { playingWordRef.current = playingWord; }, [playingWord]);
   useEffect(() => { speedRef.current = speed; if (elRef.current) elRef.current.playbackRate = speed; }, [speed]);
+
+  // Jedem echten Wort seine Wort-Nummer innerhalb der Ayah geben (für das
+  // Mitlesen: Abgleich mit den Wort-Zeitmarken der Audiodatei). Endzeichen zählen nicht.
+  const annotatedLines = useMemo(() => {
+    if (!data) return [];
+    const counter = {};
+    return data.lines.map((line) => ({
+      n: line.n,
+      words: line.words.map((w) => {
+        let wi = null;
+        if (!w.e) { counter[w.v] = (counter[w.v] || 0) + 1; wi = counter[w.v]; }
+        return { ...w, wi };
+      }),
+    }));
+  }, [data]);
 
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
 
@@ -742,7 +760,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   // Audio der aktuellen Seite erneut vorladen.
   useEffect(() => { audioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; if (data) prefetchPageAudio(data.surahs); /* eslint-disable-next-line */ }, [reciter]);
 
-  function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); setElPaused(false); }
+  function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); playingWordRef.current = null; setPlayingWord(null); setElPaused(false); }
 
   async function ensureAudio(surah) {
     if (audioCache.current.has(surah)) return audioCache.current.get(surah);
@@ -756,10 +774,19 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     if (!a || win.stopped) return;
     const t = a.currentTime * 1000;
     const ay = win.ayahs; if (!ay) return;
-    let cur = null;
-    for (let k = 0; k < ay.length; k++) if (t >= ay[k].from && t < ay[k].to) { cur = ay[k].n; break; }
-    if (cur == null && t >= ay[ay.length - 1].from) cur = ay[ay.length - 1].n;
+    let cur = null; let curAy = null;
+    for (let k = 0; k < ay.length; k++) if (t >= ay[k].from && t < ay[k].to) { cur = ay[k].n; curAy = ay[k]; break; }
+    if (cur == null && t >= ay[ay.length - 1].from) { cur = ay[ay.length - 1].n; curAy = ay[ay.length - 1]; }
     if (cur != null) { const key = `${win.surah}:${cur}`; if (key !== playingKeyRef.current) { playingKeyRef.current = key; setPlayingKey(key); } }
+    // Mitlesen: aktuell rezitiertes WORT anhand der Wort-Zeitmarken bestimmen.
+    let wkey = null;
+    if (curAy && curAy.words && curAy.words.length) {
+      let cw = null;
+      for (const s of curAy.words) if (t >= s.from && t < s.to) { cw = s.w; break; }
+      if (cw == null && t >= curAy.words[curAy.words.length - 1].from) cw = curAy.words[curAy.words.length - 1].w;
+      if (cw != null) wkey = `${win.surah}:${cur}#${cw}`;
+    }
+    if (wkey !== playingWordRef.current) { playingWordRef.current = wkey; setPlayingWord(wkey); }
     if (t >= win.endMs - 15) stopAudio();
   }
 
@@ -950,7 +977,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
         <div style={{ perspective: '1600px', touchAction: 'pan-y', overflowX: 'hidden' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         <div ref={pageElRef} className="mushaf-page rounded-2xl p-5 sm:p-8 font-mushaf" style={{ fontSize: 'clamp(1.35rem, 4.6vw, 1.9rem)', willChange: 'transform' }}>
-          {data.lines.map((line) => (
+          {annotatedLines.map((line) => (
             <div key={line.n}>
               {(headerByLine[line.n] || []).map((h) => (
                 <div key={h.surah} className="mushaf-surah-head">
@@ -958,10 +985,10 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
                   {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
                 </div>
               ))}
-              <p className={`mushaf-line ${line.words.length <= 4 || data.page === 1 ? 'is-short' : ''}`}>
+              <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
                 {line.words.map((w, i) => (
                   <span key={i} onClick={() => tapWord(w.v)}
-                    className={`mushaf-word ${playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
+                    className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
                     {cleanQuran(w.t)}{' '}
                   </span>
                 ))}
