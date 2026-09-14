@@ -1181,3 +1181,16 @@ test('Qurʼan: Basmala wird aus Ayah 1 herausgelöst (außer Al-Fatiha)', async 
   const plain = 'يَٰٓأَيُّهَا ٱلنَّاسُ ٱتَّقُوا۟ رَبَّكُمُ';
   assert.equal(stripLeadingBasmala(plain), plain, 'ohne Basmala unverändert');
 });
+test('Mushaf-Seitenschrift: ungültige Seite 404, gültige liefert woff2', async () => {
+  const bad = await fetch(base + '/api/quran/font/v1/0');
+  assert.equal(bad.status, 404, 'ungültige Seite -> 404');
+  const ok = await fetch(base + '/api/quran/font/v1/1');
+  // Netz-tolerant: bei fehlender Verbindung liefert der Proxy 502.
+  if (ok.status === 200) {
+    assert.equal(ok.headers.get('content-type'), 'font/woff2');
+    const buf = Buffer.from(await ok.arrayBuffer());
+    assert.equal(buf.slice(0, 4).toString('latin1'), 'wOF2', 'gültige woff2-Signatur');
+  } else {
+    assert.equal(ok.status, 502, 'ohne Netz -> 502');
+  }
+});

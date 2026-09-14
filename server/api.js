@@ -41,6 +41,7 @@ import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
 import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
 import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
+import { getMushafFont } from './providers/mushafFontProvider.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
 import { createLoginThrottle } from './security.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
@@ -1934,6 +1935,22 @@ router.get('/quran/page/:p', requireAuth, async (req, res) => {
     if (err.code === 'PROVIDER_UNAVAILABLE')
       return res.status(503).json({ error: 'Mushaf-Seite konnte nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.' });
     res.status(500).json({ error: 'Serverfehler beim Laden der Mushaf-Seite' });
+  }
+});
+
+// Offizielle Seitenschrift (KFGQPC HAFS v1) je Mushaf-Seite – ausgeliefert vom
+// eigenen Server (font-src 'self'). Öffentlich (nur gemeinfreie Schrift-Bytes),
+// damit der Browser sie per @font-face laden kann; lange Cache-Zeit.
+router.get('/quran/font/v1/:page', async (req, res) => {
+  try {
+    const buf = await getMushafFont(req.params.page);
+    res.setHeader('Content-Type', 'font/woff2');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.send(buf);
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).end();
+    res.status(502).end();
   }
 });
 

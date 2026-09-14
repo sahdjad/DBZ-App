@@ -35,6 +35,8 @@ export default function Abwesenheit() {
 
   const [touched, setTouched] = useState(false);
   const commentTooShort = (form.comment || '').trim().length < 30;
+  // Hinweis nur zeigen, wenn schon (zu wenig) getippt wurde oder abgesendet wird.
+  const showShort = commentTooShort && (touched || (form.comment || '').trim().length > 0);
   const submit = async (e) => {
     e.preventDefault();
     setTouched(true);
@@ -83,22 +85,23 @@ export default function Abwesenheit() {
               </label>
             </div>
             <label className="block">
-              <span className="text-sm text-sage">Begründung <span className="text-status-absent">*</span> (mind. 30 Zeichen)</span>
+              <span className="text-sm text-sage">Begründung <span className="text-status-absent">*</span></span>
               <textarea
-                className={`input mt-1 ${touched && commentTooShort ? 'border-status-absent ring-1 ring-status-absent' : ''}`}
+                className={`input mt-1 ${showShort ? 'border-status-absent ring-1 ring-status-absent' : ''}`}
                 rows={3}
                 value={form.comment}
                 onChange={(e) => setForm({ ...form, comment: e.target.value })}
                 placeholder="z. B. Assalamu alaikum, mein Kind ist heute krank und kann leider nicht kommen …"
               />
-              <div className="flex justify-between mt-1">
-                {touched && commentTooShort
-                  ? <span className="text-[11px] text-status-absent">Bitte mindestens 30 Zeichen – der Antrag kann sonst nicht gesendet werden.</span>
-                  : <span className="text-[11px] text-sage-muted">Kurze, höfliche Begründung.</span>}
-                <span className={`text-[11px] ${commentTooShort ? 'text-status-absent' : 'text-sage-muted'}`}>{(form.comment || '').trim().length}/30</span>
-              </div>
+              {/* Der Zähler wird NICHT dauerhaft angezeigt. Erst wenn schon etwas
+                  (zu kurz) geschrieben wurde bzw. beim Absenden, kommt der Hinweis. */}
+              {showShort && (
+                <p className="text-[11px] text-status-absent mt-1">
+                  Bitte etwas ausführlicher – mindestens 30 Zeichen, damit die Lehrkraft den Grund nachvollziehen kann.
+                </p>
+              )}
             </label>
-            <Button type="submit" disabled={commentTooShort}><Send size={18} /> Antrag senden</Button>
+            <Button type="submit"><Send size={18} /> Antrag senden</Button>
           </form>
         </Card>
 

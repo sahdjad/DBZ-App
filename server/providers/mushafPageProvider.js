@@ -69,7 +69,7 @@ export async function getMushafPage(page) {
     e.code = 'NOT_FOUND';
     throw e;
   }
-  const key = `page_${p}`;
+  const key = `page_${p}_v2`; // v2: mit Seitenschrift-Glyphen (code_v1)
   if (memo.has(key)) return memo.get(key);
   const disk = readDisk(key);
   if (disk) { memo.set(key, disk); return disk; }
@@ -77,7 +77,7 @@ export async function getMushafPage(page) {
   let json, chapters;
   try {
     [json, chapters] = await Promise.all([
-      fetchJson(`${BASE}/verses/by_page/${p}?words=true&word_fields=text_uthmani,line_number,char_type_name&fields=juz_number&per_page=60`),
+      fetchJson(`${BASE}/verses/by_page/${p}?words=true&word_fields=text_uthmani,code_v1,v1_page,line_number,char_type_name&fields=juz_number&per_page=60`),
       getChapters(),
     ]);
   } catch (err) {
@@ -104,10 +104,21 @@ export async function getMushafPage(page) {
     for (const w of v.words || []) {
       const ln = w.line_number || 1;
       if (!lineMap.has(ln)) lineMap.set(ln, []);
-      lineMap.get(ln).push({ t: w.text_uthmani || w.text || '', e: w.char_type_name === 'end', v: v.verse_key });
+      lineMap.get(ln).push({
+        t: w.text_uthmani || w.text || '',
+        // g = Glyph der offiziellen Seitenschrift (KFGQPC v1). Damit füllt jede
+        // Zeile die Breite exakt wie im gedruckten Mushaf (echte „Seiten").
+        g: w.code_v1 || '',
+        e: w.char_type_name === 'end',
+        v: v.verse_key,
+      });
     }
   }
   const lines = [...lineMap.keys()].sort((a, b) => a - b).map((n) => ({ n, words: lineMap.get(n) }));
+  // Haben (nahezu) alle Wörter einen Seitenschrift-Glyph? Dann kann der Client
+  // die echte Seitenschrift verwenden (Blocksatz), sonst Fallback auf Fließtext.
+  const allWords = lines.flatMap((l) => l.words);
+  const hasGlyphs = allWords.length > 0 && allWords.every((w) => w.g);
 
   const data = {
     page: p,
@@ -117,6 +128,9 @@ export async function getMushafPage(page) {
     surahs: [...seenSurah],
     starts,
     lines,
+    // Seitenschrift: Schriftfamilie + ob sie hier vollständig nutzbar ist.
+    fontPage: p,
+    font: hasGlyphs ? 'v1' : null,
   };
   memo.set(key, data);
   writeDisk(key, data);

@@ -77,7 +77,12 @@ function NewForm({ user, onDone, onCancel }) {
   const [f, setF] = useState({ title: '', body: '', priority: 'normal', audienceType: isAdmin ? 'all' : 'class', classId: '', role: 'schueler' });
 
   useEffect(() => {
-    api.get('/classes').then((d) => { setClasses(d.classes); setF((x) => ({ ...x, classId: d.classes[0]?.id || '' })); });
+    api.get('/classes').then((d) => {
+      // Lehrkraft/Vertretung sieht nur die EIGENEN Klassen; Leitung/Admin alle.
+      const visible = isAdmin ? d.classes : d.classes.filter((c) => (user.classIds || []).includes(c.id));
+      setClasses(visible);
+      setF((x) => ({ ...x, classId: visible[0]?.id || '' }));
+    });
   }, []);
 
   const submit = async () => {

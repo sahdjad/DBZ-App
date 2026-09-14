@@ -7,6 +7,21 @@ import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.js
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
+// Offizielle Mushaf-Seitenschrift (KFGQPC HAFS v1) je Seite als @font-face
+// einbinden – einmal pro Seite. Dadurch sieht die Seitenansicht wie ein echt
+// gedruckter Mushaf aus (jede Zeile füllt die Breite exakt). Wird vom eigenen
+// Server ausgeliefert (font-src 'self').
+const loadedFontPages = new Set();
+function ensurePageFont(page) {
+  const p = Number(page);
+  if (!(p >= 1 && p <= 604) || loadedFontPages.has(p)) return;
+  loadedFontPages.add(p);
+  const style = document.createElement('style');
+  style.setAttribute('data-qcf', String(p));
+  style.textContent = `@font-face{font-family:'qcf-p${p}';src:url('/api/quran/font/v1/${p}') format('woff2');font-display:swap;}`;
+  document.head.appendChild(style);
+}
+
 // Entfernt NUR die „Null"-Zeichen für stumme Buchstaben (U+06DF/U+06E0), die
 // in der Mushaf-Schrift als große gefüllte Punkte erscheinen. Buchstaben,
 // Vokalzeichen, Sukun und Ayah-Zeichen bleiben unangetastet.
@@ -752,6 +767,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const applyPage = (pg) => {
     setData(pg);
     prefetchPageAudio(pg?.surahs);
+    if (pg?.font === 'v1') { ensurePageFont(pg.fontPage); ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); }
     if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
   };
   const loadPage = (p) => {
@@ -1034,7 +1050,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : (
         <div style={{ perspective: '1600px', touchAction: 'pan-y', overflowX: 'hidden' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-        <div ref={pageElRef} className="mushaf-page rounded-2xl p-5 sm:p-8 font-mushaf" style={{ fontSize: 'clamp(1.35rem, 4.6vw, 1.9rem)', willChange: 'transform' }}>
+        <div ref={pageElRef} className={`mushaf-page rounded-2xl p-4 sm:p-8 font-mushaf mx-auto ${data.font === 'v1' ? 'is-glyph' : ''}`}
+          style={{ fontSize: data.font === 'v1' ? 'clamp(1.15rem, 4.3vw, 1.75rem)' : 'clamp(1.35rem, 4.6vw, 1.9rem)', maxWidth: '44rem', willChange: 'transform' }}>
           {annotatedLines.map((line) => (
             <div key={line.n}>
               {(headerByLine[line.n] || []).map((h) => (
@@ -1046,8 +1063,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
               <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
                 {line.words.map((w, i) => (
                   <span key={i} onClick={() => tapWord(w.v)}
+                    style={data.font === 'v1' && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
                     className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
-                    {cleanQuran(w.t)}{' '}
+                    {data.font === 'v1' && w.g ? w.g : cleanQuran(w.t)}{' '}
                   </span>
                 ))}
               </p>

@@ -159,6 +159,19 @@
   .mushaf-line.is-short {
     text-align: center;
   }
+  /* Echte Seitenschrift (KFGQPC v1): die Glyphen sind exakt gesetzt, darum füllt
+     jede Zeile mit sauberem Blocksatz die Breite – wie im gedruckten Mushaf,
+     OHNE die störenden Lücken (die entstanden nur, weil vorher eine normale
+     Schrift gestreckt wurde). Nur in diesem Modus wird justiert. */
+  .mushaf-page.is-glyph .mushaf-line {
+    text-align: justify;
+    text-align-last: justify;
+    line-height: 1.95;
+  }
+  .mushaf-page.is-glyph .mushaf-line.is-short {
+    text-align: center;
+    text-align-last: center;
+  }
   .mushaf-word {
     cursor: pointer;
     border-radius: 6px;
