@@ -39,6 +39,7 @@ import { listSurahs, getSurah } from './providers/quranProvider.js';
 import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
+import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
 import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
 import { createLoginThrottle } from './security.js';
@@ -1892,8 +1893,22 @@ router.get('/quran/surahs', requireAuth, (_req, res) => res.json({ surahs: listS
 // Auswählbare Rezitatoren. Nur Rezitatoren mit durchgehender Sure-Aufnahme UND
 // Ayah-Zeitmarken (quran.com) – so ist die lückenlose Wiedergabe für jede
 // Auswahl gleich hochwertig.
-const RECITERS = CHAPTER_RECITERS.map((r) => ({ id: r.id, name: r.name }));
+const RECITERS = [
+  ...CHAPTER_RECITERS.map((r) => ({ id: r.id, name: r.name, mode: 'chapter', follow: true })),
+  ...AYAH_RECITERS.map((r) => ({ id: r.id, name: r.name, mode: 'ayah', follow: false })),
+];
 router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
+
+// Ayah-für-Ayah-Audio (Rezitatoren ohne Sure-Zeitmarken). Der Client spielt die
+// Ayah-Dateien nacheinander ab und hebt die laufende Ayah hervor.
+router.get('/quran/audio-ayahs/:n', requireAuth, (req, res) => {
+  try {
+    res.json({ audio: getAyahAudio(req.params.n, req.query.reciter) });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Sure nicht gefunden' });
+    res.status(500).json({ error: 'Serverfehler beim Laden des Audios' });
+  }
+});
 
 // Durchgehende Audiodatei einer Sure + Ayah-Zeitmarken (für lückenlose
 // Wiedergabe, Geschwindigkeit, Bereich/Wiederholung und Hervorhebung).

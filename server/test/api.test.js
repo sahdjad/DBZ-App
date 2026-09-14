@@ -1151,3 +1151,18 @@ test('Materialien Massen-Upload: mehrere Dateien auf einmal, jede wird ein Mater
   const forbidden = await fetch(base + '/api/materials/bulk', { method: 'POST', headers: { cookie: sCookie }, body: f2 });
   assert.equal(forbidden.status, 403);
 });
+test('Qurʼan-Rezitatoren: Liste enthält Chapter- und Ayah-Rezitatoren; Ayah-Audio liefert URLs', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const recs = (await student('GET', '/quran/reciters')).data.reciters;
+  assert.ok(recs.some((r) => r.mode === 'chapter' && r.follow === true), 'Chapter-Rezitator mit Mitlesen vorhanden');
+  const ayahRec = recs.find((r) => r.mode === 'ayah');
+  assert.ok(ayahRec, 'mindestens ein Ayah-Rezitator');
+
+  // Ayah-Audio für Al-Ichlas (112, 4 Ayat) -> 4 URLs auf cdn.islamic.network.
+  const a = (await student('GET', `/quran/audio-ayahs/112?reciter=${ayahRec.id}`)).data.audio;
+  assert.equal(a.mode, 'ayah');
+  assert.equal(a.ayahs.length, 4);
+  assert.match(a.ayahs[0].url, /^https:\/\/cdn\.islamic\.network\/quran\/audio\/\d+\/[a-z.]+\/\d+\.mp3$/);
+  // Globale Ayah-Nummer von 112:1 muss 6222 sein.
+  assert.ok(a.ayahs[0].url.endsWith('/6222.mp3'), 'korrekte globale Ayah-Nummer');
+});

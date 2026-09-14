@@ -500,7 +500,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                   <label className="flex items-center gap-2">
                     <span className="text-sage-muted">Rezitator</span>
                     <select className="input py-1.5 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
-                      {(reciters.length ? reciters : [{ id: reciter, name: data.reciterName }]).map((r) => (
+                      {(reciters.length ? reciters.filter((r) => r.mode !== 'ayah') : [{ id: reciter, name: data.reciterName }]).map((r) => (
                         <option key={r.id} value={r.id}>{r.name}</option>
                       ))}
                     </select>
@@ -687,7 +687,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [elPaused, setElPaused] = useState(false);
 
   const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
-  const audioCache = useRef(new Map()); // surah -> {url,ayahs}
+  const audioCache = useRef(new Map()); // surah -> {url,ayahs}  (chapter-Rezitatoren)
+  const ayahAudioCache = useRef(new Map()); // surah -> [{n,url}] (Ayah-Rezitatoren)
   const winRef = useRef({ stopped: true });
   const speedRef = useRef(1);
   const playingKeyRef = useRef(null);
@@ -695,6 +696,12 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   useEffect(() => { playingKeyRef.current = playingKey; }, [playingKey]);
   useEffect(() => { playingWordRef.current = playingWord; }, [playingWord]);
   useEffect(() => { speedRef.current = speed; if (elRef.current) elRef.current.playbackRate = speed; }, [speed]);
+
+  // Modus des gewählten Rezitators: 'chapter' (Sure-Datei + Wort-Mitlesen) oder
+  // 'ayah' (Ayah-für-Ayah, nur Ayah-Hervorhebung).
+  const reciterMode = reciters.find((r) => r.id === reciter)?.mode || 'chapter';
+  const reciterModeRef = useRef('chapter');
+  useEffect(() => { reciterModeRef.current = reciterMode; }, [reciterMode]);
 
   // Jedem echten Wort seine Wort-Nummer innerhalb der Ayah geben (für das
   // Mitlesen: Abgleich mit den Wort-Zeitmarken der Audiodatei). Endzeichen zählen nicht.
@@ -758,7 +765,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   useEffect(() => () => { const a = elRef.current; if (a) { a.pause(); } }, []);
   // Rezitatorwechsel: Cache leeren, Wiedergabe stoppen, Quelle zurücksetzen,
   // Audio der aktuellen Seite erneut vorladen.
-  useEffect(() => { audioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; if (data) prefetchPageAudio(data.surahs); /* eslint-disable-next-line */ }, [reciter]);
+  useEffect(() => { audioCache.current.clear(); ayahAudioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; if (data && reciterMode === 'chapter') prefetchPageAudio(data.surahs); /* eslint-disable-next-line */ }, [reciter]);
 
   function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); playingWordRef.current = null; setPlayingWord(null); setElPaused(false); }
 
@@ -767,6 +774,47 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     const r = await api.get(`/quran/audio/${surah}?reciter=${reciter}`);
     audioCache.current.set(surah, r.audio);
     return r.audio;
+  }
+
+  // --- Ayah-für-Ayah-Wiedergabe (Rezitatoren ohne Sure-Zeitmarken) ----------
+  async function ensureAyahAudio(surah) {
+    if (ayahAudioCache.current.has(surah)) return ayahAudioCache.current.get(surah);
+    const r = await api.get(`/quran/audio-ayahs/${surah}?reciter=${reciter}`);
+    ayahAudioCache.current.set(surah, r.audio.ayahs);
+    return r.audio.ayahs;
+  }
+  function loadAyahAt(surah, list, idx) {
+    const el = elRef.current;
+    if (!el) return;
+    if (idx < 0 || idx >= list.length) { stopAudio(); return; }
+    winRef.current = { stopped: false, surah, mode: 'ayah', list, idx };
+    el.__surah = null;
+    el.setAttribute('src', list[idx].url); el.load();
+    el.playbackRate = speedRef.current;
+    try { el.preservesPitch = true; el.mozPreservesPitch = true; el.webkitPreservesPitch = true; } catch { /* egal */ }
+    const key = `${surah}:${list[idx].n}`;
+    playingKeyRef.current = key; setPlayingKey(key);
+    playingWordRef.current = null; setPlayingWord(null);
+    const p = el.play();
+    if (p && p.catch) p.catch((err) => { toast.push('Wiedergabe nicht möglich: ' + (err?.name || 'Fehler'), 'error'); stopAudio(); });
+  }
+  function advanceAyah() {
+    const win = winRef.current;
+    if (!win || win.stopped || win.mode !== 'ayah') return;
+    loadAyahAt(win.surah, win.list, win.idx + 1);
+  }
+  function playAyahFrom(verseKey) {
+    const s = Number(verseKey.split(':')[0]); const a = Number(verseKey.split(':')[1]);
+    const at = (list) => loadAyahAt(s, list, Math.max(0, list.findIndex((x) => x.n === a)));
+    const cached = ayahAudioCache.current.get(s);
+    if (cached) { at(cached); return; }
+    ensureAyahAudio(s).then(at).catch(() => toast.push('Audio konnte nicht geladen werden', 'error'));
+  }
+  // Wird am Ende jeder Audiodatei aufgerufen: im Ayah-Modus zur nächsten Ayah.
+  function onAudioEnded() {
+    const win = winRef.current;
+    if (win && win.mode === 'ayah' && !win.stopped) advanceAyah();
+    else stopAudio();
   }
 
   function onTimeUpdate() {
@@ -809,6 +857,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     if (p && p.catch) p.catch((err) => { toast.push('Wiedergabe nicht möglich: ' + (err?.name || 'Fehler'), 'error'); stopAudio(); });
   }
   function playFrom(verseKey) {
+    if (reciterModeRef.current === 'ayah') { playAyahFrom(verseKey); return; }
     const s = Number(verseKey.split(':')[0]);
     const cached = audioCache.current.get(s);
     if (cached) { playWith(cached, verseKey); return; } // Normalfall: bereits vorgeladen
@@ -928,7 +977,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
         onTimeUpdate={onTimeUpdate}
         onPlay={() => setElPaused(false)}
         onPause={() => { if (!winRef.current.stopped) setElPaused(true); }}
-        onEnded={() => stopAudio()}
+        onEnded={onAudioEnded}
         onError={() => { const a = elRef.current; if (a && a.getAttribute('src') && a.error) { toast.push('Audio-Fehler (Code ' + a.error.code + ')', 'error'); stopAudio(); } }} />
       <button onClick={() => { stopAudio(); onBack(); }} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zur Übersicht
@@ -960,7 +1009,16 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
           <label className="flex items-center gap-1">
             <span className="text-sage-muted">Rezitator</span>
             <select className="input py-1 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
-              {(reciters.length ? reciters : [{ id: reciter, name: 'Mishary Al-Afasy' }]).map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              {reciters.length ? (
+                <>
+                  <optgroup label="Mit Wort-Mitlesen">
+                    {reciters.filter((r) => r.mode !== 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </optgroup>
+                  <optgroup label="Ayah-für-Ayah (ohne Mitlesen)">
+                    {reciters.filter((r) => r.mode === 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </optgroup>
+                </>
+              ) : <option value={reciter}>Mishary Al-Afasy</option>}
             </select>
           </label>
         </div>
