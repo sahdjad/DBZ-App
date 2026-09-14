@@ -583,7 +583,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                   {data.bismillah && (
                     <p dir="rtl" className="font-arabic text-2xl text-center text-sage mb-4">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
                   )}
-                  <p dir="rtl" className="font-arabic text-ivory text-justify" style={{ fontSize: '1.95rem', lineHeight: 2.5 }}>
+                  <p dir="rtl" className="font-arabic text-ivory text-right" style={{ fontSize: '1.95rem', lineHeight: 2.5 }}>
                     {tajweed.ayahs.map((a, idx) => (
                       <span
                         key={a.n}
@@ -605,7 +605,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
               {data.bismillah && (
                 <p dir="rtl" className="font-arabic text-2xl text-center text-sage mb-4">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
               )}
-              <p dir="rtl" className="font-arabic text-ivory text-justify" style={{ fontSize: '1.9rem', lineHeight: 2.4 }}>
+              <p dir="rtl" className="font-arabic text-ivory text-right" style={{ fontSize: '1.9rem', lineHeight: 2.4 }}>
                 {data.ayahs.map((a, idx) => (
                   <span
                     key={a.n}

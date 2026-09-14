@@ -145,26 +145,24 @@
     border-color: #33463c;
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 10px 30px rgba(0, 0, 0, 0.3);
   }
-  /* Jede Zeile füllt die Breite (Blocksatz), so entsteht der ruhige,
-     gleichmäßige Zeilenfall des gedruckten Mushaf. Auf schmalen Displays
-     darf eine Mushaf-Zeile sanft umbrechen statt überzulaufen. */
+  /* Natürlicher, fließender Zeilenfall wie in einem normalen gedruckten Qur'an:
+     die Wörter stehen mit gleichmäßigem, natürlichem Abstand nebeneinander
+     (rechtsbündig, RTL). KEIN gestreckter Blocksatz – der hätte im Browser die
+     Wortabstände auseinandergezogen und die störenden „Lücken" erzeugt. */
   .mushaf-line {
     direction: rtl;
-    text-align: justify;
-    text-align-last: justify;
+    text-align: right;
     line-height: 2.05;
     margin: 0;
   }
-  /* Kurze Zeilen (Sure-Ende, kurze Suren wie Al-Ichlas) NICHT auseinanderziehen,
-     sondern natürlich fließend zentrieren – so entstehen keine großen Lücken. */
+  /* Kurze Zeilen (Sure-Ende, kurze Suren wie Al-Ichlas) mittig setzen. */
   .mushaf-line.is-short {
     text-align: center;
-    text-align-last: center;
   }
   .mushaf-word {
     cursor: pointer;
     border-radius: 6px;
-    padding: 0 0.05em;
+    padding: 0 0.02em;
     transition: background-color 0.2s ease;
   }
   .mushaf-word:hover { background: rgba(21, 101, 63, 0.10); }

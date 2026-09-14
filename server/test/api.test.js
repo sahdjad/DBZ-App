@@ -1165,4 +1165,19 @@ test('Qurʼan-Rezitatoren: Liste enthält Chapter- und Ayah-Rezitatoren; Ayah-Au
   assert.match(a.ayahs[0].url, /^https:\/\/cdn\.islamic\.network\/quran\/audio\/\d+\/[a-z.]+\/\d+\.mp3$/);
   // Globale Ayah-Nummer von 112:1 muss 6222 sein.
   assert.ok(a.ayahs[0].url.endsWith('/6222.mp3'), 'korrekte globale Ayah-Nummer');
+
+  // Keine Mujawwad-Rezitatoren mehr; Husary-Muʿallim bleibt erhalten.
+  assert.ok(!recs.some((r) => /mujawwad/i.test(r.id) || /mujawwad/i.test(r.name)), 'keine Mujawwad-Rezitatoren');
+  assert.ok(recs.some((r) => r.id === 'ar.husarymuallim'), 'Husary Muʿallim bleibt');
+});
+test('Qurʼan: Basmala wird aus Ayah 1 herausgelöst (außer Al-Fatiha)', async () => {
+  const { stripLeadingBasmala } = await import('../providers/quranProvider.js');
+  // An-Nisa 4:1 aus der Uthmani-Quelle (mit vorangestellter Basmala, Wasla ٱ).
+  const nisa1 = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ يَٰٓأَيُّهَا ٱلنَّاسُ ٱتَّقُوا۟ رَبَّكُمُ';
+  const out = stripLeadingBasmala(nisa1);
+  assert.ok(out.startsWith('يَٰٓأَيُّهَا'), 'Basmala entfernt, Ayah beginnt mit dem echten Text');
+  assert.ok(!out.includes('ٱلرَّحِيمِ'), 'kein Basmala-Rest');
+  // Ohne vorangestellte Basmala bleibt der Text unverändert.
+  const plain = 'يَٰٓأَيُّهَا ٱلنَّاسُ ٱتَّقُوا۟ رَبَّكُمُ';
+  assert.equal(stripLeadingBasmala(plain), plain, 'ohne Basmala unverändert');
 });

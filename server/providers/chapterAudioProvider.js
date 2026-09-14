@@ -18,14 +18,16 @@ const BASE = process.env.QURAN_COM_API_BASE || 'https://api.quran.com/api/v4';
 // Unsere Rezitator-IDs -> quran.com recitation_id (nur solche MIT Zeitmarken,
 // damit die lückenlose Wiedergabe für ALLE angebotenen Rezitatoren gleich gut
 // funktioniert). Reihenfolge = Anzeige-Reihenfolge.
+// Hinweis: Mujawwad-Aufnahmen (Abdul Basit, Al-Minshawi) sind bewusst NICHT
+// enthalten. „Muʿallim" (Lehr-Rezitation) gibt es bei quran.com nur von
+// Al-Husary – eine Mishary-Muʿallim-Aufnahme mit Wort-Zeitmarken existiert dort
+// nicht.
 export const CHAPTER_RECITERS = [
   { id: 'ar.alafasy', qid: 7, name: 'Mishary Al-Afasy' },
   { id: 'ar.husary', qid: 6, name: 'Mahmoud Al-Husary' },
   { id: 'ar.husarymuallim', qid: 12, name: 'Al-Husary (Muʿallim)' },
   { id: 'ar.abdulbasitmurattal', qid: 2, name: 'Abdul Basit (Murattal)' },
-  { id: 'ar.abdulbasitmujawwad', qid: 1, name: 'Abdul Basit (Mujawwad)' },
   { id: 'ar.minshawi', qid: 9, name: 'Muhammad Al-Minshawi' },
-  { id: 'ar.minshawimujawwad', qid: 8, name: 'Al-Minshawi (Mujawwad)' },
   { id: 'ar.abdurrahmaansudais', qid: 3, name: 'Abdurrahman As-Sudais' },
   { id: 'ar.shaatree', qid: 4, name: 'Abu Bakr Ash-Shatri' },
   { id: 'ar.saoodshuraym', qid: 10, name: 'Saud Ash-Shuraim' },
