@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -702,6 +702,10 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [elPaused, setElPaused] = useState(false);
   const [glyphFs, setGlyphFs] = useState(null); // per-Seite passende Schriftgröße (px)
   const [glyphW, setGlyphW] = useState(null); // passende Seitenbreite (px) – Hochformat wie gedruckt
+  const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
+  useEffect(() => { try { localStorage.setItem('dbz-mushaf-zoom', String(zoom)); } catch { /* egal */ } }, [zoom]);
+  const changeZoom = (d) => setZoom((z) => Math.max(0.7, Math.min(3, Math.round((z + d) * 100) / 100)));
+  const zoomed = zoom > 1.001;
 
   const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
   const audioCache = useRef(new Map()); // surah -> {url,ayahs}  (chapter-Rezitatoren)
@@ -1010,6 +1014,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
 
   function onPointerDown(e) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (zoomed) return; // beim Hineinzoomen wird gescrollt, nicht geblättert
     dragRef.current = { active: true, x0: e.clientX, y0: e.clientY, dx: 0, horiz: false };
   }
   function onPointerMove(e) {
@@ -1069,6 +1074,13 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
               inputMode="numeric" placeholder="Seite" className="input py-1 w-20 text-center text-sm" />
             <Button size="sm" variant="ghost" onClick={doJump}>Los</Button>
           </div>
+          {data?.font === 'v1' && (
+            <div className="inline-flex items-center gap-1" title="Zoom">
+              <button onClick={() => changeZoom(-0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom <= 0.7} aria-label="Kleiner"><ZoomOut size={15} /></button>
+              <button onClick={() => setZoom(1)} className="text-[11px] text-sage-muted tabular-nums w-11 text-center hover:text-ivory" title="Auf Bildschirmgröße zurücksetzen">{Math.round(zoom * 100)}%</button>
+              <button onClick={() => changeZoom(0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom >= 3} aria-label="Größer"><ZoomIn size={15} /></button>
+            </div>
+          )}
           <label className="flex items-center gap-1">
             <span className="text-sage-muted">Rezitator</span>
             <select className="input py-1 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
@@ -1095,13 +1107,13 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : !data ? (
         <Spinner label="Mushaf-Seite wird geladen …" />
       ) : (
-        <div style={{ perspective: '1600px', touchAction: 'pan-y', overflowX: 'hidden' }}
+        <div style={{ perspective: '1600px', touchAction: zoomed ? 'pan-x pan-y' : 'pan-y', overflowX: zoomed ? 'auto' : 'hidden' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
         <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${data.font === 'v1' ? 'is-glyph' : ''}`}
           style={{
-            fontSize: data.font === 'v1' ? (glyphFs ? `${glyphFs}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
-            width: data.font === 'v1' && glyphW ? `${glyphW}px` : undefined,
-            maxWidth: data.font === 'v1' ? '100%' : '44rem',
+            fontSize: data.font === 'v1' ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
+            width: data.font === 'v1' && glyphW ? `${glyphW * zoom}px` : undefined,
+            maxWidth: data.font === 'v1' ? (zoomed ? 'none' : '100%') : '44rem',
             willChange: 'transform',
           }}>
           <div className="mushaf-lines">
