@@ -1126,3 +1126,28 @@ async function cookieFor(email) {
   });
   return res.headers.get('set-cookie').split(';')[0];
 }
+test('Materialien Massen-Upload: mehrere Dateien auf einmal, jede wird ein Material', async () => {
+  const cookie = await cookieFor('lehrer@dbz.de');
+  const form = new FormData();
+  form.set('classId', 'class_3');
+  form.append('files', new Blob([Buffer.from('%PDF-1.4 test a')], { type: 'application/pdf' }), 'Protokoll-A.pdf');
+  form.append('files', new Blob([Buffer.from('%PDF-1.4 test b')], { type: 'application/pdf' }), 'Protokoll-B.pdf');
+  const res = await fetch(base + '/api/materials/bulk', { method: 'POST', headers: { cookie }, body: form });
+  assert.equal(res.status, 200);
+  const data = await res.json();
+  assert.equal(data.count, 2, 'zwei Materialien angelegt');
+  assert.ok(data.created.every((m) => m.materialType === 'file'));
+  assert.ok(data.created.some((m) => m.title === 'Protokoll-A'), 'Titel = Dateiname ohne Endung');
+
+  // Sie tauchen in der Materialliste der Klasse auf.
+  const teacher = await loginAs('lehrer@dbz.de');
+  const list = (await teacher('GET', '/materials?classId=class_3')).data.materials;
+  assert.ok(list.filter((m) => ['Protokoll-A', 'Protokoll-B'].includes(m.title)).length === 2);
+
+  // Schüler ohne Verwalterrolle darf den Massen-Upload NICHT.
+  const sCookie = await cookieFor('schueler@dbz.de');
+  const f2 = new FormData();
+  f2.append('files', new Blob([Buffer.from('x')], { type: 'application/pdf' }), 'x.pdf');
+  const forbidden = await fetch(base + '/api/materials/bulk', { method: 'POST', headers: { cookie: sCookie }, body: f2 });
+  assert.equal(forbidden.status, 403);
+});

@@ -3154,6 +3154,38 @@ router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.singl
   res.json({ material: materialView(m) });
 });
 
+// Massen-Upload: mehrere Dateien auf einmal in die Bibliothek. Jede Datei wird
+// ein eigenes Material (Titel = Dateiname). Gleiche Reichweiten-Regeln wie oben.
+router.post('/materials/bulk', requireAuth, requireRole(CLASS_MANAGERS), upload.array('files', 50), async (req, res) => {
+  const { classId, subjectId, description } = req.body || {};
+  const cid = classId || null;
+  if (cid) {
+    if (!canManageClass(req.user, cid)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
+  } else if (!isAdmin(req.user)) {
+    return res.status(403).json({ error: 'Schulweites Material nur durch die Leitung' });
+  }
+  const files = req.files || [];
+  if (!files.length) return res.status(400).json({ error: 'Bitte mindestens eine Datei auswählen' });
+
+  const created = [];
+  for (const f of files) {
+    await persistUpload(f); // dauerhaft in Supabase Storage sichern
+    const base = String(f.originalname || 'Datei').replace(/\.[^.]+$/, '').trim();
+    const m = {
+      id: newId('mat'), organizationId: org().id,
+      title: base || f.originalname, description: description || '',
+      materialType: 'file', classId: cid, subjectId: findSubject(subjectId) ? subjectId : null,
+      url: null, body: null,
+      fileRef: { filename: f.filename, originalName: f.originalname, mediaType: f.mimetype, size: f.size },
+      createdBy: req.user.id, createdByName: req.user.name, createdAt: new Date().toISOString(),
+    };
+    db.insert('materials', m);
+    created.push(materialView(m));
+  }
+  audit(req.user.id, 'material.bulk_create', 'material', null, null, { count: created.length });
+  res.json({ created, count: created.length });
+});
+
 router.get('/materials', requireAuth, (req, res) => {
   let list = db.all('materials').filter((m) => canSeeMaterial(req.user, m));
   if (req.query.classId) list = list.filter((m) => m.classId === req.query.classId);
