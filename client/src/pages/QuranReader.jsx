@@ -7,19 +7,25 @@ import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.js
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
-// Offizielle Mushaf-Seitenschrift (KFGQPC HAFS v1) je Seite als @font-face
-// einbinden – einmal pro Seite. Dadurch sieht die Seitenansicht wie ein echt
-// gedruckter Mushaf aus (jede Zeile füllt die Breite exakt). Wird vom eigenen
-// Server ausgeliefert (font-src 'self').
+// Offizielle Mushaf-Seitenschrift (KFGQPC HAFS v1) je Seite laden. WICHTIG: die
+// Glyphen liegen im „Private Use Area"-Bereich – ohne die passende Schrift würden
+// sie als wirre Ersatzzeichen erscheinen. Darum wird die Schrift per FontFace-API
+// wirklich geladen und die Seite erst DANN als Glyphen dargestellt/vermessen.
+// Ausgeliefert vom eigenen Server (font-src 'self').
 const loadedFontPages = new Set();
+const fontPromises = new Map();
 function ensurePageFont(page) {
   const p = Number(page);
-  if (!(p >= 1 && p <= 604) || loadedFontPages.has(p)) return;
-  loadedFontPages.add(p);
-  const style = document.createElement('style');
-  style.setAttribute('data-qcf', String(p));
-  style.textContent = `@font-face{font-family:'qcf-p${p}';src:url('/api/quran/font/v1/${p}') format('woff2');font-display:swap;}`;
-  document.head.appendChild(style);
+  if (!(p >= 1 && p <= 604)) return Promise.resolve(false);
+  if (loadedFontPages.has(p)) return Promise.resolve(true);
+  if (fontPromises.has(p)) return fontPromises.get(p);
+  let pr;
+  try {
+    const ff = new FontFace(`qcf-p${p}`, `url('/api/quran/font/v1/${p}') format('woff2')`, { display: 'swap' });
+    pr = ff.load().then((f) => { document.fonts.add(f); loadedFontPages.add(p); return true; }).catch(() => false);
+  } catch { pr = Promise.resolve(false); }
+  fontPromises.set(p, pr);
+  return pr;
 }
 
 // Entfernt NUR die „Null"-Zeichen für stumme Buchstaben (U+06DF/U+06E0), die
@@ -702,6 +708,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [elPaused, setElPaused] = useState(false);
   const [glyphFs, setGlyphFs] = useState(null); // per-Seite passende Schriftgröße (px)
   const [glyphW, setGlyphW] = useState(null); // passende Seitenbreite (px) – Hochformat wie gedruckt
+  const [fontReady, setFontReady] = useState(true); // Seitenschrift geladen?
   const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
   useEffect(() => { try { localStorage.setItem('dbz-mushaf-zoom', String(zoom)); } catch { /* egal */ } }, [zoom]);
   const changeZoom = (d) => setZoom((z) => Math.max(0.7, Math.min(3, Math.round((z + d) * 100) / 100)));
@@ -765,6 +772,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   // synchron im Klick laufen (wichtig für iOS/Safari), ohne Warten.
   const prefetchPageAudio = (sarr) => (sarr || []).forEach((su) => { ensureAudio(su).catch(() => {}); });
 
+  const fontPageRef = useRef(null); // aktuell benötigte Seitenschrift (gegen Wettläufe)
   const pageDataCache = useRef(new Map()); // Seiten-Daten für flüssiges Blättern
   const fetchPageData = (p) => api.get(`/quran/page/${p}`).then((d) => { pageDataCache.current.set(p, d.page); return d.page; });
   const prefetchNeighbors = (p) => [p - 1, p + 1].forEach((q) => {
@@ -773,7 +781,12 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const applyPage = (pg) => {
     setData(pg);
     prefetchPageAudio(pg?.surahs);
-    if (pg?.font === 'v1') { ensurePageFont(pg.fontPage); ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); }
+    if (pg?.font === 'v1') {
+      fontPageRef.current = pg.fontPage;
+      ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); // Nachbarn vorladen
+      if (loadedFontPages.has(pg.fontPage)) setFontReady(true);
+      else { setFontReady(false); ensurePageFont(pg.fontPage).then(() => { if (fontPageRef.current === pg.fontPage) setFontReady(true); }); }
+    } else { fontPageRef.current = null; setFontReady(true); }
     if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
   };
   const loadPage = (p) => {
@@ -929,7 +942,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
   // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
   useLayoutEffect(() => {
-    if (!data || data.font !== 'v1') { setGlyphFs(null); setGlyphW(null); return; }
+    if (!data || data.font !== 'v1' || !loadedFontPages.has(data.fontPage)) { setGlyphFs(null); setGlyphW(null); return; }
     const numLines = data.lines.length;
     const measure = () => {
       const el = pageElRef.current; if (!el) return;
@@ -968,7 +981,7 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     window.addEventListener('resize', measure);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
     // eslint-disable-next-line
-  }, [data]);
+  }, [data, fontReady]);
 
   // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
   const pageElRef = useRef(null);
@@ -1038,6 +1051,11 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
     else setFlip(0, true); // zurückfedern
   }
 
+  // Glyphen nur nutzen, wenn die Seitenschrift wirklich geladen ist (sonst
+  // würden wirre Ersatzzeichen erscheinen) – sonst lesbarer Text-Fallback.
+  const glyph = !!(data && data.font === 'v1' && loadedFontPages.has(data.fontPage));
+  const fontLoading = !!(data && data.font === 'v1' && !fontReady);
+
   return (
     <div>
       {/* Echtes <audio> im DOM (iOS/Safari-tauglich). */}
@@ -1104,16 +1122,16 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
           <p className="text-status-absent mb-4">{error}</p>
           <Button variant="outline" onClick={() => loadPage(page)}><RotateCcw size={16} /> Erneut versuchen</Button>
         </Card>
-      ) : !data ? (
+      ) : !data || fontLoading ? (
         <Spinner label="Mushaf-Seite wird geladen …" />
       ) : (
-        <div style={{ perspective: '1600px', touchAction: zoomed ? 'pan-x pan-y' : 'pan-y', overflowX: zoomed ? 'auto' : 'hidden' }}
+        <div style={{ perspective: '1600px', touchAction: zoomed ? 'pan-x pan-y' : 'pan-y', overflowX: zoomed ? 'auto' : 'hidden', direction: zoomed ? 'rtl' : undefined }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${data.font === 'v1' ? 'is-glyph' : ''}`}
+        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${glyph ? 'is-glyph' : ''}`}
           style={{
-            fontSize: data.font === 'v1' ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
-            width: data.font === 'v1' && glyphW ? `${glyphW * zoom}px` : undefined,
-            maxWidth: data.font === 'v1' ? (zoomed ? 'none' : '100%') : '44rem',
+            fontSize: glyph ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
+            width: glyph && glyphW ? `${glyphW * zoom}px` : undefined,
+            maxWidth: glyph ? (zoomed ? 'none' : '100%') : '44rem',
             willChange: 'transform',
           }}>
           <div className="mushaf-lines">
@@ -1128,9 +1146,9 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
                 <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
                   {line.words.map((w, i) => (
                     <span key={i} onClick={() => tapWord(w.v)}
-                      style={data.font === 'v1' && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
+                      style={glyph && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
                       className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
-                      {data.font === 'v1' && w.g ? w.g : cleanQuran(w.t)}{data.font === 'v1' ? '' : ' '}
+                      {glyph && w.g ? w.g : cleanQuran(w.t)}{glyph ? '' : ' '}
                     </span>
                   ))}
                 </p>
