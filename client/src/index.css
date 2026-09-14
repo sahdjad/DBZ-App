@@ -159,18 +159,43 @@
   .mushaf-line.is-short {
     text-align: center;
   }
-  /* Echte Seitenschrift (KFGQPC v1): die Glyphen sind exakt gesetzt, darum füllt
-     jede Zeile mit sauberem Blocksatz die Breite – wie im gedruckten Mushaf,
-     OHNE die störenden Lücken (die entstanden nur, weil vorher eine normale
-     Schrift gestreckt wurde). Nur in diesem Modus wird justiert. */
+  /* Echte Seitenschrift (KFGQPC v1): die ganze Seite wird ausgenutzt.
+     - Die Seite füllt die verfügbare HÖHE; die 13–15 Zeilen werden gleichmäßig
+       über die Seite verteilt (space-between) wie im gedruckten Mushaf.
+     - Jede Zeile ist ein Flex-Streifen (rechts nach links), der die volle BREITE
+       ausnutzt: die Wörter werden bis an beide Ränder verteilt.
+     - Die Schriftgröße wird per JS so gewählt, dass die breiteste Zeile exakt
+       passt (kein Umbruch) – dadurch passt es auf jedes Gerät. */
+  .mushaf-page.is-glyph {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100dvh - 13rem);
+  }
+  .mushaf-page.is-glyph .mushaf-lines {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 0.1rem;
+  }
   .mushaf-page.is-glyph .mushaf-line {
-    text-align: justify;
-    text-align-last: justify;
-    line-height: 1.95;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.28em;
+    direction: rtl;
+    text-align: initial;
+    text-align-last: initial;
+    line-height: 1.85;
   }
   .mushaf-page.is-glyph .mushaf-line.is-short {
-    text-align: center;
-    text-align-last: center;
+    justify-content: center;
+  }
+  .mushaf-page.is-glyph .mushaf-word {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 0;
   }
   .mushaf-word {
     cursor: pointer;

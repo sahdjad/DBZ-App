@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
@@ -700,6 +700,8 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const [showTafsir, setShowTafsir] = useState(false);
   const [jump, setJump] = useState('');
   const [elPaused, setElPaused] = useState(false);
+  const [glyphFs, setGlyphFs] = useState(null); // per-Seite passende Schriftgröße (px)
+  const [glyphW, setGlyphW] = useState(null); // passende Seitenbreite (px) – Hochformat wie gedruckt
 
   const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
   const audioCache = useRef(new Map()); // surah -> {url,ayahs}  (chapter-Rezitatoren)
@@ -919,6 +921,51 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
   const goto = (p) => setPage(clampPage(p));
   const doJump = () => { const p = Number(jump); if (p >= 1 && p <= 604) { goto(p); setJump(''); } else toast.push('Seite 1–604 eingeben'); };
 
+  // Passende Schriftgröße je Seite: die breiteste Zeile soll die volle Breite
+  // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
+  // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
+  useLayoutEffect(() => {
+    if (!data || data.font !== 'v1') { setGlyphFs(null); setGlyphW(null); return; }
+    const numLines = data.lines.length;
+    const measure = () => {
+      const el = pageElRef.current; if (!el) return;
+      const inner = el.querySelector('.mushaf-lines'); if (!inner) return;
+      const lines = [...inner.querySelectorAll('.mushaf-line:not(.is-short)')];
+      if (!lines.length) return;
+      const REF = 100; // an fester Referenzgröße messen -> stabil, kein Pendeln
+      const cs = getComputedStyle(el);
+      const hpad = parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0);
+      const rectTop = el.getBoundingClientRect().top;
+      const prevW = el.style.width, prevMax = el.style.maxWidth, prevFs = el.style.fontSize;
+      el.style.maxWidth = 'none'; el.style.width = ''; el.style.fontSize = `${REF}px`;
+      const prevJc = lines.map((l) => l.style.justifyContent);
+      lines.forEach((l) => { l.style.justifyContent = 'flex-start'; }); // natürliche Breite messen
+      let maxNat = 0;
+      lines.forEach((l) => { if (l.scrollWidth > maxNat) maxNat = l.scrollWidth; });
+      lines.forEach((l, i) => { l.style.justifyContent = prevJc[i] || ''; });
+      el.style.width = prevW; el.style.maxWidth = prevMax; el.style.fontSize = prevFs;
+      if (maxNat <= 0) return;
+      // Verfügbarer Platz: volle Breite (bis 800px lesbar) und volle Höhe bis
+      // zum unteren Rand -> Schriftgröße füllt BEIDE Achsen; die Seite wird zum
+      // Hochformat wie im gedruckten Mushaf.
+      const docW = document.documentElement.clientWidth;
+      const availOuter = Math.min(docW - 16, 800);
+      const targetInnerW = Math.max(120, availOuter - hpad);
+      const gaps = (numLines - 1) * 1.8;
+      const availH = Math.max(260, window.innerHeight - rectTop - 16 - 20);
+      const fontByWidth = (REF * targetInnerW) / maxNat;
+      const fontByHeight = (availH - gaps - 6) / (numLines * 1.9);
+      const fs = Math.max(12, Math.min(44, Math.min(fontByWidth, fontByHeight)));
+      const pageContentW = (maxNat * fs) / REF;
+      setGlyphFs(fs);
+      setGlyphW(Math.min(availOuter, Math.ceil(pageContentW + hpad)));
+    };
+    const raf = requestAnimationFrame(measure);
+    window.addEventListener('resize', measure);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
+    // eslint-disable-next-line
+  }, [data]);
+
   // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
   const pageElRef = useRef(null);
   const dragRef = useRef({ active: false, x0: 0, y0: 0, dx: 0, horiz: false });
@@ -1050,28 +1097,35 @@ function MushafReader({ initialSurah, initialPage, onBack, onMarksChanged }) {
       ) : (
         <div style={{ perspective: '1600px', touchAction: 'pan-y', overflowX: 'hidden' }}
           onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-        <div ref={pageElRef} className={`mushaf-page rounded-2xl p-4 sm:p-8 font-mushaf mx-auto ${data.font === 'v1' ? 'is-glyph' : ''}`}
-          style={{ fontSize: data.font === 'v1' ? 'clamp(1.15rem, 4.3vw, 1.75rem)' : 'clamp(1.35rem, 4.6vw, 1.9rem)', maxWidth: '44rem', willChange: 'transform' }}>
-          {annotatedLines.map((line) => (
-            <div key={line.n}>
-              {(headerByLine[line.n] || []).map((h) => (
-                <div key={h.surah} className="mushaf-surah-head">
-                  <div className="text-mint" style={{ fontSize: '1.1em' }} dir="rtl">سُورَةُ {h.name}</div>
-                  {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
-                </div>
-              ))}
-              <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
-                {line.words.map((w, i) => (
-                  <span key={i} onClick={() => tapWord(w.v)}
-                    style={data.font === 'v1' && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
-                    className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
-                    {data.font === 'v1' && w.g ? w.g : cleanQuran(w.t)}{' '}
-                  </span>
+        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${data.font === 'v1' ? 'is-glyph' : ''}`}
+          style={{
+            fontSize: data.font === 'v1' ? (glyphFs ? `${glyphFs}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
+            width: data.font === 'v1' && glyphW ? `${glyphW}px` : undefined,
+            maxWidth: data.font === 'v1' ? '100%' : '44rem',
+            willChange: 'transform',
+          }}>
+          <div className="mushaf-lines">
+            {annotatedLines.map((line) => (
+              <div key={line.n} className="mushaf-line-wrap">
+                {(headerByLine[line.n] || []).map((h) => (
+                  <div key={h.surah} className="mushaf-surah-head">
+                    <div className="text-mint" style={{ fontSize: '1.1em' }} dir="rtl">سُورَةُ {h.name}</div>
+                    {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
+                  </div>
                 ))}
-              </p>
-            </div>
-          ))}
-          <p className="text-[11px] text-sage-muted mt-6 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
+                <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
+                  {line.words.map((w, i) => (
+                    <span key={i} onClick={() => tapWord(w.v)}
+                      style={data.font === 'v1' && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
+                      className={`mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`}>
+                      {data.font === 'v1' && w.g ? w.g : cleanQuran(w.t)}{data.font === 'v1' ? '' : ' '}
+                    </span>
+                  ))}
+                </p>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-sage-muted mt-4 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
         </div>
         </div>
       )}
