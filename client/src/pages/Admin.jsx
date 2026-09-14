@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
+import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
 
 const TABS = [
   ['users', 'Nutzer', Users2],
   ['invites', 'Einladungen', Mail],
   ['classes', 'Klassen', School],
+  ['approvals', 'Genehmigungen', ShieldCheck],
   ['settings', 'Einstellungen', Settings],
   ['audit', 'Audit-Log', ScrollText],
 ];
 
 export default function Admin() {
+  const { user } = useAuth();
   const [tab, setTab] = useState('users');
+  const isSuperAdmin = user?.role === 'super_admin';
   return (
     <AppLayout title="Verwaltung">
       <div className="flex gap-2 mb-4 flex-wrap">
@@ -26,9 +30,65 @@ export default function Admin() {
       {tab === 'users' && <UsersTab />}
       {tab === 'invites' && <InvitesTab />}
       {tab === 'classes' && <ClassesTab />}
+      {tab === 'approvals' && <ApprovalsTab isSuperAdmin={isSuperAdmin} />}
       {tab === 'settings' && <SettingsTab />}
       {tab === 'audit' && <AuditTab />}
     </AppLayout>
+  );
+}
+
+// Genehmigungen: der System-Administrator bestätigt/lehnt Grundlagen-Änderungen
+// der Leitung (neue Konten, neue Klassen). Die Leitung sieht hier ihre eigenen
+// Anträge samt Status.
+function ApprovalsTab({ isSuperAdmin }) {
+  const toast = useToast();
+  const [requests, setRequests] = useState(null);
+  const load = () => api.get('/admin/change-requests').then((d) => setRequests(d.requests)).catch(() => setRequests([]));
+  useEffect(() => { load(); }, []);
+
+  const decide = async (id, action) => {
+    try {
+      await api.post(`/admin/change-requests/${id}/${action}`, {});
+      toast.push(action === 'approve' ? 'Bestätigt' : 'Abgelehnt', 'success');
+      load();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+
+  if (!requests) return <Spinner />;
+  const STAT = { pending: ['Offen', 'late'], approved: ['Bestätigt', 'present'], rejected: ['Abgelehnt', 'absent'] };
+  return (
+    <Card className="p-5">
+      <CardHeader
+        title={isSuperAdmin ? 'Zu bestätigen' : 'Meine Anträge'}
+        subtitle={isSuperAdmin ? 'Neue Konten und Klassen der Leitung freigeben' : 'Deine Änderungen warten auf Bestätigung durch den Administrator'}
+        icon={ShieldCheck}
+      />
+      {requests.length === 0 ? (
+        <p className="p-4 text-sage-muted text-sm">Nichts offen.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {requests.map((r) => (
+            <li key={r.id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <div className="text-ivory text-sm">{r.summary}</div>
+                <div className="text-xs text-sage-muted">
+                  {r.type === 'create_user' ? 'Neues Konto' : 'Neue Klasse'} · beantragt von {r.requestedByName}
+                  {' · '}{new Date(r.createdAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
+                </div>
+              </div>
+              {isSuperAdmin && r.status === 'pending' ? (
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => decide(r.id, 'approve')}><CheckCircle2 size={16} /> Bestätigen</Button>
+                  <Button size="sm" variant="outline" onClick={() => decide(r.id, 'reject')}><XCircle size={16} /> Ablehnen</Button>
+                </div>
+              ) : (
+                <Badge tone={STAT[r.status]?.[1] || 'neutral'}>{STAT[r.status]?.[0] || r.status}</Badge>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -56,8 +116,8 @@ function UsersTab() {
   const create = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/admin/users', { ...form, classIds: form.classId ? [form.classId] : [] });
-      toast.push('Nutzer angelegt', 'success');
+      const res = await api.post('/admin/users', { ...form, classIds: form.classId ? [form.classId] : [] });
+      toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Nutzer angelegt', 'success');
       setShow(false);
       setForm({ name: '', email: '', password: '', role: 'schueler', classId: '' });
       load();
@@ -235,8 +295,8 @@ function ClassesTab() {
   const create = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/admin/classes', { ...form, weekday: Number(form.weekday) });
-      toast.push('Klasse erstellt', 'success');
+      const res = await api.post('/admin/classes', { ...form, weekday: Number(form.weekday) });
+      toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Klasse erstellt', 'success');
       setForm({ name: '', weekday: 6, startTime: '14:00', endTime: '18:00' });
       load();
     } catch (err) { toast.push(err.message, 'error'); }

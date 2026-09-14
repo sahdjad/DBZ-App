@@ -175,6 +175,42 @@ test('Verknüpfte Konten: mit Passwort verbinden, gebündelte Badges, Wechsel oh
   assert.equal(blocked.status, 403);
 });
 
+test('Genehmigungen: Leitung legt Klasse an -> erst nach Bestätigung des System-Admins wirksam', async () => {
+  const admin = await loginAs('admin@dbz.de'); // super_admin
+  // Ein Leitungs-Konto erzeugen (durch super_admin -> sofort wirksam).
+  const stamp = Date.now();
+  const leitEmail = `leit-${stamp}@dbz.de`;
+  const mk = await admin('POST', '/admin/users', { name: 'Br. Leitung 2', email: leitEmail, password: 'demo1234', role: 'leitung' });
+  assert.equal(mk.status, 200);
+  assert.ok(mk.data.user, 'super_admin legt sofort an (kein pending)');
+
+  // Leitung legt eine Klasse an -> nur ein Antrag (pending), noch keine Klasse.
+  const leitung = await loginAs(leitEmail);
+  const before = (await leitung('GET', '/classes')).data.classes.length;
+  const req = await leitung('POST', '/admin/classes', { name: `Testklasse ${stamp}`, weekday: 6 });
+  assert.equal(req.status, 200);
+  assert.equal(req.data.pending, true, 'Leitung-Änderung ist zunächst nur ein Antrag');
+  const after = (await leitung('GET', '/classes')).data.classes.length;
+  assert.equal(after, before, 'Klasse existiert noch nicht');
+
+  // super_admin sieht den Antrag und bestätigt ihn.
+  const queue = (await admin('GET', '/admin/change-requests')).data.requests;
+  const mine = queue.find((r) => r.summary.includes(`Testklasse ${stamp}`));
+  assert.ok(mine, 'Antrag erscheint in der Genehmigungs-Liste');
+  const ok = await admin('POST', `/admin/change-requests/${mine.id}/approve`, {});
+  assert.equal(ok.status, 200);
+
+  // Jetzt existiert die Klasse.
+  const now = (await admin('GET', '/classes')).data.classes;
+  assert.ok(now.some((c) => c.name === `Testklasse ${stamp}`), 'Klasse ist nach Bestätigung da');
+
+  // Leitung darf NICHT selbst genehmigen.
+  const req2 = await leitung('POST', '/admin/classes', { name: `Zweite ${stamp}`, weekday: 6 });
+  const cr2 = (await admin('GET', '/admin/change-requests')).data.requests.find((r) => r.summary.includes(`Zweite ${stamp}`));
+  const forbidden = await leitung('POST', `/admin/change-requests/${cr2.id}/approve`, {});
+  assert.equal(forbidden.status, 403, 'Leitung kann nicht selbst bestätigen');
+});
+
 test('Kalender-Abo: persönlicher iCal-Link liefert gültigen Feed, falsches Token 404', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const tok = await teacher('GET', '/me/calendar-token');

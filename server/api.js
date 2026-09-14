@@ -3980,6 +3980,98 @@ function nextSessionFor(user) {
 // Admin: Nutzer & Klassen
 // =============================================================================
 
+// Genehmigungen: Grundlegende Struktur-Änderungen der Leitung (neue Konten,
+// neue Klassen) werden NICHT sofort wirksam, sondern müssen vom
+// System-Administrator bestätigt werden. Der System-Administrator selbst wirkt
+// sofort (er bestätigt nicht sich selbst).
+function needsApproval(user) {
+  return user.role === ROLES.LEITUNG;
+}
+function superAdminIds() {
+  return db.all('users').filter((u) => u.role === ROLES.SUPER_ADMIN && u.status !== 'disabled').map((u) => u.id);
+}
+function crView(cr) {
+  const p = { ...(cr.payload || {}) };
+  delete p.passwordHash; // niemals den Passwort-Hash nach außen geben
+  return {
+    id: cr.id, type: cr.type, summary: cr.summary, payload: p,
+    requestedByName: cr.requestedByName, status: cr.status,
+    createdAt: cr.createdAt, decidedByName: cr.decidedByName, decidedAt: cr.decidedAt,
+  };
+}
+function submitChangeRequest(user, type, summary, payload) {
+  const cr = {
+    id: newId('chg'), type, summary, payload,
+    requestedBy: user.id, requestedByName: user.name,
+    status: 'pending', createdAt: new Date().toISOString(),
+    decidedBy: null, decidedByName: null, decidedAt: null,
+  };
+  db.insert('change_requests', cr);
+  audit(user.id, 'change_request.create', 'change_request', cr.id, null, { type });
+  superAdminIds().forEach((id) => notify(id, {
+    type: 'approval', level: 'action', title: 'Bestätigung nötig',
+    body: `${user.name}: ${summary}`, deepLink: '/admin', refId: cr.id, groupId: cr.id,
+  }));
+  return cr;
+}
+// Führt eine genehmigte Änderung tatsächlich aus.
+function applyChangeRequest(cr) {
+  if (cr.type === 'create_user') {
+    if (findUserByEmail(cr.payload.email)) throw new Error('E-Mail ist inzwischen bereits vergeben');
+    const u = {
+      id: newId('user'), name: cr.payload.name, email: cr.payload.email,
+      passwordHash: cr.payload.passwordHash, role: cr.payload.role,
+      classIds: cr.payload.classIds || [], childIds: cr.payload.childIds || [],
+      status: 'active', createdAt: new Date().toISOString(),
+    };
+    db.insert('users', u);
+    return u.id;
+  }
+  if (cr.type === 'create_class') {
+    const c = {
+      id: newId('class'), organizationId: org().id, name: cr.payload.name,
+      type: cr.payload.type || 'presence', language: cr.payload.language || 'de',
+      weekday: Number.isFinite(cr.payload.weekday) ? cr.payload.weekday : 6,
+      startTime: cr.payload.startTime || '14:00', endTime: cr.payload.endTime || '18:00',
+      active: true, createdAt: new Date().toISOString(),
+    };
+    db.insert('classes', c);
+    return c.id;
+  }
+  throw new Error('Unbekannter Änderungstyp');
+}
+
+// Liste offener/eigener Anträge. System-Admin: alle offenen. Leitung: eigene.
+router.get('/admin/change-requests', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  let list = db.all('change_requests');
+  if (req.user.role === ROLES.SUPER_ADMIN) list = list.filter((c) => c.status === 'pending');
+  else list = list.filter((c) => c.requestedBy === req.user.id);
+  list = [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 100);
+  res.json({ requests: list.map(crView) });
+});
+
+router.post('/admin/change-requests/:id/approve', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
+  const cr = byId('change_requests', req.params.id);
+  if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  let newId2;
+  try { newId2 = applyChangeRequest(cr); } catch (e) { return res.status(400).json({ error: e.message }); }
+  cr.status = 'approved'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'change_request.approve', 'change_request', cr.id, null, { entityId: newId2 });
+  notify(cr.requestedBy, { type: 'approval', level: 'info', title: 'Änderung bestätigt', body: cr.summary, deepLink: '/admin' });
+  res.json({ ok: true });
+});
+
+router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
+  const cr = byId('change_requests', req.params.id);
+  if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  cr.status = 'rejected'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'change_request.reject', 'change_request', cr.id);
+  notify(cr.requestedBy, { type: 'approval', level: 'warn', title: 'Änderung abgelehnt', body: cr.summary, deepLink: '/admin' });
+  res.json({ ok: true });
+});
+
 router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
   res.json({ users: db.all('users').map(publicUser) });
 });
@@ -3991,16 +4083,19 @@ router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
   if (role === ROLES.SUPER_ADMIN && req.user.role !== ROLES.SUPER_ADMIN)
     return res.status(403).json({ error: 'Nur der System-Administrator kann diese Rolle vergeben' });
   if (findUserByEmail(email)) return res.status(409).json({ error: 'E-Mail bereits vergeben' });
+  const passwordHash = await hashPassword(password);
+  const payload = { name: name.trim(), email: email.trim(), passwordHash, role, classIds: classIds || [], childIds: childIds || [] };
+
+  // Leitung: erst nach Bestätigung durch den System-Administrator wirksam.
+  if (needsApproval(req.user)) {
+    const cr = submitChangeRequest(req.user, 'create_user', `Neues Konto: ${payload.name} (${ROLE_LABELS[role] || role})`, payload);
+    return res.json({ pending: true, changeRequest: crView(cr) });
+  }
+
   const user = {
-    id: newId('user'),
-    name: name.trim(),
-    email: email.trim(),
-    passwordHash: await hashPassword(password),
-    role,
-    classIds: classIds || [],
-    childIds: childIds || [],
-    status: 'active',
-    createdAt: new Date().toISOString(),
+    id: newId('user'), name: payload.name, email: payload.email, passwordHash,
+    role, classIds: payload.classIds, childIds: payload.childIds,
+    status: 'active', createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
   audit(req.user.id, 'user.create', 'user', user.id, null, { role });
@@ -4049,18 +4144,15 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
 router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const { name, weekday, startTime, endTime, type, language } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name erforderlich' });
-  const klass = {
-    id: newId('class'),
-    organizationId: org().id,
-    name: name.trim(),
-    type: type || 'presence',
-    language: language || 'de',
-    weekday: Number.isFinite(weekday) ? weekday : 6,
-    startTime: startTime || '14:00',
-    endTime: endTime || '18:00',
-    active: true,
-    createdAt: new Date().toISOString(),
-  };
+  const payload = { name: name.trim(), type: type || 'presence', language: language || 'de', weekday: Number.isFinite(weekday) ? weekday : 6, startTime: startTime || '14:00', endTime: endTime || '18:00' };
+
+  // Leitung: erst nach Bestätigung durch den System-Administrator wirksam.
+  if (needsApproval(req.user)) {
+    const cr = submitChangeRequest(req.user, 'create_class', `Neue Klasse: ${payload.name}`, payload);
+    return res.json({ pending: true, changeRequest: crView(cr) });
+  }
+
+  const klass = { id: newId('class'), organizationId: org().id, ...payload, active: true, createdAt: new Date().toISOString() };
   db.insert('classes', klass);
   audit(req.user.id, 'class.create', 'class', klass.id);
   res.json({ class: klass });

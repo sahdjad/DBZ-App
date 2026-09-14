@@ -151,8 +151,9 @@ export default function StudentProfil() {
         </div>
       </Card>
 
-      {/* Strafen: offene (inkl. Zuschlag) + erledigte, mit Herkunft */}
-      {MANAGER.includes(user.role) && <ProfilePenalties studentId={id} />}
+      {/* Strafen: offene (inkl. Zuschlag) + erledigte, mit Herkunft.
+          Lehrkräfte/Leitung UND Eltern (für ihre Kinder) sehen sie. */}
+      {(MANAGER.includes(user.role) || user.role === 'eltern') && <ProfilePenalties studentId={id} />}
     </AppLayout>
   );
 }
