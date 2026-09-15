@@ -23,47 +23,68 @@
    Hell = weiß mit Dunkelgrün. Dunkel = warmes, augenschonendes Dunkelgrün
    (gedämpfte Kontraste, cremeweiße statt greller Schrift). */
 :root {
-  --c-bg: 244 248 245;
-  --c-sidebar: 255 255 255;
-  --c-card: 255 255 255;
-  --c-moss: 220 231 225;
-  --c-hover: 231 241 235;
-  --c-line: 223 232 227;
-  --c-subtle: 240 245 242;
-  --c-onaccent: 255 255 255;
-  --c-mint: 21 101 63;
-  --c-mint-light: 30 138 86;
-  --c-ivory: 15 42 30;
-  --c-sage: 57 73 63;
-  --c-sage-muted: 104 120 110;
-  --c-present: 30 138 86;
-  --c-late: 169 120 26;
-  --c-excused: 60 107 158;
-  --c-absent: 188 82 56;
+  /* DEEN – Hell: warmes Elfenbein/Creme mit dunklem Waldgrün-Text, grünen
+     Akzenten und dezentem Champagner-Gold. */
+  --c-bg: 246 242 228; /* #F6F2E4 warmes Elfenbein */
+  --c-sidebar: 6 45 31; /* #062D1F tiefes Waldgrün (Navigation) */
+  --c-card: 255 253 246; /* #FFFDF6 cremeweiße Karten */
+  --c-moss: 228 222 200; /* weiche Creme-Fläche */
+  --c-hover: 237 232 213; /* sanftes Überfahren */
+  --c-line: 223 216 193; /* dezente, warme Rahmen */
+  --c-subtle: 240 235 219; /* stille Füllflächen */
+  --c-onaccent: 246 242 228; /* Text auf Grün (Elfenbein) */
+  --c-mint: 23 77 53; /* #174D35 Primärgrün */
+  --c-mint-light: 30 104 68; /* lesbarer Akzent/Link auf Hell */
+  --c-gold: 158 138 70; /* #9E8A46 Champagner-Gold (kontraststark auf Hell) */
+  --c-ivory: 8 40 28; /* Überschriften – tiefes Waldgrün */
+  --c-sage: 42 60 48; /* Fließtext dunkelgrün */
+  --c-sage-muted: 108 122 100; /* gedämpftes Olivgrau */
+  --c-present: 32 132 84;
+  --c-late: 168 124 32;
+  --c-excused: 58 104 156;
+  --c-absent: 184 78 54;
   color-scheme: light;
 }
 
 .dark {
-  /* Dunkler & weniger grünstichig -> höherer Kontrast, augenschonend. Text ist
-     deutlich heller (fast weiß), damit man nicht mehr angestrengt schauen muss. */
-  --c-bg: 15 20 18; /* #0F1412 tiefes, ruhiges Anthrazit-Grün */
-  --c-sidebar: 20 26 23; /* #141A17 */
-  --c-card: 26 33 29; /* #1A211D – klar abgehoben vom Hintergrund */
-  --c-moss: 58 72 63;
-  --c-hover: 34 43 38;
-  --c-line: 58 71 63; /* sichtbarere, aber ruhige Rahmen */
-  --c-subtle: 31 39 35;
-  --c-onaccent: 246 251 248;
-  --c-mint: 88 186 132; /* kräftiges, klares Grün als Akzent */
-  --c-mint-light: 132 214 168;
-  --c-ivory: 245 250 247; /* Überschriften nahezu weiß */
-  --c-sage: 214 224 218; /* Fließtext hell & klar (weniger Anstrengung) */
-  --c-sage-muted: 156 170 162; /* Sekundärtext deutlich lesbar */
-  --c-present: 82 200 138;
+  /* DEEN – Dunkel: tiefes Smaragd/Emerald mit elfenbeinfarbenem Text und
+     gedämpftem Oliv-/Gold-Akzent. Hoher Kontrast, augenschonend. */
+  --c-bg: 4 26 19; /* #041A13 tiefes Emerald-Schwarz */
+  --c-sidebar: 6 40 28; /* #06281C */
+  --c-card: 9 44 31; /* #092C1F – klar abgehoben */
+  --c-moss: 40 66 52;
+  --c-hover: 15 50 36;
+  --c-line: 40 72 55; /* ruhige Rahmen */
+  --c-subtle: 9 42 30;
+  --c-onaccent: 247 244 232;
+  --c-mint: 84 178 124; /* klares Grün als Akzent */
+  --c-mint-light: 132 210 164;
+  --c-gold: 201 197 142; /* #C9C58E blasses Champagner-Gold */
+  --c-ivory: 247 244 232; /* #F7F4E8 Überschriften */
+  --c-sage: 216 224 206; /* heller, klarer Fließtext */
+  --c-sage-muted: 184 190 173; /* #B8BEAD Sekundärtext */
+  --c-present: 90 200 140;
   --c-late: 224 178 92;
-  --c-excused: 130 176 224;
+  --c-excused: 132 178 226;
   --c-absent: 232 138 112;
   color-scheme: dark;
+}
+
+/* Navigationsflächen (Seitenleiste, Kopfzeile, mobile Leiste) sind IMMER tiefes
+   Waldgrün mit hellem Text – unabhängig vom Hell/Dunkel-Modus. Dazu werden die
+   Texttokens lokal auf „hell auf dunkel" gesetzt, damit alles darin automatisch
+   passt (App-Gefühl, klare Orientierung). */
+.nav-surface {
+  background-color: rgb(var(--c-sidebar));
+  --c-ivory: 247 244 232;
+  --c-sage: 214 223 205;
+  --c-sage-muted: 158 176 150;
+  --c-line: 60 92 74;
+  --c-hover: 18 58 42;
+  --c-subtle: 13 52 37;
+  --c-card: 12 50 36;
+  --c-mint: 120 202 156;
+  --c-mint-light: 150 216 178;
 }
 
 @layer base {
@@ -97,10 +118,10 @@
 @layer components {
   /* Einheitliches Formularfeld (Inputs, Selects, Textareas) */
   .input {
-    @apply w-full rounded-lg bg-card border border-line px-3 py-2.5 text-ivory placeholder:text-sage-muted;
+    @apply w-full rounded-xl bg-card border border-line px-3.5 py-2.5 text-ivory placeholder:text-sage-muted transition-all duration-200;
   }
   .input:focus {
-    @apply outline-none border-mint/50;
+    @apply outline-none border-mint/60 ring-2 ring-mint/20;
   }
 
   /* Fallback-Atmosphäre, falls kein Hero-Bild gesetzt ist (helle Variante) */
@@ -313,6 +334,13 @@
 .app-h {
   height: 100vh;
   height: 100dvh;
+  /* Dezente islamische Geometrie („flower of life") – nahezu subliminal (~4 %),
+     nur als feine Textur auf dem Seitenhintergrund, nie über Karten/Text. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23335c44' stroke-opacity='0.05' stroke-width='1'%3E%3Ccircle cx='0' cy='0' r='42'/%3E%3Ccircle cx='84' cy='0' r='42'/%3E%3Ccircle cx='0' cy='84' r='42'/%3E%3Ccircle cx='84' cy='84' r='42'/%3E%3Ccircle cx='42' cy='42' r='42'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 84px 84px;
+}
+.dark .app-h {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23bfe6cf' stroke-opacity='0.04' stroke-width='1'%3E%3Ccircle cx='0' cy='0' r='42'/%3E%3Ccircle cx='84' cy='0' r='42'/%3E%3Ccircle cx='0' cy='84' r='42'/%3E%3Ccircle cx='84' cy='84' r='42'/%3E%3Ccircle cx='42' cy='42' r='42'/%3E%3C/g%3E%3C/svg%3E");
 }
 
 html {

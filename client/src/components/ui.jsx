@@ -14,18 +14,20 @@ export function Button({
   ...props
 }) {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-300 focus-visible:ring-2 focus-visible:ring-mint focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50 disabled:pointer-events-none';
+    'inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50 disabled:pointer-events-none';
   const sizes = {
     sm: 'text-sm px-3 py-1.5',
     md: 'text-sm px-4 py-2.5',
     lg: 'text-base px-6 py-3',
   };
   const variants = {
-    primary:
-      'bg-mint text-onaccent border border-mint-light/40 hover:bg-mint-light shadow-[0_0_0_1px_rgba(134,210,172,0.15)]',
-    outline:
-      'border border-line text-ivory bg-white/0 hover:bg-subtle hover:border-line',
+    // Primär: tiefes Waldgrün, elfenbeinfarbene Schrift, weiche Tiefe.
+    primary: 'bg-mint text-onaccent shadow-sm hover:bg-mint-light',
+    // Sekundär: helle Fläche, feiner grüner Rand, dunkelgrüne Schrift.
+    outline: 'bg-card border border-mint/30 text-mint hover:bg-hover',
     ghost: 'text-sage hover:text-ivory hover:bg-subtle',
+    // Besondere Aktionen: dezenter Gold-Akzent mit dunkelgrüner Schrift.
+    gold: 'bg-gold text-sidebar shadow-sm hover:brightness-[1.06]',
     danger: 'border border-status-absent/40 text-status-absent hover:bg-status-absent/10',
   };
   return (
@@ -40,7 +42,7 @@ export function Card({ className = '', children, ...props }) {
   return (
     <div
       className={cx(
-        'bg-card border border-line rounded-xl transition-all duration-300',
+        'bg-card border border-line rounded-2xl shadow-[0_1px_2px_rgb(6_45_31/0.04),0_8px_24px_-16px_rgb(6_45_31/0.12)] transition-all duration-300',
         className,
       )}
       {...props}

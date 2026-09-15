@@ -18,6 +18,7 @@ export default {
           DEFAULT: 'rgb(var(--c-mint) / <alpha-value>)', // Akzent (DBZ-Grün)
           light: 'rgb(var(--c-mint-light) / <alpha-value>)',
         },
+        gold: 'rgb(var(--c-gold) / <alpha-value>)', // Champagner-Gold-Akzent (DEEN)
         ivory: 'rgb(var(--c-ivory) / <alpha-value>)', // Überschriften
         sage: {
           DEFAULT: 'rgb(var(--c-sage) / <alpha-value>)', // Fließtext

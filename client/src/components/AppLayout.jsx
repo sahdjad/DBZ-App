@@ -93,7 +93,7 @@ function Brand() {
         <img
           src="/logo.png"
           alt="DBZ"
-          className="h-10 w-10 rounded-lg object-contain bg-white"
+          className="h-11 w-11 rounded-2xl object-cover ring-1 ring-white/10 shadow-md"
           onError={() => setLogoOk(false)}
         />
       ) : (
@@ -131,10 +131,10 @@ function NavItems({ items, badges, onNavigate }) {
             onClick={onNavigate}
             className={({ isActive }) =>
               [
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-300',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
                 isActive
-                  ? 'bg-hover text-ivory border border-line'
-                  : 'text-sage hover:text-ivory hover:bg-subtle border border-transparent',
+                  ? 'bg-hover text-ivory font-medium shadow-[inset_3px_0_0_rgb(var(--c-gold))]'
+                  : 'text-sage hover:text-ivory hover:bg-subtle',
               ].join(' ')
             }
           >
@@ -209,10 +209,10 @@ export default function AppLayout({ children, title }) {
   };
 
   const Sidebar = (
-    <div className="flex flex-col h-full bg-sidebar border-r border-line">
+    <div className="nav-surface flex flex-col h-full border-r border-line">
       <Brand />
       <NavItems items={items} badges={badges} onNavigate={() => setOpen(false)} />
-      <div className="shrink-0 p-3 border-t border-line bg-sidebar">
+      <div className="shrink-0 p-3 border-t border-line">
         <div className="flex items-center gap-3 px-2 py-2.5">
           <Avatar name={user?.name} size={36} />
           <div className="leading-tight min-w-0 flex-1">
@@ -242,7 +242,7 @@ export default function AppLayout({ children, title }) {
 
       <div className="flex-1 min-w-0 flex flex-col app-h">
         {/* Topbar – fest oben, außerhalb des Scroll-Bereichs */}
-        <header className="shrink-0 flex items-center gap-3 px-4 lg:px-8 py-4 bg-sidebar border-b border-line">
+        <header className="nav-surface shrink-0 flex items-center gap-3 px-4 lg:px-8 py-4 border-b border-line">
           <button
             className="lg:hidden text-sage hover:text-ivory"
             onClick={() => setOpen(true)}
@@ -277,7 +277,7 @@ export default function AppLayout({ children, title }) {
 function MobileTabBar({ items, badges }) {
   return (
     <nav
-      className="lg:hidden fixed bottom-0 inset-x-0 z-30 bg-sidebar/95 backdrop-blur border-t border-line flex"
+      className="nav-surface lg:hidden fixed bottom-0 inset-x-0 z-30 backdrop-blur border-t border-line flex"
       // Safe-Area unten (iPhone Home-Indikator): Leiste sitzt höher, damit
       // Tipps nicht die Home-Geste auslösen. Auf Geräten ohne Indikator = 0.
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
