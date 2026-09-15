@@ -233,11 +233,32 @@
   }
 }
 
+/* Der Tür-QR-Druckbogen ist am Bildschirm unsichtbar und NUR beim Drucken da. */
+.qr-print-sheet { display: none; }
+
 /* Druck: nur das Dokument, sauberes A4-Layout */
 @media print {
   .no-print {
     display: none !important;
   }
+  /* QR-Druck: nur den QR-Bogen zeigen, alles andere ausblenden. */
+  body:has(.qr-print-sheet) * { visibility: hidden !important; }
+  .qr-print-sheet, .qr-print-sheet * { visibility: visible !important; }
+  .qr-print-sheet {
+    display: flex !important;
+    position: fixed;
+    inset: 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: #ffffff;
+    text-align: center;
+  }
+  .qr-print-sheet .qr-print-title { font-size: 26px; font-weight: 700; color: #0f2a1e; }
+  .qr-print-sheet .qr-print-qr img { width: 62mm !important; height: 62mm !important; }
+  .qr-print-sheet .qr-print-code { font-family: ui-monospace, monospace; font-size: 30px; letter-spacing: 0.25em; color: #08150d; }
+  .qr-print-sheet .qr-print-hint { font-size: 13px; color: #33463c; }
   html,
   body {
     background: #ffffff !important;
@@ -250,6 +271,28 @@
   @page {
     margin: 16mm;
   }
+}
+
+/* Markenstart (Splash): Logo blendet sanft ein, ein weicher Schein pulsiert. */
+.app-splash .splash-mark { animation: splashPop 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.app-splash .splash-text { animation: splashFade 0.7s ease 0.2s both; }
+.app-splash .splash-glow {
+  position: absolute;
+  inset: -30%;
+  border-radius: 9999px;
+  background: radial-gradient(closest-side, rgba(30, 138, 86, 0.28), transparent 70%);
+  animation: splashGlow 1.8s ease-in-out infinite;
+  z-index: 0;
+}
+.app-splash .splash-mark img,
+.app-splash .splash-mark span { position: relative; z-index: 1; }
+@keyframes splashPop { 0% { opacity: 0; transform: scale(0.82); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes splashFade { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes splashGlow { 0%, 100% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.06); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-splash .splash-mark,
+  .app-splash .splash-text,
+  .app-splash .splash-glow { animation: none; }
 }
 
 /* Sanfte Scroll-Animationen, respektiert reduzierte Bewegung */

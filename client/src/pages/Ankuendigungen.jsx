@@ -89,6 +89,10 @@ function NewForm({ user, onDone, onCancel }) {
     let audience = { type: 'all' };
     if (f.audienceType === 'class') audience = { type: 'class', classId: f.classId };
     else if (f.audienceType === 'role') audience = { type: 'role', role: f.role };
+    else if (f.audienceType === 'online') audience = { type: 'classType', classType: 'online' };
+    else if (f.audienceType === 'presence') audience = { type: 'classType', classType: 'presence' };
+    // Lehrkraft ohne Auswahl: immer die eigene Klasse.
+    if (!isAdmin) audience = { type: 'class', classId: f.classId };
     try {
       await api.post('/announcements', { title: f.title, body: f.body, priority: f.priority, audience });
       toast.push('Ankündigung veröffentlicht', 'success');
@@ -111,15 +115,31 @@ function NewForm({ user, onDone, onCancel }) {
           <textarea className="input mt-1" rows={4} value={f.body} onChange={(e) => setF({ ...f, body: e.target.value })} />
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-sm text-sage">Zielgruppe</span>
-            <select className="input mt-1" value={f.audienceType} onChange={(e) => setF({ ...f, audienceType: e.target.value })}>
-              {isAdmin && <option value="all">Alle</option>}
-              <option value="class">Klasse</option>
-              {isAdmin && <option value="role">Rolle</option>}
-            </select>
-          </label>
-          {f.audienceType === 'class' && (
+          {isAdmin ? (
+            <label className="block">
+              <span className="text-sm text-sage">Zielgruppe</span>
+              <select className="input mt-1" value={f.audienceType} onChange={(e) => setF({ ...f, audienceType: e.target.value })}>
+                <option value="all">Ganze Koran-Schule</option>
+                <option value="online">Nur Online-Klassen</option>
+                <option value="presence">Nur Präsenz-Klassen</option>
+                <option value="class">Bestimmte Klasse</option>
+                <option value="role">Bestimmte Rolle</option>
+              </select>
+            </label>
+          ) : (
+            /* Lehrkraft: keine Auswahl – geht immer NUR an die eigene Klasse. */
+            classes.length > 1 ? (
+              <label className="block">
+                <span className="text-sm text-sage">Klasse</span>
+                <select className="input mt-1" value={f.classId} onChange={(e) => setF({ ...f, classId: e.target.value })}>
+                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </label>
+            ) : (
+              <div className="text-xs text-sage-muted self-end pb-2">Diese Ankündigung geht an deine Klasse{classes[0] ? ` „${classes[0].name}"` : ''}.</div>
+            )
+          )}
+          {isAdmin && f.audienceType === 'class' && (
             <label className="block">
               <span className="text-sm text-sage">Klasse</span>
               <select className="input mt-1" value={f.classId} onChange={(e) => setF({ ...f, classId: e.target.value })}>
@@ -127,7 +147,7 @@ function NewForm({ user, onDone, onCancel }) {
               </select>
             </label>
           )}
-          {f.audienceType === 'role' && (
+          {isAdmin && f.audienceType === 'role' && (
             <label className="block">
               <span className="text-sm text-sage">Rolle</span>
               <select className="input mt-1" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>

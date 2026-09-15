@@ -140,7 +140,7 @@ export default function Unterricht() {
             <div className="flex justify-center mb-4">
               <QrImage value={qr.token} size={220} />
             </div>
-            <div className="font-mono text-3xl tracking-[0.3em] text-mint-light uppercase">{qr.token}</div>
+            <div className="font-mono text-2xl sm:text-3xl tracking-[0.15em] sm:tracking-[0.3em] text-mint-light uppercase break-all leading-snug">{qr.token}</div>
             <div className="text-xs text-sage-muted mt-3">Gültig bis {new Date(qr.expiresAt).toLocaleTimeString('de-DE')}</div>
           </div>
         )}
@@ -171,6 +171,14 @@ export default function Unterricht() {
               </div>
               <p className="text-[11px] text-sage-muted">Tipp: Code alle paar Wochen neu erzeugen &amp; neu ausdrucken – alte Fotos werden dadurch ungültig.</p>
             </div>
+          </div>
+
+          {/* Nur beim Drucken sichtbar: sauberes Blatt mit NUR dem QR-Code. */}
+          <div className="qr-print-sheet">
+            <div className="qr-print-title">{session?.className || 'Check-in'}</div>
+            <div className="qr-print-qr"><QrImage value={door.code} size={360} /></div>
+            <div className="qr-print-code">{door.code}</div>
+            <div className="qr-print-hint">Beim Ankommen scannen · Unterricht {door.startTime}–{door.endTime} Uhr</div>
           </div>
         </Card>
       )}

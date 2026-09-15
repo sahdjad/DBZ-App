@@ -23,7 +23,11 @@ export default function Hifz() {
 
 // Bereichs-Text: bei einer einzelnen Sure nur der Name, sonst „von – bis".
 function rangeLabel(g) {
-  return g.surahFrom === g.surahTo ? g.surahFromName : `${g.surahFromName} – ${g.surahToName}`;
+  if (g.surahFrom === g.surahTo) {
+    const whole = g.ayahFrom === 1 && g.ayahTo - g.ayahFrom + 1 === g.ayatCount;
+    return whole ? g.surahFromName : `${g.surahFromName} ${g.ayahFrom}–${g.ayahTo}`;
+  }
+  return `${g.surahFromName} – ${g.surahToName}`;
 }
 
 // Audio-Abgabe des Schülers – abspielbar für Schüler, Lehrkraft und Eltern.
@@ -249,16 +253,16 @@ function ManagerView({ surahs }) {
 
 // Einfaches Formular: Art + Von/Bis (nur Sure) + Fälligkeit (optional).
 function GoalForm({ surahs, onSubmit, onCancel }) {
-  const [f, setF] = useState({ goalType: 'murajaah', surahFrom: 114, surahTo: 114, dueAt: '' });
+  const [f, setF] = useState({ goalType: 'murajaah', surahFrom: 114, surahTo: 114, ayahFrom: '', ayahTo: '', dueAt: '' });
   const submit = () => {
-    // Ganze Sure(n): von Ayah 1 bis zur letzten Ayah der Ziel-Sure.
+    // Ayat optional: leer = ganze Sure (Ayah 1 bis letzte Ayah der Ziel-Sure).
     const toS = surahs.find((x) => x.n === Number(f.surahTo));
     onSubmit({
       goalType: f.goalType,
       surahFrom: Number(f.surahFrom),
-      ayahFrom: 1,
+      ayahFrom: f.ayahFrom ? Math.max(1, Number(f.ayahFrom)) : 1,
       surahTo: Number(f.surahTo),
-      ayahTo: toS?.ayat || 1,
+      ayahTo: f.ayahTo ? Math.max(1, Number(f.ayahTo)) : (toS?.ayat || 1),
       dueAt: f.dueAt ? new Date(f.dueAt).toISOString() : null,
     });
   };
@@ -284,6 +288,16 @@ function GoalForm({ surahs, onSubmit, onCancel }) {
             <select className="input mt-1" value={f.surahTo} onChange={(e) => setF({ ...f, surahTo: Number(e.target.value) })}>
               {surahs.map((x) => <option key={x.n} value={x.n}>{x.n}. {x.name}</option>)}
             </select>
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-sm text-sage">ab Ayah (optional)</span>
+            <input type="number" min={1} className="input mt-1" placeholder="ganze Sure" value={f.ayahFrom} onChange={(e) => setF({ ...f, ayahFrom: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="text-sm text-sage">bis Ayah (optional)</span>
+            <input type="number" min={1} className="input mt-1" placeholder="ganze Sure" value={f.ayahTo} onChange={(e) => setF({ ...f, ayahTo: e.target.value })} />
           </label>
         </div>
         <label className="block">

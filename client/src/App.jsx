@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext.jsx';
 import { Spinner } from './components/ui.jsx';
@@ -49,15 +49,34 @@ const Admin = lazy(() => import('./pages/Admin.jsx'));
 const MANAGERS = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMINS = ['super_admin', 'leitung'];
 
+// Markenstart-Bildschirm: DBZ-Logo mit sanfter Einblende-Animation statt eines
+// nüchternen „Sitzung wird geprüft"-Spinners – wirkt hochwertig beim Öffnen.
+function Splash() {
+  const [logoOk, setLogoOk] = useState(true);
+  return (
+    <div className="app-splash min-h-screen grid place-items-center bg-bg">
+      <div className="flex flex-col items-center">
+        <div className="splash-mark relative grid place-items-center h-24 w-24 rounded-3xl bg-mint/10 border border-mint/20">
+          <span className="splash-glow" aria-hidden="true" />
+          {logoOk ? (
+            <img src="/logo.png" alt="DBZ" className="h-14 w-14 object-contain" onError={() => setLogoOk(false)} />
+          ) : (
+            <span className="font-display text-2xl text-mint-light">DBZ</span>
+          )}
+        </div>
+        <div className="splash-text mt-5 text-center">
+          <div className="font-display text-xl text-ivory">Deen Bildungszentrum</div>
+          <div className="text-xs text-sage-muted mt-1">wird geladen …</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Protected({ children, roles }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading)
-    return (
-      <div className="min-h-screen grid place-items-center bg-bg">
-        <Spinner label="Sitzung wird geprüft …" />
-      </div>
-    );
+  if (loading) return <Splash />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   if (roles && !roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
   return children;

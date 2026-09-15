@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -102,6 +102,34 @@ const ROLES = [
   ['super_admin', 'Administrator'],
 ];
 
+// Admin verknüpft zwei beliebige Konten (z. B. dieselbe Person mit mehreren
+// Rollen). Nur die Verwaltung darf das – Schüler können sich nicht selbst
+// verknüpfen.
+function LinkAccountsAdminCard() {
+  const toast = useToast();
+  const [f, setF] = useState({ emailA: '', emailB: '' });
+  const [busy, setBusy] = useState(false);
+  const link = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post('/admin/link-accounts', { emailA: f.emailA.trim(), emailB: f.emailB.trim() });
+      toast.push('Konten verknüpft', 'success');
+      setF({ emailA: '', emailB: '' });
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  return (
+    <Card className="p-5">
+      <CardHeader title="Konten verknüpfen" subtitle="Dieselbe Person mit mehreren Rollen zusammenführen (z. B. Schüler + Klassenlehrer + Leitung)" icon={Link2} />
+      <form onSubmit={link} className="p-4 grid gap-2 sm:grid-cols-2">
+        <input className="input" type="email" placeholder="E-Mail Konto 1" value={f.emailA} onChange={(e) => setF({ ...f, emailA: e.target.value })} required />
+        <input className="input" type="email" placeholder="E-Mail Konto 2" value={f.emailB} onChange={(e) => setF({ ...f, emailB: e.target.value })} required />
+        <div className="sm:col-span-2"><Button type="submit" disabled={busy}><Link2 size={16} /> Verknüpfen</Button></div>
+      </form>
+    </Card>
+  );
+}
+
 function UsersTab() {
   const toast = useToast();
   const [users, setUsers] = useState(null);
@@ -129,6 +157,7 @@ function UsersTab() {
   if (!users) return <Spinner />;
   return (
     <div className="space-y-4">
+      <LinkAccountsAdminCard />
       <div className="flex justify-end"><Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button></div>
       {show && (
         <Card className="p-5">

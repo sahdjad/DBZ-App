@@ -3858,7 +3858,10 @@ router.get('/me/linked-accounts', requireAuth, (req, res) => {
 });
 
 // Ein weiteres eigenes Konto per E-Mail + Passwort verknüpfen (beidseitig).
+// Konten verknüpfen darf NUR die Verwaltung (Admin/Leitung) freigeben – so kann
+// sich z. B. kein Schüler selbst ein zweites Konto anhängen.
 router.post('/me/link-account', requireAuth, async (req, res) => {
+  if (!isAdmin(req.user)) return res.status(403).json({ error: 'Verknüpfte Konten richtet nur die Verwaltung ein.' });
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'E-Mail und Passwort des anderen Kontos erforderlich' });
   const other = findUserByEmail(email);
@@ -3874,6 +3877,26 @@ router.post('/me/link-account', requireAuth, async (req, res) => {
   db.commit();
   audit(req.user.id, 'account.link', 'user', other.id);
   res.json({ account: linkedAccountView(other) });
+});
+
+// Admin/Leitung verknüpft ZWEI beliebige Konten miteinander (z. B. dieselbe
+// Person als Schüler + Klassenlehrer + Leitung). Keine Passwörter nötig – die
+// Verwaltung hat die Autorität. Beidseitig.
+router.post('/admin/link-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const { emailA, emailB } = req.body || {};
+  const a = findUserByEmail((emailA || '').trim());
+  const b = findUserByEmail((emailB || '').trim());
+  if (!a || !b) return res.status(404).json({ error: 'Mindestens ein Konto wurde nicht gefunden' });
+  if (a.id === b.id) return res.status(400).json({ error: 'Das ist dasselbe Konto' });
+  a.linkedAccountIds = a.linkedAccountIds || [];
+  b.linkedAccountIds = b.linkedAccountIds || [];
+  if (!a.linkedAccountIds.includes(b.id)) a.linkedAccountIds.push(b.id);
+  if (!b.linkedAccountIds.includes(a.id)) b.linkedAccountIds.push(a.id);
+  db.commit();
+  audit(req.user.id, 'account.link.admin', 'user', b.id, null, { with: a.id });
+  // Beide informieren.
+  [a, b].forEach((u) => notify(u.id, { type: 'account_linked', level: 'info', title: 'Konten verknüpft', body: 'Die Verwaltung hat deine Konten verknüpft. Du kannst jetzt zwischen ihnen wechseln.', deepLink: '/konto' }));
+  res.json({ ok: true, a: linkedAccountView(a), b: linkedAccountView(b) });
 });
 
 // Verknüpfung wieder lösen (beidseitig).
@@ -3916,8 +3939,20 @@ function announcementAudienceUsers(a) {
           (u.childIds || []).some((ch) => (findUserById(ch)?.classIds || []).includes(cid))),
     );
   }
+  // Nur Online- bzw. nur Präsenzklassen (nur für Leitung/Admin).
+  if (a.audience.type === 'classType') {
+    const set = new Set(db.all('classes').filter((c) => c.type === a.audience.classType).map((c) => c.id));
+    return users.filter(
+      (u) =>
+        (u.classIds || []).some((c) => set.has(c)) ||
+        (u.role === ROLES.ELTERN &&
+          (u.childIds || []).some((ch) => (findUserById(ch)?.classIds || []).some((c) => set.has(c)))),
+    );
+  }
   return [];
 }
+
+const CLASS_TYPE_LABELS = { online: 'Online-Klassen', presence: 'Präsenz-Klassen' };
 
 function canSeeAnnouncement(user, a) {
   if (isAdmin(user) || a.authorId === user.id) return true;
@@ -3925,9 +3960,10 @@ function canSeeAnnouncement(user, a) {
 }
 
 function announcementView(a) {
-  let audienceLabel = 'Alle';
+  let audienceLabel = 'Ganze Schule';
   if (a.audience.type === 'class') audienceLabel = findClass(a.audience.classId)?.name || 'Klasse';
   else if (a.audience.type === 'role') audienceLabel = ROLE_LABELS[a.audience.role] || a.audience.role;
+  else if (a.audience.type === 'classType') audienceLabel = CLASS_TYPE_LABELS[a.audience.classType] || 'Klassen';
   return { ...a, audienceLabel };
 }
 
@@ -3941,7 +3977,8 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
   if (isAdmin(req.user)) {
     if (aud.type === 'class' && !findClass(aud.classId)) return res.status(400).json({ error: 'Klasse nicht gefunden' });
     if (aud.type === 'role' && !ALL_ROLES.includes(aud.role)) return res.status(400).json({ error: 'Rolle ungültig' });
-    if (!['all', 'class', 'role'].includes(aud.type)) return res.status(400).json({ error: 'Zielgruppe ungültig' });
+    if (aud.type === 'classType' && !['online', 'presence'].includes(aud.classType)) return res.status(400).json({ error: 'Klassentyp ungültig' });
+    if (!['all', 'class', 'role', 'classType'].includes(aud.type)) return res.status(400).json({ error: 'Zielgruppe ungültig' });
   } else {
     // Klassenlehrer/Vertretung: nur eigene Klasse
     if (aud.type !== 'class' || !canManageClass(req.user, aud.classId))

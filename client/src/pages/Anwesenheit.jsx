@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { CalendarCheck, Download } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Ring, StatusBadge, Spinner } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Ring, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -96,6 +96,7 @@ function Row({ label, value }) {
 }
 
 function ManagerView() {
+  const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState('');
   const [rows, setRows] = useState(null);
@@ -121,7 +122,8 @@ function ManagerView() {
           </select>
         ) : <span />}
         {classId && (
-          <Button as="a" href={`/api/export/attendance.csv?classId=${classId}`} variant="outline" size="sm">
+          <Button variant="outline" size="sm"
+            onClick={() => api.download(`/export/attendance.csv?classId=${classId}`, `anwesenheit_${classId}.csv`).catch((e) => toast.push(e.message, 'error'))}>
             <Download size={16} /> CSV exportieren
           </Button>
         )}

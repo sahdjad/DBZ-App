@@ -10,9 +10,11 @@ export function QrImage({ value, size = 220 }) {
   const [src, setSrc] = useState('');
   useEffect(() => {
     let alive = true;
+    // Intern in hoher Auflösung erzeugen (3×) und kleiner anzeigen -> auf Retina-
+    // Displays (Handy!) gestochen scharf statt verschwommen, und beim Drucken top.
     QRCode.toDataURL(value, {
       margin: 2,
-      width: size,
+      width: Math.max(600, Math.round(size * 3)),
       color: { dark: '#08150dff', light: '#F6FAF8ff' },
       errorCorrectionLevel: 'M',
     })
@@ -23,7 +25,7 @@ export function QrImage({ value, size = 220 }) {
     };
   }, [value, size]);
   if (!src) return <div style={{ width: size, height: size }} className="rounded-lg bg-subtle animate-pulse" />;
-  return <img src={src} width={size} height={size} alt="QR-Code zum Einchecken" className="rounded-lg" />;
+  return <img src={src} style={{ width: size, height: size }} alt="QR-Code zum Einchecken" className="rounded-lg" />;
 }
 
 /**

@@ -144,15 +144,16 @@ test('Verknüpfte Konten: mit Passwort verbinden, gebündelte Badges, Wechsel oh
   const acctA = (await admin('POST', '/admin/users', { name: 'Doppel-Konto A', email: `dka-${stamp}@dbz.de`, password: 'demo1234', role: 'vertretung', classIds: ['class_3'] })).data.user;
   const acctB = (await admin('POST', '/admin/users', { name: 'Doppel-Konto B', email: `dkb-${stamp}@dbz.de`, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user;
 
-  // In Konto A einloggen und Konto B mit dessen Passwort verknüpfen.
-  const a = await loginAs(`dka-${stamp}@dbz.de`);
-  const link = await a('POST', '/me/link-account', { email: `dkb-${stamp}@dbz.de`, password: 'demo1234' });
-  assert.equal(link.status, 200);
-  assert.equal(link.data.account.id, acctB.id);
+  // NUR die Verwaltung verknüpft: Admin verbindet beide Konten.
+  const linked = await admin('POST', '/admin/link-accounts', { emailA: `dka-${stamp}@dbz.de`, emailB: `dkb-${stamp}@dbz.de` });
+  assert.equal(linked.status, 200);
 
-  // Falsches Passwort des anderen Kontos wird abgelehnt.
-  const bad = await a('POST', '/me/link-account', { email: `dkb-${stamp}@dbz.de`, password: 'falsch' });
-  assert.equal(bad.status, 401);
+  // In Konto A einloggen.
+  const a = await loginAs(`dka-${stamp}@dbz.de`);
+
+  // Eine Lehrkraft/Schüler kann sich NICHT selbst verknüpfen.
+  const selfLink = await a('POST', '/me/link-account', { email: `dkb-${stamp}@dbz.de`, password: 'demo1234' });
+  assert.equal(selfLink.status, 403, 'Selbst-Verknüpfen ist nur der Verwaltung erlaubt');
 
   // Verknüpftes Konto erscheint in der Liste.
   const list = await a('GET', '/me/linked-accounts');
@@ -1261,4 +1262,19 @@ test('Prüfung: Datei-/Audio-Prüfung ohne Fragen + Antwort + korrigiert zurück
   assert.equal(view.data.attempt.status, 'released');
   assert.equal(view.data.attempt.total, 8);
   assert.equal(view.data.attempt.feedback, 'achte auf Madd');
+});
+
+test('Ankündigungen: Leitung kann gezielt nur Präsenz- bzw. nur Online-Klassen ansprechen', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.equal((await leitung('POST', '/announcements', { title: 'Präsenz-Info', body: 'Nur Präsenzklassen', audience: { type: 'classType', classType: 'presence' } })).status, 200);
+  assert.equal((await leitung('POST', '/announcements', { title: 'Online-Info', body: 'Nur Online', audience: { type: 'classType', classType: 'online' } })).status, 200);
+  const student = await loginAs('schueler@dbz.de'); // class_3 = Präsenz
+  const list = (await student('GET', '/announcements')).data.announcements;
+  assert.ok(list.some((a) => a.title === 'Präsenz-Info'), 'Präsenzschüler sieht Präsenz-Ankündigung');
+  assert.ok(!list.some((a) => a.title === 'Online-Info'), 'Präsenzschüler sieht Online-Ankündigung NICHT');
+
+  // Lehrkraft darf keine schulweiten/Typ-Ankündigungen machen.
+  const teacher = await loginAs('lehrer@dbz.de');
+  assert.equal((await teacher('POST', '/announcements', { title: 'X', body: 'Y', audience: { type: 'classType', classType: 'presence' } })).status, 403);
+  assert.equal((await teacher('POST', '/announcements', { title: 'X', body: 'Y', audience: { type: 'all' } })).status, 403);
 });

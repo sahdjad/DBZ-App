@@ -313,6 +313,8 @@ function NotificationsCard() {
 // ohne erneutes Passwort wechseln.
 function LinkedAccountsCard() {
   const toast = useToast();
+  const { user } = useAuth();
+  const isAdmin = user.role === 'super_admin' || user.role === 'leitung';
   const [accounts, setAccounts] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -366,28 +368,34 @@ function LinkedAccountsCard() {
                     <div className="text-xs text-sage-muted">{a.roleLabel}{a.unread > 0 ? ` · ${a.unread} ungelesen` : ''}</div>
                   </div>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => unlink(a.id, a.name)} aria-label="Verknüpfung lösen">
-                  <Unlink size={16} />
-                </Button>
+                {isAdmin && (
+                  <Button size="sm" variant="ghost" onClick={() => unlink(a.id, a.name)} aria-label="Verknüpfung lösen">
+                    <Unlink size={16} />
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
         )}
 
-        <form onSubmit={link} className="space-y-2">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm text-sage">E-Mail des anderen Kontos</span>
-              <input type="email" autoComplete="off" className="input mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="z. B. name@dbz.de" required />
-            </label>
-            <label className="block">
-              <span className="text-sm text-sage">Passwort des anderen Kontos</span>
-              <input type="password" autoComplete="off" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
-            </label>
-          </div>
-          <Button type="submit" disabled={busy}><Link2 size={18} /> Konto verknüpfen</Button>
-          <p className="text-[11px] text-sage-muted">Zum Verknüpfen brauchst du die Zugangsdaten beider Konten – so kann niemand fremde Konten verbinden.</p>
-        </form>
+        {isAdmin ? (
+          <form onSubmit={link} className="space-y-2">
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm text-sage">E-Mail des anderen Kontos</span>
+                <input type="email" autoComplete="off" className="input mt-1" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="z. B. name@dbz.de" required />
+              </label>
+              <label className="block">
+                <span className="text-sm text-sage">Passwort des anderen Kontos</span>
+                <input type="password" autoComplete="off" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </label>
+            </div>
+            <Button type="submit" disabled={busy}><Link2 size={18} /> Konto verknüpfen</Button>
+            <p className="text-[11px] text-sage-muted">Verknüpfungen legt nur die Verwaltung an. Zwei beliebige Konten verbindest du im Bereich „Verwaltung".</p>
+          </form>
+        ) : (
+          <p className="text-[11px] text-sage-muted">Verknüpfte Konten richtet die Verwaltung (Administrator/Leitung) ein. Wende dich an sie, wenn du mehrere Rollen zusammenführen möchtest.</p>
+        )}
       </div>
     </Card>
   );
