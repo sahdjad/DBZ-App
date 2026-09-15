@@ -1278,3 +1278,36 @@ test('Ankündigungen: Leitung kann gezielt nur Präsenz- bzw. nur Online-Klassen
   assert.equal((await teacher('POST', '/announcements', { title: 'X', body: 'Y', audience: { type: 'classType', classType: 'presence' } })).status, 403);
   assert.equal((await teacher('POST', '/announcements', { title: 'X', body: 'Y', audience: { type: 'all' } })).status, 403);
 });
+
+test('Regeln & Strafenkatalog: sichtbar, pro Klasse anpassbar, Schüler read-only', async () => {
+  const student = await loginCookie('schueler@dbz.de');
+  const r = await jreq(student, 'GET', '/rules');
+  assert.equal(r.status, 200);
+  assert.ok(r.data.catalog.length >= 5, 'Katalog hat Kategorien');
+  assert.ok(r.data.rules.text.length > 20, 'Regeltext vorhanden');
+  assert.equal(r.data.catalog.flatMap((c) => c.items).find((i) => i.id === 'v_30').consequence, '1 Seite');
+
+  // Lehrkraft passt Konsequenz NUR für die eigene Klasse an.
+  const teacher = await loginCookie('lehrer@dbz.de');
+  assert.equal((await jreq(teacher, 'PUT', '/rules/catalog/class_3', { overrides: { v_30: '2 Euro' } })).status, 200);
+  const r2 = await jreq(student, 'GET', '/rules');
+  const it = r2.data.catalog.flatMap((c) => c.items).find((i) => i.id === 'v_30');
+  assert.equal(it.consequence, '2 Euro');
+  assert.equal(it.classConsequence, '2 Euro');
+
+  // Schüler darf nicht bearbeiten.
+  assert.equal((await jreq(student, 'PUT', '/rules/catalog/class_3', { overrides: { v_30: '0' } })).status, 403);
+  assert.equal((await jreq(student, 'PUT', '/rules/text/class_3', { text: 'hack' })).status, 403);
+});
+
+test('Klassen-Zuordnung: Admin fügt Lehrkraft (Vertretung) hinzu und entfernt sie', async () => {
+  const admin = await loginCookie('admin@dbz.de');
+  const stamp = Date.now();
+  const v = (await jreq(admin, 'POST', '/admin/users', { name: 'Vertretung X', email: `vx-${stamp}@dbz.de`, password: 'demo1234', role: 'vertretung', classIds: [] })).data.user;
+  assert.equal((await jreq(admin, 'POST', '/admin/classes/class_3/teachers', { userId: v.id })).status, 200);
+  const t = await jreq(admin, 'GET', '/admin/classes/class_3/teachers');
+  assert.ok(t.data.assigned.some((x) => x.id === v.id), 'zugewiesen');
+  assert.equal((await jreq(admin, 'DELETE', `/admin/classes/class_3/teachers/${v.id}`)).status, 200);
+  const t2 = await jreq(admin, 'GET', '/admin/classes/class_3/teachers');
+  assert.ok(!t2.data.assigned.some((x) => x.id === v.id), 'entfernt');
+});

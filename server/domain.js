@@ -103,7 +103,7 @@ export function notify(userId, { type, level = 'info', title, body, deepLink = n
 // wird je Bereich eine Qualität 0–100 und daraus ein Notenvorschlag (1–6)
 // abgeleitet. Es sind NUR Vorschläge – die Lehrkraft entscheidet endgültig.
 
-export const STANDING_WEIGHTS = { homework: 0.30, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15, audios: 0.05 };
+export const STANDING_WEIGHTS = { homework: 0.30, attendance: 0.25, behavior: 0.1, exams: 0.15, activities: 0.15, audios: 0.05, mitarbeit: 0.15 };
 
 function qHomework(hw) {
   if (!hw || !hw.total) return null;
@@ -137,6 +137,11 @@ function qAudios(au) {
   if (!au || !au.count) return null;
   return Math.max(0, Math.min(100, au.count * 20));
 }
+// Mitarbeit (Rezitation): Durchschnitt der Bewertungen (Punkte + Fleiß-Bonus).
+function qMitarbeit(m) {
+  if (!m || !m.count) return null;
+  return Math.max(0, Math.min(100, Math.round(m.avgPercent)));
+}
 const qualityToGrade = (q) => Math.round((1 + ((100 - q) / 100) * 5) * 10) / 10; // 100->1,0 ; 0->6,0
 const toHalfGrade = (g) => Math.max(1, Math.min(6, Math.round(g * 2) / 2));
 
@@ -157,6 +162,8 @@ export function computeStanding(data, weights) {
       detail: data.activities?.count ? `${data.activities.count} Einträge · ${data.activities.scoredCount} bewertet · Ø ${data.activities.avgPercent}%` : 'keine Aktivitäten' },
     { key: 'audios', label: 'Audios', quality: qAudios(data.audios),
       detail: data.audios?.count ? `${data.audios.count} eingereichte Audios` : 'keine Audios' },
+    { key: 'mitarbeit', label: 'Mitarbeit (Rezitation)', quality: qMitarbeit(data.mitarbeit),
+      detail: data.mitarbeit?.count ? `${data.mitarbeit.count} Bewertungen · Ø ${data.mitarbeit.avgPercent}%` : 'keine Rezitations-Bewertungen' },
   ].map((d) => ({ ...d, grade: d.quality != null ? qualityToGrade(d.quality) : null }));
 
   const active = dims.filter((d) => d.quality != null);

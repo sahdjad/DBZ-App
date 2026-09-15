@@ -3,7 +3,7 @@ import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock } fro
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
-import { QrImage } from '../components/QrCode.jsx';
+import { QrImage, printQrCode } from '../components/QrCode.jsx';
 
 const STATUSES = [
   ['present', 'Anwesend'],
@@ -165,20 +165,12 @@ export default function Unterricht() {
                 Die Schüler scannen ihn beim Ankommen; gültig ist er automatisch rund um die Unterrichtszeit.
               </p>
               <div className="flex gap-2 justify-center sm:justify-start flex-wrap">
-                <Button variant="outline" size="sm" onClick={() => window.print()}><Printer size={16} /> Drucken</Button>
+                <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', `Beim Ankommen scannen · Unterricht ${door.startTime}–${door.endTime} Uhr`)}><Printer size={16} /> QR drucken</Button>
                 <Button variant="outline" size="sm" onClick={() => openCheckin(30)}><DoorOpen size={16} /> Check-in 30 Min öffnen</Button>
                 <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={16} /> Neuen Code erzeugen</Button>
               </div>
               <p className="text-[11px] text-sage-muted">Tipp: Code alle paar Wochen neu erzeugen &amp; neu ausdrucken – alte Fotos werden dadurch ungültig.</p>
             </div>
-          </div>
-
-          {/* Nur beim Drucken sichtbar: sauberes Blatt mit NUR dem QR-Code. */}
-          <div className="qr-print-sheet">
-            <div className="qr-print-title">{session?.className || 'Check-in'}</div>
-            <div className="qr-print-qr"><QrImage value={door.code} size={360} /></div>
-            <div className="qr-print-code">{door.code}</div>
-            <div className="qr-print-hint">Beim Ankommen scannen · Unterricht {door.startTime}–{door.endTime} Uhr</div>
           </div>
         </Card>
       )}

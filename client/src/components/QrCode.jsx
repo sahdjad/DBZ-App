@@ -28,6 +28,35 @@ export function QrImage({ value, size = 220 }) {
   return <img src={src} style={{ width: size, height: size }} alt="QR-Code zum Einchecken" className="rounded-lg" />;
 }
 
+// Nur den QR-Code drucken (ein sauberes Blatt), NICHT die ganze Webseite.
+// Öffnet ein eigenes Druckfenster mit hochauflösendem QR -> genau eine Seite.
+export async function printQrCode(code, title = '', subtitle = '') {
+  const esc = (s) => String(s).replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]));
+  let dataUrl = '';
+  try {
+    dataUrl = await QRCode.toDataURL(code, { margin: 2, width: 1200, color: { dark: '#08150d', light: '#ffffff' }, errorCorrectionLevel: 'M' });
+  } catch {
+    window.print();
+    return;
+  }
+  const w = window.open('', '_blank');
+  if (!w) { window.print(); return; } // Popup blockiert -> Notfall: normale Druckansicht
+  w.document.write(
+    `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title || 'QR-Code')}</title><style>` +
+    '@page{margin:14mm;}html,body{height:100%;margin:0;font-family:system-ui,-apple-system,sans-serif;}' +
+    '.sheet{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px;}' +
+    '.t{font-size:26px;font-weight:700;color:#0f2a1e;}img{width:115mm;height:115mm;}' +
+    '.c{font-family:ui-monospace,SFMono-Regular,monospace;font-size:34px;letter-spacing:.2em;color:#08150d;}' +
+    '.s{font-size:14px;color:#33463c;max-width:120mm;}</style></head><body><div class="sheet">' +
+    (title ? `<div class="t">${esc(title)}</div>` : '') +
+    `<img src="${dataUrl}" alt="QR-Code" />` +
+    `<div class="c">${esc(code)}</div>` +
+    (subtitle ? `<div class="s">${esc(subtitle)}</div>` : '') +
+    '</div><script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200);};window.onafterprint=function(){window.close();};<\/script></body></html>',
+  );
+  w.document.close();
+}
+
 /**
  * Kamera-Scannen ist überall möglich, wo die Kamera per getUserMedia verfügbar ist
  * (inkl. iOS-Safari). Die eigentliche QR-Erkennung übernimmt jsQR im Browser.

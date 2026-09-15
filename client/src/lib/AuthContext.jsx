@@ -18,9 +18,23 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Erst-Start: Marken-Splash mindestens ~3,5 s zeigen (wirkt hochwertiger),
+  // auch wenn die Sitzungsprüfung schneller fertig ist. Spätere refresh()-Aufrufe
+  // (z. B. Kontowechsel) sind davon nicht betroffen.
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    const start = Date.now();
+    (async () => {
+      try {
+        const { user } = await api.get('/auth/me');
+        setUser(user);
+      } catch {
+        setUser(null);
+      } finally {
+        const wait = Math.max(0, 3500 - (Date.now() - start));
+        setTimeout(() => setLoading(false), wait);
+      }
+    })();
+  }, []);
 
   const login = async (email, password) => {
     const { user } = await api.post('/auth/login', { email, password });

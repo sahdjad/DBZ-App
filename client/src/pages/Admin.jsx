@@ -350,17 +350,68 @@ function ClassesTab() {
         </form>
       </Card>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {classes.map((c) => (
-          <Card key={c.id} className="p-4 flex items-center justify-between gap-3">
-            <div>
-              <div className="text-ivory">{c.name}</div>
-              <div className="text-xs text-sage-muted">{days[c.weekday]} · {c.startTime}–{c.endTime} · {c.studentCount} Schüler</div>
-            </div>
-            <Button as="a" href={`/api/export/roster.csv?classId=${c.id}`} variant="ghost" size="sm" title="Klassenliste als CSV">
-              <Download size={16} /> CSV
-            </Button>
-          </Card>
-        ))}
+        {classes.map((c) => <ClassCard key={c.id} c={c} days={days} />)}
+      </div>
+    </div>
+  );
+}
+
+function ClassCard({ c, days }) {
+  const toast = useToast();
+  const [openTeachers, setOpenTeachers] = useState(false);
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-ivory">{c.name}</div>
+          <div className="text-xs text-sage-muted">{days[c.weekday]} · {c.startTime}–{c.endTime} · {c.studentCount} Schüler · {c.type === 'online' ? 'Online' : 'Präsenz'}</div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <Button variant="ghost" size="sm" onClick={() => setOpenTeachers((o) => !o)}><Users2 size={16} /> Lehrkräfte</Button>
+          <Button variant="ghost" size="sm" title="Klassenliste als CSV"
+            onClick={() => api.download(`/export/roster.csv?classId=${c.id}`, `klassenliste_${c.id}.csv`).catch((e) => toast.push(e.message, 'error'))}>
+            <Download size={16} /> CSV
+          </Button>
+        </div>
+      </div>
+      {openTeachers && <ClassTeachers classId={c.id} />}
+    </Card>
+  );
+}
+
+// Lehrkräfte einer Klasse zuordnen/entfernen (Vertretung „rein & raus").
+function ClassTeachers({ classId }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [pick, setPick] = useState('');
+  const load = () => api.get(`/admin/classes/${classId}/teachers`).then((d) => { setData(d); setPick(d.available[0]?.id || ''); });
+  useEffect(() => { load(); }, [classId]);
+  const add = async () => {
+    if (!pick) return;
+    try { await api.post(`/admin/classes/${classId}/teachers`, { userId: pick }); toast.push('Lehrkraft zugewiesen', 'success'); load(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  const remove = async (userId) => {
+    try { await api.del(`/admin/classes/${classId}/teachers/${userId}`); toast.push('Zugang entfernt', 'success'); load(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (!data) return <div className="mt-3"><Spinner /></div>;
+  return (
+    <div className="mt-3 border-t border-line pt-3 space-y-2">
+      {data.assigned.length === 0 ? (
+        <p className="text-xs text-sage-muted">Noch keine Lehrkraft zugewiesen.</p>
+      ) : data.assigned.map((t) => (
+        <div key={t.id} className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-sage">{t.name} <span className="text-sage-muted">· {t.roleLabel}</span></span>
+          <Button variant="ghost" size="sm" onClick={() => remove(t.id)}><XCircle size={15} /> Entfernen</Button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <select className="input py-1 text-sm w-auto flex-1" value={pick} onChange={(e) => setPick(e.target.value)}>
+          {data.available.length === 0 && <option value="">– keine weitere Lehrkraft –</option>}
+          {data.available.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.roleLabel})</option>)}
+        </select>
+        <Button size="sm" onClick={add} disabled={!pick}><Plus size={15} /> Hinzufügen</Button>
       </div>
     </div>
   );
@@ -427,6 +478,7 @@ function SettingsTab() {
 const WEIGHT_FIELDS = [
   ['homework', 'Hausaufgaben'], ['attendance', 'Anwesenheit'], ['exams', 'Prüfungen'],
   ['activities', 'Aktivitäten'], ['audios', 'Audios'], ['behavior', 'Verhalten'],
+  ['mitarbeit', 'Mitarbeit (Rezitation)'],
 ];
 function GradeWeightsCard({ weights, onChange, onSave }) {
   const w = weights || {};

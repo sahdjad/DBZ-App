@@ -2673,6 +2673,11 @@ function reportData(studentId, win) {
   // Eingereichte Audios (Sprach-/Rezitations-Abgaben) – eigene Kennzahl.
   const subs = db.all('submissions').filter((s) => s.studentId === studentId && (!win || inWindow(s.submittedAt, win)));
   const audios = { count: subs.filter((s) => (s.files || []).some((f) => String(f.mediaType || '').startsWith('audio'))).length };
+  // Mitarbeit (Rezitation): bewertete Hifz-/Muraja'ah-Rezitationen (Punkte + Fleiß-Bonus).
+  const recs = db.all('recitation_attempts').filter((a) => a.studentId === studentId && typeof a.points === 'number' && (!win || inWindow(a.attemptedAt, win)));
+  const mitarbeit = recs.length
+    ? { count: recs.length, avgPercent: Math.round(recs.reduce((s, a) => s + Math.min(100, (a.points / 10) * 100 + (a.bonus || 0) * 4), 0) / recs.length) }
+    : { count: 0, avgPercent: 0 };
   return {
     attendance: attendanceStats(studentId, win),
     homework: hw,
@@ -2683,6 +2688,7 @@ function reportData(studentId, win) {
     exams,
     activities,
     audios,
+    mitarbeit,
   };
 }
 
@@ -4422,6 +4428,47 @@ router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.
   res.json({ class: klass });
 });
 
+// --- Lehrkräfte einer Klasse zuordnen (z. B. Vertretung) --------------------
+// Admin/Leitung gibt einer Lehrkraft Zugang zu einer Klasse und nimmt ihn wieder
+// weg. So kann eine Vertretung „in eine Klasse rein und wieder raus".
+const TEACHER_ASSIGN_ROLES = [ROLES.KLASSENLEHRER, ROLES.VERTRETUNG];
+const teacherMini = (u) => ({ id: u.id, name: u.name, email: u.email, roleLabel: ROLE_LABELS[u.role] || u.role });
+
+router.get('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  const users = db.all('users').filter((u) => TEACHER_ASSIGN_ROLES.includes(u.role) && u.status !== 'disabled');
+  res.json({
+    classId: c.id,
+    className: c.name,
+    assigned: users.filter((u) => (u.classIds || []).includes(c.id)).map(teacherMini),
+    available: users.filter((u) => !(u.classIds || []).includes(c.id)).map(teacherMini),
+  });
+});
+
+router.post('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  const u = findUserById(req.body?.userId);
+  if (!u || !TEACHER_ASSIGN_ROLES.includes(u.role)) return res.status(400).json({ error: 'Keine passende Lehrkraft' });
+  u.classIds = [...new Set([...(u.classIds || []), c.id])];
+  db.commit();
+  audit(req.user.id, 'class.teacher.add', 'class', c.id, null, { userId: u.id });
+  notify(u.id, { type: 'class_assigned', level: 'info', title: 'Klasse zugewiesen', body: `Du hast jetzt Zugang zur Klasse „${c.name}".`, deepLink: '/dashboard' });
+  res.json({ ok: true });
+});
+
+router.delete('/admin/classes/:id/teachers/:userId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  const u = findUserById(req.params.userId);
+  if (!u) return res.status(404).json({ error: 'Lehrkraft nicht gefunden' });
+  u.classIds = (u.classIds || []).filter((x) => x !== c.id);
+  db.commit();
+  audit(req.user.id, 'class.teacher.remove', 'class', c.id, null, { userId: u.id });
+  res.json({ ok: true });
+});
+
 router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
   res.json({ logs: db.all('audit_logs').slice(-200).reverse() });
 });
@@ -4550,5 +4597,189 @@ router.get('/export/roster.csv', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   audit(req.user.id, 'export.roster', 'class', klass.id);
   sendCsv(res, `klassenliste_${klass.name.replace(/\s+/g, '_')}.csv`, rows);
 });
+
+// =============================================================================
+// Klassenregeln & Strafenkatalog (Strafprotokoll)
+// =============================================================================
+// Der Katalog (Kategorien/Verstöße) ist als Vorlage vorgegeben. Editierbar ist
+// die Konsequenz je Verstoß: schulweit (Admin/Leitung) und pro Klasse
+// (Klassenlehrer/Vertretung/Klassensprecher). Effektiv gilt: Klasse > Schule > Vorlage.
+const DEFAULT_PENALTY_CATALOG = [
+  { id: 'verspaetung', title: 'Verspätungen und Fehlen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
+    { id: 'v_30', label: 'Bis zu 30 Min unentschuldigt', consequence: '1 Seite' },
+    { id: 'v_45', label: 'Bis zu 45 Min unentschuldigt', consequence: '3 Seiten' },
+    { id: 'v_60', label: 'Bis zu 1 Stunde unentschuldigt', consequence: '3 Seiten' },
+    { id: 'v_60plus', label: 'Ab 1 Stunde unentschuldigt', consequence: '3 Seiten' },
+    { id: 'v_komplett', label: 'Komplettes unentschuldigtes Fehlen', consequence: 'Räumlichkeiten säubern' },
+  ] },
+  { id: 'stoerungen', title: 'Störungen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen. Uneinsichtigkeit kann bis zum Unterrichtsausschluss führen.', items: [
+    { id: 's_mehrfach', label: 'Mehrfache Unterrichtsstörungen', consequence: '1 Seite' },
+    { id: 's_auffaellig', label: 'Auffällige Störungen', consequence: '3 Seiten' },
+    { id: 's_regelmaessig', label: 'Regelmäßige mehrfache Unterrichtsstörungen', consequence: '4 Seiten + Gespräch mit Direktoren und/oder Eltern' },
+  ] },
+  { id: 'hausaufgaben', title: 'Hausaufgaben', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
+    { id: 'h_unvollstaendig', label: 'Unvollständige oder fehlende Hausaufgaben', consequence: '2 Seiten' },
+    { id: 'h_quiz', label: 'Fehlendes Quiz (Klassen 3a, 3b, 4 und 5)', consequence: 'Essen für die gesamte Klasse bringen' },
+    { id: 'h_3xfolge', label: '3-mal in Folge fehlende Hausaufgaben', consequence: 'Vor-/Nachsitzen' },
+  ] },
+  { id: 'materialien', title: 'Unterrichtsmaterialien', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
+    { id: 'm_heft', label: 'Grünes Heft / Abu Laq Laq / DBZ Lehrbuch vergessen', consequence: '1 Seite' },
+    { id: 'm_koran', label: 'Koran vergessen', consequence: '2 Seiten' },
+    { id: 'm_schreibhefte', label: 'Schreibhefte vergessen', consequence: '2 Seiten' },
+    { id: 'm_mittel', label: 'Unterrichtsmittel im Klassenzimmer vergessen', consequence: '1 Seite' },
+  ] },
+  { id: 'klassenzimmer', title: 'Ordnung & Sauberkeit – Klassenzimmer', note: 'Jede Klasse ist für sich verantwortlich. Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
+    { id: 'kz_tafel', label: 'Tafel nicht gereinigt', consequence: '1 Seite' },
+    { id: 'kz_licht', label: 'Licht/TV etc. nicht ausgeschaltet', consequence: '3 Seiten' },
+    { id: 'kz_fenster', label: 'Fenster nicht geschlossen', consequence: '3 Seiten' },
+    { id: 'kz_heizung', label: 'Heizung angelassen', consequence: '3 Seiten' },
+    { id: 'kz_stuehle', label: 'Stühle nicht hochgestellt', consequence: '3 Seiten' },
+  ] },
+  { id: 'raeume', title: 'Ordnung & Sauberkeit – Räumlichkeiten (Ordnungsdienst)', note: 'Der Verein kann jederzeit hiervon abweichen. Ggf. Verlängerung des Ordnungsdienstes um eine weitere Woche.', items: [
+    { id: 'r_treppe', label: 'Treppenhaus dreckig', consequence: '3 Seiten' },
+    { id: 'r_licht', label: 'Lichter nicht ausgeschaltet', consequence: '3 Seiten' },
+    { id: 'r_fenster', label: 'Fenster nicht geschlossen', consequence: '3 Seiten' },
+    { id: 'r_boden', label: 'Boden nicht sauber', consequence: '3 Seiten' },
+    { id: 'r_toiletten', label: 'Toiletten nicht gereinigt', consequence: '3 Seiten' },
+    { id: 'r_kueche', label: 'Küche nicht sauber', consequence: '6 Seiten' },
+  ] },
+  { id: 'sonstiges', title: 'Sonstiges', note: 'Der Verein kann jederzeit hiervon abweichen.', items: [
+    { id: 'x_grundstueck', label: 'Verlassen des Grundstücks ohne Erlaubnis', consequence: '3 Seiten' },
+    { id: 'x_schuhe', label: 'Schuhe in den Räumlichkeiten', consequence: '3 Seiten' },
+    { id: 'x_fahrlaessig', label: 'Fahrlässiger Umgang mit den Räumlichkeiten', consequence: 'ab 3 Seiten' },
+    { id: 'x_aufzug', label: 'Benutzung des Aufzugs ohne Erlaubnis', consequence: '3 Seiten' },
+    { id: 'x_parkplatz', label: 'Rücksichtsloses Fahren auf dem Parkplatz', consequence: '6 Seiten' },
+  ] },
+];
+
+const DEFAULT_CLASS_RULES = `1. Allgemeines Verhalten
+• Pünktlichkeit: Spätestens um 14:15 Uhr sitzt jeder Schüler am Platz – mit dem großen Koran und den Unterrichts-Utensilien. Wer nach 14:15 Uhr kommt, bekommt eine Strafe.
+• Unterrichtsbeginn: Der Unterricht beginnt um 14:00 Uhr mit gemeinsamem Qur'anlesen (5–7 Seiten). Während alle lesen, holen die Lehrer einzelne Schüler zum individuellen Lesen heraus.
+• Respekt: Niemand lacht, stört oder redet, während andere rezitieren oder der Lehrer spricht.
+• Ende: Nur der Lehrer beendet den Unterricht. Wer früher gehen muss, sagt dem Lehrer vorher Bescheid.
+
+2. Verhalten im Unterricht
+• Essen und Trinken sind im Unterricht verboten (außer der Lehrer erlaubt es).
+• Handys lautlos – keine Nutzung im Unterricht, außer der Lehrer erlaubt es.
+• Wer etwas sagen will: melden, nicht dazwischenrufen.
+• Immer respektvoll sprechen – keine Schimpfwörter, keine Beleidigungen.
+• Über den Islam nur reden, wenn man es gelernt hat oder der Lehrer fragt.
+
+3. Hausaufgaben
+• Hausaufgaben sind Pflicht und werden streng kontrolliert.
+• Mehr als 5 Schüler ohne Hausaufgabe → Strafe für die ganze Klasse.
+• Weniger → individuelle Strafe (z. B. 3 Seiten abschreiben + am selben Tag nachholen).
+• Fehlen alle Hausaufgaben einer Woche → Sonntag nachsitzen.
+
+4. Fehlzeiten & Entschuldigungen
+• Fehlzeiten müssen mit Grund entschuldigt werden (schriftlich oder mündlich).
+• Unentschuldigtes Fehlen: Stoff selbstständig nachholen, Geldstrafe oder 2 Sonntage nachsitzen.
+• Wiederholtes unentschuldigtes Fehlen hat Konsequenzen.`;
+
+function effectivePenaltyCatalog(classId) {
+  const school = org().penaltyCatalog || {};
+  const klass = classId ? findClass(classId)?.penaltyOverrides || {} : {};
+  return DEFAULT_PENALTY_CATALOG.map((cat) => ({
+    id: cat.id,
+    title: cat.title,
+    note: cat.note,
+    items: cat.items.map((it) => ({
+      id: it.id,
+      label: it.label,
+      defaultConsequence: it.consequence,
+      schoolConsequence: school[it.id] ?? null,
+      classConsequence: klass[it.id] ?? null,
+      consequence: klass[it.id] ?? school[it.id] ?? it.consequence,
+    })),
+  }));
+}
+
+function rulesTextFor(classId) {
+  const klass = classId ? findClass(classId)?.classRules : null;
+  return { text: klass || org().classRulesDefault || DEFAULT_CLASS_RULES, isClassSpecific: !!klass };
+}
+
+// Darf der Nutzer den Katalog/die Regeln DIESER Klasse bearbeiten?
+function canEditClassRules(user, classId) {
+  if (!classId) return false;
+  if (isAdmin(user)) return true;
+  if (isClassManager(user) && canManageClass(user, classId)) return true;
+  if (user.role === ROLES.KLASSENSPRECHER && (user.classIds || []).includes(classId)) return true;
+  return false;
+}
+
+function resolveRulesClass(req) {
+  if (req.user.role === ROLES.SCHUELER || req.user.role === ROLES.KLASSENSPRECHER) return (req.user.classIds || [])[0] || null;
+  if (req.user.role === ROLES.ELTERN) {
+    const child = findUserById((req.user.childIds || [])[0]);
+    return (child?.classIds || [])[0] || null;
+  }
+  // Verwalter: gewünschte Klasse, falls erlaubt – sonst erste eigene.
+  const wanted = req.query.classId;
+  if (wanted && (isAdmin(req.user) || canManageClass(req.user, wanted))) return wanted;
+  return visibleClasses(req.user)[0]?.id || null;
+}
+
+router.get('/rules', requireAuth, (req, res) => {
+  const classId = resolveRulesClass(req);
+  res.json({
+    classId,
+    className: classId ? findClass(classId)?.name || null : null,
+    classes: visibleClasses(req.user).map((c) => ({ id: c.id, name: c.name })),
+    catalog: effectivePenaltyCatalog(classId),
+    rules: rulesTextFor(classId),
+    canEditSchool: isAdmin(req.user),
+    canEditClass: canEditClassRules(req.user, classId),
+  });
+});
+
+// Schulweite Konsequenzen (Admin/Leitung) – gilt für die ganze Koran-Schule.
+router.put('/rules/catalog', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const overrides = req.body?.overrides || {};
+  const o = org();
+  o.penaltyCatalog = sanitizeOverrides(overrides);
+  db.commit();
+  audit(req.user.id, 'rules.catalog.school', 'organization', o.id);
+  res.json({ catalog: effectivePenaltyCatalog(resolveRulesClass(req)) });
+});
+
+// Konsequenzen NUR für eine Klasse (Klassenlehrer/Vertretung/Klassensprecher/Admin).
+router.put('/rules/catalog/:classId', requireAuth, (req, res) => {
+  const c = findClass(req.params.classId);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canEditClassRules(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  c.penaltyOverrides = sanitizeOverrides(req.body?.overrides || {});
+  db.commit();
+  audit(req.user.id, 'rules.catalog.class', 'class', c.id);
+  res.json({ catalog: effectivePenaltyCatalog(c.id) });
+});
+
+router.put('/rules/text', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const o = org();
+  o.classRulesDefault = String(req.body?.text || '').slice(0, 8000);
+  db.commit();
+  audit(req.user.id, 'rules.text.school', 'organization', o.id);
+  res.json({ rules: rulesTextFor(resolveRulesClass(req)) });
+});
+
+router.put('/rules/text/:classId', requireAuth, (req, res) => {
+  const c = findClass(req.params.classId);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canEditClassRules(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  c.classRules = String(req.body?.text || '').slice(0, 8000);
+  db.commit();
+  audit(req.user.id, 'rules.text.class', 'class', c.id);
+  res.json({ rules: rulesTextFor(c.id) });
+});
+
+// Nur bekannte Katalog-Item-IDs mit Text (max. 200 Zeichen) übernehmen.
+function sanitizeOverrides(input) {
+  const known = new Set(DEFAULT_PENALTY_CATALOG.flatMap((c) => c.items.map((i) => i.id)));
+  const out = {};
+  for (const [k, v] of Object.entries(input || {})) {
+    if (known.has(k) && typeof v === 'string' && v.trim()) out[k] = v.trim().slice(0, 200);
+  }
+  return out;
+}
 
 export default router;
