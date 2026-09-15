@@ -47,12 +47,14 @@ export default function Unterricht() {
     if (d.session?.classId) api.get(`/classes/${d.session.classId}/checkin-qr`).then(setDoor).catch(() => {});
   }, []);
 
-  const openCheckin = async (minutes) => {
+  const openCheckin = async () => {
+    const sid = door?.sessionId || active;
+    if (!sid) return;
     try {
-      const d = await api.post(`/sessions/${active}/checkin-open`, { minutes });
-      setSession(d.session);
+      await api.post(`/sessions/${sid}/checkin-open`, {});
+      if (session?.classId) api.get(`/classes/${session.classId}/checkin-qr`).then(setDoor).catch(() => {});
       loadAttendance(active);
-      toast.push(`Check-in für ${minutes} Minuten geöffnet`, 'success');
+      toast.push('Check-in geöffnet – die Schüler wurden benachrichtigt', 'success');
     } catch (err) {
       toast.push(err.message, 'error');
     }
@@ -154,19 +156,22 @@ export default function Unterricht() {
             icon={DoorOpen}
           />
           <div className="p-4 flex flex-col sm:flex-row items-center gap-5">
-            <div className="bg-white p-3 rounded-xl shrink-0"><QrImage value={door.code} size={180} /></div>
+            <div className="bg-white p-3 rounded-xl shrink-0 text-center">
+              <QrImage value={door.code} size={180} />
+              <div className="mt-2 text-lg font-extrabold uppercase tracking-wide text-status-absent">Beim Ankommen scannen</div>
+            </div>
             <div className="flex-1 space-y-3 text-center sm:text-left">
               <span className={`inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full ${door.window?.open ? 'bg-status-present/15 text-status-present' : 'bg-status-absent/15 text-status-absent'}`}>
-                <Clock size={14} /> {door.window?.open ? 'Check-in ist gerade offen' : 'Check-in gerade geschlossen'}
+                <Clock size={14} /> {door.window?.open ? `Check-in offen${door.checkinOpenUntil ? ` bis ${new Date(door.checkinOpenUntil).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Check-in gerade geschlossen'}
               </span>
-              {!door.window?.open && door.window?.reason && <p className="text-xs text-sage-muted">{door.window.reason}</p>}
               <p className="text-sm text-sage">
-                Unterricht {door.startTime}–{door.endTime} Uhr. Der Code bleibt <b>immer gleich</b> – einmal aufhängen genügt.
-                Die Schüler scannen ihn beim Ankommen; gültig ist er automatisch rund um die Unterrichtszeit.
+                Der Code bleibt <b>immer gleich</b> – einmal aufhängen genügt. Du kannst den Check-in schon vor dem Unterricht öffnen;
+                die Schüler bekommen eine Benachrichtigung. Wer nach der Toleranz scannt, wird automatisch als <b>verspätet</b> geführt.
+                Der Check-in schließt automatisch um {door.autoClose || '16:00'} Uhr – oder wenn du „Beenden" drückst.
               </p>
               <div className="flex gap-2 justify-center sm:justify-start flex-wrap">
-                <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', `Beim Ankommen scannen · Unterricht ${door.startTime}–${door.endTime} Uhr`)}><Printer size={16} /> QR drucken</Button>
-                <Button variant="outline" size="sm" onClick={() => openCheckin(30)}><DoorOpen size={16} /> Check-in 30 Min öffnen</Button>
+                <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', 'Beim Ankommen scannen')}><Printer size={16} /> QR drucken</Button>
+                {!door.window?.open && <Button size="sm" onClick={openCheckin}><DoorOpen size={16} /> Check-in öffnen</Button>}
                 <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={16} /> Neuen Code erzeugen</Button>
               </div>
               <p className="text-[11px] text-sage-muted">Tipp: Code alle paar Wochen neu erzeugen &amp; neu ausdrucken – alte Fotos werden dadurch ungültig.</p>

@@ -419,6 +419,7 @@ router.get('/org', requireAuth, (_req, res) => {
       primaryColor: o.primaryColor,
       socialLinks: o.socialLinks,
       lateAfterMinutes: o.lateAfterMinutes,
+      checkinAutoClose: o.checkinAutoClose || '16:00',
       audioRetentionDays: o.audioRetentionDays ?? 0,
       gradeWeights: gradeWeights(),
       penaltyDueDays: o.penaltyDueDays ?? 7,
@@ -432,9 +433,10 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
   const o = db.all('organizations')[0];
   if (!o) return res.status(404).json({ error: 'Organisation nicht gefunden' });
   const before = JSON.parse(JSON.stringify(o));
-  const { socialLinks, lateAfterMinutes, name, audioRetentionDays, gradeWeights: gw } = req.body || {};
+  const { socialLinks, lateAfterMinutes, name, audioRetentionDays, gradeWeights: gw, checkinAutoClose } = req.body || {};
   if (socialLinks && typeof socialLinks === 'object') o.socialLinks = { ...o.socialLinks, ...socialLinks };
   if (Number.isFinite(lateAfterMinutes)) o.lateAfterMinutes = Math.max(0, Math.min(60, lateAfterMinutes));
+  if (typeof checkinAutoClose === 'string' && /^\d{1,2}:\d{2}$/.test(checkinAutoClose)) o.checkinAutoClose = checkinAutoClose;
   if (Number.isFinite(audioRetentionDays)) o.audioRetentionDays = Math.max(0, Math.min(3650, audioRetentionDays));
   if (name && name.trim()) o.name = name.trim();
   const { penaltyDueDays, penaltySurchargePages, penaltySurchargeMoney } = req.body || {};
@@ -574,22 +576,41 @@ router.get('/classes/:id/checkin-qr', requireAuth, (req, res) => {
     className: klass.name,
     startTime: klass.startTime,
     endTime: klass.endTime,
+    sessionId: session.id,
     window: doorCheckinOpen(session),
     checkinOpenUntil: session.checkinOpenUntil || null,
+    autoClose: org().checkinAutoClose || '16:00',
   });
 });
 
 // Lehrkraft öffnet/verlängert das Check-in-Fenster aus der Ferne (z. B. vom Handy).
+// Heutiges Datum mit einer Uhrzeit "HH:MM" als Date (lokale Serverzeit).
+function todayAt(hhmm) {
+  const [h, m] = String(hhmm || '16:00').split(':').map((x) => parseInt(x, 10) || 0);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d;
+}
+
+// Check-in öffnen: bleibt bis zur automatischen Schließzeit (Standard 16:00) offen
+// – der Lehrer kann jederzeit vorher „Beenden". Die Schüler bekommen eine
+// Benachrichtigung, sobald der Check-in offen ist.
 router.post('/sessions/:id/checkin-open', requireAuth, (req, res) => {
   const s = byId('sessions', req.params.id);
   if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
   if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const minutes = Math.min(Math.max(parseInt(req.body?.minutes, 10) || 30, 5), 180);
-  s.checkinOpenUntil = new Date(Date.now() + minutes * 60000).toISOString();
+  const close = todayAt(org().checkinAutoClose || '16:00');
+  const until = close.getTime() > Date.now() + 10 * 60000 ? close : new Date(Date.now() + 2 * 3600000);
+  s.checkinOpenUntil = until.toISOString();
   if (s.status === 'ended') s.status = 'scheduled';
   db.commit();
-  audit(req.user.id, 'session.checkin_open', 'session', s.id, null, { minutes });
-  res.json({ session: sessionView(s, findClass(s.classId), req.user) });
+  audit(req.user.id, 'session.checkin_open', 'session', s.id, null, { until: s.checkinOpenUntil });
+  // Schüler der Klasse benachrichtigen (außer man hat schon eingecheckt).
+  const klass = findClass(s.classId);
+  targetStudentsOfClass(s.classId).forEach((sid) =>
+    notify(sid, { type: 'checkin_open', level: 'info', title: 'Check-in ist offen ✅', body: `Du kannst dich jetzt für ${klass?.name || 'den Unterricht'} einchecken.`, deepLink: '/checkin' }),
+  );
+  res.json({ session: sessionView(s, klass, req.user) });
 });
 
 // Tür-Code neu erzeugen – alte Fotos/Ausdrucke werden dadurch ungültig.

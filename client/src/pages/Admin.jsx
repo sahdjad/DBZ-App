@@ -425,7 +425,7 @@ function SettingsTab() {
     e.preventDefault();
     try {
       await api.patch('/org', {
-        name: org.name, lateAfterMinutes: Number(org.lateAfterMinutes), audioRetentionDays: Number(org.audioRetentionDays), socialLinks: org.socialLinks,
+        name: org.name, lateAfterMinutes: Number(org.lateAfterMinutes), audioRetentionDays: Number(org.audioRetentionDays), socialLinks: org.socialLinks, checkinAutoClose: org.checkinAutoClose,
         penaltyDueDays: Number(org.penaltyDueDays), penaltySurchargePages: Number(org.penaltySurchargePages), penaltySurchargeMoney: Number(org.penaltySurchargeMoney),
       });
       toast.push('Einstellungen gespeichert', 'success');
@@ -445,6 +445,7 @@ function SettingsTab() {
         <form onSubmit={save} className="p-4 space-y-3">
           <Input label="Name der Organisation" value={org.name} onChange={(v) => setOrg({ ...org, name: v })} />
           <Input label="Verspätungsgrenze (Minuten)" type="number" value={org.lateAfterMinutes} onChange={(v) => setOrg({ ...org, lateAfterMinutes: v })} />
+          <Input label="Check-in schließt automatisch um (HH:MM)" type="time" value={org.checkinAutoClose || '16:00'} onChange={(v) => setOrg({ ...org, checkinAutoClose: v })} />
           <label className="block">
             <span className="text-sm text-sage">Audio-Aufbewahrung (Tage, 0 = deaktiviert)</span>
             <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />

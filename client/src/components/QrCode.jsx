@@ -46,8 +46,8 @@ export async function printQrCode(code, title = '', subtitle = '') {
     '@page{margin:14mm;}html,body{height:100%;margin:0;font-family:system-ui,-apple-system,sans-serif;}' +
     '.sheet{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px;}' +
     '.t{font-size:26px;font-weight:700;color:#0f2a1e;}img{width:115mm;height:115mm;}' +
-    '.c{font-family:ui-monospace,SFMono-Regular,monospace;font-size:34px;letter-spacing:.2em;color:#08150d;}' +
-    '.s{font-size:14px;color:#33463c;max-width:120mm;}</style></head><body><div class="sheet">' +
+    '.c{font-family:ui-monospace,SFMono-Regular,monospace;font-size:30px;letter-spacing:.2em;color:#08150d;}' +
+    '.s{font-size:26px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#b91c1c;max-width:150mm;}</style></head><body><div class="sheet">' +
     (title ? `<div class="t">${esc(title)}</div>` : '') +
     `<img src="${dataUrl}" alt="QR-Code" />` +
     `<div class="c">${esc(code)}</div>` +

@@ -90,19 +90,22 @@ function PenaltyRow({ p, actions }) {
   );
 }
 
-// Vorlagen für häufige Verstöße (Vorschlag – Lehrer/Sprecher kann alles anpassen).
-const TEMPLATES = [
-  { label: 'Verspätung', reason: 'Verspätung', type: 'money', amount: 2 },
-  { label: 'Stören im Unterricht', reason: 'Stören im Unterricht', type: 'pages', amount: 5 },
-  { label: 'Hausaufgaben vergessen', reason: 'Hausaufgaben vergessen', type: 'pages', amount: 5 },
-  { label: 'Fehlende Mitarbeit', reason: 'Fehlende Mitarbeit', type: 'pages', amount: 5 },
-];
+// Wandelt eine Katalog-Konsequenz ("3 Seiten", "2 €") in Art + Höhe um.
+function parseConsequence(text) {
+  const s = String(text || '');
+  const pages = s.match(/(\d+)\s*Seite/i);
+  if (pages) return { type: 'pages', amount: Number(pages[1]) };
+  const money = s.match(/(\d+(?:[.,]\d+)?)\s*(?:€|euro)/i);
+  if (money) return { type: 'money', amount: Number(money[1].replace(',', '.')) };
+  return null; // z. B. „Essen bringen" -> als Grund übernehmen
+}
 
 function RecordForm({ onCreated }) {
   const toast = useToast();
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
+  const [catalog, setCatalog] = useState([]);
   const [form, setForm] = useState({ studentId: '', type: 'pages', amount: 5, reason: '', dueInDays: '' });
 
   useEffect(() => {
@@ -111,6 +114,24 @@ function RecordForm({ onCreated }) {
       setClassId(d.classes[0]?.id || '');
     });
   }, []);
+  // Strafenkatalog laden (für die aktuell gewählte Klasse) -> Auswahl statt Tippen.
+  useEffect(() => {
+    const q = classId ? `?classId=${classId}` : '';
+    api.get(`/rules${q}`).then((d) => setCatalog(d.catalog || [])).catch(() => setCatalog([]));
+  }, [classId]);
+
+  const applyCatalog = (val) => {
+    if (!val) return;
+    const [cat, item] = val.split('::');
+    const it = catalog.find((c) => c.id === cat)?.items.find((i) => i.id === item);
+    if (!it) return;
+    const parsed = parseConsequence(it.consequence);
+    setForm((f) => ({
+      ...f,
+      reason: parsed ? it.label : `${it.label} → ${it.consequence}`,
+      ...(parsed ? { type: parsed.type, amount: parsed.amount } : {}),
+    }));
+  };
   useEffect(() => {
     if (!classId) return;
     api
@@ -141,14 +162,20 @@ function RecordForm({ onCreated }) {
     <Card className="p-5">
       <CardHeader title="Neue Strafe erfassen" subtitle="Seiten schreiben oder Geldstrafe" icon={Scale} />
       <form onSubmit={save} className="p-4 space-y-3">
-        {/* Vorlagen für häufige Gründe (füllen Grund/Art/Höhe vor – frei änderbar) */}
-        <div className="flex flex-wrap gap-1.5">
-          <span className="text-xs text-sage-muted self-center mr-1">Vorlage:</span>
-          {TEMPLATES.map((t) => (
-            <button key={t.label} type="button" onClick={() => setForm((f) => ({ ...f, reason: t.reason, type: t.type, amount: t.amount }))}
-              className="text-xs px-2.5 py-1 rounded-full border border-line text-sage hover:bg-hover">{t.label}</button>
-          ))}
-        </div>
+        {/* Direkt aus dem Strafenkatalog wählen – füllt Grund/Art/Höhe vor (frei änderbar). */}
+        {catalog.length > 0 && (
+          <label className="block">
+            <span className="text-sm text-sage">Aus Strafenkatalog</span>
+            <select className="input mt-1" defaultValue="" onChange={(e) => { applyCatalog(e.target.value); e.target.value = ''; }}>
+              <option value="">– Verstoß wählen (optional) –</option>
+              {catalog.map((cat) => (
+                <optgroup key={cat.id} label={cat.title}>
+                  {cat.items.map((it) => <option key={it.id} value={`${cat.id}::${it.id}`}>{it.label} → {it.consequence}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
+        )}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {classes.length > 1 && (
             <label className="block sm:col-span-2">

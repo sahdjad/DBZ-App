@@ -1300,6 +1300,18 @@ test('Regeln & Strafenkatalog: sichtbar, pro Klasse anpassbar, Schüler read-onl
   assert.equal((await jreq(student, 'PUT', '/rules/text/class_3', { text: 'hack' })).status, 403);
 });
 
+test('Check-in öffnen: bleibt bis zur Auto-Schließzeit offen', async () => {
+  const teacher = await loginCookie('lehrer@dbz.de');
+  const qr = await jreq(teacher, 'GET', '/classes/class_3/checkin-qr');
+  assert.equal(qr.status, 200);
+  const sid = qr.data.sessionId;
+  assert.ok(sid, 'Sitzung vorhanden');
+  assert.equal((await jreq(teacher, 'POST', `/sessions/${sid}/checkin-open`, {})).status, 200);
+  const qr2 = await jreq(teacher, 'GET', '/classes/class_3/checkin-qr');
+  assert.ok(qr2.data.checkinOpenUntil, 'Öffnungszeit gesetzt');
+  assert.equal(qr2.data.window.open, true, 'Check-in ist danach offen');
+});
+
 test('Klassen-Zuordnung: Admin fügt Lehrkraft (Vertretung) hinzu und entfernt sie', async () => {
   const admin = await loginCookie('admin@dbz.de');
   const stamp = Date.now();

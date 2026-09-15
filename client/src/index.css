@@ -44,23 +44,25 @@
 }
 
 .dark {
-  --c-bg: 20 28 24; /* #141C18 warmes Dunkelgrün */
-  --c-sidebar: 25 35 29; /* #19231D */
-  --c-card: 28 39 32; /* #1C2720 */
-  --c-moss: 52 66 57;
-  --c-hover: 36 49 41; /* sanftes Überfahren */
-  --c-line: 52 66 57; /* dezente Rahmen */
-  --c-subtle: 33 45 38;
-  --c-onaccent: 245 250 247;
-  --c-mint: 74 170 116; /* etwas heller für Kontrast auf Dunkel */
-  --c-mint-light: 118 200 156;
-  --c-ivory: 233 242 235; /* cremeweiße Überschriften (nicht grell) */
-  --c-sage: 190 205 196; /* weicher heller Fließtext */
-  --c-sage-muted: 138 155 145;
-  --c-present: 74 190 128;
-  --c-late: 210 165 84;
-  --c-excused: 122 168 216;
-  --c-absent: 224 130 104;
+  /* Dunkler & weniger grünstichig -> höherer Kontrast, augenschonend. Text ist
+     deutlich heller (fast weiß), damit man nicht mehr angestrengt schauen muss. */
+  --c-bg: 15 20 18; /* #0F1412 tiefes, ruhiges Anthrazit-Grün */
+  --c-sidebar: 20 26 23; /* #141A17 */
+  --c-card: 26 33 29; /* #1A211D – klar abgehoben vom Hintergrund */
+  --c-moss: 58 72 63;
+  --c-hover: 34 43 38;
+  --c-line: 58 71 63; /* sichtbarere, aber ruhige Rahmen */
+  --c-subtle: 31 39 35;
+  --c-onaccent: 246 251 248;
+  --c-mint: 88 186 132; /* kräftiges, klares Grün als Akzent */
+  --c-mint-light: 132 214 168;
+  --c-ivory: 245 250 247; /* Überschriften nahezu weiß */
+  --c-sage: 214 224 218; /* Fließtext hell & klar (weniger Anstrengung) */
+  --c-sage-muted: 156 170 162; /* Sekundärtext deutlich lesbar */
+  --c-present: 82 200 138;
+  --c-late: 224 178 92;
+  --c-excused: 130 176 224;
+  --c-absent: 232 138 112;
   color-scheme: dark;
 }
 
