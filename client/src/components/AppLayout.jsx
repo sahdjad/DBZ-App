@@ -29,10 +29,12 @@ import {
   MessagesSquare,
   Scale,
   Gauge,
+  ChevronsUpDown,
+  Check,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
-import { Avatar, Button } from './ui.jsx';
+import { Avatar, Button, Spinner, useToast } from './ui.jsx';
 
 // Rollen-abhängige Navigation (docs/INFORMATION_ARCHITECTURE.md).
 const ITEMS = {
@@ -164,6 +166,7 @@ export default function AppLayout({ children, title }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
   const [badges, setBadges] = useState({ messages: 0, announcements: 0, total: 0 });
   const scrollRef = useRef(null);
 
@@ -213,13 +216,19 @@ export default function AppLayout({ children, title }) {
       <Brand />
       <NavItems items={items} badges={badges} onNavigate={() => setOpen(false)} />
       <div className="shrink-0 p-3 border-t border-line">
-        <div className="flex items-center gap-3 px-2 py-2.5">
+        <button
+          type="button"
+          onClick={() => setSwitcherOpen(true)}
+          className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-subtle transition-colors"
+          aria-label="Konto wechseln"
+        >
           <Avatar name={user?.name} size={36} />
-          <div className="leading-tight min-w-0 flex-1">
+          <div className="leading-tight min-w-0 flex-1 text-left">
             <div className="text-sm text-ivory truncate">{user?.name}</div>
             <div className="text-[11px] text-sage-muted truncate">{user?.roleLabel}</div>
           </div>
-        </div>
+          <ChevronsUpDown size={16} className="text-sage-muted shrink-0" aria-hidden="true" />
+        </button>
         <Button variant="ghost" size="sm" className="w-full justify-start mt-1.5" onClick={handleLogout}>
           <LogOut size={16} /> Abmelden
         </Button>
@@ -269,12 +278,15 @@ export default function AppLayout({ children, title }) {
       </div>
 
       {/* Mobile-Bottom-Nav für schnellen Zugriff */}
-      <MobileTabBar items={items.slice(0, 4)} badges={badges} />
+      <MobileTabBar items={items.slice(0, 4)} badges={badges} user={user} onAccount={() => setSwitcherOpen(true)} />
+
+      <AccountSwitcherSheet open={switcherOpen} onClose={() => setSwitcherOpen(false)} currentUser={user} />
     </div>
   );
 }
 
-function MobileTabBar({ items, badges }) {
+function MobileTabBar({ items, badges, user, onAccount }) {
+  const linkedTotal = badges.linkedTotal || 0;
   return (
     <nav
       className="nav-surface lg:hidden fixed bottom-0 inset-x-0 z-30 backdrop-blur border-t border-line flex"
@@ -307,6 +319,103 @@ function MobileTabBar({ items, badges }) {
           </NavLink>
         );
       })}
+      {/* Eigenes Konto / Kontowechsel – langer Druck ist auf Touch unzuverlässig,
+          daher genügt ein Tap (wie bei Instagram/WhatsApp funktional gleichwertig). */}
+      <button
+        type="button"
+        onClick={onAccount}
+        className="relative flex-1 flex flex-col items-center gap-1 pt-2.5 pb-1 text-[11px] text-sage-muted"
+        aria-label="Konto wechseln"
+      >
+        <span className="relative">
+          <Avatar name={user?.name} size={22} />
+          {linkedTotal > 0 && (
+            <span className="absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 grid place-items-center rounded-full bg-mint text-onaccent text-[10px] font-mono font-semibold">
+              {linkedTotal > 99 ? '99+' : linkedTotal}
+            </span>
+          )}
+        </span>
+        <span className="truncate max-w-full px-1">Konto</span>
+      </button>
     </nav>
+  );
+}
+
+// Schneller Kontowechsel (Instagram/WhatsApp-artig): Avatar/Name antippen öffnet
+// die Liste verknüpfter Konten, Auswahl wechselt ohne erneutes Passwort.
+function AccountSwitcherSheet({ open, onClose, currentUser }) {
+  const { switchAccount } = useAuth();
+  const toast = useToast();
+  const [accounts, setAccounts] = useState(null);
+  const [busyId, setBusyId] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setAccounts(null);
+    api.get('/me/linked-accounts').then((d) => setAccounts(d.accounts)).catch(() => setAccounts([]));
+  }, [open]);
+
+  if (!open) return null;
+
+  const go = async (id) => {
+    setBusyId(id);
+    try {
+      await switchAccount(id);
+      window.location.reload(); // sauberer Neustart mit dem neuen Konto
+    } catch (err) {
+      toast.push(err.message, 'error');
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 lg:inset-0 lg:m-auto lg:h-fit lg:max-w-sm lg:rounded-2xl rounded-t-2xl bg-card border-t lg:border border-line p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-display text-lg text-ivory">Konto wechseln</h2>
+          <button onClick={onClose} aria-label="Schließen" className="text-sage hover:text-ivory p-1"><X size={20} /></button>
+        </div>
+
+        <div className="flex items-center gap-3 px-2 py-2.5 rounded-xl bg-subtle mb-2">
+          <Avatar name={currentUser?.name} size={36} />
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-ivory truncate">{currentUser?.name}</div>
+            <div className="text-[11px] text-sage-muted truncate">{currentUser?.roleLabel}</div>
+          </div>
+          <Check size={18} className="text-mint shrink-0" aria-hidden="true" />
+        </div>
+
+        {!accounts ? (
+          <div className="py-4"><Spinner /></div>
+        ) : accounts.length === 0 ? (
+          <p className="text-sm text-sage-muted px-2 py-3">
+            Noch keine weiteren Konten verknüpft. Richte das im Bereich „Konto" ein.
+          </p>
+        ) : (
+          <ul className="space-y-1">
+            {accounts.map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  disabled={busyId != null}
+                  onClick={() => go(a.id)}
+                  className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-subtle transition-colors text-left disabled:opacity-50"
+                >
+                  <Avatar name={a.name} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-ivory truncate">{a.name}</div>
+                    <div className="text-[11px] text-sage-muted truncate">
+                      {a.roleLabel}{a.unread > 0 ? ` · ${a.unread} ungelesen` : ''}
+                    </div>
+                  </div>
+                  {busyId === a.id && <span className="h-4 w-4 rounded-full border-2 border-line border-t-mint animate-spin shrink-0" role="status" aria-label="Wird gewechselt" />}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }
