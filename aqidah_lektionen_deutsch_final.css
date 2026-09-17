@@ -1,0 +1,442 @@
+/* =========================================================================
+   Wichtige Lektionen für die allgemeine Ummah in der ʿAqīdah
+   Professionelles islamisches Layout
+   Farbpalette: Dunkelgrün · Gold · Beige  |  Geometrische Motive (keine Lebewesen)
+   ========================================================================= */
+
+:root {
+  --green-dark:  #123524;
+  --green:       #1b4d33;
+  --green-mid:   #2e6b48;
+  --gold:        #b8901f;
+  --gold-light:  #c9a44c;
+  --gold-pale:   #e8d8a8;
+  --beige:       #faf6ea;
+  --cream:       #fbf8ef;
+  --ink:         #1f2a24;
+  --ink-soft:    #41504a;
+}
+
+/* ---------- Page setup for PDF ---------- */
+@page {
+  size: A4;
+  margin: 22mm 20mm 24mm 20mm;
+  @top-center {
+    content: "دروس مهمة لعامة الأمة في العقيدة";
+    font-family: 'Amiri', serif;
+    color: #9a7c2a;
+    font-size: 9pt;
+  }
+  @bottom-center {
+    content: counter(page);
+    font-family: 'Amiri', serif;
+    color: #1b4d33;
+    font-size: 10pt;
+  }
+}
+@page :first { margin: 0; @top-center { content: ""; } @bottom-center { content: ""; } }
+@page cover  { margin: 0; @top-center { content: ""; } @bottom-center { content: ""; } }
+
+/* ---------- Base ---------- */
+* { box-sizing: border-box; }
+body {
+  font-family: 'Liberation Serif', 'DejaVu Serif', 'Amiri', serif;
+  color: var(--ink);
+  line-height: 1.62;
+  font-size: 11.5pt;
+  margin: 0;
+  background: #fff;
+  text-align: justify;
+  hyphens: auto;
+}
+
+.ar-inline { font-family: 'Amiri', serif; font-size: 1.08em; }
+
+/* =========================================================================
+   COVER
+   ========================================================================= */
+.cover {
+  page: cover;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(201,164,76,.18), transparent 55%),
+    linear-gradient(160deg, var(--green-dark) 0%, var(--green) 55%, #0d2a1b 100%);
+  height: 297mm;
+  width: 210mm;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  page-break-after: always;
+  position: relative;
+}
+.cover-frame {
+  position: absolute;
+  top: 12mm; left: 12mm; right: 12mm; bottom: 12mm;
+  border: 2px solid var(--gold);
+  outline: 1px solid rgba(201,164,76,.5);
+  outline-offset: 4px;
+}
+.cover-corner {
+  position: absolute; width: 26mm; height: 26mm;
+  border: 2px solid var(--gold-light);
+}
+.cover-corner.tl { top: -2px; left: -2px; border-right:none; border-bottom:none; }
+.cover-corner.tr { top: -2px; right: -2px; border-left:none; border-bottom:none; }
+.cover-corner.bl { bottom: -2px; left: -2px; border-right:none; border-top:none; }
+.cover-corner.br { bottom: -2px; right: -2px; border-left:none; border-top:none; }
+
+.cover-inner { text-align: center; padding: 0 18mm; width: 100%; }
+.bismillah {
+  font-family: 'Amiri Quran', 'Amiri', serif;
+  color: var(--gold-pale);
+  font-size: 19pt;
+  margin-bottom: 18mm;
+  direction: rtl;
+}
+.cover-star { color: var(--gold); font-size: 26pt; line-height: 1; margin: 6mm 0; }
+.cover-star.small { font-size: 17pt; margin: 10mm 0 6mm; }
+.cover-title-ar {
+  font-family: 'Amiri', serif;
+  direction: rtl;
+  color: #fff;
+  font-size: 30pt;
+  font-weight: 700;
+  margin: 0 0 6mm;
+  text-shadow: 0 1px 0 rgba(0,0,0,.3);
+}
+.cover-rule {
+  width: 60%; height: 2px; margin: 4mm auto;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+.cover-title-de {
+  color: var(--gold-light);
+  font-family: 'Liberation Serif','DejaVu Serif',serif;
+  font-size: 23pt;
+  font-weight: 700;
+  letter-spacing: .5px;
+  line-height: 1.3;
+  margin: 6mm 0;
+}
+.cover-author {
+  color: #f0ead8;
+  font-size: 13.5pt;
+  margin-top: 8mm;
+  font-style: italic;
+}
+.cover-sub {
+  color: var(--gold-pale);
+  font-size: 11pt;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-top: 3mm;
+}
+
+/* =========================================================================
+   TITLE PAGE
+   ========================================================================= */
+.title-page {
+  page-break-after: always;
+  text-align: center;
+  padding: 40mm 18mm 0;
+  height: 250mm;
+}
+.tp-ornament { color: var(--gold); font-size: 20pt; letter-spacing: 8px; margin: 8mm 0; }
+.tp-ornament.bottom { margin-top: 24mm; }
+.tp-title {
+  color: var(--green-dark);
+  font-size: 24pt;
+  line-height: 1.35;
+  margin: 6mm auto;
+  max-width: 80%;
+}
+.tp-ar {
+  font-family: 'Amiri', serif;
+  direction: rtl;
+  color: var(--gold);
+  font-size: 22pt;
+  margin: 8mm 0;
+}
+.tp-line {
+  width: 45%; height: 2px; margin: 10mm auto;
+  background: linear-gradient(90deg, transparent, var(--gold), transparent);
+}
+.tp-author { font-size: 13pt; line-height: 1.7; color: var(--ink); }
+.tp-meta { color: var(--ink-soft); font-style: italic; margin-top: 12mm; line-height: 1.6; }
+
+/* =========================================================================
+   CONTENT
+   ========================================================================= */
+.content { counter-reset: figure; }
+
+h2 {
+  color: #fff;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-mid) 100%);
+  font-size: 17pt;
+  padding: 7px 16px 7px 14px;
+  margin: 14mm 0 6mm;
+  border-left: 5px solid var(--gold);
+  border-radius: 2px;
+  page-break-after: avoid;
+}
+h3 {
+  color: var(--green-dark);
+  font-size: 14pt;
+  margin: 9mm 0 3mm;
+  padding-bottom: 4px;
+  border-bottom: 2px solid var(--gold-pale);
+  page-break-after: avoid;
+}
+h3::before { content: "۞ "; color: var(--gold); font-size: .9em; }
+h4 {
+  color: var(--green-mid);
+  font-size: 12.5pt;
+  margin: 6mm 0 2mm;
+  page-break-after: avoid;
+}
+p { margin: 0 0 3.2mm; orphans: 2; widows: 2; }
+
+a { color: var(--green-mid); text-decoration: none; }
+
+.content ol, .content ul { margin: 0 0 4mm; padding-left: 7mm; }
+.content li { margin: 1.1mm 0; }
+
+code {
+  font-family: 'DejaVu Sans Mono', monospace;
+  background: var(--beige);
+  padding: 0 3px; border-radius: 3px; font-size: .9em;
+  color: var(--green-dark);
+}
+
+/* ---------- Quote boxes (Qurʾān / Hadith) ---------- */
+.quote-box {
+  margin: 5mm 0;
+  padding: 5mm 6mm;
+  border-radius: 4px;
+  page-break-inside: avoid;
+  position: relative;
+}
+.quote-box.quran {
+  background: linear-gradient(180deg, #f7faf6, #eef5ec);
+  border: 1px solid #cfe0cb;
+  border-left: 4px solid var(--green-mid);
+}
+.quote-box.hadith {
+  background: var(--beige);
+  border: 1px solid var(--gold-pale);
+  border-left: 4px solid var(--gold);
+}
+.quote-box.note {
+  background: #f7f5ef;
+  border-left: 4px solid var(--gold-light);
+}
+.q-ar {
+  font-family: 'Amiri Quran', 'Amiri', serif;
+  direction: rtl;
+  text-align: center;
+  font-size: 17pt;
+  line-height: 2.0;
+  color: var(--green-dark);
+  margin: 1mm 0 2mm;
+}
+.h-ar {
+  font-family: 'Amiri', serif;
+  direction: rtl;
+  text-align: right;
+  font-size: 15pt;
+  line-height: 1.95;
+  color: #6b5410;
+  margin: 1mm 0 2mm;
+}
+.q-trans {
+  font-style: italic;
+  color: var(--ink);
+  text-align: center;
+  margin: 1.5mm 4mm;
+  font-size: 11pt;
+}
+.quote-box.hadith .q-trans { text-align: right; }
+.q-ref {
+  text-align: center;
+  color: var(--gold);
+  font-size: 9.5pt;
+  font-style: normal;
+  margin-top: 2mm;
+  letter-spacing: .3px;
+}
+.quote-box.hadith .q-ref { text-align: left; color: #9a7c2a; }
+
+/* ---------- Diagrams ---------- */
+.diagram {
+  margin: 5mm auto;
+  padding: 4mm 5mm;
+  background: linear-gradient(180deg, #fbfaf4, var(--beige));
+  border: 1.5px solid var(--gold-pale);
+  border-radius: 5px;
+  page-break-inside: avoid;
+  counter-increment: figure;
+}
+.diagram pre {
+  font-family: 'DejaVu Sans Mono', monospace;
+  font-size: 8.4pt;
+  line-height: 1.32;
+  color: var(--green-dark);
+  margin: 0;
+  white-space: pre;
+  text-align: center;
+  overflow: hidden;
+}
+
+/* ---------- Tables ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 5mm 0;
+  font-size: 10.3pt;
+  page-break-inside: avoid;
+}
+thead th {
+  background: var(--green);
+  color: #fff;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid var(--green-dark);
+  font-size: 10.3pt;
+}
+tbody td {
+  padding: 4px 8px;
+  border: 1px solid #d8d0b8;
+  vertical-align: top;
+}
+tbody tr:nth-child(even) { background: var(--beige); }
+tbody tr:nth-child(odd)  { background: #fff; }
+
+/* ---------- Ornament (section divider) ---------- */
+.ornament {
+  text-align: center;
+  color: var(--gold);
+  font-size: 16pt;
+  margin: 7mm 0;
+  letter-spacing: 6px;
+}
+.ornament::before { content: "❁ "; color: var(--gold-light); }
+.ornament::after  { content: " ❁"; color: var(--gold-light); }
+
+strong { color: var(--green-dark); }
+em { color: var(--ink-soft); }
+
+h2, h3, h4 { break-after: avoid; }
+
+/* =========================================================================
+   FLOW DIAGRAMS  (rebuilt in German, framed boxes with corner accents)
+   ========================================================================= */
+.flow {
+  margin: 6mm 0;
+  padding: 5mm 4mm 6mm;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(201,164,76,.10), transparent 40%),
+    linear-gradient(180deg, #fcfbf5, var(--beige));
+  border: 1px solid var(--gold-pale);
+  border-radius: 6px;
+  page-break-inside: avoid;
+  text-align: center;
+}
+.flow-caption {
+  font-size: 9.5pt;
+  color: var(--gold);
+  letter-spacing: .4px;
+  margin-bottom: 4mm;
+  font-style: italic;
+}
+/* root / parent node */
+.flow-root {
+  display: inline-block;
+  background: linear-gradient(135deg, var(--green) 0%, var(--green-mid) 100%);
+  color: #fff;
+  font-weight: 700;
+  font-size: 11.5pt;
+  padding: 3.5mm 8mm;
+  border-radius: 4px;
+  border: 1.5px solid var(--green-dark);
+  outline: 1.2px solid var(--gold);
+  outline-offset: 2.5px;
+  margin: 0 auto 1mm;
+  box-shadow: 0 1px 2px rgba(0,0,0,.12);
+}
+.flow-sub {
+  display: inline-block;
+  background: linear-gradient(135deg, #2e6b48, #3c8159);
+  color: #fff; font-weight: 600; font-size: 10.5pt;
+  padding: 2.2mm 5mm; border-radius: 4px;
+  border: 1.2px solid var(--green-dark);
+  outline: 1px solid var(--gold-light); outline-offset: 2px;
+  margin: 1mm auto;
+}
+/* connector */
+.flow-down {
+  width: 0; height: 5mm;
+  border-left: 2px solid var(--green-mid);
+  margin: 0 auto;
+}
+.flow-arrow { color: var(--green-mid); font-size: 11pt; line-height: 1; margin: -1mm 0 1mm; }
+
+/* a row of sibling nodes */
+.flow-row {
+  display: table;
+  width: 100%;
+  border-spacing: 4mm 0;
+  margin: 0 auto;
+}
+.flow-col { display: table-cell; vertical-align: top; width: 1%; }
+
+/* leaf / content node – framed card with clear four-corner double frame */
+.flow-node {
+  position: relative;
+  background: #ffffff;
+  border: 1.5px solid var(--green);
+  outline: 1px solid var(--gold-light);
+  outline-offset: 2.5px;
+  border-radius: 3px;
+  padding: 3mm 3.5mm;
+  margin: 1.5mm 1mm;
+  text-align: center;
+  font-size: 10pt;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.flow-node .nt {            /* node title */
+  display: block;
+  font-weight: 700;
+  color: var(--green-dark);
+  font-size: 10.5pt;
+  margin-bottom: 1mm;
+  padding-bottom: 1mm;
+  border-bottom: 1px solid var(--gold-pale);
+}
+.ns {                      /* node subtitle / arabic — always on its own line */
+  display: block;
+  font-family: 'Amiri', serif;
+  font-size: 12pt;
+  margin-bottom: .5mm;
+}
+.flow-node .ns { color: var(--green-mid); }
+.flow-root .ns, .flow-sub .ns { color: var(--gold-pale); font-size: 13pt; margin-bottom: 1.5mm; }
+.flow-node ul, .flow-node ol {
+  text-align: left;
+  margin: 1mm 0 0;
+  padding-left: 5mm;
+  font-size: 9.6pt;
+  line-height: 1.45;
+}
+.flow-node li { margin: .6mm 0; }
+.flow-node.accent { border-color: var(--gold); outline-color: var(--green-mid); }
+.flow-node.plain  { background: var(--beige); }
+
+/* footnote block */
+.footnote {
+  font-size: 9.3pt;
+  color: var(--ink-soft);
+  border-top: 1px solid var(--gold-pale);
+  margin: 5mm 0 0;
+  padding-top: 2mm;
+}
+.footnote .fn-num { color: var(--gold); font-weight: 700; margin-right: 3px; }
+.fn-ref { color: var(--gold); font-weight: 700; font-size: .68em; vertical-align: super; padding-left: 1px; }
