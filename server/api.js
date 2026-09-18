@@ -949,6 +949,39 @@ router.get('/students/:id/profile', requireAuth, (req, res) => {
   });
 });
 
+// Live-Übersicht für HEUTE: grün/rot je Schüler + wer krank gemeldet und vom
+// Lehrer bestätigt ist. Anders als /attendance-overview (volle Historie, nur
+// Verwalter) darf hier auch der Klassensprecher der eigenen Klasse LESEND
+// zugreifen – entlastet die Lehrkraft, ohne dass er selbst etwas ändern kann
+// (Korrekturen bleiben Verwaltersache).
+router.get('/classes/:id/today-status', requireAuth, (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  const isKlassensprecher = req.user.role === ROLES.KLASSENSPRECHER && (req.user.classIds || []).includes(klass.id);
+  if (!canManageClass(req.user, klass.id) && !isKlassensprecher) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const students = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
+  const session = db.all('sessions').find((s) => s.classId === klass.id && s.date === todayKey());
+  const records = session ? db.all('attendance').filter((a) => a.sessionId === session.id) : [];
+  const today = todayKey();
+  const approvedSick = db
+    .all('absence_requests')
+    .filter((r) => r.status === 'approved' && (r.sessionDate || r.createdAt || '').slice(0, 10) === today);
+
+  const rows = students.map((s) => {
+    const rec = records.find((a) => a.studentId === s.id);
+    const sick = approvedSick.find((r) => r.studentId === s.id);
+    return {
+      id: s.id,
+      name: s.name,
+      status: rec ? rec.status : sick ? 'excused' : 'open',
+      minutesLate: rec ? rec.minutesLate : null,
+      reasonCategory: sick ? sick.reasonCategory : null,
+    };
+  });
+  res.json({ hasSession: Boolean(session), rows });
+});
+
 router.get('/classes/:id/attendance-overview', requireAuth, (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });

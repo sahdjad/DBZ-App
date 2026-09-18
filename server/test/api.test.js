@@ -301,6 +301,29 @@ test('Klassensprecher: Lehrer ernennt/entfernt direkt (eigene Klasse), fremde Kl
   assert.equal(demote.data.user.role, 'schueler');
 });
 
+test('Klassensprecher: sieht Heute-Status der Klasse (lesend), fremde Klasse nicht; normaler Schüler auch nicht', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+  await teacher('POST', `/students/${studentId}/klassensprecher`, { promote: true });
+
+  const sprecher = await loginAs('schueler@dbz.de');
+  const status = await sprecher('GET', '/classes/class_3/today-status');
+  assert.equal(status.status, 200);
+  assert.ok(status.data.rows.some((r) => r.id === studentId), 'Klassensprecher sieht sich selbst in der Heute-Übersicht');
+  assert.ok(status.data.rows.every((r) => 'status' in r), 'jede Zeile hat einen Status (grün/rot-Anzeige)');
+
+  // Normaler Schüler (nicht Klassensprecher) darf die Klassenübersicht nicht sehen.
+  const admin = await loginAs('admin@dbz.de');
+  const otherEmail = `other-student-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Anderer Schüler', email: otherEmail, password: 'demo1234', role: 'schueler', classIds: ['class_3'] });
+  const otherStudent = await loginAs(otherEmail);
+  const denied = await otherStudent('GET', '/classes/class_3/today-status');
+  assert.equal(denied.status, 403);
+
+  await teacher('POST', `/students/${studentId}/klassensprecher`, { promote: false });
+});
+
 test('Nachrichten: Schüler kann Leitung schreiben, ALLE Leitungs-/Admin-Konten teilen sich den Thread', async () => {
   // Zweite Leitung anlegen (mehrere Leitungspersonen -> geteiltes Postfach).
   const admin = await loginAs('admin@dbz.de');
