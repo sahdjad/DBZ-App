@@ -697,6 +697,33 @@ test('Verhalten: Sichtbarkeit für Schüler und Eltern wird durchgesetzt', async
   assert.equal(forbidden.status, 403);
 });
 
+test('Verhalten: Audio-Rückmeldung statt/zusätzlich zu Text', async () => {
+  const form = new FormData();
+  form.set('studentId', 'user_yusuf');
+  form.set('classId', 'class_3');
+  form.set('category', 'adab');
+  form.set('tone', 'positive');
+  form.set('visibleToStudent', 'true');
+  form.set('visibleToParent', 'true');
+  form.set('audio', new Blob([Buffer.from('AUDIO-FEEDBACK-DATA')], { type: 'audio/webm' }), 'rueckmeldung.webm');
+  const res = await fetch(base + '/api/behavior', {
+    method: 'POST',
+    headers: { cookie: await cookieFor('lehrer@dbz.de') },
+    body: form,
+  });
+  assert.equal(res.status, 200, 'Audio allein (ohne Text) reicht als Rückmeldung');
+  const created = await res.json();
+  assert.equal(created.record.visibleToStudent, true, 'boolean aus multipart/form-data korrekt ausgewertet (nicht der String "true")');
+
+  const student = await loginAs('schueler@dbz.de');
+  const list = await student('GET', '/behavior');
+  const rec = list.data.records.find((r) => r.id === created.record.id);
+  assert.ok(rec.hasAudio, 'Schüler sieht, dass eine Audio-Nachricht vorhanden ist');
+
+  const audio = await student('GET', `/behavior/${rec.id}/audio`);
+  assert.equal(audio.status, 200);
+});
+
 test('Schülerprofil: Lehrer und eigenes Elternteil dürfen, Fremde nicht', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const t = await teacher('GET', '/students/user_yusuf/profile');

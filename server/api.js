@@ -2000,7 +2000,9 @@ router.post('/protocols/:id/approve', requireAuth, (req, res) => {
 router.get('/behavior-categories', requireAuth, (_req, res) => res.json({ categories: BEHAVIOR_CATEGORIES }));
 
 // Vermerk anlegen (Verwalter der Klasse). Sichtbarkeit für Schüler/Eltern steuerbar.
-router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+// Audio-Rückmeldung statt/zusätzlich zu Text – mehr emotionale Wirkung, gerade
+// wenn Eltern die Nachricht abends anhören (aus der Lehrerbesprechung).
+router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), upload.single('audio'), async (req, res) => {
   const { studentId, classId, category, note, tone, visibleToStudent, visibleToParent } = req.body || {};
   if (!canManageClass(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   const student = findUserById(studentId);
@@ -2008,7 +2010,9 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), (req, res) =>
     return res.status(400).json({ error: 'Schüler gehört nicht zur Klasse' });
   if (!BEHAVIOR_CATEGORIES.some((c) => c.id === category))
     return res.status(400).json({ error: 'Ungültige Kategorie' });
-  if (!note || !note.trim()) return res.status(400).json({ error: 'Bitte einen Vermerk eingeben' });
+  if ((!note || !note.trim()) && !req.file)
+    return res.status(400).json({ error: 'Bitte einen Vermerk eingeben oder eine Audio-Nachricht aufnehmen' });
+  if (req.file) await persistUpload(req.file);
 
   const rec = {
     id: newId('beh'),
@@ -2017,10 +2021,12 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), (req, res) =>
     classId,
     category,
     tone: tone === 'negative' ? 'negative' : 'positive',
-    note: note.trim(),
+    note: (note || '').trim(),
+    audioRef: req.file ? { filename: req.file.filename, originalName: req.file.originalname, mediaType: req.file.mimetype, size: req.file.size } : null,
     // Standard: Schüler sehen den Vermerk NICHT (erst mit dem Zeugnis); nur wenn ausdrücklich freigegeben.
-    visibleToStudent: visibleToStudent === true,
-    visibleToParent: visibleToParent !== false,
+    // Werte können von multipart/form-data als String ('true'/'false') kommen.
+    visibleToStudent: visibleToStudent === true || visibleToStudent === 'true',
+    visibleToParent: !(visibleToParent === false || visibleToParent === 'false'),
     createdBy: req.user.id,
     createdAt: new Date().toISOString(),
   };
@@ -2069,7 +2075,23 @@ router.get('/behavior', requireAuth, (req, res) => {
     list = [];
   }
   list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  res.json({ records: list });
+  res.json({ records: list.map((r) => { const { audioRef, ...rest } = r; return { ...rest, hasAudio: Boolean(audioRef) }; }) });
+});
+
+function canSeeBehaviorRecord(user, r) {
+  if (isClassManager(user)) return canManageClass(user, r.classId);
+  if (STUDENT_ROLES.includes(user.role)) return r.studentId === user.id && r.visibleToStudent;
+  if (user.role === ROLES.ELTERN) return (user.childIds || []).includes(r.studentId) && r.visibleToParent;
+  return false;
+}
+
+router.get('/behavior/:id/audio', requireAuth, async (req, res) => {
+  const r = byId('behavior_records', req.params.id);
+  if (!r || !r.audioRef) return res.status(404).json({ error: 'Keine Audio-Nachricht vorhanden' });
+  if (!canSeeBehaviorRecord(req.user, r)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const buf = await readFile(r.audioRef.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
+  return sendBufferWithRange(req, res, buf, r.audioRef.mediaType, r.audioRef.originalName);
 });
 
 // =============================================================================

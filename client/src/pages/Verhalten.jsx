@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Plus, ThumbsUp, AlertTriangle } from 'lucide-react';
+import { Sparkles, Plus, ThumbsUp, AlertTriangle, Mic, Square, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { useRecorder, mmss } from '../lib/recorder.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
@@ -39,7 +40,8 @@ function RecordList({ records, showStudent }) {
               <Badge tone="neutral">{r.categoryLabel || r.category}</Badge>
               <span className="text-xs text-sage-muted">{fmt(r.createdAt)}</span>
             </div>
-            <p className="text-sage text-sm mt-1">{r.note}</p>
+            {r.note && <p className="text-sage text-sm mt-1">{r.note}</p>}
+            {r.hasAudio && <audio controls src={`/api/behavior/${r.id}/audio`} className="w-full h-9 mt-2" />}
           </div>
         </div>
       ))}
@@ -62,6 +64,8 @@ function ManagerView() {
   const [students, setStudents] = useState([]);
   const [records, setRecords] = useState(null);
   const [form, setForm] = useState({ studentId: '', category: 'adab', tone: 'positive', note: '', visibleToStudent: false, visibleToParent: true });
+  const [audioFile, setAudioFile] = useState(null);
+  const rec = useRecorder((f, err) => { if (err) return toast.push(err.message, 'error'); if (f) setAudioFile(f); });
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -83,10 +87,22 @@ function ManagerView() {
 
   const save = async (e) => {
     e.preventDefault();
+    if (!form.note.trim() && !audioFile) {
+      toast.push('Bitte einen Vermerk eingeben oder eine Audio-Nachricht aufnehmen', 'error');
+      return;
+    }
     try {
-      await api.post('/behavior', { ...form, classId });
+      if (audioFile) {
+        const fd = new FormData();
+        Object.entries({ ...form, classId }).forEach(([k, v]) => fd.append(k, v));
+        fd.append('audio', audioFile);
+        await api.upload('/behavior', fd);
+      } else {
+        await api.post('/behavior', { ...form, classId });
+      }
       toast.push('Vermerk gespeichert', 'success');
       setForm((f) => ({ ...f, note: '' }));
+      setAudioFile(null);
       loadRecords();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -127,9 +143,27 @@ function ManagerView() {
             </Button>
           </div>
           <label className="block">
-            <span className="text-sm text-sage">Vermerk</span>
-            <textarea className="input mt-1" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} required />
+            <span className="text-sm text-sage">Vermerk {audioFile ? '(optional bei Audio-Nachricht)' : ''}</span>
+            <textarea className="input mt-1" rows={2} value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
           </label>
+
+          {rec.recording ? (
+            <div className="flex items-center gap-3">
+              <span className="flex items-center gap-2 text-status-absent text-sm"><span className="w-2.5 h-2.5 rounded-full bg-status-absent animate-pulse" /> Aufnahme … {mmss(rec.seconds)}</span>
+              <div className="flex-1" />
+              <Button type="button" size="sm" variant="ghost" onClick={rec.cancel}>Abbrechen</Button>
+              <Button type="button" size="sm" onClick={rec.stop}><Square size={15} /> Fertig</Button>
+            </div>
+          ) : audioFile ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-sage inline-flex items-center gap-1">🎤 Audio-Nachricht bereit</span>
+              <button type="button" className="text-sage-muted hover:text-status-absent" onClick={() => setAudioFile(null)} aria-label="Verwerfen"><Trash2 size={16} /></button>
+            </div>
+          ) : (
+            <Button type="button" size="sm" variant="outline" onClick={rec.start}><Mic size={15} /> Audio-Rückmeldung aufnehmen</Button>
+          )}
+          <p className="text-[11px] text-sage-muted -mt-2">Eine kurze gesprochene Rückmeldung wirkt oft persönlicher, gerade wenn Eltern sie abends anhören.</p>
+
           <div className="flex flex-wrap gap-4 text-sm text-sage">
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={form.visibleToStudent} onChange={(e) => setForm({ ...form, visibleToStudent: e.target.checked })} /> Für Schüler sichtbar
