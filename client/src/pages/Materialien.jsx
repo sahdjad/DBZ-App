@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Plus, FileText, Link2 as LinkIcon, StickyNote, ExternalLink, Trash2, Paperclip, UploadCloud } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -8,16 +8,19 @@ import { useAuth } from '../lib/AuthContext.jsx';
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMIN = ['super_admin', 'leitung'];
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
+const NO_SUBJECT = '__none__';
 
 export default function Materialien() {
   const { user } = useAuth();
   const toast = useToast();
   const [list, setList] = useState(null);
+  const [subjects, setSubjects] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [activeSubject, setActiveSubject] = useState('all');
 
   const load = () => api.get('/materials').then((d) => setList(d.materials));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api.get('/subjects').then((d) => setSubjects(d.subjects)); }, []);
 
   const remove = async (id) => {
     try { await api.del(`/materials/${id}`); toast.push('Gelöscht', 'success'); load(); }
@@ -25,6 +28,25 @@ export default function Materialien() {
   };
 
   const isManager = MANAGER.includes(user.role);
+
+  // Nach Fach gruppieren statt einer flachen Liste – nur Fächer zeigen, für
+  // die es tatsächlich Materialien gibt, plus "Ohne Fach" für alte Einträge.
+  const groups = useMemo(() => {
+    if (!list) return [];
+    const bySubject = new Map();
+    for (const m of list) {
+      const key = m.subjectId || NO_SUBJECT;
+      if (!bySubject.has(key)) bySubject.set(key, []);
+      bySubject.get(key).push(m);
+    }
+    const ordered = subjects
+      .filter((s) => bySubject.has(s.id))
+      .map((s) => ({ id: s.id, name: s.name, items: bySubject.get(s.id) }));
+    if (bySubject.has(NO_SUBJECT)) ordered.push({ id: NO_SUBJECT, name: 'Ohne Fach', items: bySubject.get(NO_SUBJECT) });
+    return ordered;
+  }, [list, subjects]);
+
+  const shown = activeSubject === 'all' ? groups : groups.filter((g) => g.id === activeSubject);
 
   return (
     <AppLayout title="Materialien">
@@ -43,8 +65,27 @@ export default function Materialien() {
           Noch keine Materialien.
         </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {list.map((m) => <MaterialCard key={m.id} m={m} canDelete={m.createdBy === user.id || ADMIN.includes(user.role)} onDelete={() => remove(m.id)} />)}
+        <div className="space-y-5">
+          {groups.length > 1 && (
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setActiveSubject('all')} className={`text-xs px-3 py-1.5 rounded-full border transition ${activeSubject === 'all' ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage hover:bg-subtle'}`}>
+                Alle
+              </button>
+              {groups.map((g) => (
+                <button key={g.id} onClick={() => setActiveSubject(g.id)} className={`text-xs px-3 py-1.5 rounded-full border transition ${activeSubject === g.id ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage hover:bg-subtle'}`}>
+                  {g.name} <span className="text-sage-muted">({g.items.length})</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {shown.map((g) => (
+            <div key={g.id}>
+              {groups.length > 1 && <h2 className="text-sm font-medium text-sage-muted mb-2">{g.name}</h2>}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {g.items.map((m) => <MaterialCard key={m.id} m={m} canDelete={m.createdBy === user.id || ADMIN.includes(user.role)} onDelete={() => remove(m.id)} />)}
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </AppLayout>
