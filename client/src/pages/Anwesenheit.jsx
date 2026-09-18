@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarCheck, Download } from 'lucide-react';
+import { CalendarCheck, Download, Users2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Ring, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -12,7 +12,55 @@ const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('de-DE', { weekday: '
 
 export default function Anwesenheit() {
   const { user } = useAuth();
-  return <AppLayout title="Anwesenheit">{MANAGER.includes(user.role) ? <ManagerView /> : <SelfView />}</AppLayout>;
+  return (
+    <AppLayout title="Anwesenheit">
+      {MANAGER.includes(user.role) ? (
+        <ManagerView />
+      ) : user.role === 'klassensprecher' ? (
+        <div className="space-y-4">
+          <TodayStatus classId={(user.classIds || [])[0]} />
+          <SelfView />
+        </div>
+      ) : (
+        <SelfView />
+      )}
+    </AppLayout>
+  );
+}
+
+// Für den Klassensprecher: wer ist heute grün (da), wer rot (fehlt/zu spät),
+// wer krank gemeldet und vom Lehrer bestätigt ist – auf einen Blick, ohne dass
+// er selbst etwas ändern kann (nur lesend, entlastet die Lehrkraft).
+function TodayStatus({ classId }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    if (!classId) return;
+    api.get(`/classes/${classId}/today-status`).then(setData).catch(() => setData({ rows: [] }));
+  }, [classId]);
+
+  if (!data) return <Spinner />;
+  const green = ['present', 'excused'];
+  return (
+    <Card className="p-0 overflow-hidden">
+      <CardHeader title="Heute" subtitle={data.hasSession ? 'Wer ist da, wer nicht' : 'Noch kein Check-in geöffnet'} icon={Users2} />
+      <ul className="divide-y divide-line px-1">
+        {data.rows.length === 0 ? (
+          <p className="p-4 text-sage-muted text-sm">Keine Schüler in dieser Klasse.</p>
+        ) : data.rows.map((r) => (
+          <li key={r.id} className="py-2.5 px-3 flex items-center justify-between gap-3">
+            <span className="text-ivory text-sm flex items-center gap-2">
+              <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${green.includes(r.status) ? 'bg-status-present' : r.status === 'open' ? 'bg-subtle border border-line' : 'bg-status-absent'}`} />
+              {r.name}
+            </span>
+            <span className="flex items-center gap-2">
+              {r.minutesLate > 0 && <span className="font-mono text-status-late text-xs">{r.minutesLate} Min</span>}
+              <StatusBadge status={r.status} />
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }
 
 function rate(a) {
