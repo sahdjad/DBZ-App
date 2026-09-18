@@ -48,6 +48,12 @@ export function AuthProvider({ children }) {
     return user;
   };
 
+  // Offene Registrierung ohne Einladung/Klasse: Konto bleibt "pending", kein
+  // automatischer Login (Server gibt bewusst keinen Token zurück).
+  const registerOpen = async (payload) => {
+    await api.post('/auth/register-open', payload);
+  };
+
   const logout = async () => {
     await api.post('/auth/logout');
     setUser(null);
@@ -67,7 +73,7 @@ export function AuthProvider({ children }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, updateName, refresh, switchAccount }}>
+    <AuthContext.Provider value={{ user, loading, login, register, registerOpen, logout, updateName, refresh, switchAccount }}>
       {children}
     </AuthContext.Provider>
   );

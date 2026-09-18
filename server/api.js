@@ -322,7 +322,29 @@ router.get('/invite/:token', (req, res) => {
   });
 });
 
-// Selbst-Registrierung per Einladung (öffentlich).
+// Kontaktdaten für das Sekretariat (Adresse, Telefon, Notfallkontakt). Für
+// Schüler/Klassensprecher verpflichtend (Spec: „alle wichtigen Kontaktdaten"),
+// für andere Rollen optional, aber wenn angegeben genauso gespeichert.
+function buildProfile(body, required) {
+  const p = {
+    street: (body.street || '').trim(),
+    zip: (body.zip || '').trim(),
+    city: (body.city || '').trim(),
+    phone: (body.phone || '').trim(),
+    emergencyName: (body.emergencyName || '').trim(),
+    emergencyPhone: (body.emergencyPhone || '').trim(),
+    selfPayer: Boolean(body.selfPayer),
+  };
+  if (required) {
+    const missing = ['street', 'zip', 'city', 'phone', 'emergencyName', 'emergencyPhone'].filter((k) => !p[k]);
+    if (missing.length) return { error: 'Bitte Adresse, Telefonnummer und Notfallkontakt vollständig angeben' };
+  }
+  return { profile: p };
+}
+const PROFILE_REQUIRED_ROLES = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER];
+
+// Selbst-Registrierung per Einladung (öffentlich). Klasse steht schon fest
+// (aus der Einladung) -> Konto ist sofort aktiv.
 router.post('/auth/register', async (req, res) => {
   const { token, name, email, password } = req.body || {};
   const inv = findInviteByToken(token || '');
@@ -332,6 +354,8 @@ router.post('/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich' });
   if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
+  const pr = buildProfile(req.body || {}, PROFILE_REQUIRED_ROLES.includes(inv.intendedRole));
+  if (pr.error) return res.status(400).json({ error: pr.error });
 
   const user = {
     id: newId('user'),
@@ -341,6 +365,7 @@ router.post('/auth/register', async (req, res) => {
     role: inv.intendedRole,
     classIds: inv.classId ? [inv.classId] : [],
     childIds: inv.childId ? [inv.childId] : [],
+    profile: pr.profile,
     status: 'active',
     createdAt: new Date().toISOString(),
   };
@@ -350,6 +375,41 @@ router.post('/auth/register', async (req, res) => {
   audit(user.id, 'user.register', 'user', user.id, null, { via: 'invite', role: inv.intendedRole });
   issueToken(res, user);
   res.json({ user: publicUser(user) });
+});
+
+// Offene Selbst-Registrierung OHNE Einladung/Klasse (öffentlich). Für neue
+// Schüler, die noch keiner Klasse zugeteilt sind (z. B. vor Probeunterricht).
+// Konto bleibt "pending", bis Leitung/Admin eine Klasse zuweist -> kein Login
+// möglich, bevor das passiert ist (siehe /auth/login).
+router.post('/auth/register-open', async (req, res) => {
+  const { name, email, password } = req.body || {};
+  if (!name || !name.trim() || !email || !email.trim() || !password)
+    return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich' });
+  if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
+  if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
+  const pr = buildProfile(req.body || {}, true);
+  if (pr.error) return res.status(400).json({ error: pr.error });
+
+  const user = {
+    id: newId('user'),
+    name: name.trim(),
+    email: email.trim(),
+    passwordHash: await hashPassword(password),
+    role: ROLES.SCHUELER,
+    classIds: [],
+    childIds: [],
+    profile: pr.profile,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+  };
+  db.insert('users', user);
+  audit(user.id, 'user.register_open', 'user', user.id, null, { via: 'open' });
+  leitungIds().forEach((id) => notify(id, {
+    type: 'approval', level: 'action', title: 'Neue Anmeldung',
+    body: `${user.name} hat sich angemeldet und wartet auf eine Klassenzuweisung.`, deepLink: '/admin', refId: user.id, groupId: user.id,
+  }));
+  // Kein Login-Token: Konto ist "pending", erst nach Klassenzuweisung nutzbar.
+  res.json({ ok: true });
 });
 
 // Passwort vergessen: erzeugt Reset-Token und versendet Link (Provider).
@@ -4281,6 +4341,9 @@ function needsApproval(user) {
 function superAdminIds() {
   return db.all('users').filter((u) => u.role === ROLES.SUPER_ADMIN && u.status !== 'disabled').map((u) => u.id);
 }
+function leitungIds() {
+  return db.all('users').filter((u) => u.role === ROLES.LEITUNG && u.status !== 'disabled').map((u) => u.id);
+}
 function crView(cr) {
   const p = { ...(cr.payload || {}) };
   delete p.passwordHash; // niemals den Passwort-Hash nach außen geben
@@ -4329,8 +4392,53 @@ function applyChangeRequest(cr) {
     db.insert('classes', c);
     return c.id;
   }
+  if (cr.type === 'assign_class') {
+    const u = findUserById(cr.payload.userId);
+    if (!u || u.status !== 'pending') throw new Error('Registrierung nicht mehr offen');
+    const klass = findClass(cr.payload.classId);
+    if (!klass) throw new Error('Klasse nicht gefunden');
+    u.classIds = [klass.id];
+    u.status = 'active';
+    notify(u.id, { type: 'approval', level: 'info', title: 'Willkommen!', body: `Du bist jetzt Klasse „${klass.name}" zugeteilt.`, deepLink: '/dashboard' });
+    return u.id;
+  }
   throw new Error('Unbekannter Änderungstyp');
 }
+
+// Wartende offene Registrierungen (ohne Klasse) auflisten/zuweisen/ablehnen.
+router.get('/admin/pending-registrations', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
+  const list = db.all('users').filter((u) => u.status === 'pending');
+  res.json({ users: list.map(publicUser) });
+});
+
+router.post('/admin/pending-registrations/:id/assign', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const target = findUserById(req.params.id);
+  if (!target || target.status !== 'pending') return res.status(404).json({ error: 'Registrierung nicht gefunden' });
+  const klass = findClass(req.body?.classId);
+  if (!klass) return res.status(400).json({ error: 'Klasse nicht gefunden' });
+
+  if (needsApproval(req.user)) {
+    const cr = submitChangeRequest(req.user, 'assign_class', `Klassenzuweisung: ${target.name} → ${klass.name}`, { userId: target.id, classId: klass.id });
+    return res.json({ pending: true, changeRequest: crView(cr) });
+  }
+
+  target.classIds = [klass.id];
+  target.status = 'active';
+  db.commit();
+  audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classId: klass.id });
+  notify(target.id, { type: 'approval', level: 'info', title: 'Willkommen!', body: `Du bist jetzt Klasse „${klass.name}" zugeteilt.`, deepLink: '/dashboard' });
+  res.json({ ok: true });
+});
+
+router.post('/admin/pending-registrations/:id/reject', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const arr = db.all('users');
+  const idx = arr.findIndex((u) => u.id === req.params.id && u.status === 'pending');
+  if (idx === -1) return res.status(404).json({ error: 'Registrierung nicht gefunden' });
+  const [removed] = arr.splice(idx, 1);
+  db.commit();
+  audit(req.user.id, 'user.reject_registration', 'user', removed.id, { name: removed.name, email: removed.email });
+  res.json({ ok: true });
+});
 
 // Liste offener/eigener Anträge. System-Admin: alle offenen. Leitung: eigene.
 router.get('/admin/change-requests', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {

@@ -1051,17 +1051,83 @@ test('Einladung: erstellen, prüfen, registrieren; Rolle/Klasse aus Einladung', 
   assert.equal(check.data.role, 'schueler');
   assert.equal(check.data.className, 'Klasse 3');
 
-  // Selbst-Registrierung
+  // Selbst-Registrierung (Schüler: Kontaktdaten fürs Sekretariat sind Pflicht)
+  const profile = { street: 'Musterweg 1', zip: '12345', city: 'Musterstadt', phone: '0170123456', emergencyName: 'Mama Muster', emergencyPhone: '0170654321' };
   const reg = client();
-  const r = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1' });
+  const r = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1', ...profile });
   assert.equal(r.status, 200);
   assert.equal(r.data.user.role, 'schueler');
   assert.deepEqual(r.data.user.classIds, ['class_3']);
+  assert.equal(r.data.user.profile.city, 'Musterstadt');
+
+  // Ohne Kontaktdaten scheitert die Registrierung
+  const regNoProfile = client();
+  const rNoProfile = await regNoProfile('POST', '/auth/register', { token, name: 'Ohne Daten', email: 'ohne@dbz.de', password: 'passwort1' });
+  assert.equal(rNoProfile.status, 400);
 
   // maxUses aufgebraucht -> zweite Registrierung scheitert
   const reg2 = client();
-  const r2 = await reg2('POST', '/auth/register', { token, name: 'X', email: 'x@dbz.de', password: 'passwort1' });
+  const r2 = await reg2('POST', '/auth/register', { token, name: 'X', email: 'x@dbz.de', password: 'passwort1', ...profile });
   assert.equal(r2.status, 400);
+});
+
+test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -> Admin bestätigt -> Login geht', async () => {
+  const profile = { street: 'Musterweg 1', zip: '12345', city: 'Musterstadt', phone: '0170123456', emergencyName: 'Mama Muster', emergencyPhone: '0170654321' };
+  const reg = client();
+  const r = await reg('POST', '/auth/register-open', { name: 'Wartender Schüler', email: 'wartend@dbz.de', password: 'passwort1', ...profile });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.ok, true);
+
+  // Login schlägt fehl, solange keine Klasse zugewiesen ist.
+  const loginAttempt = client();
+  const failedLogin = await loginAttempt('POST', '/auth/login', { email: 'wartend@dbz.de', password: 'passwort1' });
+  assert.equal(failedLogin.status, 403);
+
+  const admin = await loginAs('admin@dbz.de');
+  const pendingList = await admin('GET', '/admin/pending-registrations');
+  assert.equal(pendingList.status, 200);
+  const pendingUser = pendingList.data.users.find((u) => u.email === 'wartend@dbz.de');
+  assert.ok(pendingUser);
+  assert.equal(pendingUser.profile.city, 'Musterstadt');
+
+  // Leitung darf zuweisen, braucht aber Admin-Bestätigung.
+  const leitung = await loginAs('leitung@dbz.de');
+  const proposed = await leitung('POST', `/admin/pending-registrations/${pendingUser.id}/assign`, { classId: 'class_3' });
+  assert.equal(proposed.status, 200);
+  assert.equal(proposed.data.pending, true);
+
+  const stillBlocked = client();
+  const stillFails = await stillBlocked('POST', '/auth/login', { email: 'wartend@dbz.de', password: 'passwort1' });
+  assert.equal(stillFails.status, 403);
+
+  const changeRequests = await admin('GET', '/admin/change-requests');
+  const cr = changeRequests.data.requests.find((c) => c.type === 'assign_class' && c.payload.userId === pendingUser.id);
+  assert.ok(cr);
+  const approve = await admin('POST', `/admin/change-requests/${cr.id}/approve`, {});
+  assert.equal(approve.status, 200);
+
+  const finalLogin = client();
+  const success = await finalLogin('POST', '/auth/login', { email: 'wartend@dbz.de', password: 'passwort1' });
+  assert.equal(success.status, 200);
+  assert.deepEqual(success.data.user.classIds, ['class_3']);
+});
+
+test('Offene Registrierung: Admin weist direkt zu (ohne Umweg über Genehmigung)', async () => {
+  const profile = { street: 'Musterweg 2', zip: '54321', city: 'Beispielstadt', phone: '0170111222', emergencyName: 'Papa Muster', emergencyPhone: '0170333444' };
+  const reg = client();
+  await reg('POST', '/auth/register-open', { name: 'Direkt Zugewiesen', email: 'direkt@dbz.de', password: 'passwort1', ...profile });
+
+  const admin = await loginAs('admin@dbz.de');
+  const pendingList = await admin('GET', '/admin/pending-registrations');
+  const pendingUser = pendingList.data.users.find((u) => u.email === 'direkt@dbz.de');
+  const assign = await admin('POST', `/admin/pending-registrations/${pendingUser.id}/assign`, { classId: 'class_3' });
+  assert.equal(assign.status, 200);
+  assert.equal(assign.data.ok, true);
+
+  const login = client();
+  const success = await login('POST', '/auth/login', { email: 'direkt@dbz.de', password: 'passwort1' });
+  assert.equal(success.status, 200);
+  assert.deepEqual(success.data.user.classIds, ['class_3']);
 });
 
 test('Einladung: Lehrkraft darf keine Leitung einladen', async () => {
