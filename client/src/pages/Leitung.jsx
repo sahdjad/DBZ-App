@@ -52,7 +52,7 @@ export default function Leitung() {
             <CardHeader title="Offene Vorgänge" subtitle="Wartet auf Bearbeitung" icon={AlertCircle} />
             <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
               {counts.pendingUsers > 0 && (
-                <button onClick={() => navigate('/admin')} className="flex items-center gap-3 rounded-xl border border-status-late/30 bg-status-late/10 px-4 py-3 text-left hover:bg-status-late/15 transition">
+                <button onClick={() => navigate('/admin?tab=pending')} className="flex items-center gap-3 rounded-xl border border-status-late/30 bg-status-late/10 px-4 py-3 text-left hover:bg-status-late/15 transition">
                   <UserCheck size={20} className="text-status-late" />
                   <div>
                     <div className="text-ivory">{counts.pendingUsers} Registrierung(en) freigeben</div>

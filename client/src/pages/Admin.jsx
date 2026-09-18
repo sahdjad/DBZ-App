@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2 } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -7,6 +8,7 @@ import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../component
 
 const TABS = [
   ['users', 'Nutzer', Users2],
+  ['pending', 'Neue Anmeldungen', UserCheck],
   ['invites', 'Einladungen', Mail],
   ['classes', 'Klassen', School],
   ['approvals', 'Genehmigungen', ShieldCheck],
@@ -16,7 +18,8 @@ const TABS = [
 
 export default function Admin() {
   const { user } = useAuth();
-  const [tab, setTab] = useState('users');
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState(params.get('tab') || 'users');
   const isSuperAdmin = user?.role === 'super_admin';
   return (
     <AppLayout title="Verwaltung">
@@ -28,6 +31,7 @@ export default function Admin() {
         ))}
       </div>
       {tab === 'users' && <UsersTab />}
+      {tab === 'pending' && <PendingTab />}
       {tab === 'invites' && <InvitesTab />}
       {tab === 'classes' && <ClassesTab />}
       {tab === 'approvals' && <ApprovalsTab isSuperAdmin={isSuperAdmin} />}
@@ -72,7 +76,7 @@ function ApprovalsTab({ isSuperAdmin }) {
               <div className="min-w-0">
                 <div className="text-ivory text-sm">{r.summary}</div>
                 <div className="text-xs text-sage-muted">
-                  {r.type === 'create_user' ? 'Neues Konto' : 'Neue Klasse'} · beantragt von {r.requestedByName}
+                  {r.type === 'create_user' ? 'Neues Konto' : r.type === 'assign_class' ? 'Klassenzuweisung' : 'Neue Klasse'} · beantragt von {r.requestedByName}
                   {' · '}{new Date(r.createdAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
                 </div>
               </div>
@@ -126,6 +130,82 @@ function LinkAccountsAdminCard() {
         <input className="input" type="email" placeholder="E-Mail Konto 2" value={f.emailB} onChange={(e) => setF({ ...f, emailB: e.target.value })} required />
         <div className="sm:col-span-2"><Button type="submit" disabled={busy}><Link2 size={16} /> Verknüpfen</Button></div>
       </form>
+    </Card>
+  );
+}
+
+// Offene Registrierungen ohne Klasse (z. B. neue Schüler vor Probeunterricht):
+// Kontaktdaten prüfen, Klasse zuweisen (Leitung -> Antrag an Admin, Admin -> sofort)
+// oder ablehnen.
+function PendingTab() {
+  const toast = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
+  const [list, setList] = useState(null);
+  const [classes, setClasses] = useState([]);
+  const [picked, setPicked] = useState({});
+  const [busy, setBusy] = useState(null);
+
+  const load = () => api.get('/admin/pending-registrations').then((d) => setList(d.users));
+  useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
+
+  const assign = async (id) => {
+    const classId = picked[id];
+    if (!classId) { toast.push('Bitte zuerst eine Klasse auswählen', 'error'); return; }
+    setBusy(id);
+    try {
+      const res = await api.post(`/admin/pending-registrations/${id}/assign`, { classId });
+      toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Klasse zugewiesen', 'success');
+      load();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(null); }
+  };
+
+  const reject = async (id) => {
+    if (!window.confirm('Diese Anmeldung wirklich ablehnen und löschen?')) return;
+    setBusy(id);
+    try {
+      await api.post(`/admin/pending-registrations/${id}/reject`, {});
+      toast.push('Abgelehnt', 'success');
+      load();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(null); }
+  };
+
+  if (!list) return <Spinner />;
+  return (
+    <Card className="p-5">
+      <CardHeader title="Neue Anmeldungen" subtitle="Ohne Einladung registriert – wartet auf Klassenzuweisung" icon={UserCheck} />
+      {list.length === 0 ? (
+        <p className="p-4 text-sage-muted text-sm">Keine offenen Anmeldungen.</p>
+      ) : (
+        <ul className="divide-y divide-line">
+          {list.map((u) => (
+            <li key={u.id} className="py-4">
+              <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+                <div>
+                  <div className="text-ivory">{u.name}</div>
+                  <div className="text-xs text-sage-muted">{u.email}</div>
+                </div>
+                {!isSuperAdmin && <Badge tone="late">braucht Admin-Bestätigung</Badge>}
+              </div>
+              {u.profile && (
+                <div className="text-xs text-sage-muted mb-3 space-y-0.5">
+                  <div>{u.profile.street}, {u.profile.zip} {u.profile.city}</div>
+                  <div>Tel: {u.profile.phone}{u.profile.selfPayer ? ' · Selbstzahler' : ''}</div>
+                  <div>Notfallkontakt: {u.profile.emergencyName} ({u.profile.emergencyPhone})</div>
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <select className="input py-1.5 w-auto text-sm" value={picked[u.id] || ''} onChange={(e) => setPicked({ ...picked, [u.id]: e.target.value })}>
+                  <option value="">– Klasse wählen –</option>
+                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <Button size="sm" onClick={() => assign(u.id)} disabled={busy === u.id}><CheckCircle2 size={16} /> Zuweisen</Button>
+                <Button size="sm" variant="outline" onClick={() => reject(u.id)} disabled={busy === u.id}><XCircle size={16} /> Ablehnen</Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   );
 }
