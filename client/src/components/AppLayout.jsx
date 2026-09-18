@@ -81,7 +81,7 @@ function navForRole(role) {
       return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'strafen', 'regeln','berichte', 'aktivitaeten','benachrichtigungen', 'dbzonline', 'konto');
     case 'super_admin':
     case 'leitung':
-      return k('dashboard', 'leitung', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'berichte', 'aktivitaeten', 'strafen', 'regeln','benachrichtigungen', 'dbzonline', 'konto');
+      return k('dashboard', 'leitung', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'aktivitaeten', 'strafen', 'regeln','benachrichtigungen', 'dbzonline', 'konto');
     default:
       return k('dashboard', 'benachrichtigungen', 'konto');
   }

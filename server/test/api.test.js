@@ -324,6 +324,38 @@ test('Klassensprecher: sieht Heute-Status der Klasse (lesend), fremde Klasse nic
   await teacher('POST', `/students/${studentId}/klassensprecher`, { promote: false });
 });
 
+test('Probezeit: nur Klassenlehrkraft setzt/sieht sie, Admin/Leitung sehen sie nicht in der Klassenliste', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+
+  // Admin/Leitung dürfen nicht setzen (bewusst nur Klassenlehrkraft).
+  const admin = await loginAs('admin@dbz.de');
+  const deniedForAdmin = await admin('POST', `/students/${studentId}/probation`, { probation: true });
+  assert.equal(deniedForAdmin.status, 403);
+
+  const set = await teacher('POST', `/students/${studentId}/probation`, { probation: true });
+  assert.equal(set.status, 200);
+  assert.equal(set.data.probation, true);
+
+  // Klassenlehrkraft sieht es in der Klassenliste.
+  const teacherRoster = await teacher('GET', '/classes/class_3/roster');
+  const row = teacherRoster.data.rows.find((r) => r.id === studentId);
+  assert.equal(row.probation, true, 'Klassenlehrkraft sieht die Probezeit-Markierung');
+
+  // Admin/Leitung sehen das Feld in der Klassenliste NICHT (auch wenn sie Zugriff auf die Liste haben).
+  const adminRoster = await admin('GET', '/classes/class_3/roster');
+  const adminRow = adminRoster.data.rows.find((r) => r.id === studentId);
+  assert.equal('probation' in adminRow, false, 'Probezeit ist nur in der Lehreransicht sichtbar, nicht für Admin/Leitung');
+
+  // Auch über die allgemeine Nutzerliste (Admin-Verwaltung) leakt es nicht.
+  const adminUsers = await admin('GET', '/admin/users');
+  const adminUserRow = adminUsers.data.users.find((u) => u.id === studentId);
+  assert.equal('probation' in adminUserRow, false, 'Probezeit leakt nicht über publicUser()');
+
+  await teacher('POST', `/students/${studentId}/probation`, { probation: false });
+});
+
 test('Nachrichten: Schüler kann Leitung schreiben, ALLE Leitungs-/Admin-Konten teilen sich den Thread', async () => {
   // Zweite Leitung anlegen (mehrere Leitungspersonen -> geteiltes Postfach).
   const admin = await loginAs('admin@dbz.de');
@@ -1513,7 +1545,7 @@ test('Regeln & Strafenkatalog: sichtbar, pro Klasse anpassbar, Schüler read-onl
   assert.equal(r.status, 200);
   assert.ok(r.data.catalog.length >= 5, 'Katalog hat Kategorien');
   assert.ok(r.data.rules.text.length > 20, 'Regeltext vorhanden');
-  assert.equal(r.data.catalog.flatMap((c) => c.items).find((i) => i.id === 'v_30').consequence, '1 Seite');
+  assert.equal(r.data.catalog.flatMap((c) => c.items).find((i) => i.id === 'v_30').consequence, '2 € oder 1 Seite');
 
   // Lehrkraft passt Konsequenz NUR für die eigene Klasse an.
   const teacher = await loginCookie('lehrer@dbz.de');
