@@ -1,0 +1,271 @@
+## Teil 1 — Grundlagen der Glaubenslehre und Quellen der ʿAqīda {#teil-1}
+
+**1.** Sprachlich von *ʿaqada* = „festbinden" — man bindet sein Herz fest an etwas. Fachlich: eine Sammlung verborgener Angelegenheiten (ʿilm ul-ġayb), die **tawqīfī** sind — d. h. ausschließlich durch die Offenbarung festgelegt, nicht durch Erfahrung, Träume, Verstand oder Philosophie.
+
+**2.** Der Glaube an Allah, an die Engel, an die Bücher, an die Gesandten, an den Jüngsten Tag, an die Vorherbestimmung (al-Qadar).
+
+**3.** Die Stellung zu den Ṣaḥāba (gegen die, die sie beleidigen), die Definition des Īmān (gegen falsche Definitionen, sonst wären z. B. Iblīs „Muslime"), die Stellung zum muslimischen Herrscher (al-Imāma).
+
+**4.** Die sechs Säulen des Īmān (Ḥadīth Jibrīl) und das, was sich daran anschließt (Definition des Īmān, Ṣaḥāba, Imamat).
+
+**5.** Koran, Sunnah und Ijmāʿ (Konsens der Mujtahidūn).
+
+**6.** Die ʿAqīda behandelt Verborgenes (ġaybī), das man nicht mit den Sinnen erfassen und auch nicht durch Erfahrung, Träume oder Philosophie herleiten kann. Sie ist **tawqīfī**: ausschließlich durch die Offenbarung (Koran/Sunnah) bestimmt. Der Verstand darf die Offenbarung verstehen helfen, sie aber nicht selbst hervorbringen oder das Verborgene ergründen.
+
+**7.** Koran und Sunnah werden stets nach dem Verständnis der rechtschaffenen Salaf verstanden — weil die Ṣaḥāba den Propheten ﷺ sahen und die Offenbarung direkt miterlebten; ihr Lehrer war die beste Schöpfung, und ihr Wissen erreicht niemand nach ihnen.
+
+**8.** Alle 73 Gruppen sind im Feuer außer einer; auf die Frage, wer sie sei, antwortete der Prophet ﷺ: „Wer auf dem ist, worauf ich und meine Gefährten sind." Damit sind die Ṣaḥāba/Salaf die Waage: Stützt sich eine Gruppe auf ihr Verständnis (Uṣūl), ist sie die gerettete; weicht sie ab, ist sie verirrt.
+
+---
+
+## Teil 2 — Der Glaube an Allah: die drei Arten des Tawḥīd {#teil-2}
+
+**9.** Tawḥīd ar-Rubūbiyya (Wissen — Einzigkeit in der Herrschaft), Tawḥīd al-Asmāʾ waṣ-Ṣifāt (Wissen — Namen und Eigenschaften), Tawḥīd al-Ulūhiyya (Tat — Einzigkeit in der Anbetung).
+
+**10.** Fiṭra (angeboren), Verstand (jede Schöpfung braucht einen Schöpfer), Offenbarung (Allah ist der Schöpfer aller Dinge), Sinneswahrnehmung (die vollkommene Ordnung des Kosmos).
+
+**11.** Glückseligkeit im Diesseits und Jenseits; Schutzfreundschaft und Hilfe Allahs; Eintritt ins Paradies (mit dem Schauen Allahs); Festigung und Nachfolgeherrschaft auf Erden; Sicherheit und Rechtleitung.
+
+**12.** Rubūbiyya: Allah allein als Schöpfer, Eigentümer, Lenker. Asmāʾ waṣ-Ṣifāt: Sein Hören/Sehen ist vollkommen, Er ähnelt nichts. Ulūhiyya: jeder Gottesdienst (Gebet, Duʿāʾ, Schlachten, Niederwerfung) gebührt nur Ihm.
+
+**13.** „Wir hören und gehorchen" — das Prinzip, dass der Verstand der Offenbarung dient (sie verstehen hilft), aber das Verborgene (z. B. Todesengel, Seele) nicht selbst ergründen kann; man unterwirft sich der Offenbarung, statt sie mit dem Verstand infrage zu stellen.
+
+---
+
+## Teil 3 — Tawḥīd ar-Rubūbiyya und seine Vernichter {#teil-3}
+
+**14.** (1) Das äußere Leugnen der Existenz Allahs, (2) die Annahme eines unabhängig Handelnden neben Allah (Sterne, böses Omen, „das Medikament heilt an sich"), (3) eine Gnade eigenständig einem anderen zuschreiben.
+
+**15.** Pharao (Firʿawn) und die Atheisten.
+
+**16.** Die Götzendiener der Araber bekannten Allah als Schöpfer (Rubūbiyya), beteten aber andere an — sie blieben dennoch Ungläubige, weil ihnen der Tawḥīd al-Ulūhiyya fehlte. Rubūbiyya allein macht also nicht zum Gläubigen.
+
+**17.** „Wirkt an sich, ohne Allah" ist bei Amulett wie Medikament Unglaube. „Allah wirkt dadurch": beim Amulett verboten (kein bestätigtes Heilmittel), beim Medikament erlaubt (bestätigtes Mittel).
+
+**18.** Wenn er meint, das Amulett selbst schütze ihn (unabhängig wirkend), ist es großer Schirk bzw. der zweite Vernichter der Rubūbiyya. Meint er, es sei nur ein — an sich wirkungsloses — Mittel, das er trotzdem an sein Herz hängt (Tamīma), ist es kleiner Schirk (Ursache des Schirk).
+
+---
+
+## Teil 4 — Tawḥīd al-Asmāʾ waṣ-Ṣifāt (Namen und Eigenschaften Allahs) {#teil-4}
+
+**19.** Gemeinsames Maß = geteilte Gesamtbedeutung (z. B. „Sehen" = das Erfassen des Gesehenen, bei Schöpfer wie Geschöpf). Trennendes Maß = die Art und Weise (Kayfiyya), die nur Allah eigen ist — vollkommen und unvergleichlich.
+
+**20.** Erste Grundlage: bejahen, was Allah sich zuschrieb, und verneinen, was Er von sich verneint — nur aus Koran und Sunnah. Zweite Grundlage: jede Ähnlichkeit verneinen („Laysa ka-mithlihī shayʾ").
+
+**21.** Tashbīh (Vergleichung) = „Allah hört wie wir" — Übertreibung im Bejahen bis zur Gleichsetzung. Taʿṭīl (Leugnung) = „Allah hört gar nicht" — Übertreibung im Verneinen. Ahlus-Sunnah geht den Weg der Mitte.
+
+**22.** Tamthīl (Allah mit der Schöpfung vergleichen) und Taʿṭīl (Allah eine zugeschriebene Eigenschaft absprechen). Die zwei Wege der indirekten Ablehnung unter Taʿṭīl: Taḥrīf/Taʾwīl (die Bedeutung verdrehen) und Tafwīḍ (die Bedeutung „unbekannt" lassen/überlassen).
+
+**23.** Tafwīḍ unterstellt, Allah habe unverständliche Worte offenbart, obwohl der Koran klares Arabisch zum Nachsinnen ist. Es ist eine Form von Taʿṭīl (indirekte Ablehnung) und nicht die Lehre der Salaf/Ahlus-Sunnah.
+
+**24.** (1) Bejahen/verneinen, was Allah/der Gesandte bejahten/verneinten; (2) Stehenbleiben nur bei Koran/Sunnah, kein Verstand; (3) kein Unterschied zwischen den Textbelegen; (4) vollkommene Perfektheit; (5) Schweigen über Ungenanntes; (6) gemeinsamer und trennender Maß; (7) bekannt der Bedeutung, unbekannt der Art und Weise nach; (8) Vorsicht vor Tamthīl/Taʿṭīl/Takyīf/Taḥrīf; (9) Texte nach der offenkundigen Bedeutung; (10) Methodik der Salaf.
+
+**25.** Abū Razīn fragte nicht „Wie lacht Er?", sondern bestätigte einfach: „Lacht unser Herr?" — „Ja." — „Von einem Herrn, der lacht, werden wir niemals des Guten ermangeln." Lehre: bestätigen ohne „Wie" und ohne Vergleich, und das Erfordernis der Eigenschaft (hier: Hoffnung) leben.
+
+---
+
+## Teil 5 — Tawḥīd al-Ulūhiyya und die Arten des Schirk {#teil-5}
+
+**26.** „Kein mit Recht Angebeteter außer Allah" (nicht „kein Erschaffer außer Allah"). Häufiger Irrtum: es als Aussage über die Rubūbiyya misszuverstehen — die Götzendiener bekannten die Rubūbiyya bereits und blieben trotzdem Ungläubige.
+
+**27.** Beim Diener: höchste Demut zusammen mit höchster Liebe. Bei der Handlung: sie muss aus der Offenbarung belegt sein.
+
+**28.** Großer Schirk (hebt den Islam auf, man ist kein Muslim mehr) und kleiner Schirk (mindert die pflichtgemäße Vollkommenheit, man bleibt Muslim, steht aber unter Strafandrohung).
+
+**29.** Duʿāʾ al-ʿIbāda: jeder Gottesdienst ist zugleich ein indirektes Bittgebet (z. B. um das Paradies) — ausschließlich für Allah, sonst großer Schirk. Duʿāʾ al-Masʾala: das direkte Bitten um etwas — an Allah ist es Anbetung, an einen Menschen nur unter drei Bedingungen erlaubt.
+
+**30.** Der Gebetene muss lebend, fähig und anwesend sein. Ein toter Frommer am Grab erfüllt keine dieser Bedingungen (weder lebend noch anwesend) — die Anrufung ist daher nicht erlaubt, sondern großer Schirk.
+
+**31.** „Ein umfassender Begriff für alles, was Allah liebt und womit Er zufrieden ist — an Aussagen und Taten, den offenkundigen und den verborgenen." Da man nur durch Koran und Sunnah weiß, was Allah liebt, kann niemand einen Gottesdienst erfinden, ohne implizit zu behaupten, Wissen über Allahs Zufriedenheit zu haben, das nicht belegt ist.
+
+---
+
+## Teil 6 — Die Ursachen des Schirk und der kleine Schirk {#teil-6}
+
+**32.** (1) Die Übertreibung bezüglich der Rechtschaffenen (al-Ġuluww fiṣ-ṣāliḥīn), (2) die Verherrlichung der Gräber (Bauten, Lampen).
+
+**33.** Ewiges Höllenfeuer ohne Herauskommen; das Paradies ist ihm verwehrt; ihm wird nicht vergeben; alle guten Taten werden zunichte.
+
+**34.** Fünf rechtschaffene Männer — Wadd, Suwāʿ, Yaġūth, Yaʿūq, Nasr. Nach ihrem Tod gab Iblīs ein, Bildnisse über ihren Gräbern zu errichten, „nur zur Erinnerung". Als diese Generation starb, gab der Satan der nächsten ein, ihre Vorfahren hätten diese Bildnisse angebetet — so wurden sie statt Allah angebetet.
+
+**35.** Schwören bei einem anderen als Allah; das Tragen eines Amuletts (Tamīma).
+
+**36.** Asmāʾ waṣ-Ṣifāt umfasst die beiden anderen (der Name ar-Rabb → Rubūbiyya, der Name Allāh → Ulūhiyya); Rubūbiyya verlangt notwendig die Ulūhiyya; Ulūhiyya schließt die Rubūbiyya ein.
+
+---
+
+## Teil 7 — Der Glaube an die Engel {#teil-7}
+
+**37.** Z. B.: Geistwesen mit eigenständigem Wesen; aus erschaffenem Licht erschaffen; essen und trinken nicht; gewaltige Schöpfung; schöne Gestalt; haben Flügel, Hände und Herzen.
+
+**38.** Allgemeiner Glaube = der Glaube an ihre bloße Existenz (das notwendige Minimum). Detaillierter Glaube = der Glaube an alles, was einen im Einzelnen aus Koran und Sunnah erreicht.
+
+**39.** Namen (z. B. Jibrīl, Mīkāʾīl, Isrāfīl, Mālik, Munkar, Nakīr), Eigenschaften (z. B. Jibrīl hat 600 Flügel), Taten (z. B. Jibrīl = Offenbarung, Mīkāʾīl = Regen, der Todesengel = das Nehmen der Seelen).
+
+**40.** An einige glauben, an andere nicht; glauben, sie verdienten Anbetung; glauben, sie seien Töchter Allahs; ihnen die Kenntnis des absoluten Verborgenen zuschreiben; sie herabwürdigen/schmähen.
+
+**41.** Weil „Asrāʾīl" für den Todesengel nirgends belegt ist; man sagt stattdessen „der Todesengel" (Malak al-Mawt).
+
+**42.** Liebe zu ihnen; die Erkenntnis, dass sie (und erst recht Menschen) keine Anbetung verdienen; das Nacheifern in ihrem Gehorsam; Gottesfurcht (sie hören und schreiben unsere Taten auf).
+
+---
+
+## Teil 8 — Der Glaube an die Bücher {#teil-8}
+
+**43.** (1) Stückweise über 23 Jahre herabgesandt, (2) Wächter über die früheren Bücher (bestätigt sie und abrogiert sie zugleich), (3) vor Verfälschung bewahrt, weil Allah selbst die Bewahrung übernahm.
+
+**44.** „Damit Wir dein Herz festigen" (li-nuṯabbita bihī fuʾādak) — zur Stärkung und Festigung des Propheten ﷺ, im Unterschied zu den früheren Büchern, die auf einmal herabkamen.
+
+**45.** Der Koran bestätigt, was von den früheren Büchern wahr ist, ist Richter und Zeuge darüber und abrogiert sie — gehandelt wird fortan nur noch nach dem Koran.
+
+**46.** Die früheren Bücher wurden Menschen (Gelehrten, Rabbinern) zur Bewahrung anvertraut und deshalb verfälscht. Den Koran hat Allah selbst zu bewahren versprochen („Wir sind es, die den Koran herabsandten, und Wir sind seine Hüter") — daher unveränderbar.
+
+---
+
+## Teil 9 — Der Glaube an die Gesandten {#teil-9}
+
+**47.** 25 Gesandte werden im Koran namentlich genannt; insgesamt gibt es laut authentischem Ḥadīth 315 Gesandte (die Gesamtzahl der Propheten kennt nur Allah).
+
+**48.** An Muhammad ﷺ glaubt man durch Anerkennung UND Befolgung (sein Gesetz gilt bis heute). An die übrigen Gesandten glaubt man nur durch Anerkennung, da ihre Gesetze abrogiert wurden.
+
+**49.** An einige glauben, an andere nicht; sich aus Abwendung, Hochmut oder Zweifel vom Urteil des Gesandten abwenden; ihnen Eigenheiten der Rubūbiyya/Ulūhiyya zuschreiben; ihnen das absolute Verborgene zuschreiben; sie schmähen/herabwürdigen.
+
+**50.** Menschen, die durch die Offenbarung ausgezeichnet wurden; Unfehlbarkeit (ʿIṣma) in der Verkündung; ihre Herzen schlafen nicht (nur die Augen); die Erde verzehrt ihre Körper nicht; sie leben im Barzakh und beten.
+
+**51.** Bester der Propheten; gesandt zu Menschen UND Dschinn; die größte Fürsprache (al-Maqām al-Maḥmūd); die umfassenden Worte (Jawāmiʿ al-Kalim); das Siegel der Propheten (kein Prophet nach ihm).
+
+---
+
+## Teil 10 — Der Jüngste Tag (I): Barzakh, Grab und Auferstehung {#teil-10}
+
+**52.** Allgemein: die Gewissheit, dass es einen Tag der Auferstehung und Vergeltung gibt. Detailliert: der Glaube an alles, was an Texten dazu überliefert ist (z. B. Becken, Brücke).
+
+**53.** Munkar und Nakīr — zwei schwarze, blauäugige Engel. Sie fragen: „Wer ist dein Herr? Was ist deine Religion? Wer ist dein Prophet?"
+
+**54.** Erster Stoß (des Schreckens/Todes): alle fallen tot nieder, das Barzakh-Leben endet. Zweiter Stoß (der Auferstehung): die Menschen stehen aus ihren Gräbern auf.
+
+**55.** Grabesstrafe: die zwei Männer, von denen einer sich nicht sorgfältig vom Urin reinigte und der andere Nammīma (Stichelei) betrieb. Grabeswonne: die Seelen der Märtyrer in Leibern grüner Vögel, die am Thron hängen und im Paradies umherstreifen.
+
+**56.** Wie man lebte und starb, so wird man auferweckt — im Gehorsam gestorben, im Gehorsam auferweckt; in Zerstreuung/Sünde gelebt und gestorben, ebenso auferweckt. Eine Warnung, worauf man sein Leben ausrichtet.
+
+---
+
+## Teil 11 — Der Jüngste Tag (II): Fürsprache, Waage, Paradies und Hölle {#teil-11}
+
+**57.** Die große Fürsprache → die Austeilung der Bücher → die Abrechnung → die Waage → das Becken → die Brücke → der Übergang → Paradies/Hölle.
+
+**58.** Leichte Abrechnung = die bloße Vorlage der Sünden mit anschließender (privater) Vergebung. Schwere Abrechnung = Bloßstellung und strenge Rechenschaft — „wer streng zur Rede gestellt wird, geht zugrunde".
+
+**59.** Wasser weißer als Milch, süßer als Honig; Gefäße so zahlreich wie die Sterne; wer davon trinkt, dürstet nie mehr; Abtrünnige und Leute der Neuerung werden vertrieben.
+
+**60.** Auf dem Übergang (al-Qanṭara) zwischen Ṣirāṭ und Paradies werden die Gläubigen geläutert, bis kein Groll und kein Neid mehr in ihren Herzen bleibt.
+
+**61.** Leugnen (dass der Jüngste Tag nicht existiert) — trifft das Fundament des Glaubens; Umdeutung (Taʾwīl) dessen, was geschieht (z. B. „die Waage ist nur die Gerechtigkeit") — trifft je nach Fall Fundament oder Vollkommenheit.
+
+**62.** Paradies und Hölle sind bereits jetzt erschaffen und existieren (bereitet für die Gottesfürchtigen bzw. die Ungläubigen) und sind ewig — sie gehen nicht zugrunde. Wer glaubt, sie existierten noch nicht oder würden enden, ist irregeleitet und gehört nicht zu Ahlus-Sunnah.
+
+---
+
+## Teil 12 — Der Glaube an die Vorherbestimmung (al-Qadar) {#teil-12}
+
+**63.** (1) Das Wissen (al-ʿIlm), (2) das Aufschreiben (al-Kitāba, auf der wohlbehüteten Tafel), (3) der Wille (al-Mashīʾa), (4) die Erschaffung (al-Khalq).
+
+**64.** Der gesetzliche Wille (Šarʿī — was Allah liebt und womit Er zufrieden ist) und der universale Wille (Kawnī — was Allah zulässt, auch was Er hasst).
+
+**65.** Was im gesetzlichen Willen geschieht, geschieht automatisch auch im universalen; was im universalen geschieht, geschieht nicht automatisch im gesetzlichen. Beispiel Gebet: beide Willen (Allah liebt es, und es geschieht). Verschlafenes Gebet: nur der universale Wille (es geschah, aber Allah liebt es nicht).
+
+**66.** Z. B.: Allah bürdet keiner Seele mehr auf, als sie leisten kann; Gesandte wurden gesandt, „damit die Menschen keinen Beweisgrund gegen Allah haben"; Loben/Tadeln und Belohnen/Bestrafen wären bei Zwang reine Ungerechtigkeit; jeder spürt den Unterschied zwischen freier Tat und Zwang (Beispiel ʿAmmār ibn Yāsir).
+
+**67.** Al-Jabriyya (Deterministen): „Allah zwingt uns", der Diener habe keine Fähigkeit — falsch, er hat Willen und Fähigkeit. Al-Qadariyya: „der Diener erschafft seine eigenen Taten" — falsch, manche leugnen sogar Allahs Vorwissen. Widerlegung der Alkohol-Ausrede: Der Mensch hat einen freien Willen und trägt die Konsequenzen; mit dem Qadar für Sünden zu argumentieren ist der Weg der Polytheisten. Wie man im Alltag stets die bessere von zwei Optionen wählt, hätte er auch den Gehorsam wählen können.
+
+**68.** Allah erschafft dem Diener Willen und Fähigkeit; was aus diesem Willen und dieser Fähigkeit hervorgeht, ist zugleich Allahs Erschaffung, wird aber dem Diener zugeschrieben, weil er die Handlung unmittelbar mit seinem (erschaffenen) Willen vollzieht — kein Zwang, da der Diener selbst wählt.
+
+---
+
+## Teil 13 — Die Definition des Īmān (Wort und Tat) {#teil-13}
+
+**69.** Das Bekräftigen mit dem Herzen, das Bezeugen mit der Zunge, die guten Taten mit den Gliedern.
+
+**70.** Er ist ein Heuchler (Munāfiq), kein wahrer Muslim.
+
+**71.** Wort des Herzens (Überzeugung — „Nicht-Zweifeln"); Wort der Zunge („Qūlū āmannā…"); Tat des Herzens (das Beben des Herzens bei Erwähnung Allahs); Tat der Glieder (z. B. das Gebet zur geänderten Gebetsrichtung).
+
+**72.** Die betende Frau hat im Verhältnis mehr Īmān als die menstruierende, obwohl diese für das Nicht-Beten entschuldigt ist und keine Sünde trägt — es zeigt, dass der Īmān auch durch entschuldigtes Unterlassen von Gehorsam (nicht nur durch Sünde) im Verhältnis sinken kann.
+
+**73.** Der Īmān hat über 70 (bzw. 60) Zweige: der höchste ist lā ilāha illā Allāh (Wort der Zunge), der niedrigste das Entfernen des Schädlichen vom Weg (Tat der Glieder), und die Schamhaftigkeit ist ein Zweig (Tat des Herzens) — er zeigt die riesige Bandbreite dessen, was zum Īmān gehört.
+
+---
+
+## Teil 14 — Die Stufen des Īmān und der Kufr {#teil-14}
+
+**74.** Aṣl al-Īmān (der fundamentale Īmān, macht zum Muslim), al-Īmān al-Wājib (der verpflichtende/vollkommene Īmān, verdient den Lohn), al-Īmān al-Mustaḥabb (der freiwillige Īmān).
+
+**75.** Beim Grund-Īmān („Bist du Muslim?") sagt man „Ja" ohne Vorbehalt. Bei der Frage nach dem vollkommenen Glauben braucht es „In shāʾa Allāh", da niemand die Vollkommenheit mit Sicherheit von sich behaupten kann.
+
+**76.** Takdhīb (für Lüge erklären), Istikbār (Hochmut/Abwendung wie Iblīs), Iʿrāḍ (Abwendung, ohne für Lügner zu erklären), Shakk (echter Zweifel an der Wahrhaftigkeit), Nifāq (Heuchelei).
+
+**77.** Wort des Herzens (z. B. eine Pflicht Allahs innerlich leugnen), Wort der Zunge (Allah oder die Religion schmähen), Tat des Herzens (den Propheten ﷺ oder das, was er brachte, verabscheuen), Tat der Glieder (sich vor einem Grab oder Götzen niederwerfen).
+
+**78.** Dass eine Aussage oder Tat allgemein Unglaube ist, bedeutet nicht automatisch, dass die konkrete Person, die sie begeht, ungläubig ist — erst wenn die Bedingungen erfüllt sind und Hindernisse (z. B. Unwissenheit, Zwang, Fehlinterpretation) ausgeschlossen wurden, darf über die bestimmte Person geurteilt werden.
+
+**79.** Großer Kufr hebt den Islam vollständig auf (kein Muslim mehr, ewiges Feuer, alle Taten zunichte). Kleiner Kufr mindert nur die pflichtgemäße Vollkommenheit — der Betroffene bleibt Muslim und steht unter Allahs Willen (Bestrafung oder Vergebung).
+
+---
+
+## Teil 15 — Der Glaube in Bezug auf die Sahaba {#teil-15}
+
+**80.** Wer den Propheten ﷺ zu dessen Lebzeiten, nach seiner Entsendung, als Gläubiger sah oder traf, und im Īmān (Glauben) starb.
+
+**81.** Sie lieben, sie ehren und hochachten, für sie um Vergebung und Barmherzigkeit bitten, und sich dessen enthalten, was zwischen ihnen vorfiel.
+
+**82.** Zwischen denen, die eine Gruppe der Ṣaḥāba vergöttern/übertreiben, und denen, die sie (ganz oder teilweise) hassen und verfluchen.
+
+**83.** Weil Allah die gesamte Generation der Ṣaḥāba bis zum letzten von ihnen über sieben Himmel für rechtschaffen erklärte (Vers der as-Sābiqūn al-Awwalūn). Beispiel: Aḥmad ibn Ḥanbal sagte, „der Staub in Muʿāwiyas Nase ist besser als ʿUmar ibn ʿAbd al-ʿAzīz".
+
+**84.** Er ist irregeleitet und gehört nicht zu Ahlus-Sunnah — weil Allah ihre Rechtschaffenheit bezeugt hat und sie die Überlieferer von Koran und Sunnah sind, durch die uns die Religion erreichte.
+
+---
+
+## Teil 16 — Das Imamat und der muslimische Herrscher {#teil-16}
+
+**85.** Der wählende Weg (Bayʿa der Ahl al-Ḥall wa-l-ʿAqd, oder Nachfolgebestimmung) und der notgedrungene Weg (Gewaltherrschaft, sobald sich die Lage gefestigt hat).
+
+**86.** Man gehorcht ihm in dieser Sache nicht („kein Gehorsam gegenüber einem Geschöpf im Ungehorsam gegenüber dem Schöpfer") — der übrige, rechtmäßige Gehorsam bleibt aber bestehen.
+
+**87.** Im Verborgenen, indem man ihn privat bei der Hand nimmt, nicht öffentlich — weil öffentliches Anprangern zu Blutvergießen, Ehrverletzung und Chaos führen kann. Kann man ihn nicht erreichen, macht man Duʿāʾ für ihn statt ihn zu beleidigen.
+
+**88.** Offenkundiger Unglaube (kufr bawāḥ), über den ein klarer Beweis von Allah vorliegt — und selbst dann muss über die bestimmte Person mit erfüllten Bedingungen und ausgeschlossenen Hindernissen geurteilt werden.
+
+**89.** „Wer stirbt, ohne dass auf seinem Nacken ein Treueeid liegt, stirbt einen Tod der Jāhiliyya." Daraus folgt: die Bayʿa ist eine individuelle Pflicht — die Ahl al-Ḥall wa-l-ʿAqd leisten sie unmittelbar, die übrigen folgen ihnen.
+
+---
+
+## Teil 17 — Die Neuerung (al-Bidʿa) {#teil-17}
+
+**90.** Ein erfundener Weg in der Religion, der der Scharia nachgeahmt ist und mit dem man eine Übertreibung in der Anbetung Allahs beabsichtigt.
+
+**91.** Nach der Art (aṣliyya/iḍāfiyya), nach dem Thema (in der ʿAqīda/in den Furūʿ), nach dem Urteil (mukaffira/ġayr mukaffira).
+
+**92.** Bidʿa aṣliyya hat gar keinen Ursprung in der Religion (z. B. Tanz/Trommel als Gottesdienst). Bidʿa iḍāfiyya verändert oder ergänzt eine bestehende, belegte Tat (Ort/Zeit/Art) — z. B. das Feiern des Maulid: Die Liebe zum Propheten ist ein Ursprung, aber die Tat wird ohne Beleg an einen bestimmten Tag geheftet.
+
+**93.** Z. B.: Entfernung von der Sunnah und Unwissenheit; mit den Neuerern sitzen und ihnen zuhören; an Erlogenes über die Religion glauben; Nachahmung der Nicht-Muslime; Gelüste und blinde Nachahmung (Taqlīd) der Irregeleiteten.
+
+**94.** (1) Ist die Handlung Gottesdienst oder Sünde? Sünde → sofort verboten. (2) Kannte der Prophet ﷺ diese Sache? Kannte er sie nicht → Vorwurf der Unwissenheit gegen ihn (Kufr). (3) Hat er sie übermittelt? Nicht übermittelt → Vorwurf des Verschweigens (Kufr); übermittelt → „Bringt euren Beweis!" — fehlt der Beleg, hat die Feier keine Grundlage. Jeder Weg endet in einer Sackgasse ohne Berechtigung.
+
+**95.** ʿUmars Ausspruch bezog sich auf das gemeinsame Tarāwīḥ-Gebet hinter einem Imam — eine Wiederbelebung einer Sunnah, die der Prophet ﷺ selbst schon praktiziert, aber aus Sorge vor ihrer Verpflichtung wieder eingestellt hatte. Es ist die sprachliche Bidʿa (Neuheit im Wortsinn), nicht die verbotene, erfundene religiöse Bidʿa.
+
+---
+
+## Teil 18 — Situationsanalyse {#teil-18}
+
+**96.** (Ungefähre Lösung) Die Aussage entspricht dem Vernichter, sich mit Bitten oder Vertrauen an die Engel zu richten (als verdienten sie Anbetung). Richtigstellung: Man liebt die Engel und erkennt ihren Gehorsam an, aber richtet keine Bitten/Anbetung an sie — sie sind geehrte Diener Allahs. Um Schutz und Hilfe bittet man nur Allah (Duʿāʾ al-Masʾala gehört Ihm allein bzw. — unter den drei Bedingungen — einem lebenden, fähigen, anwesenden Menschen).
+
+**97.** (Ungefähre Lösung) Das ist großer Schirk: (a) Es ist Duʿāʾ al-Masʾala an einen Toten, der die drei Bedingungen (lebend, fähig, anwesend) nicht erfüllt; (b) es ist eine Übertreibung bezüglich eines Rechtschaffenen — genau wie beim Volk Nūḥs, wo die Grabverehrung von Rechtschaffenen zum Schirk führte. Fürsprache erbittet man nur direkt von Allah bzw. durch erlaubte Mittel (eigene gute Taten, die Bitte um Fürsprache eines Lebenden) — niemals durch Anrufung eines Toten.
+
+**98.** (Ungefähre Lösung) Prüfschema: Kannte der Prophet ﷺ eine solche Gedenkfeier? Nein — also entweder Vorwurf der Unwissenheit oder des Verschweigens (beides Kufr, wenn man sie als Gottesdienst behauptet) → „Bringt euren Beweis!" Da keiner vorliegt, hat die Feier keine Grundlage. Einordnung: Bidʿa iḍāfiyya (die Liebe zum Rechtschaffenen ist ein Ursprung, die Feier an einem bestimmten Tag ist unbelegter Zusatz); Urteil in der Regel ġayr mukaffira/mufassiqa (Sünde), es sei denn es kommt eine Anbetung des Verstorbenen hinzu — dann mukaffira.
+
+**99.** (Ungefähre Lösung) Sünden — auch große — machen jemanden nicht automatisch zum Ungläubigen; das ist allenfalls kleiner Kufr bzw. Sünde, solange die Pflicht selbst nicht geleugnet wird. Die Takfīr-Grundregel verlangt, ein allgemeines Urteil nicht automatisch auf eine bestimmte Person zu übertragen, ohne Bedingungen zu prüfen und Hindernisse (z. B. Unwissenheit) auszuschließen. Takfīr ist Sache der Gelehrten, nicht des Einzelnen; hartes/gewaltsames Vorgehen ist der Weg der Khawāriǧ und ausdrücklich verboten.
+
+**100.** (Ungefähre Lösung) Schwören bei einem anderen als Allah ist (mindestens) kleiner Schirk („Man ḥalafa bi-ġayri-llāhi faqad ashraka"); es wird zu großem Schirk, wenn man den Beschworenen dabei so verherrlicht wie Allah. Der Prophet ﷺ lehrte stattdessen: „Wer schwören will, der schwöre bei Allah oder schweige." Also ist es keineswegs „nur eine Redewendung", sondern ernst zu korrigieren.
+
+---

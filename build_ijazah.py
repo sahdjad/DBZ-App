@@ -231,8 +231,6 @@ def build(src_path, out_html, out_css, css_link, variant_label):
     md = open(src_path, encoding='utf-8').read()
     pts = [int(x) for x in re.findall(r'【(\d+)\s*P】', md)]
     total = sum(pts)
-    pass_pts = -(-total * 95 // 100)  # ceil(95%)
-
     build_css(out_css)
     body_html = convert(md)
 
@@ -302,24 +300,37 @@ def build(src_path, out_html, out_css, css_link, variant_label):
   </div>
 
   <div class="info-h">Bewertungsschlüssel</div>
-  <p class="scale-note">Gesamtpunktzahl: @TOTAL@ Punkte &nbsp;·&nbsp; Bestanden ab <span class="pass-pill">95&nbsp;%</span> (mindestens @PASS@ Punkte)</p>
+  <p class="scale-note">Gesamtpunktzahl: @TOTAL@ Punkte &nbsp;·&nbsp; Bestanden ab <span class="pass-pill">70&nbsp;%</span> / Note 3 (mindestens @PASS@ Punkte)</p>
   <table>
-    <thead><tr><th>Prozent</th><th>Punkte (von @TOTAL@)</th><th>Bewertung</th><th>Ergebnis</th></tr></thead>
+    <thead><tr><th>Prozent</th><th>Punkte (von @TOTAL@)</th><th>Note</th><th>Ergebnis</th></tr></thead>
     <tbody>
-      <tr><td>98–100&nbsp;%</td><td>@P98@–@TOTAL@</td><td>ausgezeichnet</td><td>bestanden</td></tr>
-      <tr><td>95–97&nbsp;%</td><td>@PASS@–@P97@</td><td>sehr gut</td><td>bestanden</td></tr>
-      <tr><td>unter 95&nbsp;%</td><td>0–@FAIL@</td><td>—</td><td>nicht bestanden (Wiederholung)</td></tr>
+      <tr><td>92–100&nbsp;%</td><td>@P92@–@TOTAL@</td><td>1 · sehr gut</td><td>bestanden</td></tr>
+      <tr><td>81–91&nbsp;%</td><td>@P81@–@P91END@</td><td>2 · gut</td><td>bestanden</td></tr>
+      <tr><td>70–80&nbsp;%</td><td>@PASS@–@P80END@</td><td>3 · befriedigend</td><td>bestanden</td></tr>
+      <tr><td>50–69&nbsp;%</td><td>@P50@–@FAIL@</td><td>4 · ausreichend</td><td>nicht bestanden</td></tr>
+      <tr><td>30–49&nbsp;%</td><td>@P30@–@P49END@</td><td>5 · mangelhaft</td><td>nicht bestanden</td></tr>
+      <tr><td>unter 30&nbsp;%</td><td>0–@P29END@</td><td>6 · ungenügend</td><td>nicht bestanden</td></tr>
     </tbody>
   </table>
   <p class="teil-intro">Diese Prüfung folgt dem Aufbau des Werkes und der 20 Hefteinträge: von den Grundlagen und Quellen über die sechs Säulen des Īmān (Tor 1) hin zur Definition des Glaubens, den Ṣaḥābah und dem Imamat (Tor 2), der Bidʿa, und schließt mit einem angewandten Teil (Situationsanalyse). Beginne mit den Teilen, die dir leichtfallen. Möge Allah dir Gelingen schenken.</p>
 </section>
 '''
+    def ceil_pct(p):
+        return -(-total * p // 100)
+    p92, p81, p70, p50, p30 = ceil_pct(92), ceil_pct(81), ceil_pct(70), ceil_pct(50), ceil_pct(30)
+    pass_pts = p70
     repl = {
         '@TOTAL@': str(total),
         '@PASS@': str(pass_pts),
-        '@P98@': str(-(-total * 98 // 100)),
-        '@P97@': str((total * 97) // 100),
+        '@P92@': str(p92),
+        '@P81@': str(p81),
+        '@P91END@': str(p92 - 1),
+        '@P80END@': str(p81 - 1),
+        '@P50@': str(p50),
         '@FAIL@': str(pass_pts - 1),
+        '@P30@': str(p30),
+        '@P49END@': str(p50 - 1),
+        '@P29END@': str(p30 - 1),
     }
     info = info_tpl
     for k, v in repl.items():
