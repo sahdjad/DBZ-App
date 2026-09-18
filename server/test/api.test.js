@@ -556,6 +556,52 @@ test('Abwesenheitsantrag: Schüler stellt, kann ihn nicht selbst genehmigen, Leh
   assert.equal(decide.data.status, 'approved');
 });
 
+test('Abwesenheitsantrag: Grußformel allein reicht nicht als Begründung (auch wenn >= 30 Zeichen)', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const paddedGreeting = await student('POST', '/absence-requests', {
+    requestType: 'absent', reasonCategory: 'krankheit',
+    comment: 'As-salamu alaikum wa rahmatullahi wa barakatuh, liebe Lehrerin, vielen Dank, mit freundlichen Grüßen',
+  });
+  assert.equal(paddedGreeting.status, 400, 'Reine Grußformel ohne echten Grund wird abgelehnt');
+
+  const realReason = await student('POST', '/absence-requests', {
+    requestType: 'absent', reasonCategory: 'krankheit',
+    comment: 'Assalamu alaikum, starke Bauchschmerzen und Fieber seit heute früh.',
+  });
+  assert.equal(realReason.status, 200, 'Kurze, aber echte Begründung wird akzeptiert');
+});
+
+test('Abwesenheitsantrag: Rückfrage in der App klären (nicht extern) - Antwort setzt Antrag zurück auf offen', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const create = await student('POST', '/absence-requests', {
+    requestType: 'absent', reasonCategory: 'sonstiges',
+    comment: 'Muss heute leider zu einem Termin, kann nicht am Unterricht teilnehmen.',
+  });
+  const id = create.data.request.id;
+
+  const teacher = await loginAs('lehrer@dbz.de');
+  const ask = await teacher('POST', `/absence-requests/${id}/decide`, { decision: 'needs_info' });
+  assert.equal(ask.status, 200);
+  assert.equal(ask.data.status, 'needs_info');
+
+  const question = await teacher('POST', `/absence-requests/${id}/comments`, { body: 'Was für ein Termin genau?' });
+  assert.equal(question.status, 200);
+
+  // Schüler sieht die Rückfrage und antwortet -> Antrag geht zurück auf "pending".
+  const listForStudent = await student('GET', '/absence-requests');
+  const seen = listForStudent.data.requests.find((r) => r.id === id);
+  assert.equal(seen.comments[0].body, 'Was für ein Termin genau?');
+
+  const reply = await student('POST', `/absence-requests/${id}/comments`, { body: 'Arzttermin, ich schicke den Nachweis nach.' });
+  assert.equal(reply.status, 200);
+  assert.equal(reply.data.request.status, 'pending', 'Antwort setzt den Antrag automatisch zurück auf offen');
+
+  const teacherView = await teacher('GET', '/absence-requests');
+  const seenByTeacher = teacherView.data.requests.find((r) => r.id === id);
+  assert.equal(seenByTeacher.status, 'pending');
+  assert.equal(seenByTeacher.comments.length, 2);
+});
+
 test('Hausaufgabe: Textabgabe funktioniert und erscheint in der Korrekturqueue', async () => {
   const student = await loginAs('schueler@dbz.de');
   const list = await student('GET', '/assignments');

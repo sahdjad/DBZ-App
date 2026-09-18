@@ -1347,10 +1347,23 @@ router.get('/calendar/:token', (req, res) => {
 
 router.get('/absence-reasons', requireAuth, (_req, res) => res.json({ reasons: ABSENCE_REASONS }));
 
+// Grußformeln/Höflichkeitsfloskeln zählen nicht als Begründungs-Inhalt – sonst
+// reicht "As-salamu alaikum ..." allein, um eine reine Zeichenanzahl-Prüfung zu
+// erfüllen, ohne dass wirklich etwas gesagt wird.
+const GREETING_FILLER_RE = /\b(as-?salamu?\s*alaikum\S*|wa\s*alaikum\s*(as-?)?salam\S*|salamun\S*|hallo|hi|guten\s+(morgen|tag|abend)|liebe[r]?\s+\S+|sehr\s+geehrte[r]?\s+\S+|mit\s+freundlichen\s+gr[uü][sß]+en|liebe\s+gr[uü][sß]e|vielen\s+dank|danke\s*(schön)?|bitte|mfg|lg|gr[uü][sß]e?)\b/gi;
+
+function meaningfulContentWords(text) {
+  const stripped = (text || '').replace(GREETING_FILLER_RE, ' ');
+  return stripped.split(/[^a-zA-ZäöüÄÖÜß]+/).filter((w) => w.length >= 3).length;
+}
+const ABSENCE_REASON_MIN_WORDS = 5;
+
 router.post('/absence-requests', requireAuth, (req, res) => {
   const { studentId, classId, requestType, reasonCategory, comment, sessionDate } = req.body || {};
-  if (!comment || comment.trim().length < 30)
-    return res.status(400).json({ error: 'Bitte eine Begründung mit mindestens 30 Zeichen angeben.' });
+  // Echte inhaltliche Mindestlänge statt reiner Zeichenzahl (sonst reicht eine
+  // Grußformel als Lückenfüller, ohne dass eine echte Begründung dasteht).
+  if (!comment || meaningfulContentWords(comment) < ABSENCE_REASON_MIN_WORDS)
+    return res.status(400).json({ error: `Bitte kurz begründen, was los ist (mindestens ${ABSENCE_REASON_MIN_WORDS} aussagekräftige Wörter, Grußformeln zählen nicht mit).` });
   // Schüler stellt für sich; Eltern für ihr Kind.
   let targetStudentId = req.user.id;
   if (req.user.role === ROLES.ELTERN) {
@@ -1448,6 +1461,39 @@ router.post('/absence-requests/:id/decide', requireAuth, (req, res) => {
     deepLink: '/abwesenheit',
   });
   res.json({ ok: true, status: item.status });
+});
+
+// Rückfrage-Antwort direkt in der App statt außerhalb (WhatsApp/Telefon) klären
+// zu müssen. Antwortet die Familie auf eine Rückfrage, geht der Antrag
+// automatisch zurück auf "offen", damit die Lehrkraft erneut entscheidet.
+router.post('/absence-requests/:id/comments', requireAuth, (req, res) => {
+  const item = byId('absence_requests', req.params.id);
+  if (!item) return res.status(404).json({ error: 'Antrag nicht gefunden' });
+  const isOwner = item.studentId === req.user.id;
+  const isParent = req.user.role === ROLES.ELTERN && (req.user.childIds || []).includes(item.studentId);
+  const isManager = canManageClass(req.user, item.classId);
+  if (!isOwner && !isParent && !isManager) return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const body = (req.body?.body || '').trim();
+  if (!body) return res.status(400).json({ error: 'Text erforderlich' });
+  const comment = { id: newId('arc'), authorId: req.user.id, authorName: req.user.name, isManager, body, createdAt: new Date().toISOString() };
+  item.comments = item.comments || [];
+  item.comments.push(comment);
+  if (!isManager && item.status === 'needs_info') {
+    item.status = 'pending';
+    item.decidedBy = null;
+    item.decidedAt = null;
+  }
+  db.commit();
+  audit(req.user.id, 'absence.comment', 'absence_request', item.id);
+  const recipients = isManager ? [item.studentId] : classManagersOfClasses([item.classId]).map((m) => m.id);
+  recipients.forEach((id) => notify(id, {
+    type: 'absence_decided', level: 'info',
+    title: isManager ? 'Rückfrage zu deiner Abwesenheit' : 'Antwort auf Rückfrage',
+    body: `${req.user.name}: ${body.slice(0, 100)}`,
+    deepLink: '/abwesenheit',
+  }));
+  res.json({ ok: true, request: item });
 });
 
 // =============================================================================
