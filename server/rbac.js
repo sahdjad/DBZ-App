@@ -21,6 +21,10 @@ export const TEACHING_ROLES = [ROLES.KLASSENLEHRER, ROLES.VERTRETUNG];
 export const ADMIN_ROLES = [ROLES.SUPER_ADMIN, ROLES.LEITUNG];
 // Rollen, die eine Klasse fachlich verwalten (Anwesenheit, Aufgaben, Freigaben).
 export const CLASS_MANAGERS = [ROLES.SUPER_ADMIN, ROLES.LEITUNG, ROLES.KLASSENLEHRER, ROLES.VERTRETUNG];
+// Klassensprecher ist fachlich ein Schüler MIT Zusatzrechten, kein Ersatz für
+// die Schüler-Rolle: überall wo "die Schüler der Klasse" gemeint sind (Check-in,
+// Klassenliste, Aufgaben-Ziele, Zähler …), gehört der Klassensprecher mit dazu.
+export const STUDENT_ROLES = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER];
 
 export const ROLE_LABELS = {
   super_admin: 'System-Administrator',

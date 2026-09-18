@@ -22,6 +22,7 @@ import {
   requireRole,
   CLASS_MANAGERS,
   TEACHING_ROLES,
+  STUDENT_ROLES,
 } from './rbac.js';
 import {
   attendanceStatusFor,
@@ -526,7 +527,7 @@ router.get('/classes', requireAuth, (req, res) => {
     weekday: c.weekday,
     startTime: c.startTime,
     endTime: c.endTime,
-    studentCount: db.all('users').filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(c.id)).length,
+    studentCount: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(c.id)).length,
   }));
   res.json({ classes });
 });
@@ -536,7 +537,7 @@ router.get('/classes/:id/students', requireAuth, (req, res) => {
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   const students = db
     .all('users')
-    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(klass.id));
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
   // Verwalter sehen Details, andere Klassenmitglieder nur eine minimale Liste.
   if (canManageClass(req.user, klass.id)) {
     return res.json({ students: students.map(publicUser) });
@@ -544,6 +545,31 @@ router.get('/classes/:id/students', requireAuth, (req, res) => {
   const isMember = (req.user.classIds || []).includes(klass.id);
   if (!isMember) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
   res.json({ students: students.map(minimalStudent) });
+});
+
+// Klassensprecher ernennen/zurückstufen. Anders als der allgemeine Rollenwechsel
+// (nur Admin/Leitung) darf das der Klassenlehrer/die Vertretung direkt für
+// Schüler der EIGENEN Klasse machen – braucht keine Admin-Bestätigung, weil
+// Klassensprecher fachlich ein Schüler mit Zusatzrechten bleibt, kein
+// Rollenwechsel mit neuen Systemrechten.
+router.post('/students/:id/klassensprecher', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const target = findUserById(req.params.id);
+  if (!target || !STUDENT_ROLES.includes(target.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!(target.classIds || []).some((c) => canManageClass(req.user, c)))
+    return res.status(403).json({ error: 'Kein Zugriff' });
+
+  const promote = Boolean(req.body?.promote);
+  const before = target.role;
+  target.role = promote ? ROLES.KLASSENSPRECHER : ROLES.SCHUELER;
+  db.commit();
+  audit(req.user.id, 'user.klassensprecher_toggle', 'user', target.id, { role: before }, { role: target.role });
+  notify(target.id, {
+    type: 'approval', level: 'info',
+    title: promote ? 'Du bist jetzt Klassensprecher(in)' : 'Klassensprecher-Rolle entfernt',
+    body: promote ? 'Deine Lehrkraft hat dich zum Klassensprecher/zur Klassensprecherin ernannt.' : 'Du bist jetzt wieder regulär als Schüler eingetragen.',
+    deepLink: '/dashboard',
+  });
+  res.json({ user: publicUser(target) });
 });
 
 // =============================================================================
@@ -583,7 +609,7 @@ function sessionView(s, klass, user) {
     doorOpen: doorCheckinOpen(s).open,
   };
   // eigener Anwesenheitsstatus des Schülers
-  if (user?.role === ROLES.SCHUELER) {
+  if (user && STUDENT_ROLES.includes(user.role)) {
     const rec = db.all('attendance').find((a) => a.sessionId === s.id && a.studentId === user.id);
     view.myAttendance = rec ? { status: rec.status, minutesLate: rec.minutesLate } : null;
   }
@@ -685,7 +711,8 @@ router.post('/classes/:id/checkin-qr/rotate', requireAuth, (req, res) => {
 });
 
 // Schüler-Check-in per QR-Token (Serverzeit, Verspätung serverseitig berechnet).
-router.post('/checkin', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => {
+// Klassensprecher ist auch Schüler -> muss genauso einchecken können.
+router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const { token } = req.body || {};
   if (!token) return res.status(400).json({ error: 'Kein QR-Code übermittelt' });
   const myClassIds = req.user.classIds || [];
@@ -755,7 +782,7 @@ router.get('/sessions/:id/attendance', requireAuth, (req, res) => {
   if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   const students = db
     .all('users')
-    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(s.classId));
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(s.classId));
   const records = db.all('attendance').filter((a) => a.sessionId === s.id);
   const list = students.map((st) => {
     const rec = records.find((a) => a.studentId === st.id);
@@ -891,7 +918,7 @@ function studentAssignments(studentId) {
 
 router.get('/students/:id/profile', requireAuth, (req, res) => {
   const student = findUserById(req.params.id);
-  if (!student || student.role !== ROLES.SCHUELER)
+  if (!student || !STUDENT_ROLES.includes(student.role))
     return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!canViewStudent(req.user, student)) return res.status(403).json({ error: 'Kein Zugriff' });
 
@@ -928,8 +955,8 @@ router.get('/classes/:id/attendance-overview', requireAuth, (req, res) => {
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   const students = db
     .all('users')
-    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(klass.id));
-  const rows = students.map((s) => ({ id: s.id, name: s.name, ...attendanceStats(s.id) }));
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
+  const rows = students.map((s) => ({ id: s.id, name: s.name, role: s.role, ...attendanceStats(s.id) }));
   res.json({ rows });
 });
 
@@ -943,7 +970,7 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
 
   const students = db
     .all('users')
-    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(klass.id));
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
   const assignments = db.all('assignments');
   const submissions = db.all('submissions');
   const penalties = db.all('penalties');
@@ -999,7 +1026,7 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
 // Aufstellung je Klasse. Bündelt Anwesenheit, Strafen und Registrierungen.
 router.get('/leadership/overview', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
   const users = db.all('users');
-  const students = users.filter((u) => u.role === ROLES.SCHUELER);
+  const students = users.filter((u) => STUDENT_ROLES.includes(u.role));
   const classes = db.all('classes');
   const penalties = db.all('penalties');
   const openPen = penalties.filter((p) => p.status === 'approved');
@@ -1089,7 +1116,7 @@ router.get('/calendar', requireAuth, (req, res) => {
       time: d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
     });
   };
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     db.all('assignments').filter((a) => targetsFor(a).includes(req.user.id)).forEach((a) => add(a, effectiveDue(a, req.user.id)));
   } else if (req.user.role === ROLES.ELTERN) {
     (req.user.childIds || []).forEach((cid) => {
@@ -1272,7 +1299,7 @@ function buildCalendarIcs(user) {
     const t = d.toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin', hour: '2-digit', minute: '2-digit' });
     push({ uid: `due-${a.id}-${who || 'me'}`, start: icsDate(due.slice(0, 10)), allDay: true, summary: `Frist ${t}: ${a.title}${who ? ' · ' + who : ''}` });
   };
-  if (user.role === ROLES.SCHUELER) db.all('assignments').filter((a) => targetsFor(a).includes(user.id)).forEach((a) => addDue(a, effectiveDue(a, user.id)));
+  if (STUDENT_ROLES.includes(user.role)) db.all('assignments').filter((a) => targetsFor(a).includes(user.id)).forEach((a) => addDue(a, effectiveDue(a, user.id)));
   else if (user.role === ROLES.ELTERN) (user.childIds || []).forEach((cid) => { const ch = findUserById(cid); db.all('assignments').filter((a) => targetsFor(a).includes(cid)).forEach((a) => addDue(a, effectiveDue(a, cid), ch?.name)); });
   else if (isClassManager(user)) db.all('assignments').filter((a) => canManageClass(user, a.classId)).forEach((a) => addDue(a, a.dueAt));
 
@@ -1330,7 +1357,7 @@ router.post('/absence-requests', requireAuth, (req, res) => {
     if (!(req.user.childIds || []).includes(studentId))
       return res.status(403).json({ error: 'Kein verknüpftes Kind' });
     targetStudentId = studentId;
-  } else if (req.user.role !== ROLES.SCHUELER) {
+  } else if (!STUDENT_ROLES.includes(req.user.role)) {
     return res.status(403).json({ error: 'Nur Schüler oder Eltern können Anträge stellen' });
   }
   const student = findUserById(targetStudentId);
@@ -1371,7 +1398,7 @@ router.post('/absence-requests', requireAuth, (req, res) => {
 
 router.get('/absence-requests', requireAuth, (req, res) => {
   let list = db.all('absence_requests');
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     list = list.filter((r) => r.studentId === req.user.id);
   } else if (req.user.role === ROLES.ELTERN) {
     list = list.filter((r) => (req.user.childIds || []).includes(r.studentId));
@@ -1468,7 +1495,7 @@ function targetsFor(a) {
   if (a.targetType === 'students') return a.targetStudentIds;
   return db
     .all('users')
-    .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(a.classId))
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(a.classId))
     .map((u) => u.id);
 }
 
@@ -1482,7 +1509,7 @@ function effectiveDue(assignment, studentId) {
 }
 
 router.get('/assignments', requireAuth, (req, res) => {
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     const list = db
       .all('assignments')
       .filter((a) => targetsFor(a).includes(req.user.id))
@@ -1557,7 +1584,7 @@ function decorateForStudent(a, studentId) {
 router.get('/assignments/:id', requireAuth, (req, res) => {
   const a = byId('assignments', req.params.id);
   if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     if (!targetsFor(a).includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
     const sub = db.all('submissions').find((s) => s.assignmentId === a.id && s.studentId === req.user.id);
     const review = sub ? db.all('reviews').find((r) => r.submissionId === sub.id) : null;
@@ -1600,7 +1627,7 @@ router.post('/assignments/:id/extend', requireAuth, (req, res) => {
 router.post(
   '/assignments/:id/submit',
   requireAuth,
-  requireRole(ROLES.SCHUELER),
+  requireRole(STUDENT_ROLES),
   upload.array('files', 5),
   async (req, res) => {
     const a = byId('assignments', req.params.id);
@@ -1873,7 +1900,7 @@ router.post('/protocols/:id/approve', requireAuth, (req, res) => {
   // Nach Freigabe: Schüler der Klasse benachrichtigen (jetzt sichtbar).
   if (p.status === 'approved') {
     db.all('users')
-      .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(p.classId))
+      .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(p.classId))
       .forEach((st) =>
         notify(st.id, {
           type: 'protocol_submitted',
@@ -1948,7 +1975,7 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), (req, res) =>
 router.get('/behavior', requireAuth, (req, res) => {
   const all = db.all('behavior_records');
   let list;
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     list = all.filter((r) => r.studentId === req.user.id && r.visibleToStudent);
   } else if (req.user.role === ROLES.ELTERN) {
     const childId = req.query.studentId;
@@ -2183,7 +2210,7 @@ function goalView(g) {
 router.post('/quran-goals', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const { studentId, goalType, surahFrom, ayahFrom, surahTo, ayahTo, dueAt } = req.body || {};
   const student = findUserById(studentId);
-  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   const classId = (student.classIds || []).find((c) => canManageClass(req.user, c));
   if (!classId) return res.status(403).json({ error: 'Kein Zugriff' });
   const span = ayahSpan(surahFrom, ayahFrom, surahTo, ayahTo);
@@ -2213,7 +2240,7 @@ router.post('/quran-goals', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
 
 router.get('/quran-goals', requireAuth, (req, res) => {
   let list = db.all('quran_goals');
-  if (req.user.role === ROLES.SCHUELER) list = list.filter((g) => g.studentId === req.user.id);
+  if (STUDENT_ROLES.includes(req.user.role)) list = list.filter((g) => g.studentId === req.user.id);
   else if (req.user.role === ROLES.ELTERN) {
     const sid = req.query.studentId;
     if (sid && !(req.user.childIds || []).includes(sid)) return res.status(403).json({ error: 'Kein verknüpftes Kind' });
@@ -2294,7 +2321,7 @@ router.get('/quran-goals/:id', requireAuth, (req, res) => {
 
 // Schüler lädt zu Hause eine Audio-Rezitation zum Ziel hoch (Vorarbeit). Die
 // Lehrkraft hört sie an und bewertet – oder prüft alternativ im Unterricht.
-router.post('/quran-goals/:id/recording', requireAuth, requireRole(ROLES.SCHUELER), upload.single('file'), async (req, res) => {
+router.post('/quran-goals/:id/recording', requireAuth, requireRole(STUDENT_ROLES), upload.single('file'), async (req, res) => {
   const goal = byId('quran_goals', req.params.id);
   if (!goal) return res.status(404).json({ error: 'Ziel nicht gefunden' });
   if (goal.studentId !== req.user.id) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -2452,7 +2479,7 @@ router.post('/exams/:id/publish', requireAuth, requireRole(CLASS_MANAGERS), (req
 });
 
 function targetStudentsOfClass(classId) {
-  return db.all('users').filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(classId)).map((u) => u.id);
+  return db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(classId)).map((u) => u.id);
 }
 
 /** Zielschüler einer Prüfung: leere Zuweisung = ganze Klasse, sonst die zugewiesenen. */
@@ -2467,7 +2494,7 @@ function examTargetsStudent(exam, studentId) {
 }
 
 router.get('/exams', requireAuth, (req, res) => {
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     const list = db
       .all('exams')
       .filter((e) => e.status === 'published' && (req.user.classIds || []).includes(e.classId) && examTargetsStudent(e, req.user.id))
@@ -2509,7 +2536,7 @@ router.get('/exams', requireAuth, (req, res) => {
 router.get('/exams/:id', requireAuth, (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam) return res.status(404).json({ error: 'Prüfung nicht gefunden' });
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     if (exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
       return res.status(403).json({ error: 'Kein Zugriff' });
     const att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
@@ -2533,7 +2560,7 @@ router.get('/exams/:id', requireAuth, (req, res) => {
 });
 
 // Versuch starten
-router.post('/exams/:id/attempt', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => {
+router.post('/exams/:id/attempt', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam || exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId))
     return res.status(403).json({ error: 'Kein Zugriff' });
@@ -2560,7 +2587,7 @@ router.post('/exams/:id/attempt', requireAuth, requireRole(ROLES.SCHUELER), (req
 });
 
 // Abgeben (Auto-Korrektur der Choice-Fragen)
-router.post('/exams/:id/submit', requireAuth, requireRole(ROLES.SCHUELER), (req, res) => {
+router.post('/exams/:id/submit', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam) return res.status(404).json({ error: 'Prüfung nicht gefunden' });
   const att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
@@ -2655,7 +2682,7 @@ router.get('/exams/:id/file/:fileId', requireAuth, async (req, res) => {
   if (!exam) return res.status(404).json({ error: 'Nicht gefunden' });
   const allowed =
     canManageClass(req.user, exam.classId) ||
-    (req.user.role === ROLES.SCHUELER && (req.user.classIds || []).includes(exam.classId) && examTargetsStudent(exam, req.user.id));
+    (STUDENT_ROLES.includes(req.user.role) && (req.user.classIds || []).includes(exam.classId) && examTargetsStudent(exam, req.user.id));
   if (!allowed) return res.status(403).json({ error: 'Kein Zugriff' });
   const f = (exam.files || []).find((x) => x.id === req.params.fileId);
   if (!f) return res.status(404).json({ error: 'Datei fehlt' });
@@ -2665,7 +2692,7 @@ router.get('/exams/:id/file/:fileId', requireAuth, async (req, res) => {
 });
 
 // Schüler gibt eine Datei-/Audio-Antwort ab.
-router.post('/exams/:id/response', requireAuth, requireRole(ROLES.SCHUELER), upload.array('files', 5), async (req, res) => {
+router.post('/exams/:id/response', requireAuth, requireRole(STUDENT_ROLES), upload.array('files', 5), async (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam || exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
     return res.status(403).json({ error: 'Kein Zugriff' });
@@ -2839,7 +2866,7 @@ router.post('/report-periods', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES
 router.post('/reports', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const { studentId, periodId } = req.body || {};
   const student = findUserById(studentId);
-  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(student.classIds || []).some((c) => canManageClass(req.user, c)))
     return res.status(403).json({ error: 'Kein Zugriff' });
   const period = byId('report_periods', periodId);
@@ -2934,7 +2961,7 @@ router.get('/reports', requireAuth, (req, res) => {
 // automatisch aus den aktuellen Daten). Nur Lehrkraft/Leitung der Klasse.
 router.get('/students/:id/standing', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const student = findUserById(req.params.id);
-  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
   res.json(studentStanding(req.params.id, winFromQuery(req.query)));
 });
@@ -2949,7 +2976,7 @@ router.get('/reports/overview', requireAuth, requireRole(CLASS_MANAGERS), (req, 
   const rows = [];
   for (const c of classes) {
     db.all('users')
-      .filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(c.id))
+      .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(c.id))
       .forEach((s) => {
         const r = reports.find((x) => x.studentId === s.id && x.periodId === periodId);
         const v = r ? reportView(r) : null;
@@ -2980,7 +3007,7 @@ function activityView(a) {
 router.post('/activities', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   const { studentId, title, category, points, maxPoints, countsForGrade, note } = req.body || {};
   const student = findUserById(studentId);
-  if (!student || student.role !== ROLES.SCHUELER) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   const classId = (student.classIds || [])[0];
   if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
@@ -3053,25 +3080,27 @@ router.get('/reports/:id', requireAuth, (req, res) => {
 // Direktnachrichten (sichere 1:1-Kommunikation)
 // =============================================================================
 
-// Erlaubte Gesprächspartner: Schüler/Eltern <-> Lehrkräfte der jeweiligen Klasse.
+// Erlaubte Gesprächspartner: Schüler/Eltern <-> Lehrkräfte der jeweiligen Klasse
+// UND die DBZ-Leitung/Sekretariat (schulweit, unabhängig von der Klasse).
 // Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
 function messageContacts(user) {
   const users = db.all('users');
   const active = (u) => u.status !== 'disabled' && u.id !== user.id;
+  const isLeitung = (u) => u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN;
   if (isAdmin(user)) return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role));
   if (isClassManager(user)) {
     const myClasses = user.classIds || [];
-    const students = users.filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).some((c) => myClasses.includes(c)));
+    const students = users.filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).some((c) => myClasses.includes(c)));
     const studentIds = new Set(students.map((s) => s.id));
     const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((ch) => studentIds.has(ch)));
     return [...students, ...parents].filter(active);
   }
-  if (user.role === ROLES.SCHUELER)
-    return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => (user.classIds || []).includes(c)));
+  if (STUDENT_ROLES.includes(user.role))
+    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => (user.classIds || []).includes(c)))));
   if (user.role === ROLES.ELTERN) {
     const childClasses = new Set();
     (user.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => childClasses.add(c)));
-    return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => childClasses.has(c)));
+    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => childClasses.has(c)))));
   }
   return [];
 }
@@ -3085,11 +3114,19 @@ function classManagersOfClasses(classIds) {
     .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
 }
 
+// Alle aktiven Leitungs-/Admin-Konten – das "Sekretariat" teilt sich EIN
+// Postfach: schreibt jemand die Leitung an, sehen/beantworten alle denselben
+// Thread (statt dass 5 Leitungen 5 getrennte Nachrichten bekommen).
+function leitungAndAdminIds() {
+  return db.all('users').filter((u) => u.status !== 'disabled' && (u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
+}
+
 // Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
 // eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
-// Lehrkräfte) beteiligt. So entsteht keine Isolation und beide Lehrkräfte können
-// mitlesen und antworten (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/Leitung
-// bleibt ein direktes Zweiergespräch.
+// Lehrkräfte) beteiligt. Schreibt sie an die Leitung, werden ALLE Leitungs-/
+// Admin-Konten beteiligt (geteiltes Postfach, eine Antwort reicht für alle).
+// So entsteht keine Isolation (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/
+// Leitung bleibt ein direktes Zweiergespräch.
 function resolveThreadParticipants(initiator, recipient) {
   const isMgr = (u) => CLASS_MANAGERS.includes(u.role);
   let family = null;
@@ -3098,16 +3135,22 @@ function resolveThreadParticipants(initiator, recipient) {
 
   let ids;
   if (family) {
-    let classIds = [];
-    if (family.role === ROLES.SCHUELER) classIds = family.classIds || [];
-    else if (family.role === ROLES.ELTERN) {
-      const s = new Set();
-      (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => s.add(c)));
-      classIds = [...s];
+    const target = family === initiator ? recipient : initiator;
+    let teamIds;
+    if (target.role === ROLES.LEITUNG || target.role === ROLES.SUPER_ADMIN) {
+      teamIds = leitungAndAdminIds();
+    } else {
+      let classIds = [];
+      if (STUDENT_ROLES.includes(family.role)) classIds = family.classIds || [];
+      else if (family.role === ROLES.ELTERN) {
+        const s = new Set();
+        (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => s.add(c)));
+        classIds = [...s];
+      }
+      teamIds = classManagersOfClasses(classIds).map((m) => m.id);
     }
-    const managers = classManagersOfClasses(classIds).map((m) => m.id);
     // Sicherstellen, dass der ursprüngliche Empfänger/Absender dabei ist.
-    ids = [family.id, ...managers, initiator.id, recipient.id];
+    ids = [family.id, ...teamIds, initiator.id, recipient.id];
   } else {
     ids = [initiator.id, recipient.id];
   }
@@ -3132,6 +3175,10 @@ function threadTitle(t, viewer) {
     return isMgr ? !CLASS_MANAGERS.includes(u.role) : CLASS_MANAGERS.includes(u.role);
   });
   const ids = wanted.length ? wanted : others;
+  // Geteiltes Leitungs-Postfach: statt einzelner Namen einheitlich "DBZ-Leitung"
+  // anzeigen (kann mehrere Personen sein, ist aber EIN Team/Posteingang).
+  if (ids.length > 1 && ids.every((id) => [ROLES.LEITUNG, ROLES.SUPER_ADMIN].includes(findUserById(id)?.role)))
+    return 'DBZ-Leitung';
   return ids.map((id) => t.participantNames[id]).filter(Boolean).join(', ') || 'Unbekannt';
 }
 
@@ -3559,7 +3606,7 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
   if (!canRecordPenalty(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
 
   const student = findUserById(studentId);
-  if (!student || student.role !== ROLES.SCHUELER || !(student.classIds || []).includes(classId))
+  if (!student || !STUDENT_ROLES.includes(student.role) || !(student.classIds || []).includes(classId))
     return res.status(400).json({ error: 'Bitte einen gültigen Schüler dieser Klasse wählen' });
   if (!['pages', 'money'].includes(type)) return res.status(400).json({ error: 'Ungültige Straf-Art' });
   const amt = Number(amount);
@@ -3654,7 +3701,7 @@ router.get('/penalties/summary', requireAuth, requireRole(CLASS_MANAGERS), (req,
   const rows = [];
   for (const c of classes) {
     db.all('users')
-      .filter((s) => s.role === ROLES.SCHUELER && (s.classIds || []).includes(c.id))
+      .filter((s) => STUDENT_ROLES.includes(s.role) && (s.classIds || []).includes(c.id))
       .forEach((s) => {
         const mine = all.filter((p) => p.studentId === s.id && p.classId === c.id);
         const totals = openTotals(mine);
@@ -4205,7 +4252,7 @@ function upcomingFor(user, days = 14, limit = 5) {
     if (dd < today || dd > end) return;
     events.push({ date: due.slice(0, 10), type: 'deadline', title: who ? `${a.title} · ${who}` : a.title, time: new Date(due).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) });
   };
-  if (user.role === ROLES.SCHUELER) db.all('assignments').filter((a) => targetsFor(a).includes(user.id)).forEach((a) => addDue(a, effectiveDue(a, user.id)));
+  if (STUDENT_ROLES.includes(user.role)) db.all('assignments').filter((a) => targetsFor(a).includes(user.id)).forEach((a) => addDue(a, effectiveDue(a, user.id)));
   else if (user.role === ROLES.ELTERN) (user.childIds || []).forEach((cid) => { const ch = findUserById(cid); db.all('assignments').filter((a) => targetsFor(a).includes(cid)).forEach((a) => addDue(a, effectiveDue(a, cid), ch?.name)); });
   else if (isClassManager(user)) db.all('assignments').filter((a) => canManageClass(user, a.classId)).forEach((a) => addDue(a, a.dueAt));
   return events.sort((a, b) => a.date.localeCompare(b.date) || (a.time || '').localeCompare(b.time || '')).slice(0, limit);
@@ -4237,7 +4284,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
 
   const base = { user, notifications, unread, announcements, upcoming, unreadMessages, org: publicOrg() };
 
-  if (req.user.role === ROLES.SCHUELER) {
+  if (STUDENT_ROLES.includes(req.user.role)) {
     const assignments = db
       .all('assignments')
       .filter((a) => targetsFor(a).includes(req.user.id))
@@ -4301,7 +4348,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
     stats: {
       users: db.all('users').length,
       classes: db.all('classes').length,
-      students: db.all('users').filter((u) => u.role === ROLES.SCHUELER).length,
+      students: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role)).length,
       pendingUsers: db.all('users').filter((u) => u.status === 'pending').length,
     },
   });
@@ -4527,7 +4574,7 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
 
   if (Array.isArray(classIds)) u.classIds = classIds.filter((c) => findClass(c));
   if (Array.isArray(childIds))
-    u.childIds = childIds.filter((id) => findUserById(id)?.role === ROLES.SCHUELER);
+    u.childIds = childIds.filter((id) => STUDENT_ROLES.includes(findUserById(id)?.role));
 
   if (status === 'active' || status === 'disabled') {
     if (status === 'disabled' && u.id === req.user.id)
@@ -4538,6 +4585,35 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   db.commit();
   audit(req.user.id, 'user.update', 'user', u.id, before, { role: u.role, status: u.status });
   res.json({ user: publicUser(u) });
+});
+
+// Endgültiges Löschen (nicht nur deaktivieren) – z. B. wenn ein Schüler sich
+// komplett abmeldet. Zweistufig als Sicherheitsnetz: das Konto muss zuerst
+// deaktiviert sein, bevor es unwiderruflich gelöscht werden kann. Historische
+// Einträge (Anwesenheit, Abgaben, Audit-Log) bleiben bestehen und zeigen den
+// Namen weiterhin an – nur der Nutzer-Datensatz selbst (inkl. Passwort-Hash,
+// Kontaktdaten) wird entfernt.
+router.delete('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (u.id === req.user.id) return res.status(400).json({ error: 'Das eigene Konto kann nicht gelöscht werden' });
+  if (u.status !== 'disabled')
+    return res.status(400).json({ error: 'Konto muss zuerst deaktiviert werden, bevor es gelöscht werden kann' });
+  if (u.role === ROLES.SUPER_ADMIN)
+    return res.status(400).json({ error: 'System-Administratoren können nicht gelöscht werden' });
+
+  const arr = db.all('users');
+  const idx = arr.findIndex((x) => x.id === u.id);
+  arr.splice(idx, 1);
+  // Verknüpfungen zu anderen Konten (z. B. Eltern-Kind) und offene Einladungen
+  // aufräumen, damit keine toten Referenzen bleiben.
+  arr.forEach((x) => {
+    if (x.childIds?.includes(u.id)) x.childIds = x.childIds.filter((id) => id !== u.id);
+    if (x.linkedAccountIds?.includes(u.id)) x.linkedAccountIds = x.linkedAccountIds.filter((id) => id !== u.id);
+  });
+  db.commit();
+  audit(req.user.id, 'user.delete', 'user', u.id, { name: u.name, email: u.email, role: u.role }, null);
+  res.json({ ok: true });
 });
 
 router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
@@ -4646,7 +4722,7 @@ router.post('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), (req, re
     if (!classId || !canManageClass(req.user, classId))
       return res.status(403).json({ error: 'Nur Einladungen für die eigene Klasse' });
   }
-  if (childId && findUserById(childId)?.role !== ROLES.SCHUELER)
+  if (childId && !STUDENT_ROLES.includes(findUserById(childId)?.role))
     return res.status(400).json({ error: 'Verknüpftes Kind ist kein Schüler' });
 
   const token = crypto.randomBytes(24).toString('base64url');
@@ -4705,7 +4781,7 @@ router.get('/export/attendance.csv', requireAuth, requireRole(CLASS_MANAGERS), (
   const klass = findClass(req.query.classId);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const students = db.all('users').filter((u) => u.role === ROLES.SCHUELER && (u.classIds || []).includes(klass.id));
+  const students = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
   const rows = [['Name', 'Sitzungen', 'Anwesend', 'Verspätet', 'Entschuldigt', 'Unentschuldigt', 'Ø Versp. (Min)', 'Quote %']];
   for (const s of students) {
     const a = attendanceStats(s.id);

@@ -328,6 +328,17 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
     }
   };
 
+  const remove = async () => {
+    if (!window.confirm(`${user.name} endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+    try {
+      await api.del(`/admin/users/${user.id}`);
+      toast.push('Nutzer gelöscht', 'success');
+      onDone();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
   const showClasses = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'].includes(f.role);
   return (
     <Card className="p-5 border-mint/30">
@@ -389,7 +400,13 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
         <div className="flex gap-2">
           <Button onClick={save}>Speichern</Button>
           <Button variant="ghost" onClick={onCancel}>Abbrechen</Button>
+          {user.status === 'disabled' && (
+            <Button variant="danger" onClick={remove} className="ml-auto">Endgültig löschen</Button>
+          )}
         </div>
+        {user.status !== 'disabled' && (
+          <p className="text-[11px] text-sage-muted">Zum endgültigen Löschen zuerst „Konto aktiv" ausschalten und speichern.</p>
+        )}
       </div>
     </Card>
   );

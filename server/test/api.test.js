@@ -267,6 +267,72 @@ test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Grup
   assert.ok(firstTeacherBadges.messages >= 1, 'Erste Lehrkraft wird über die Antwort benachrichtigt');
 });
 
+test('Klassensprecher: Lehrer ernennt/entfernt direkt (eigene Klasse), fremde Klasse geht nicht; Klassensprecher bleibt voll funktionsfähiger Schüler', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+
+  // Fremde Klasse anlegen mit anderem Lehrer -> darf nicht befördern.
+  const admin = await loginAs('admin@dbz.de');
+  const otherClass = await admin('POST', '/admin/classes', { name: 'Klasse X-Test' });
+  const otherTeacherEmail = `other-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Anderer Lehrer', email: otherTeacherEmail, password: 'demo1234', role: 'klassenlehrer', classIds: [otherClass.data.class.id] });
+  const otherTeacher = await loginAs(otherTeacherEmail);
+  const denied = await otherTeacher('POST', `/students/${studentId}/klassensprecher`, { promote: true });
+  assert.equal(denied.status, 403);
+
+  // Eigener Lehrer darf ernennen.
+  const promote = await teacher('POST', `/students/${studentId}/klassensprecher`, { promote: true });
+  assert.equal(promote.status, 200);
+  assert.equal(promote.data.user.role, 'klassensprecher');
+
+  // Klassensprecher bleibt voll funktionsfähiger Schüler: Check-in, Aufgaben, Nachrichten weiterhin möglich.
+  const sprecher = await loginAs('schueler@dbz.de');
+  const assignments = await sprecher('GET', '/assignments');
+  assert.equal(assignments.status, 200);
+  const contacts = await sprecher('GET', '/message-contacts');
+  assert.ok(contacts.data.contacts.length > 0, 'Klassensprecher kann weiterhin Nachrichten schreiben');
+  const rosterAfter = await teacher('GET', `/classes/class_3/roster`);
+  assert.ok(rosterAfter.data.rows.some((r) => r.id === studentId), 'Klassensprecher taucht weiter in der Klassenliste auf');
+
+  // Zurückstufen.
+  const demote = await teacher('POST', `/students/${studentId}/klassensprecher`, { promote: false });
+  assert.equal(demote.status, 200);
+  assert.equal(demote.data.user.role, 'schueler');
+});
+
+test('Nachrichten: Schüler kann Leitung schreiben, ALLE Leitungs-/Admin-Konten teilen sich den Thread', async () => {
+  // Zweite Leitung anlegen (mehrere Leitungspersonen -> geteiltes Postfach).
+  const admin = await loginAs('admin@dbz.de');
+  const created = await admin('POST', '/admin/users', {
+    name: 'Zweite Leitung', email: `leitung2-${Date.now()}@dbz.de`, password: 'demo1234', role: 'leitung',
+  });
+  assert.equal(created.status, 200);
+  const secondLeitungEmail = created.data.user.email;
+
+  const student = await loginAs('schueler@dbz.de');
+  const contacts = (await student('GET', '/message-contacts')).data.contacts;
+  const firstLeitung = contacts.find((c) => c.roleLabel === 'DBZ-Leitung');
+  assert.ok(firstLeitung, 'Leitung steht in der Kontaktliste des Schülers');
+
+  const send = await student('POST', '/threads', { recipientId: firstLeitung.id, body: 'Assalamu alaikum, ich habe eine Frage.' });
+  assert.equal(send.status, 200);
+  const threadId = send.data.threadId;
+  const studentThread = (await student('GET', `/threads/${threadId}`)).data.thread;
+  assert.equal(studentThread.otherName, 'DBZ-Leitung', 'Thread-Titel zeigt einheitlich "DBZ-Leitung"');
+
+  // Die zweite, ursprünglich gar nicht angeschriebene Leitung sieht denselben Thread mit.
+  const secondLeitung = await loginAs(secondLeitungEmail);
+  const secondThreads = (await secondLeitung('GET', '/threads')).data.threads;
+  assert.ok(secondThreads.some((t) => t.id === threadId), 'Zweite Leitung sieht den Thread, obwohl nicht direkt angeschrieben');
+
+  // Zweite Leitung antwortet -> Schüler sieht die Antwort, Postfach ist geteilt.
+  const reply = await secondLeitung('POST', `/threads/${threadId}/messages`, { body: 'Wa alaikum salam, wie kann ich helfen?' });
+  assert.equal(reply.status, 200);
+  const studentView = (await student('GET', `/threads/${threadId}`)).data.thread;
+  assert.ok(studentView.messages.some((m) => m.body === 'Wa alaikum salam, wie kann ich helfen?'));
+});
+
 test('Notenvorschlag: gute Daten -> gute Note, schlechte Daten -> schlechte Note', async () => {
   const { computeStanding } = await import('../domain.js');
   const good = computeStanding({

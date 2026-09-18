@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Search } from 'lucide-react';
+import { Search, Star } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, Spinner } from '../components/ui.jsx';
+import { Card, Spinner, useToast } from '../components/ui.jsx';
 
 function rateColor(r) {
   if (r === null) return 'text-sage-muted';
@@ -14,10 +14,12 @@ function rateColor(r) {
 
 export default function Klassenliste() {
   const navigate = useNavigate();
+  const toast = useToast();
   const [classes, setClasses] = useState(null);
   const [classId, setClassId] = useState('');
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
+  const [busyId, setBusyId] = useState(null);
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -26,11 +28,28 @@ export default function Klassenliste() {
     });
   }, []);
 
+  const load = () => api.get(`/classes/${classId}/roster`).then(setData).catch(() => setData({ rows: [] }));
   useEffect(() => {
     if (!classId) return;
     setData(null);
-    api.get(`/classes/${classId}/roster`).then(setData).catch(() => setData({ rows: [] }));
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [classId]);
+
+  const toggleKlassensprecher = async (e, row) => {
+    e.stopPropagation();
+    const promote = row.role !== 'klassensprecher';
+    setBusyId(row.id);
+    try {
+      await api.post(`/students/${row.id}/klassensprecher`, { promote });
+      toast.push(promote ? `${row.name} ist jetzt Klassensprecher(in)` : `${row.name} ist wieder regulärer Schüler`, 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const rows = useMemo(() => {
     const list = data?.rows || [];
@@ -72,6 +91,7 @@ export default function Klassenliste() {
                     <th className="py-3 px-3 font-medium text-center" title="Offene Aufgaben (davon überfällig)">Offen</th>
                     <th className="py-3 px-3 font-medium text-center" title="Offene Strafen">Strafen</th>
                     <th className="py-3 px-3 font-medium text-center" title="Negative Verhaltensvermerke">Vermerke</th>
+                    <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -81,7 +101,10 @@ export default function Klassenliste() {
                       onClick={() => navigate(`/profil/${r.id}`)}
                       className="border-b border-line last:border-0 hover:bg-hover cursor-pointer"
                     >
-                      <td className="py-3 px-4 text-ivory whitespace-nowrap">{r.name}</td>
+                      <td className="py-3 px-4 text-ivory whitespace-nowrap">
+                        {r.name}
+                        {r.role === 'klassensprecher' && <Star size={13} className="inline ml-1.5 -mt-0.5 text-gold" aria-label="Klassensprecher(in)" />}
+                      </td>
                       <td className={`py-3 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`}>
                         {r.attendanceRate === null ? '–' : `${r.attendanceRate}%`}
                       </td>
@@ -112,6 +135,15 @@ export default function Klassenliste() {
                       </td>
                       <td className={`py-3 px-3 text-center font-mono ${r.negativeBehavior > 0 ? 'text-status-late' : 'text-sage-muted'}`}>
                         {r.negativeBehavior}
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <button
+                          onClick={(e) => toggleKlassensprecher(e, r)}
+                          disabled={busyId === r.id}
+                          className={`text-xs px-2.5 py-1 rounded-lg border transition ${r.role === 'klassensprecher' ? 'border-gold/40 text-gold bg-gold/10 hover:bg-gold/15' : 'border-line text-sage hover:bg-subtle'}`}
+                        >
+                          {r.role === 'klassensprecher' ? 'Entfernen' : 'Ernennen'}
+                        </button>
                       </td>
                     </tr>
                   ))}
