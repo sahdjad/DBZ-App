@@ -80,7 +80,10 @@ function gradeWeights() {
 /** Öffentlich sichtbare Nutzerfelder (nie passwordHash oder Familien-Code). */
 function publicUser(u) {
   if (!u) return null;
-  const { passwordHash, familyCode, ...rest } = u;
+  // "probation" bewusst nie über den allgemeinen Nutzer-Mapper ausgeben – das
+  // ist nur für die Klassenlehrkraft in der Klassenliste sichtbar (eigene,
+  // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
+  const { passwordHash, familyCode, probation, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role };
 }
 
@@ -1037,6 +1040,7 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
     return {
       id: s.id,
       name: s.name,
+      role: s.role,
       attendanceRate,
       sessions: att.sessions,
       unexcused: att.unexcused,
@@ -1049,10 +1053,27 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
       penaltyMoney,
       penaltyPages,
       negativeBehavior,
+      // Nur für die Klassenlehrkraft sichtbar (nicht für Leitung/Admin/Klassensprecher):
+      // "wer ist auf Probezeit" bleibt Sache des Lehrers, nicht Teil der allgemeinen Klassenliste.
+      ...(TEACHING_ROLES.includes(req.user.role) ? { probation: Boolean(s.probation) } : {}),
     };
   });
   rows.sort((a, b) => a.name.localeCompare(b.name, 'de'));
   res.json({ class: { id: klass.id, name: klass.name }, rows });
+});
+
+// Probezeit markieren/entfernen – NUR die Klassenlehrkraft/Vertretung der
+// eigenen Klasse, nicht Admin/Leitung (soll bewusst nur in der Lehreransicht
+// sichtbar/steuerbar sein, nicht in der allgemeinen Schülerliste).
+router.post('/students/:id/probation', requireAuth, requireRole(TEACHING_ROLES), (req, res) => {
+  const target = findUserById(req.params.id);
+  if (!target || !STUDENT_ROLES.includes(target.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!(target.classIds || []).some((c) => canManageClass(req.user, c)))
+    return res.status(403).json({ error: 'Kein Zugriff' });
+  target.probation = Boolean(req.body?.probation);
+  db.commit();
+  audit(req.user.id, 'user.probation_toggle', 'user', target.id, null, { probation: target.probation });
+  res.json({ ok: true, probation: target.probation });
 });
 
 // Schulweite Übersicht für die Leitung: Kennzahlen, offene Freigaben und eine
@@ -4912,49 +4933,49 @@ router.get('/export/roster.csv', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
 // (Klassenlehrer/Vertretung/Klassensprecher). Effektiv gilt: Klasse > Schule > Vorlage.
 const DEFAULT_PENALTY_CATALOG = [
   { id: 'verspaetung', title: 'Verspätungen und Fehlen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'v_30', label: 'Bis zu 30 Min unentschuldigt', consequence: '1 Seite' },
-    { id: 'v_45', label: 'Bis zu 45 Min unentschuldigt', consequence: '3 Seiten' },
-    { id: 'v_60', label: 'Bis zu 1 Stunde unentschuldigt', consequence: '3 Seiten' },
-    { id: 'v_60plus', label: 'Ab 1 Stunde unentschuldigt', consequence: '3 Seiten' },
-    { id: 'v_komplett', label: 'Komplettes unentschuldigtes Fehlen', consequence: 'Räumlichkeiten säubern' },
+    { id: 'v_30', label: 'Bis zu 30 Min unentschuldigt', consequence: '2 € oder 1 Seite' },
+    { id: 'v_45', label: 'Bis zu 45 Min unentschuldigt', consequence: '5 € oder 3 Seiten' },
+    { id: 'v_60', label: 'Bis zu 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten' },
+    { id: 'v_60plus', label: 'Ab 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten' },
+    { id: 'v_komplett', label: 'Komplettes unentschuldigtes Fehlen', consequence: '20 € oder Räumlichkeiten säubern' },
   ] },
   { id: 'stoerungen', title: 'Störungen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen. Uneinsichtigkeit kann bis zum Unterrichtsausschluss führen.', items: [
-    { id: 's_mehrfach', label: 'Mehrfache Unterrichtsstörungen', consequence: '1 Seite' },
-    { id: 's_auffaellig', label: 'Auffällige Störungen', consequence: '3 Seiten' },
-    { id: 's_regelmaessig', label: 'Regelmäßige mehrfache Unterrichtsstörungen', consequence: '4 Seiten + Gespräch mit Direktoren und/oder Eltern' },
+    { id: 's_mehrfach', label: 'Mehrfache Unterrichtsstörungen', consequence: '2 € oder 1 Seite' },
+    { id: 's_auffaellig', label: 'Auffällige Störungen', consequence: '5 € oder 3 Seiten' },
+    { id: 's_regelmaessig', label: 'Regelmäßige mehrfache Unterrichtsstörungen', consequence: '10 € oder 4 Seiten + Gespräch mit Direktoren und/oder Eltern' },
   ] },
   { id: 'hausaufgaben', title: 'Hausaufgaben', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'h_unvollstaendig', label: 'Unvollständige oder fehlende Hausaufgaben', consequence: '2 Seiten' },
+    { id: 'h_unvollstaendig', label: 'Unvollständige oder fehlende Hausaufgaben', consequence: '2 € oder 2 Seiten' },
     { id: 'h_quiz', label: 'Fehlendes Quiz (Klassen 3a, 3b, 4 und 5)', consequence: 'Essen für die gesamte Klasse bringen' },
     { id: 'h_3xfolge', label: '3-mal in Folge fehlende Hausaufgaben', consequence: 'Vor-/Nachsitzen' },
   ] },
   { id: 'materialien', title: 'Unterrichtsmaterialien', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'm_heft', label: 'Grünes Heft / Abu Laq Laq / DBZ Lehrbuch vergessen', consequence: '1 Seite' },
-    { id: 'm_koran', label: 'Koran vergessen', consequence: '2 Seiten' },
-    { id: 'm_schreibhefte', label: 'Schreibhefte vergessen', consequence: '2 Seiten' },
-    { id: 'm_mittel', label: 'Unterrichtsmittel im Klassenzimmer vergessen', consequence: '1 Seite' },
+    { id: 'm_heft', label: 'Grünes Heft / Abu Laq Laq / DBZ Lehrbuch vergessen', consequence: '2 € oder 1 Seite' },
+    { id: 'm_koran', label: 'Koran vergessen', consequence: '2 € oder 2 Seiten' },
+    { id: 'm_schreibhefte', label: 'Schreibhefte vergessen', consequence: '2 € oder 2 Seiten' },
+    { id: 'm_mittel', label: 'Unterrichtsmittel im Klassenzimmer vergessen', consequence: '2 € oder 1 Seite' },
   ] },
   { id: 'klassenzimmer', title: 'Ordnung & Sauberkeit – Klassenzimmer', note: 'Jede Klasse ist für sich verantwortlich. Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'kz_tafel', label: 'Tafel nicht gereinigt', consequence: '1 Seite' },
-    { id: 'kz_licht', label: 'Licht/TV etc. nicht ausgeschaltet', consequence: '3 Seiten' },
-    { id: 'kz_fenster', label: 'Fenster nicht geschlossen', consequence: '3 Seiten' },
-    { id: 'kz_heizung', label: 'Heizung angelassen', consequence: '3 Seiten' },
-    { id: 'kz_stuehle', label: 'Stühle nicht hochgestellt', consequence: '3 Seiten' },
+    { id: 'kz_tafel', label: 'Tafel nicht gereinigt', consequence: '2 € oder 1 Seite' },
+    { id: 'kz_licht', label: 'Licht/TV etc. nicht ausgeschaltet', consequence: '5 € oder 3 Seiten' },
+    { id: 'kz_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten' },
+    { id: 'kz_heizung', label: 'Heizung angelassen', consequence: '5 € oder 3 Seiten' },
+    { id: 'kz_stuehle', label: 'Stühle nicht hochgestellt', consequence: '5 € oder 3 Seiten' },
   ] },
-  { id: 'raeume', title: 'Ordnung & Sauberkeit – Räumlichkeiten (Ordnungsdienst)', note: 'Der Verein kann jederzeit hiervon abweichen. Ggf. Verlängerung des Ordnungsdienstes um eine weitere Woche.', items: [
-    { id: 'r_treppe', label: 'Treppenhaus dreckig', consequence: '3 Seiten' },
-    { id: 'r_licht', label: 'Lichter nicht ausgeschaltet', consequence: '3 Seiten' },
-    { id: 'r_fenster', label: 'Fenster nicht geschlossen', consequence: '3 Seiten' },
-    { id: 'r_boden', label: 'Boden nicht sauber', consequence: '3 Seiten' },
-    { id: 'r_toiletten', label: 'Toiletten nicht gereinigt', consequence: '3 Seiten' },
-    { id: 'r_kueche', label: 'Küche nicht sauber', consequence: '6 Seiten' },
+  { id: 'raeume', title: 'Ordnung & Sauberkeit – Räumlichkeiten (Ordnungsdienst)', note: 'Der Verein kann jederzeit hiervon abweichen. Zusätzlich: Verlängerung des Ordnungsdienstes um eine weitere Woche.', items: [
+    { id: 'r_treppe', label: 'Treppenhaus dreckig', consequence: '5 € oder 3 Seiten' },
+    { id: 'r_licht', label: 'Lichter nicht ausgeschaltet', consequence: '5 € oder 3 Seiten' },
+    { id: 'r_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten' },
+    { id: 'r_boden', label: 'Boden nicht sauber', consequence: '5 € oder 3 Seiten' },
+    { id: 'r_toiletten', label: 'Toiletten nicht gereinigt', consequence: '5 € oder 3 Seiten' },
+    { id: 'r_kueche', label: 'Küche nicht sauber', consequence: '10 € oder 6 Seiten' },
   ] },
   { id: 'sonstiges', title: 'Sonstiges', note: 'Der Verein kann jederzeit hiervon abweichen.', items: [
-    { id: 'x_grundstueck', label: 'Verlassen des Grundstücks ohne Erlaubnis', consequence: '3 Seiten' },
-    { id: 'x_schuhe', label: 'Schuhe in den Räumlichkeiten', consequence: '3 Seiten' },
-    { id: 'x_fahrlaessig', label: 'Fahrlässiger Umgang mit den Räumlichkeiten', consequence: 'ab 3 Seiten' },
-    { id: 'x_aufzug', label: 'Benutzung des Aufzugs ohne Erlaubnis', consequence: '3 Seiten' },
-    { id: 'x_parkplatz', label: 'Rücksichtsloses Fahren auf dem Parkplatz', consequence: '6 Seiten' },
+    { id: 'x_grundstueck', label: 'Verlassen des Grundstücks ohne Erlaubnis', consequence: '5 € oder 3 Seiten' },
+    { id: 'x_schuhe', label: 'Schuhe in den Räumlichkeiten', consequence: '5 € oder 3 Seiten' },
+    { id: 'x_fahrlaessig', label: 'Fahrlässiger Umgang mit den Räumlichkeiten', consequence: 'ab 5 € oder ab 3 Seiten' },
+    { id: 'x_aufzug', label: 'Benutzung des Aufzugs ohne Erlaubnis', consequence: '5 € oder 3 Seiten' },
+    { id: 'x_parkplatz', label: 'Rücksichtsloses Fahren auf dem Parkplatz', consequence: '10 € oder 6 Seiten' },
   ] },
 ];
 

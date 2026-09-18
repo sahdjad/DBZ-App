@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Star } from 'lucide-react';
+import { Search, Star, CircleDot } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, Spinner, useToast } from '../components/ui.jsx';
+import { useAuth } from '../lib/AuthContext.jsx';
+
+const TEACHER_ROLES = ['klassenlehrer', 'vertretung'];
 
 function rateColor(r) {
   if (r === null) return 'text-sage-muted';
@@ -15,6 +18,8 @@ function rateColor(r) {
 export default function Klassenliste() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const isTeacher = TEACHER_ROLES.includes(user.role);
   const [classes, setClasses] = useState(null);
   const [classId, setClassId] = useState('');
   const [data, setData] = useState(null);
@@ -43,6 +48,21 @@ export default function Klassenliste() {
     try {
       await api.post(`/students/${row.id}/klassensprecher`, { promote });
       toast.push(promote ? `${row.name} ist jetzt Klassensprecher(in)` : `${row.name} ist wieder regulärer Schüler`, 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const toggleProbation = async (e, row) => {
+    e.stopPropagation();
+    const probation = !row.probation;
+    setBusyId(row.id);
+    try {
+      await api.post(`/students/${row.id}/probation`, { probation });
+      toast.push(probation ? `${row.name} auf Probezeit gesetzt` : `${row.name}: Probezeit beendet`, 'success');
       load();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -92,6 +112,7 @@ export default function Klassenliste() {
                     <th className="py-3 px-3 font-medium text-center" title="Offene Strafen">Strafen</th>
                     <th className="py-3 px-3 font-medium text-center" title="Negative Verhaltensvermerke">Vermerke</th>
                     <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
+                    {isTeacher && <th className="py-3 px-3 font-medium text-center">Probezeit</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -102,6 +123,7 @@ export default function Klassenliste() {
                       className="border-b border-line last:border-0 hover:bg-hover cursor-pointer"
                     >
                       <td className="py-3 px-4 text-ivory whitespace-nowrap">
+                        {r.probation && <CircleDot size={10} className="inline mr-1.5 -mt-0.5 text-blue-400" aria-label="Probezeit" />}
                         {r.name}
                         {r.role === 'klassensprecher' && <Star size={13} className="inline ml-1.5 -mt-0.5 text-gold" aria-label="Klassensprecher(in)" />}
                       </td>
@@ -145,6 +167,17 @@ export default function Klassenliste() {
                           {r.role === 'klassensprecher' ? 'Entfernen' : 'Ernennen'}
                         </button>
                       </td>
+                      {isTeacher && (
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            onClick={(e) => toggleProbation(e, r)}
+                            disabled={busyId === r.id}
+                            className={`text-xs px-2.5 py-1 rounded-lg border transition ${r.probation ? 'border-blue-400/40 text-blue-400 bg-blue-400/10 hover:bg-blue-400/15' : 'border-line text-sage hover:bg-subtle'}`}
+                          >
+                            {r.probation ? 'Beenden' : 'Markieren'}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
