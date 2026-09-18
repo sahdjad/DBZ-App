@@ -245,7 +245,7 @@ def build(src_path, out_html, out_css, css_link, variant_label):
       <h1 class="cover-title-ar">اختبار الإجازة في العقيدة</h1>
       <div class="cover-rule"></div>
       <h1 class="cover-title-de">Ijāzah-Prüfung in der ʿAqīdah</h1>
-      <p class="cover-author">zum Werk „Wichtige Lektionen für die allgemeine Ummah in der ʿAqīdah"<br>von Šaykh Aḥmad an-Naǧǧār — und den 20 Hefteinträgen dazu</p>
+      <p class="cover-author">zum Werk „Wichtige Lektionen für die allgemeine Ummah in der ʿAqīdah"<br>von Šaykh Aḥmad an-Naǧǧār</p>
       <div class="exam-badge">%s</div>
       <p class="cover-sub" style="margin-top:8mm">Bearbeitungszeit: 2 Stunden &nbsp;·&nbsp; %d Punkte</p>
     </div>
