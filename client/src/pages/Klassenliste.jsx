@@ -1,12 +1,104 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Star, CircleDot } from 'lucide-react';
+import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, Spinner, useToast } from '../components/ui.jsx';
+import { Card, Button, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
 const TEACHER_ROLES = ['klassenlehrer', 'vertretung'];
+const INVITE_ROLE_LABELS = { schueler: 'Schüler', klassensprecher: 'Klassensprecher(in)', eltern: 'Eltern' };
+
+// Lehrkräfte können hier – ohne Umweg über die Verwaltung – einen
+// Registrierungslink für die eigene Klasse erzeugen (Schüler/Klassensprecher/
+// Eltern). Der Server erzwingt ohnehin, dass Lehrkräfte nur für ihre eigene
+// Klasse einladen dürfen (siehe /admin/invites in api.js).
+function ClassInviteCard({ classId, className }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [invites, setInvites] = useState(null);
+  const [form, setForm] = useState({ role: 'schueler', expiresInDays: 14, maxUses: 30 });
+  const [created, setCreated] = useState(null);
+
+  const load = () => api.get('/admin/invites').then((d) => setInvites(d.invites.filter((i) => i.className === className)));
+  useEffect(() => {
+    if (!open) return;
+    setCreated(null);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, classId]);
+
+  const create = async () => {
+    try {
+      const payload = { role: form.role, classId, expiresInDays: Number(form.expiresInDays), maxUses: Number(form.maxUses) };
+      const { token } = await api.post('/admin/invites', payload);
+      setCreated(`${window.location.origin}/#/registrieren?token=${token}`);
+      toast.push('Einladungslink erstellt', 'success');
+      load();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  const revoke = async (id) => { try { await api.post(`/admin/invites/${id}/revoke`); load(); } catch (err) { toast.push(err.message, 'error'); } };
+  const copy = (link) => { navigator.clipboard?.writeText(link); toast.push('Link kopiert', 'success'); };
+  const statusColor = (s) => (s === 'aktiv' ? 'text-status-present' : s === 'aufgebraucht' ? 'text-sage-muted' : 'text-status-late');
+
+  return (
+    <Card className="p-0 overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between p-4 text-left">
+        <span className="flex items-center gap-2 text-ivory font-medium"><Link2 size={17} /> Anmeldelink für {className}</span>
+        {open ? <ChevronUp size={16} className="text-sage-muted" /> : <ChevronDown size={16} className="text-sage-muted" />}
+      </button>
+      {open && (
+        <div className="p-4 pt-4 space-y-4 border-t border-line">
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+            <label className="block">
+              <span className="text-sm text-sage">Rolle</span>
+              <select className="input mt-1" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+                {Object.entries(INVITE_ROLE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm text-sage">Gültig (Tage)</span>
+              <input type="number" className="input mt-1" value={form.expiresInDays} onChange={(e) => setForm({ ...form, expiresInDays: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="text-sm text-sage">Max. Nutzungen</span>
+              <input type="number" className="input mt-1" value={form.maxUses} onChange={(e) => setForm({ ...form, maxUses: e.target.value })} />
+            </label>
+            <Button onClick={create}><Link2 size={16} /> Link erstellen</Button>
+          </div>
+
+          {created && (
+            <div className="rounded-lg border border-mint/30 bg-mint/5 p-3">
+              <div className="text-sm text-sage mb-2">Diesen Link teilen (z. B. per WhatsApp):</div>
+              <div className="flex gap-2">
+                <input readOnly className="input font-mono text-xs" value={created} onFocus={(e) => e.target.select()} />
+                <Button variant="outline" onClick={() => copy(created)}><Copy size={16} /> Kopieren</Button>
+              </div>
+            </div>
+          )}
+
+          {invites === null ? <Spinner /> : invites.length === 0 ? (
+            <p className="text-xs text-sage-muted">Noch keine Einladungen für diese Klasse.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {invites.map((i) => (
+                <div key={i.id} className="flex items-center justify-between gap-2 text-xs border-b border-line pb-1.5 last:border-0">
+                  <span className="text-sage">{i.roleLabel} · genutzt {i.usedCount}/{i.maxUses} · bis {new Date(i.expiresAt).toLocaleDateString('de-DE')}</span>
+                  <span className="flex items-center gap-2">
+                    <span className={statusColor(i.status)}>{i.status}</span>
+                    {i.status === 'aktiv' && (
+                      <Button size="sm" variant="ghost" onClick={() => revoke(i.id)}><XCircle size={14} /> Sperren</Button>
+                    )}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
 
 function rateColor(r) {
   if (r === null) return 'text-sage-muted';
@@ -77,9 +169,12 @@ export default function Klassenliste() {
     return s ? list.filter((r) => r.name.toLowerCase().includes(s)) : list;
   }, [data, q]);
 
+  const currentClass = classes?.find((c) => c.id === classId);
+
   return (
     <AppLayout title="Klassenliste">
       <div className="space-y-4">
+        {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}
         <div className="flex flex-wrap items-center gap-3">
           {classes && classes.length > 1 && (
             <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
