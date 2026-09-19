@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { BookMarked, UserPlus, CheckCircle2 } from 'lucide-react';
+import { BookMarked, UserPlus, CheckCircle2, Plus, X } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Button, Card, Spinner, useToast } from '../components/ui.jsx';
 
+const emptyGuardian = () => ({ name: '', phones: [''], email: '' });
 const emptyProfile = {
   firstName: '', lastName: '', birthDate: '', gender: '',
   street: '', houseNumber: '', zip: '', city: '', phone: '',
   desiredLevel: '',
-  guardianName: '', guardianPhone: '', guardianEmail: '',
+  guardians: [emptyGuardian()],
   siblings: '', notes: '',
   selfPayer: false,
 };
@@ -25,6 +26,82 @@ function ageFromBirthDate(iso) {
   const beforeBirthday = now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate());
   if (beforeBirthday) age -= 1;
   return age >= 0 && age < 120 ? age : null;
+}
+
+// Bis zu 2 Erziehungsberechtigte (z. B. Mutter + Vater), jede/r mit beliebig
+// vielen Telefonnummern – für Patchwork-/Trennungsfälle mit zwei Haushalten.
+function GuardianFields({ profile, setProfile }) {
+  const guardians = profile.guardians;
+  const updateGuardian = (idx, patch) => {
+    setProfile({ ...profile, guardians: guardians.map((g, i) => (i === idx ? { ...g, ...patch } : g)) });
+  };
+  const updatePhone = (idx, phoneIdx, value) => {
+    updateGuardian(idx, { phones: guardians[idx].phones.map((p, j) => (j === phoneIdx ? value : p)) });
+  };
+  const addPhone = (idx) => {
+    if (guardians[idx].phones.length >= 5) return;
+    updateGuardian(idx, { phones: [...guardians[idx].phones, ''] });
+  };
+  const removePhone = (idx, phoneIdx) => {
+    updateGuardian(idx, { phones: guardians[idx].phones.filter((_, j) => j !== phoneIdx) });
+  };
+  const addGuardian = () => {
+    if (guardians.length >= 2) return;
+    setProfile({ ...profile, guardians: [...guardians, emptyGuardian()] });
+  };
+  const removeGuardian = (idx) => setProfile({ ...profile, guardians: guardians.filter((_, i) => i !== idx) });
+
+  return (
+    <div className="space-y-3">
+      {guardians.map((g, idx) => (
+        <div key={idx} className="space-y-4 rounded-lg border border-line p-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-sage-muted">
+              Erziehungsberechtigte(r){guardians.length > 1 ? ` ${idx + 1}` : ''}
+            </p>
+            {idx > 0 && (
+              <button type="button" onClick={() => removeGuardian(idx)} className="text-xs text-sage-muted hover:text-status-absent flex items-center gap-1">
+                <X size={13} /> Entfernen
+              </button>
+            )}
+          </div>
+          <label className="block">
+            <span className="text-sm text-sage">Name (Mutter/Vater bzw. Erziehungsberechtigte/r)</span>
+            <input className="input mt-1" value={g.name} onChange={(e) => updateGuardian(idx, { name: e.target.value })} required={idx === 0} />
+          </label>
+
+          <div className="space-y-2">
+            <span className="text-sm text-sage">Telefonnummer(n)</span>
+            {g.phones.map((phone, phoneIdx) => (
+              <div key={phoneIdx} className="flex gap-2">
+                <input type="tel" className="input" value={phone} onChange={(e) => updatePhone(idx, phoneIdx, e.target.value)} required={idx === 0 && phoneIdx === 0} />
+                {g.phones.length > 1 && (
+                  <button type="button" onClick={() => removePhone(idx, phoneIdx)} className="shrink-0 px-2 text-sage-muted hover:text-status-absent" aria-label="Nummer entfernen">
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+            {g.phones.length < 5 && (
+              <button type="button" onClick={() => addPhone(idx)} className="text-sm text-mint-light hover:underline flex items-center gap-1">
+                <Plus size={14} /> Weitere Nummer
+              </button>
+            )}
+          </div>
+
+          <label className="block">
+            <span className="text-sm text-sage">E-Mail</span>
+            <input type="email" className="input mt-1" value={g.email} onChange={(e) => updateGuardian(idx, { email: e.target.value })} required={idx === 0} />
+          </label>
+        </div>
+      ))}
+      {guardians.length < 2 && (
+        <button type="button" onClick={addGuardian} className="text-sm text-mint-light hover:underline flex items-center gap-1">
+          <Plus size={14} /> Zweite/n Erziehungsberechtigte/n hinzufügen
+        </button>
+      )}
+    </div>
+  );
 }
 
 // Anmeldedaten fürs Sekretariat – für beide Registrierungswege gleich (mit
@@ -93,23 +170,7 @@ function ProfileFields({ profile, setProfile }) {
         Ich bin Selbstzahler (keine Erziehungsberechtigten-Angaben nötig)
       </label>
 
-      {!profile.selfPayer && (
-        <div className="space-y-4 rounded-lg border border-line p-3">
-          <p className="text-xs text-sage-muted">Erziehungsberechtigte(r)</p>
-          <label className="block">
-            <span className="text-sm text-sage">Name (Mutter/Vater bzw. Erziehungsberechtigte/r)</span>
-            <input className="input mt-1" value={profile.guardianName} onChange={set('guardianName')} required />
-          </label>
-          <label className="block">
-            <span className="text-sm text-sage">Telefonnummer</span>
-            <input type="tel" className="input mt-1" value={profile.guardianPhone} onChange={set('guardianPhone')} required />
-          </label>
-          <label className="block">
-            <span className="text-sm text-sage">E-Mail</span>
-            <input type="email" className="input mt-1" value={profile.guardianEmail} onChange={set('guardianEmail')} required />
-          </label>
-        </div>
-      )}
+      {!profile.selfPayer && <GuardianFields profile={profile} setProfile={setProfile} />}
 
       <label className="block">
         <span className="text-sm text-sage">Geschwister am DBZ (optional)</span>
