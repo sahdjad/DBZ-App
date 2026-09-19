@@ -134,7 +134,6 @@ function ProfileFields({ profile, setProfile }) {
           <option value="">– auswählen –</option>
           <option value="weiblich">weiblich</option>
           <option value="maennlich">männlich</option>
-          <option value="divers">divers</option>
         </select>
       </label>
 
