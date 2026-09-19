@@ -1280,7 +1280,7 @@ test('Einladung: Selbstzahler braucht keine Erziehungsberechtigten-Angaben', asy
   const token = created.data.token;
 
   const selfPayerProfile = {
-    firstName: 'Selbst', lastName: 'Zahler', birthDate: '2000-01-01', gender: 'divers',
+    firstName: 'Selbst', lastName: 'Zahler', birthDate: '2000-01-01', gender: 'weiblich',
     street: 'Musterweg', houseNumber: '3', zip: '99999', city: 'Musterstadt', phone: '0170999888',
     selfPayer: true,
   };
