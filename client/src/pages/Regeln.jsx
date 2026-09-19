@@ -122,12 +122,12 @@ function CatalogCard({ data, onReload, toast }) {
             <div className="text-ivory font-medium">{cat.title}</div>
             <div className="divide-y divide-line mt-1">
               {cat.items.map((it) => (
-                <div key={it.id} className="py-2 flex items-start justify-between gap-3">
-                  <span className="text-sm text-sage flex-1">{it.label}</span>
+                <div key={it.id} className="py-2 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 sm:gap-3">
+                  <span className="text-sm text-sage sm:flex-1 break-words">{it.label}</span>
                   {edit ? (
-                    <input className="input py-1 text-sm w-44 sm:w-56" value={vals[it.id] ?? ''} onChange={(e) => setVals((v) => ({ ...v, [it.id]: e.target.value }))} />
+                    <input className="input py-1 text-sm w-full sm:w-56" value={vals[it.id] ?? ''} onChange={(e) => setVals((v) => ({ ...v, [it.id]: e.target.value }))} />
                   ) : (
-                    <span className="text-sm font-medium text-mint-light text-right shrink-0 inline-flex items-center gap-1">
+                    <span className="text-sm font-medium text-mint-light sm:text-right inline-flex flex-wrap items-center gap-1">
                       {it.consequence}
                       {it.classConsequence != null && <Badge tone="present">Klasse</Badge>}
                     </span>

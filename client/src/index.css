@@ -350,6 +350,14 @@ html {
 html,
 body {
   -webkit-overflow-scrolling: touch;
+  overflow-x: hidden;
+}
+/* Die App scrollt nur vertikal – kein Links-/Rechts-Wischen, egal ob ein
+   einzelnes Element mal etwas zu breit gerät (z. B. lange Wörter/Zahlen in
+   Tabellen). Ohne explizites overflow-x würde der Browser es sonst aus dem
+   gesetzten overflow-y automatisch auf "auto" (scrollbar) setzen. */
+.dbz-scroll {
+  overflow-x: hidden;
 }
 [class*="overflow-y-auto"],
 [class*="overflow-x-auto"] {

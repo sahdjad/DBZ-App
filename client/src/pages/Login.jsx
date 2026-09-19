@@ -76,7 +76,7 @@ export default function Login() {
               <img
                 src="/logo.png"
                 alt="DEEN Bildungszentrum"
-                className="h-24 w-24 mx-auto rounded-2xl object-contain bg-white/90 p-2 shadow-xl"
+                className="h-36 w-auto max-w-[80%] mx-auto rounded-2xl object-contain bg-white p-3 shadow-xl"
                 onError={() => setLogoOk(false)}
               />
             ) : (
