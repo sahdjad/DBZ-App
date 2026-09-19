@@ -326,22 +326,35 @@ router.get('/invite/:token', (req, res) => {
   });
 });
 
-// Kontaktdaten für das Sekretariat (Adresse, Telefon, Notfallkontakt). Für
-// Schüler/Klassensprecher verpflichtend (Spec: „alle wichtigen Kontaktdaten"),
-// für andere Rollen optional, aber wenn angegeben genauso gespeichert.
+// Anmeldedaten für das Sekretariat (Person, Adresse, Erziehungsberechtigte,
+// Sonstiges). Für Schüler/Klassensprecher verpflichtend (Spec: „alle wichtigen
+// Kontaktdaten"), für andere Rollen optional, aber wenn angegeben genauso
+// gespeichert. Erziehungsberechtigte sind nur bei Selbstzahlern optional.
 function buildProfile(body, required) {
+  const selfPayer = Boolean(body.selfPayer);
   const p = {
+    firstName: (body.firstName || '').trim(),
+    lastName: (body.lastName || '').trim(),
+    birthDate: (body.birthDate || '').trim(),
+    gender: (body.gender || '').trim(),
     street: (body.street || '').trim(),
+    houseNumber: (body.houseNumber || '').trim(),
     zip: (body.zip || '').trim(),
     city: (body.city || '').trim(),
     phone: (body.phone || '').trim(),
-    emergencyName: (body.emergencyName || '').trim(),
-    emergencyPhone: (body.emergencyPhone || '').trim(),
-    selfPayer: Boolean(body.selfPayer),
+    desiredLevel: (body.desiredLevel || '').trim(),
+    guardianName: (body.guardianName || '').trim(),
+    guardianPhone: (body.guardianPhone || '').trim(),
+    guardianEmail: (body.guardianEmail || '').trim(),
+    siblings: (body.siblings || '').trim(),
+    notes: (body.notes || '').trim(),
+    selfPayer,
   };
   if (required) {
-    const missing = ['street', 'zip', 'city', 'phone', 'emergencyName', 'emergencyPhone'].filter((k) => !p[k]);
-    if (missing.length) return { error: 'Bitte Adresse, Telefonnummer und Notfallkontakt vollständig angeben' };
+    const base = ['firstName', 'lastName', 'birthDate', 'gender', 'street', 'houseNumber', 'zip', 'city', 'phone'];
+    const guardianFields = selfPayer ? [] : ['guardianName', 'guardianPhone', 'guardianEmail'];
+    const missing = [...base, ...guardianFields].filter((k) => !p[k]);
+    if (missing.length) return { error: 'Bitte alle Pflichtfelder vollständig angeben (Person, Adresse' + (selfPayer ? '' : ', Erziehungsberechtigte/r') + ')' };
   }
   return { profile: p };
 }

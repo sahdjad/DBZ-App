@@ -189,9 +189,20 @@ function PendingTab() {
               </div>
               {u.profile && (
                 <div className="text-xs text-sage-muted mb-3 space-y-0.5">
-                  <div>{u.profile.street}, {u.profile.zip} {u.profile.city}</div>
+                  {u.profile.birthDate && (
+                    <div>
+                      Geb. {new Date(u.profile.birthDate).toLocaleDateString('de-DE')}
+                      {u.profile.gender ? ` · ${u.profile.gender}` : ''}
+                    </div>
+                  )}
+                  <div>{u.profile.street} {u.profile.houseNumber}, {u.profile.zip} {u.profile.city}</div>
                   <div>Tel: {u.profile.phone}{u.profile.selfPayer ? ' · Selbstzahler' : ''}</div>
-                  <div>Notfallkontakt: {u.profile.emergencyName} ({u.profile.emergencyPhone})</div>
+                  {u.profile.desiredLevel && <div>Gewünschte Einstufung: {u.profile.desiredLevel}</div>}
+                  {!u.profile.selfPayer && (
+                    <div>Erziehungsberechtigte/r: {u.profile.guardianName} · {u.profile.guardianPhone}{u.profile.guardianEmail ? ` · ${u.profile.guardianEmail}` : ''}</div>
+                  )}
+                  {u.profile.siblings && <div>Geschwister am DBZ: {u.profile.siblings}</div>}
+                  {u.profile.notes && <div>Bemerkung: {u.profile.notes}</div>}
                 </div>
               )}
               <div className="flex items-center gap-2 flex-wrap">
