@@ -37,54 +37,46 @@ function ProfileFields({ profile, setProfile }) {
     <div className="space-y-4 pt-2 border-t border-line">
       <p className="text-xs text-sage-muted pt-2">Anmeldedaten (für das Sekretariat)</p>
 
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-sm text-sage">Vorname</span>
-          <input className="input mt-1" value={profile.firstName} onChange={set('firstName')} required />
-        </label>
-        <label className="block">
-          <span className="text-sm text-sage">Nachname</span>
-          <input className="input mt-1" value={profile.lastName} onChange={set('lastName')} required />
-        </label>
-      </div>
+      <label className="block">
+        <span className="text-sm text-sage">Vorname</span>
+        <input className="input mt-1" value={profile.firstName} onChange={set('firstName')} required />
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">Nachname</span>
+        <input className="input mt-1" value={profile.lastName} onChange={set('lastName')} required />
+      </label>
 
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-sm text-sage">Geburtsdatum</span>
-          <input type="date" className="input mt-1" value={profile.birthDate} onChange={set('birthDate')} required />
-          {age !== null && <span className="text-xs text-sage-muted mt-1 block">Alter: {age} Jahre</span>}
-        </label>
-        <label className="block">
-          <span className="text-sm text-sage">Geschlecht</span>
-          <select className="input mt-1" value={profile.gender} onChange={set('gender')} required>
-            <option value="">– auswählen –</option>
-            <option value="weiblich">weiblich</option>
-            <option value="maennlich">männlich</option>
-            <option value="divers">divers</option>
-          </select>
-        </label>
-      </div>
+      <label className="block">
+        <span className="text-sm text-sage">Geburtsdatum</span>
+        <input type="date" className="input mt-1" value={profile.birthDate} onChange={set('birthDate')} required />
+        {age !== null && <span className="text-xs text-sage-muted mt-1 block">Alter: {age} Jahre</span>}
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">Geschlecht</span>
+        <select className="input mt-1" value={profile.gender} onChange={set('gender')} required>
+          <option value="">– auswählen –</option>
+          <option value="weiblich">weiblich</option>
+          <option value="maennlich">männlich</option>
+          <option value="divers">divers</option>
+        </select>
+      </label>
 
-      <div className="grid grid-cols-3 gap-2">
-        <label className="block col-span-2">
-          <span className="text-sm text-sage">Straße</span>
-          <input className="input mt-1" value={profile.street} onChange={set('street')} required />
-        </label>
-        <label className="block">
-          <span className="text-sm text-sage">Hausnummer</span>
-          <input className="input mt-1" value={profile.houseNumber} onChange={set('houseNumber')} required />
-        </label>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        <label className="block">
-          <span className="text-sm text-sage">PLZ</span>
-          <input className="input mt-1" value={profile.zip} onChange={set('zip')} required />
-        </label>
-        <label className="block col-span-2">
-          <span className="text-sm text-sage">Ort</span>
-          <input className="input mt-1" value={profile.city} onChange={set('city')} required />
-        </label>
-      </div>
+      <label className="block">
+        <span className="text-sm text-sage">Straße</span>
+        <input className="input mt-1" value={profile.street} onChange={set('street')} required />
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">Hausnummer</span>
+        <input className="input mt-1" value={profile.houseNumber} onChange={set('houseNumber')} required />
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">PLZ</span>
+        <input className="input mt-1" value={profile.zip} onChange={set('zip')} required />
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">Ort</span>
+        <input className="input mt-1" value={profile.city} onChange={set('city')} required />
+      </label>
 
       <label className="block">
         <span className="text-sm text-sage">Telefonnummer</span>
@@ -102,22 +94,20 @@ function ProfileFields({ profile, setProfile }) {
       </label>
 
       {!profile.selfPayer && (
-        <div className="space-y-3 rounded-lg border border-line p-3">
+        <div className="space-y-4 rounded-lg border border-line p-3">
           <p className="text-xs text-sage-muted">Erziehungsberechtigte(r)</p>
           <label className="block">
             <span className="text-sm text-sage">Name (Mutter/Vater bzw. Erziehungsberechtigte/r)</span>
             <input className="input mt-1" value={profile.guardianName} onChange={set('guardianName')} required />
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block">
-              <span className="text-sm text-sage">Telefonnummer</span>
-              <input type="tel" className="input mt-1" value={profile.guardianPhone} onChange={set('guardianPhone')} required />
-            </label>
-            <label className="block">
-              <span className="text-sm text-sage">E-Mail</span>
-              <input type="email" className="input mt-1" value={profile.guardianEmail} onChange={set('guardianEmail')} required />
-            </label>
-          </div>
+          <label className="block">
+            <span className="text-sm text-sage">Telefonnummer</span>
+            <input type="tel" className="input mt-1" value={profile.guardianPhone} onChange={set('guardianPhone')} required />
+          </label>
+          <label className="block">
+            <span className="text-sm text-sage">E-Mail</span>
+            <input type="email" className="input mt-1" value={profile.guardianEmail} onChange={set('guardianEmail')} required />
+          </label>
         </div>
       )}
 
