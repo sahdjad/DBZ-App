@@ -1583,3 +1583,30 @@ test('Klassen-Zuordnung: Admin fügt Lehrkraft (Vertretung) hinzu und entfernt s
   const t2 = await jreq(admin, 'GET', '/admin/classes/class_3/teachers');
   assert.ok(!t2.data.assigned.some((x) => x.id === v.id), 'entfernt');
 });
+
+test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, schützt eigenes Konto und letzten Admin', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const stamp = Date.now();
+  const mkA = await admin('POST', '/admin/users', { name: 'Bulk A', email: `bulk-a-${stamp}@dbz.de`, password: 'demo1234', role: 'schueler' });
+  const mkB = await admin('POST', '/admin/users', { name: 'Bulk B', email: `bulk-b-${stamp}@dbz.de`, password: 'demo1234', role: 'schueler' });
+  assert.equal(mkA.status, 200);
+  assert.equal(mkB.status, 200);
+  const idA = mkA.data.user.id;
+  const idB = mkB.data.user.id;
+  assert.equal(mkA.data.user.status, 'active', 'Konten sind sofort aktiv (keine Deaktivierung nötig für Sammel-Löschung)');
+
+  const del = await admin('POST', '/admin/users/bulk-delete', { ids: [idA, idB] });
+  assert.equal(del.status, 200);
+  assert.equal(del.data.results.length, 2);
+  assert.ok(del.data.results.every((r) => r.ok), 'beide Konten erfolgreich gelöscht');
+
+  const list = (await admin('GET', '/admin/users')).data.users;
+  assert.ok(!list.some((u) => u.id === idA), 'Konto A ist vollständig entfernt');
+  assert.ok(!list.some((u) => u.id === idB), 'Konto B ist vollständig entfernt');
+
+  // Eigenes Konto und der letzte System-Administrator sind geschützt.
+  const me = list.find((u) => u.email === 'admin@dbz.de');
+  const guard = await admin('POST', '/admin/users/bulk-delete', { ids: [me.id] });
+  assert.equal(guard.status, 200);
+  assert.equal(guard.data.results[0].ok, false, 'eigenes Konto wird nicht gelöscht');
+});

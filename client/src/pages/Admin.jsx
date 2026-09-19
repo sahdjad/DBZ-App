@@ -212,11 +212,14 @@ function PendingTab() {
 
 function UsersTab() {
   const toast = useToast();
+  const { user: me } = useAuth();
   const [users, setUsers] = useState(null);
   const [classes, setClasses] = useState([]);
   const [show, setShow] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
+  const [selected, setSelected] = useState([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -234,11 +237,46 @@ function UsersTab() {
     }
   };
 
+  // Das eigene Konto lässt sich nie mit auswählen/löschen.
+  const selectable = (users || []).filter((u) => u.id !== me?.id);
+  const allSelected = selectable.length > 0 && selected.length === selectable.length;
+  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((u) => u.id));
+  const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+
+  const bulkDelete = async () => {
+    if (!selected.length) return;
+    if (!window.confirm(`${selected.length} Konto(en) endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+    setBulkBusy(true);
+    try {
+      const { results } = await api.post('/admin/users/bulk-delete', { ids: selected });
+      const okCount = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length) {
+        toast.push(`${okCount} gelöscht, ${failed.length} nicht möglich (${failed[0].error}${failed.length > 1 ? ' u. a.' : ''})`, okCount > 0 ? 'success' : 'error');
+      } else {
+        toast.push(`${okCount} Konto(en) endgültig gelöscht`, 'success');
+      }
+      setSelected([]);
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (!users) return <Spinner />;
   return (
     <div className="space-y-4">
       <LinkAccountsAdminCard />
-      <div className="flex justify-end"><Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button></div>
+      <div className="flex justify-end gap-2">
+        {selected.length > 0 && (
+          <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
+            <XCircle size={18} /> {selected.length} löschen
+          </Button>
+        )}
+        <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
+      </div>
       {show && (
         <Card className="p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
@@ -277,11 +315,17 @@ function UsersTab() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-left text-sage-muted border-b border-line">
+              <th className="p-3 w-8"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
               <th className="p-3">Name</th><th className="p-3">E-Mail</th><th className="p-3">Rolle</th><th className="p-3">Status</th><th className="p-3"></th>
             </tr></thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id} className="border-b border-line">
+                  <td className="p-3">
+                    {u.id !== me?.id && (
+                      <input type="checkbox" checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
+                    )}
+                  </td>
                   <td className="p-3 text-ivory">{u.name}</td>
                   <td className="p-3 text-sage-muted font-mono text-xs">{u.email}</td>
                   <td className="p-3">{u.roleLabel}</td>
