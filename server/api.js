@@ -4709,33 +4709,68 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   res.json({ user: publicUser(u) });
 });
 
+// Entfernt einen Nutzer-Datensatz vollständig (inkl. Passwort-Hash,
+// Kontaktdaten) und räumt Verknüpfungen zu anderen Konten (z. B. Eltern-Kind)
+// auf, damit keine toten Referenzen bleiben. Historische Einträge (Anwesenheit,
+// Abgaben, Audit-Log) bleiben bestehen und zeigen den Namen weiterhin an.
+// Ruft db.commit() NICHT selbst auf – das übernimmt der Aufrufer (auch bei
+// mehreren Löschungen in Folge reicht ein Commit am Ende).
+function hardDeleteUser(u) {
+  const arr = db.all('users');
+  const idx = arr.findIndex((x) => x.id === u.id);
+  arr.splice(idx, 1);
+  arr.forEach((x) => {
+    if (x.childIds?.includes(u.id)) x.childIds = x.childIds.filter((id) => id !== u.id);
+    if (x.linkedAccountIds?.includes(u.id)) x.linkedAccountIds = x.linkedAccountIds.filter((id) => id !== u.id);
+  });
+}
+
+// Der letzte verbleibende System-Administrator darf nie gelöscht werden –
+// sonst hat niemand mehr Zugriff auf die Verwaltung.
+const isLastSuperAdmin = (u) => u.role === ROLES.SUPER_ADMIN && db.all('users').filter((x) => x.role === ROLES.SUPER_ADMIN).length <= 1;
+
 // Endgültiges Löschen (nicht nur deaktivieren) – z. B. wenn ein Schüler sich
 // komplett abmeldet. Zweistufig als Sicherheitsnetz: das Konto muss zuerst
-// deaktiviert sein, bevor es unwiderruflich gelöscht werden kann. Historische
-// Einträge (Anwesenheit, Abgaben, Audit-Log) bleiben bestehen und zeigen den
-// Namen weiterhin an – nur der Nutzer-Datensatz selbst (inkl. Passwort-Hash,
-// Kontaktdaten) wird entfernt.
+// deaktiviert sein, bevor es unwiderruflich gelöscht werden kann.
 router.delete('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
   if (u.id === req.user.id) return res.status(400).json({ error: 'Das eigene Konto kann nicht gelöscht werden' });
   if (u.status !== 'disabled')
     return res.status(400).json({ error: 'Konto muss zuerst deaktiviert werden, bevor es gelöscht werden kann' });
-  if (u.role === ROLES.SUPER_ADMIN)
-    return res.status(400).json({ error: 'System-Administratoren können nicht gelöscht werden' });
+  if (isLastSuperAdmin(u))
+    return res.status(400).json({ error: 'Der letzte System-Administrator kann nicht gelöscht werden' });
 
-  const arr = db.all('users');
-  const idx = arr.findIndex((x) => x.id === u.id);
-  arr.splice(idx, 1);
-  // Verknüpfungen zu anderen Konten (z. B. Eltern-Kind) und offene Einladungen
-  // aufräumen, damit keine toten Referenzen bleiben.
-  arr.forEach((x) => {
-    if (x.childIds?.includes(u.id)) x.childIds = x.childIds.filter((id) => id !== u.id);
-    if (x.linkedAccountIds?.includes(u.id)) x.linkedAccountIds = x.linkedAccountIds.filter((id) => id !== u.id);
-  });
+  hardDeleteUser(u);
   db.commit();
   audit(req.user.id, 'user.delete', 'user', u.id, { name: u.name, email: u.email, role: u.role }, null);
   res.json({ ok: true });
+});
+
+// Sammel-Löschung mehrerer Konten in einem Rutsch (z. B. um Test-/Demo-Konten
+// aufzuräumen). Im Gegensatz zur Einzel-Löschung ist die vorherige
+// Deaktivierung hier keine Voraussetzung – ausgewählte Konten werden direkt
+// und vollständig entfernt. Jeder Eintrag durchläuft weiterhin die
+// Schutzregeln (eigenes Konto, letzter System-Administrator); fehlgeschlagene
+// Einträge werden einzeln zurückgemeldet, ohne die restliche Löschung zu stoppen.
+router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Keine Nutzer ausgewählt' });
+
+  const results = ids.map((id) => {
+    const u = findUserById(id);
+    if (!u) return { id, ok: false, error: 'Nicht gefunden' };
+    if (u.id === req.user.id) return { id, ok: false, error: 'Eigenes Konto kann nicht gelöscht werden' };
+    if (isLastSuperAdmin(u)) return { id, ok: false, error: 'Letzter System-Administrator kann nicht gelöscht werden' };
+
+    const before = { name: u.name, email: u.email, role: u.role };
+    hardDeleteUser(u);
+    audit(req.user.id, 'user.delete', 'user', u.id, before, null);
+    return { id, ok: true };
+  });
+
+  db.commit();
+  res.json({ results });
 });
 
 router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
