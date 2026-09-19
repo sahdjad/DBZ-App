@@ -5,46 +5,129 @@ import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Button, Card, Spinner, useToast } from '../components/ui.jsx';
 
-const emptyProfile = { street: '', zip: '', city: '', phone: '', emergencyName: '', emergencyPhone: '', selfPayer: false };
+const emptyProfile = {
+  firstName: '', lastName: '', birthDate: '', gender: '',
+  street: '', houseNumber: '', zip: '', city: '', phone: '',
+  desiredLevel: '',
+  guardianName: '', guardianPhone: '', guardianEmail: '',
+  siblings: '', notes: '',
+  selfPayer: false,
+};
 
-// Adress-/Kontaktfelder fürs Sekretariat – für beide Registrierungswege gleich
-// (mit Einladung UND ohne), nur die Klassenzuteilung unterscheidet sich.
+// Aus dem Geburtsdatum das aktuelle Alter berechnen (für die Live-Anzeige im
+// Formular – wird nicht gespeichert, nur zur Bestätigung angezeigt).
+function ageFromBirthDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const beforeBirthday = now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate());
+  if (beforeBirthday) age -= 1;
+  return age >= 0 && age < 120 ? age : null;
+}
+
+// Anmeldedaten fürs Sekretariat – für beide Registrierungswege gleich (mit
+// Einladung UND ohne), nur die Klassenzuteilung unterscheidet sich.
 function ProfileFields({ profile, setProfile }) {
   const set = (k) => (e) => setProfile({ ...profile, [k]: e.target.value });
+  const age = ageFromBirthDate(profile.birthDate);
+
   return (
     <div className="space-y-4 pt-2 border-t border-line">
-      <p className="text-xs text-sage-muted pt-2">Kontaktdaten (für das Sekretariat)</p>
+      <p className="text-xs text-sage-muted pt-2">Anmeldedaten (für das Sekretariat)</p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-sm text-sage">Vorname</span>
+          <input className="input mt-1" value={profile.firstName} onChange={set('firstName')} required />
+        </label>
+        <label className="block">
+          <span className="text-sm text-sage">Nachname</span>
+          <input className="input mt-1" value={profile.lastName} onChange={set('lastName')} required />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className="text-sm text-sage">Geburtsdatum</span>
+          <input type="date" className="input mt-1" value={profile.birthDate} onChange={set('birthDate')} required />
+          {age !== null && <span className="text-xs text-sage-muted mt-1 block">Alter: {age} Jahre</span>}
+        </label>
+        <label className="block">
+          <span className="text-sm text-sage">Geschlecht</span>
+          <select className="input mt-1" value={profile.gender} onChange={set('gender')} required>
+            <option value="">– auswählen –</option>
+            <option value="weiblich">weiblich</option>
+            <option value="maennlich">männlich</option>
+            <option value="divers">divers</option>
+          </select>
+        </label>
+      </div>
+
       <div className="grid grid-cols-3 gap-2">
         <label className="block col-span-2">
-          <span className="text-sm text-sage">Straße, Hausnummer</span>
+          <span className="text-sm text-sage">Straße</span>
           <input className="input mt-1" value={profile.street} onChange={set('street')} required />
         </label>
+        <label className="block">
+          <span className="text-sm text-sage">Hausnummer</span>
+          <input className="input mt-1" value={profile.houseNumber} onChange={set('houseNumber')} required />
+        </label>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
         <label className="block">
           <span className="text-sm text-sage">PLZ</span>
           <input className="input mt-1" value={profile.zip} onChange={set('zip')} required />
         </label>
+        <label className="block col-span-2">
+          <span className="text-sm text-sage">Ort</span>
+          <input className="input mt-1" value={profile.city} onChange={set('city')} required />
+        </label>
       </div>
-      <label className="block">
-        <span className="text-sm text-sage">Ort</span>
-        <input className="input mt-1" value={profile.city} onChange={set('city')} required />
-      </label>
+
       <label className="block">
         <span className="text-sm text-sage">Telefonnummer</span>
         <input type="tel" className="input mt-1" value={profile.phone} onChange={set('phone')} required />
       </label>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="block">
-          <span className="text-sm text-sage">Eltern-/Notfallkontakt (Name)</span>
-          <input className="input mt-1" value={profile.emergencyName} onChange={set('emergencyName')} required />
-        </label>
-        <label className="block">
-          <span className="text-sm text-sage">Eltern-/Notfallkontakt (Telefon)</span>
-          <input type="tel" className="input mt-1" value={profile.emergencyPhone} onChange={set('emergencyPhone')} required />
-        </label>
-      </div>
+
+      <label className="block">
+        <span className="text-sm text-sage">Gewünschte Klasse / Einstufung (optional)</span>
+        <input className="input mt-1" placeholder="z. B. Anfänger, Fortgeschritten …" value={profile.desiredLevel} onChange={set('desiredLevel')} />
+      </label>
+
       <label className="flex items-center gap-2 text-sm text-sage">
         <input type="checkbox" checked={profile.selfPayer} onChange={(e) => setProfile({ ...profile, selfPayer: e.target.checked })} />
-        Ich bin Selbstzahler (kein separater Elternkontakt für die Anmeldung)
+        Ich bin Selbstzahler (keine Erziehungsberechtigten-Angaben nötig)
+      </label>
+
+      {!profile.selfPayer && (
+        <div className="space-y-3 rounded-lg border border-line p-3">
+          <p className="text-xs text-sage-muted">Erziehungsberechtigte(r)</p>
+          <label className="block">
+            <span className="text-sm text-sage">Name (Mutter/Vater bzw. Erziehungsberechtigte/r)</span>
+            <input className="input mt-1" value={profile.guardianName} onChange={set('guardianName')} required />
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block">
+              <span className="text-sm text-sage">Telefonnummer</span>
+              <input type="tel" className="input mt-1" value={profile.guardianPhone} onChange={set('guardianPhone')} required />
+            </label>
+            <label className="block">
+              <span className="text-sm text-sage">E-Mail</span>
+              <input type="email" className="input mt-1" value={profile.guardianEmail} onChange={set('guardianEmail')} required />
+            </label>
+          </div>
+        </div>
+      )}
+
+      <label className="block">
+        <span className="text-sm text-sage">Geschwister am DBZ (optional)</span>
+        <input className="input mt-1" placeholder="Namen, falls vorhanden" value={profile.siblings} onChange={set('siblings')} />
+      </label>
+      <label className="block">
+        <span className="text-sm text-sage">Bemerkungen für die Verwaltung (optional)</span>
+        <textarea className="input mt-1" rows={2} value={profile.notes} onChange={set('notes')} />
       </label>
     </div>
   );
@@ -79,11 +162,16 @@ export default function Registrieren() {
   };
   useEffect(() => { if (token) checkToken(token); /* eslint-disable-next-line */ }, []);
 
+  // Bei Schüler/Klassensprecher ersetzen Vor-/Nachname aus den Anmeldedaten
+  // das separate Namensfeld (weniger Doppelerfassung).
+  const showsProfileFields = openMode || invite?.role === 'schueler' || invite?.role === 'klassensprecher';
+  const nameFor = () => (showsProfileFields ? `${profile.firstName} ${profile.lastName}`.trim() : form.name);
+
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     try {
-      await register({ token, ...form, ...profile });
+      await register({ token, ...form, name: nameFor(), ...profile });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -96,7 +184,7 @@ export default function Registrieren() {
     e.preventDefault();
     setBusy(true);
     try {
-      await registerOpen({ ...form, ...profile });
+      await registerOpen({ ...form, name: nameFor(), ...profile });
       setOpenDone(true);
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -145,10 +233,6 @@ export default function Registrieren() {
               {openMode ? (
                 <form onSubmit={submitOpen} className="space-y-4">
                   <label className="block">
-                    <span className="text-sm text-sage">Name</span>
-                    <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                  </label>
-                  <label className="block">
                     <span className="text-sm text-sage">E-Mail</span>
                     <input type="email" autoComplete="username" className="input mt-1" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                   </label>
@@ -186,10 +270,12 @@ export default function Registrieren() {
                     <div className="text-xs text-sage-muted mt-1">{invite.orgName}</div>
                   </Card>
                   <form onSubmit={submit} className="space-y-4">
-                    <label className="block">
-                      <span className="text-sm text-sage">Name</span>
-                      <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-                    </label>
+                    {!showsProfileFields && (
+                      <label className="block">
+                        <span className="text-sm text-sage">Name</span>
+                        <input className="input mt-1" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+                      </label>
+                    )}
                     <label className="block">
                       <span className="text-sm text-sage">E-Mail</span>
                       <input type="email" autoComplete="username" className="input mt-1" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
@@ -198,7 +284,7 @@ export default function Registrieren() {
                       <span className="text-sm text-sage">Passwort (mind. 6 Zeichen)</span>
                       <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} />
                     </label>
-                    {(invite.role === 'schueler' || invite.role === 'klassensprecher') && (
+                    {showsProfileFields && (
                       <ProfileFields profile={profile} setProfile={setProfile} />
                     )}
                     <Button type="submit" size="lg" className="w-full" disabled={busy}><UserPlus size={18} /> {busy ? 'Konto wird erstellt …' : 'Konto erstellen'}</Button>

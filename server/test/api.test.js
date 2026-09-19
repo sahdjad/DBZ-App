@@ -1246,7 +1246,11 @@ test('Einladung: erstellen, prüfen, registrieren; Rolle/Klasse aus Einladung', 
   assert.equal(check.data.className, 'Klasse 3');
 
   // Selbst-Registrierung (Schüler: Kontaktdaten fürs Sekretariat sind Pflicht)
-  const profile = { street: 'Musterweg 1', zip: '12345', city: 'Musterstadt', phone: '0170123456', emergencyName: 'Mama Muster', emergencyPhone: '0170654321' };
+  const profile = {
+    firstName: 'Neuer', lastName: 'Schüler', birthDate: '2012-05-01', gender: 'maennlich',
+    street: 'Musterweg', houseNumber: '1', zip: '12345', city: 'Musterstadt', phone: '0170123456',
+    guardianName: 'Mama Muster', guardianPhone: '0170654321', guardianEmail: 'mama@muster.de',
+  };
   const reg = client();
   const r = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1', ...profile });
   assert.equal(r.status, 200);
@@ -1265,8 +1269,29 @@ test('Einladung: erstellen, prüfen, registrieren; Rolle/Klasse aus Einladung', 
   assert.equal(r2.status, 400);
 });
 
+test('Einladung: Selbstzahler braucht keine Erziehungsberechtigten-Angaben', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const created = await leitung('POST', '/admin/invites', { role: 'schueler', classId: 'class_3', maxUses: 1, expiresInDays: 7 });
+  const token = created.data.token;
+
+  const selfPayerProfile = {
+    firstName: 'Selbst', lastName: 'Zahler', birthDate: '2000-01-01', gender: 'divers',
+    street: 'Musterweg', houseNumber: '3', zip: '99999', city: 'Musterstadt', phone: '0170999888',
+    selfPayer: true,
+  };
+  const reg = client();
+  const r = await reg('POST', '/auth/register', { token, name: 'Selbst Zahler', email: `selfpayer-${Date.now()}@dbz.de`, password: 'passwort1', ...selfPayerProfile });
+  assert.equal(r.status, 200, 'Selbstzahler kommt ohne Erziehungsberechtigte/n durch');
+  assert.equal(r.data.user.profile.selfPayer, true);
+  assert.equal(r.data.user.profile.guardianName, '');
+});
+
 test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -> Admin bestätigt -> Login geht', async () => {
-  const profile = { street: 'Musterweg 1', zip: '12345', city: 'Musterstadt', phone: '0170123456', emergencyName: 'Mama Muster', emergencyPhone: '0170654321' };
+  const profile = {
+    firstName: 'Wartender', lastName: 'Schüler', birthDate: '2011-03-15', gender: 'weiblich',
+    street: 'Musterweg', houseNumber: '1', zip: '12345', city: 'Musterstadt', phone: '0170123456',
+    guardianName: 'Mama Muster', guardianPhone: '0170654321', guardianEmail: 'mama@muster.de',
+  };
   const reg = client();
   const r = await reg('POST', '/auth/register-open', { name: 'Wartender Schüler', email: 'wartend@dbz.de', password: 'passwort1', ...profile });
   assert.equal(r.status, 200);
@@ -1307,7 +1332,11 @@ test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -
 });
 
 test('Offene Registrierung: Admin weist direkt zu (ohne Umweg über Genehmigung)', async () => {
-  const profile = { street: 'Musterweg 2', zip: '54321', city: 'Beispielstadt', phone: '0170111222', emergencyName: 'Papa Muster', emergencyPhone: '0170333444' };
+  const profile = {
+    firstName: 'Direkt', lastName: 'Zugewiesen', birthDate: '2010-09-20', gender: 'maennlich',
+    street: 'Musterweg', houseNumber: '2', zip: '54321', city: 'Beispielstadt', phone: '0170111222',
+    guardianName: 'Papa Muster', guardianPhone: '0170333444', guardianEmail: 'papa@muster.de',
+  };
   const reg = client();
   await reg('POST', '/auth/register-open', { name: 'Direkt Zugewiesen', email: 'direkt@dbz.de', password: 'passwort1', ...profile });
 
