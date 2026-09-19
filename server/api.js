@@ -326,12 +326,24 @@ router.get('/invite/:token', (req, res) => {
   });
 });
 
+// Bis zu 2 Erziehungsberechtigte (z. B. Mutter + Vater), jede/r mit Name,
+// beliebig vielen Telefonnummern (max. 5) und E-Mail.
+function normalizeGuardians(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.slice(0, 2).map((g) => ({
+    name: String(g?.name || '').trim(),
+    phones: (Array.isArray(g?.phones) ? g.phones : []).map((p) => String(p || '').trim()).filter(Boolean).slice(0, 5),
+    email: String(g?.email || '').trim(),
+  })).filter((g) => g.name || g.phones.length || g.email);
+}
+
 // Anmeldedaten für das Sekretariat (Person, Adresse, Erziehungsberechtigte,
 // Sonstiges). Für Schüler/Klassensprecher verpflichtend (Spec: „alle wichtigen
 // Kontaktdaten"), für andere Rollen optional, aber wenn angegeben genauso
 // gespeichert. Erziehungsberechtigte sind nur bei Selbstzahlern optional.
 function buildProfile(body, required) {
   const selfPayer = Boolean(body.selfPayer);
+  const guardians = normalizeGuardians(body.guardians);
   const p = {
     firstName: (body.firstName || '').trim(),
     lastName: (body.lastName || '').trim(),
@@ -343,18 +355,16 @@ function buildProfile(body, required) {
     city: (body.city || '').trim(),
     phone: (body.phone || '').trim(),
     desiredLevel: (body.desiredLevel || '').trim(),
-    guardianName: (body.guardianName || '').trim(),
-    guardianPhone: (body.guardianPhone || '').trim(),
-    guardianEmail: (body.guardianEmail || '').trim(),
+    guardians,
     siblings: (body.siblings || '').trim(),
     notes: (body.notes || '').trim(),
     selfPayer,
   };
   if (required) {
     const base = ['firstName', 'lastName', 'birthDate', 'gender', 'street', 'houseNumber', 'zip', 'city', 'phone'];
-    const guardianFields = selfPayer ? [] : ['guardianName', 'guardianPhone', 'guardianEmail'];
-    const missing = [...base, ...guardianFields].filter((k) => !p[k]);
-    if (missing.length) return { error: 'Bitte alle Pflichtfelder vollständig angeben (Person, Adresse' + (selfPayer ? '' : ', Erziehungsberechtigte/r') + ')' };
+    const missing = base.filter((k) => !p[k]);
+    const guardianOk = selfPayer || (guardians[0]?.name && guardians[0]?.phones.length > 0 && guardians[0]?.email);
+    if (missing.length || !guardianOk) return { error: 'Bitte alle Pflichtfelder vollständig angeben (Person, Adresse' + (selfPayer ? '' : ', mind. 1 Erziehungsberechtigte/r mit Name, Telefon und E-Mail') + ')' };
   }
   return { profile: p };
 }

@@ -198,9 +198,9 @@ function PendingTab() {
                   <div>{u.profile.street} {u.profile.houseNumber}, {u.profile.zip} {u.profile.city}</div>
                   <div>Tel: {u.profile.phone}{u.profile.selfPayer ? ' · Selbstzahler' : ''}</div>
                   {u.profile.desiredLevel && <div>Gewünschte Einstufung: {u.profile.desiredLevel}</div>}
-                  {!u.profile.selfPayer && (
-                    <div>Erziehungsberechtigte/r: {u.profile.guardianName} · {u.profile.guardianPhone}{u.profile.guardianEmail ? ` · ${u.profile.guardianEmail}` : ''}</div>
-                  )}
+                  {!u.profile.selfPayer && u.profile.guardians?.map((g, i) => (
+                    <div key={i}>Erziehungsberechtigte/r{u.profile.guardians.length > 1 ? ` ${i + 1}` : ''}: {g.name} · {g.phones?.join(' / ')}{g.email ? ` · ${g.email}` : ''}</div>
+                  ))}
                   {u.profile.siblings && <div>Geschwister am DBZ: {u.profile.siblings}</div>}
                   {u.profile.notes && <div>Bemerkung: {u.profile.notes}</div>}
                 </div>
