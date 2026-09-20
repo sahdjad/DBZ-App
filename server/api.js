@@ -4796,6 +4796,25 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   res.json({ results });
 });
 
+// Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx) in
+// einem Klick wieder aktivieren -- z. B. wenn sie beim Aufräumen der eigenen
+// echten Konten versehentlich deaktiviert wurden, aber für eine Besichtigung/
+// Vorführung weiter gebraucht werden. Rührt nichts an, was schon aktiv ist.
+const DEMO_ACCOUNT_EMAILS = ['admin@dbz.de', 'leitung@dbz.de', 'lehrer@dbz.de', 'sprecher@dbz.de', 'schueler@dbz.de', 'eltern@dbz.de'];
+router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const results = DEMO_ACCOUNT_EMAILS.map((email) => {
+    const u = findUserByEmail(email);
+    if (!u) return { email, ok: false, error: 'Nicht gefunden' };
+    if (u.status === 'active') return { email, ok: true, changed: false };
+    const before = { status: u.status };
+    u.status = 'active';
+    audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status });
+    return { email, ok: true, changed: true };
+  });
+  db.commit();
+  res.json({ results });
+});
+
 router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const { name, weekday, startTime, endTime, type, language } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name erforderlich' });

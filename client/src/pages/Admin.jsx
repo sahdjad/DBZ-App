@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -231,6 +231,7 @@ function UsersTab() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -276,11 +277,30 @@ function UsersTab() {
     }
   };
 
+  // Setzt die 6 Demo-Konten von der Login-Seite wieder auf aktiv (z. B. nach
+  // versehentlichem Deaktivieren beim Aufräumen der eigenen echten Konten).
+  const reactivateDemo = async () => {
+    setDemoBusy(true);
+    try {
+      const { results } = await api.post('/admin/reactivate-demo-accounts', {});
+      const changed = results.filter((r) => r.changed).length;
+      toast.push(changed > 0 ? `${changed} Demo-Konto(en) reaktiviert` : 'Demo-Konten waren bereits aktiv', 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+
   if (!users) return <Spinner />;
   return (
     <div className="space-y-4">
       <LinkAccountsAdminCard />
-      <div className="flex justify-end gap-2">
+      <div className="flex justify-end gap-2 flex-wrap">
+        <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
+          <RotateCcw size={18} /> Demo-Konten reaktivieren
+        </Button>
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
             <XCircle size={18} /> {selected.length} löschen
