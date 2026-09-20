@@ -277,14 +277,18 @@ function UsersTab() {
     }
   };
 
-  // Setzt die 6 Demo-Konten von der Login-Seite wieder auf aktiv (z. B. nach
-  // versehentlichem Deaktivieren beim Aufräumen der eigenen echten Konten).
+  // Setzt die 6 Demo-Konten von der Login-Seite wieder auf aktiv UND ihr
+  // Passwort zwingend auf demo1234 zurück (z. B. nach versehentlichem
+  // Deaktivieren oder falls sich ein Passwort durch Tests verändert hat).
   const reactivateDemo = async () => {
     setDemoBusy(true);
     try {
       const { results } = await api.post('/admin/reactivate-demo-accounts', {});
-      const changed = results.filter((r) => r.changed).length;
-      toast.push(changed > 0 ? `${changed} Demo-Konto(en) reaktiviert` : 'Demo-Konten waren bereits aktiv', 'success');
+      const missing = results.filter((r) => !r.ok);
+      toast.push(
+        missing.length ? `Erledigt, aber nicht gefunden: ${missing.map((r) => r.email).join(', ')}` : 'Alle 6 Demo-Konten aktiv, Passwort auf demo1234 zurückgesetzt',
+        missing.length ? 'error' : 'success',
+      );
       load();
     } catch (err) {
       toast.push(err.message, 'error');
