@@ -1682,3 +1682,38 @@ test('Demo-Konten: Reaktivierungs-Endpoint setzt Status auf aktiv UND Passwort z
   const forbidden = await teacher('POST', '/admin/reactivate-demo-accounts', {});
   assert.equal(forbidden.status, 403);
 });
+
+test('Demo-Konten: komplett gelöschtes Demo-Konto wird mit fester ID neu angelegt', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const list = (await admin('GET', '/admin/users')).data.users;
+  const sprecher = list.find((u) => u.email === 'sprecher@dbz.de');
+  assert.ok(sprecher, 'Demo-Konto sprecher@dbz.de existiert vor dem Test');
+
+  // Komplett löschen (nicht nur deaktivieren) -- genau der Fall, der beim
+  // Aufräumen mit der Mehrfachauswahl-Löschung passieren kann.
+  const del = await admin('POST', '/admin/users/bulk-delete', { ids: [sprecher.id] });
+  assert.equal(del.status, 200);
+  assert.equal(del.data.results[0].ok, true);
+  const gone = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'sprecher@dbz.de');
+  assert.equal(gone, undefined, 'Konto ist wirklich weg');
+
+  const login1 = client();
+  const failedBefore = await login1('POST', '/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' });
+  assert.equal(failedBefore.status, 401, 'Login schlägt fehl, solange das Konto fehlt');
+
+  const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
+  assert.equal(reactivate.status, 200);
+  const sprecherResult = reactivate.data.results.find((r) => r.email === 'sprecher@dbz.de');
+  assert.equal(sprecherResult.ok, true);
+  assert.equal(sprecherResult.recreated, true);
+
+  const restored = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'sprecher@dbz.de');
+  assert.ok(restored, 'Konto existiert wieder');
+  assert.equal(restored.id, 'user_sprecher', 'gleiche feste ID wie beim ursprünglichen Seeding');
+  assert.equal(restored.role, 'klassensprecher');
+  assert.deepEqual(restored.classIds, ['class_3']);
+
+  const login2 = client();
+  const success = await login2('POST', '/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' });
+  assert.equal(success.status, 200, 'demo1234 funktioniert für das neu angelegte Konto');
+});
