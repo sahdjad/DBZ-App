@@ -95,7 +95,11 @@ function minimalStudent(u) {
 /** Klassen, die der Nutzer sehen darf. */
 function visibleClasses(user) {
   const classes = db.all('classes');
-  if (isAdmin(user)) return classes;
+  // Demo-Admin/-Leitung sehen NICHT alle echten Klassen der Schule -- nur die
+  // Demo-Klasse(n). Für andere Rollen ist der Zugriff ohnehin schon über
+  // eigene classIds/childIds beschränkt (siehe unten), das betrifft nur den
+  // sonst uneingeschränkten isAdmin-Zweig.
+  if (isAdmin(user)) return user.isDemo ? classes.filter((c) => c.isDemo) : classes;
   if (CLASS_MANAGERS.includes(user.role))
     return classes.filter((c) => (user.classIds || []).includes(c.id));
   if (user.role === ROLES.ELTERN) {
@@ -188,6 +192,21 @@ function requireAuth(req, res, next) {
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   req.user = user;
   next();
+}
+
+// Demo-Konten (isDemo=true, gesetzt über /admin/reactivate-demo-accounts) sind
+// Vorführ-Zugänge für Besichtigungen. Sie dürfen die App normal benutzen
+// (Check-in, Aufgaben, Nachrichten ... innerhalb ihrer eigenen Demo-Klasse),
+// aber nie ein echtes (nicht als Demo markiertes) Konto oder eine echte Klasse
+// bearbeiten/löschen -- sonst könnte ein Besichtigungs-Zugang echte Daten der
+// Schule verändern oder ausspähen. Wird direkt vor der jeweiligen Mutation
+// aufgerufen, mit dem betroffenen Datensatz (oder null, wenn er neu entsteht).
+function blockDemoOnRealTarget(req, res, target) {
+  if (req.user.isDemo && target && !target.isDemo) {
+    res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+    return true;
+  }
+  return false;
 }
 
 // --- Datei-Uploads (Audio / PDF / Bild) --------------------------------------
@@ -4598,8 +4617,9 @@ function applyChangeRequest(cr) {
 }
 
 // Wartende offene Registrierungen (ohne Klasse) auflisten/zuweisen/ablehnen.
-router.get('/admin/pending-registrations', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
-  const list = db.all('users').filter((u) => u.status === 'pending');
+router.get('/admin/pending-registrations', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  let list = db.all('users').filter((u) => u.status === 'pending');
+  if (req.user.isDemo) list = list.filter((u) => u.isDemo);
   res.json({ users: list.map(publicUser) });
 });
 
@@ -4635,7 +4655,8 @@ router.post('/admin/pending-registrations/:id/reject', requireAuth, requireRole(
 // Liste offener/eigener Anträge. System-Admin: alle offenen. Leitung: eigene.
 router.get('/admin/change-requests', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   let list = db.all('change_requests');
-  if (req.user.role === ROLES.SUPER_ADMIN) list = list.filter((c) => c.status === 'pending');
+  if (req.user.isDemo) list = list.filter((c) => findUserById(c.requestedBy)?.isDemo);
+  else if (req.user.role === ROLES.SUPER_ADMIN) list = list.filter((c) => c.status === 'pending');
   else list = list.filter((c) => c.requestedBy === req.user.id);
   list = [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 100);
   res.json({ requests: list.map(crView) });
@@ -4644,6 +4665,8 @@ router.get('/admin/change-requests', requireAuth, requireRole(ROLES.SUPER_ADMIN,
 router.post('/admin/change-requests/:id/approve', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
   const cr = byId('change_requests', req.params.id);
   if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  if (req.user.isDemo && !findUserById(cr.requestedBy)?.isDemo)
+    return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
   let newId2;
   try { newId2 = applyChangeRequest(cr); } catch (e) { return res.status(400).json({ error: e.message }); }
   cr.status = 'approved'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
@@ -4656,6 +4679,8 @@ router.post('/admin/change-requests/:id/approve', requireAuth, requireRole(ROLES
 router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
   const cr = byId('change_requests', req.params.id);
   if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  if (req.user.isDemo && !findUserById(cr.requestedBy)?.isDemo)
+    return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
   cr.status = 'rejected'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
   db.commit();
   audit(req.user.id, 'change_request.reject', 'change_request', cr.id);
@@ -4663,8 +4688,9 @@ router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.
   res.json({ ok: true });
 });
 
-router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
-  res.json({ users: db.all('users').map(publicUser) });
+router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const list = req.user.isDemo ? db.all('users').filter((u) => u.isDemo) : db.all('users');
+  res.json({ users: list.map(publicUser) });
 });
 
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
@@ -4686,7 +4712,7 @@ router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
   const user = {
     id: newId('user'), name: payload.name, email: payload.email, passwordHash,
     role, classIds: payload.classIds, childIds: payload.childIds,
-    status: 'active', createdAt: new Date().toISOString(),
+    status: 'active', isDemo: Boolean(req.user.isDemo), createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
   audit(req.user.id, 'user.create', 'user', user.id, null, { role });
@@ -4697,6 +4723,7 @@ router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
 router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
   // Nur der System-Administrator darf Super-Admins bearbeiten.
   if (u.role === ROLES.SUPER_ADMIN && req.user.role !== ROLES.SUPER_ADMIN)
     return res.status(403).json({ error: 'Nur der System-Administrator darf diese Rolle bearbeiten' });
@@ -4758,6 +4785,7 @@ const isLastSuperAdmin = (u) => u.role === ROLES.SUPER_ADMIN && db.all('users').
 router.delete('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
   if (u.id === req.user.id) return res.status(400).json({ error: 'Das eigene Konto kann nicht gelöscht werden' });
   if (u.status !== 'disabled')
     return res.status(400).json({ error: 'Konto muss zuerst deaktiviert werden, bevor es gelöscht werden kann' });
@@ -4783,6 +4811,7 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   const results = ids.map((id) => {
     const u = findUserById(id);
     if (!u) return { id, ok: false, error: 'Nicht gefunden' };
+    if (req.user.isDemo && !u.isDemo) return { id, ok: false, error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' };
     if (u.id === req.user.id) return { id, ok: false, error: 'Eigenes Konto kann nicht gelöscht werden' };
     if (isLastSuperAdmin(u)) return { id, ok: false, error: 'Letzter System-Administrator kann nicht gelöscht werden' };
 
@@ -4813,13 +4842,15 @@ const DEMO_ACCOUNT_DEFS = [
 ];
 router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const demoPasswordHash = await hashPassword('demo1234');
+  const demoClass = findClass('class_3');
+  if (demoClass && !demoClass.isDemo) demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.
   const results = [];
   for (const def of DEMO_ACCOUNT_DEFS) {
     let u = findUserByEmail(def.email);
     if (!u) {
       u = {
         id: def.id, name: def.name, email: def.email, passwordHash: demoPasswordHash, role: def.role,
-        classIds: def.classIds || [], childIds: def.childIds || [], status: 'active', createdAt: new Date().toISOString(),
+        classIds: def.classIds || [], childIds: def.childIds || [], status: 'active', isDemo: true, createdAt: new Date().toISOString(),
       };
       db.insert('users', u);
       audit(req.user.id, 'user.create', 'user', u.id, null, { role: u.role, viaReactivateDemoAccounts: true });
@@ -4830,6 +4861,9 @@ router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SU
     const wasDisabled = u.status !== 'active';
     u.status = 'active';
     u.passwordHash = demoPasswordHash;
+    u.isDemo = true; // Backfill für Konten, die vor dieser Kennzeichnung angelegt wurden.
+    u.classIds = def.classIds || [];
+    u.childIds = def.childIds || [];
     audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status, passwordReset: true });
     results.push({ email: def.email, ok: true, changed: true, wasDisabled });
   }
@@ -4848,7 +4882,7 @@ router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.
     return res.json({ pending: true, changeRequest: crView(cr) });
   }
 
-  const klass = { id: newId('class'), organizationId: org().id, ...payload, active: true, createdAt: new Date().toISOString() };
+  const klass = { id: newId('class'), organizationId: org().id, ...payload, active: true, isDemo: Boolean(req.user.isDemo), createdAt: new Date().toISOString() };
   db.insert('classes', klass);
   audit(req.user.id, 'class.create', 'class', klass.id);
   res.json({ class: klass });
@@ -4863,7 +4897,8 @@ const teacherMini = (u) => ({ id: u.id, name: u.name, email: u.email, roleLabel:
 router.get('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const c = findClass(req.params.id);
   if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
-  const users = db.all('users').filter((u) => TEACHER_ASSIGN_ROLES.includes(u.role) && u.status !== 'disabled');
+  if (blockDemoOnRealTarget(req, res, c)) return;
+  const users = db.all('users').filter((u) => TEACHER_ASSIGN_ROLES.includes(u.role) && u.status !== 'disabled' && (!req.user.isDemo || u.isDemo));
   res.json({
     classId: c.id,
     className: c.name,
@@ -4875,8 +4910,10 @@ router.get('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_A
 router.post('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const c = findClass(req.params.id);
   if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, c)) return;
   const u = findUserById(req.body?.userId);
   if (!u || !TEACHER_ASSIGN_ROLES.includes(u.role)) return res.status(400).json({ error: 'Keine passende Lehrkraft' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
   u.classIds = [...new Set([...(u.classIds || []), c.id])];
   db.commit();
   audit(req.user.id, 'class.teacher.add', 'class', c.id, null, { userId: u.id });
@@ -4887,6 +4924,7 @@ router.post('/admin/classes/:id/teachers', requireAuth, requireRole(ROLES.SUPER_
 router.delete('/admin/classes/:id/teachers/:userId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const c = findClass(req.params.id);
   if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, c)) return;
   const u = findUserById(req.params.userId);
   if (!u) return res.status(404).json({ error: 'Lehrkraft nicht gefunden' });
   u.classIds = (u.classIds || []).filter((x) => x !== c.id);
@@ -4895,8 +4933,10 @@ router.delete('/admin/classes/:id/teachers/:userId', requireAuth, requireRole(RO
   res.json({ ok: true });
 });
 
-router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (_req, res) => {
-  res.json({ logs: db.all('audit_logs').slice(-200).reverse() });
+router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  let logs = db.all('audit_logs');
+  if (req.user.isDemo) logs = logs.filter((l) => findUserById(l.actorId)?.isDemo);
+  res.json({ logs: logs.slice(-200).reverse() });
 });
 
 // Vollständiges Backup herunterladen (Leitung/Admin) – für Off-Site-Sicherung.
@@ -4912,6 +4952,7 @@ router.get('/admin/backup.json', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
 router.post('/admin/users/:id/reset-password', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
   if (u.role === ROLES.SUPER_ADMIN && req.user.role !== ROLES.SUPER_ADMIN)
     return res.status(403).json({ error: 'Nur der System-Administrator darf dieses Passwort zurücksetzen' });
   const { newPassword } = req.body || {};
@@ -4968,7 +5009,8 @@ router.post('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), (req, re
 
 router.get('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
   let list = db.all('invites');
-  if (!isAdmin(req.user)) list = list.filter((i) => i.createdBy === req.user.id);
+  if (req.user.isDemo) list = list.filter((i) => i.createdBy === req.user.id);
+  else if (!isAdmin(req.user)) list = list.filter((i) => i.createdBy === req.user.id);
   res.json({ invites: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(inviteView) });
 });
 

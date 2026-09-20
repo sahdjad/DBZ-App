@@ -1645,6 +1645,49 @@ test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, s
   assert.equal(guard.data.results[0].ok, false, 'eigenes Konto wird nicht gelöscht');
 });
 
+test('Demo-Konten: sehen/bearbeiten keine echten Konten/Klassen, eigene Neuanlagen bleiben in der Demo-Blase', async () => {
+  const admin = await loginAs('admin@dbz.de'); // noch nicht isDemo an dieser Stelle
+
+  // Eine "echte" Leitung + Klasse anlegen, BEVOR admin zum Demo-Konto wird.
+  const stamp = Date.now();
+  const realLeitung = (await admin('POST', '/admin/users', {
+    name: 'Echte Leitung', email: `echte-leitung-${stamp}@dbz.de`, password: 'passwort1', role: 'leitung',
+  })).data.user;
+  const realClass = (await admin('POST', '/admin/classes', { name: `Echte Klasse ${stamp}`, weekday: 6 })).data.class;
+  assert.ok(!realLeitung.isDemo, 'echtes Konto ist nicht als Demo markiert');
+  assert.ok(!realClass.isDemo, 'echte Klasse ist nicht als Demo markiert');
+
+  // admin (und die anderen 5 Demo-Konten) auf isDemo=true bringen.
+  const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
+  assert.equal(reactivate.status, 200);
+
+  // Demo-Admin sieht die echte Leitung/Klasse nicht mehr in den Listen.
+  const userList = (await admin('GET', '/admin/users')).data.users;
+  assert.ok(!userList.some((u) => u.id === realLeitung.id), 'echtes Konto ist für Demo-Admin unsichtbar');
+  assert.ok(userList.some((u) => u.email === 'leitung@dbz.de'), 'Demo-Konto bleibt sichtbar');
+  const classList = (await admin('GET', '/classes')).data.classes;
+  assert.ok(!classList.some((c) => c.id === realClass.id), 'echte Klasse ist für Demo-Admin unsichtbar');
+  assert.ok(classList.some((c) => c.id === 'class_3'), 'Demo-Klasse bleibt sichtbar');
+
+  // Demo-Admin darf das echte Konto/die echte Klasse nicht bearbeiten/löschen.
+  const editReal = await admin('PATCH', `/admin/users/${realLeitung.id}`, { name: 'Umbenannt' });
+  assert.equal(editReal.status, 403);
+  const deleteReal = await admin('DELETE', `/admin/users/${realLeitung.id}`);
+  assert.equal(deleteReal.status, 403);
+  const bulkReal = await admin('POST', '/admin/users/bulk-delete', { ids: [realLeitung.id] });
+  assert.equal(bulkReal.data.results[0].ok, false, 'Sammel-Löschung blockiert echtes Konto');
+  const addTeacherReal = await admin('POST', `/admin/classes/${realClass.id}/teachers`, { userId: realLeitung.id });
+  assert.equal(addTeacherReal.status, 403);
+
+  // Was der Demo-Admin selbst neu anlegt, bleibt automatisch in der Demo-Blase.
+  const newDemoUser = (await admin('POST', '/admin/users', {
+    name: 'Von Demo angelegt', email: `demo-erstellt-${stamp}@dbz.de`, password: 'passwort1', role: 'schueler', classIds: ['class_3'],
+  })).data.user;
+  assert.equal(newDemoUser.isDemo, true, 'vom Demo-Konto neu angelegtes Konto ist selbst als Demo markiert');
+  const editOwnCreation = await admin('PATCH', `/admin/users/${newDemoUser.id}`, { name: 'Wieder umbenannt' });
+  assert.equal(editOwnCreation.status, 200, 'Demo-Admin darf eigene Demo-Neuanlagen normal bearbeiten');
+});
+
 test('Demo-Konten: Reaktivierungs-Endpoint setzt Status auf aktiv UND Passwort zwingend auf demo1234', async () => {
   const admin = await loginAs('admin@dbz.de');
   const list = (await admin('GET', '/admin/users')).data.users;
