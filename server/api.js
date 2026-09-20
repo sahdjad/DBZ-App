@@ -4797,20 +4797,25 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
 });
 
 // Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx) in
-// einem Klick wieder aktivieren -- z. B. wenn sie beim Aufräumen der eigenen
-// echten Konten versehentlich deaktiviert wurden, aber für eine Besichtigung/
-// Vorführung weiter gebraucht werden. Rührt nichts an, was schon aktiv ist.
+// einem Klick wieder aktivieren UND ihr Passwort zwingend auf "demo1234"
+// zurücksetzen -- z. B. wenn sie beim Aufräumen der eigenen echten Konten
+// versehentlich deaktiviert wurden, oder sich das Passwort durch Tests
+// (z. B. "Passwort zurücksetzen" während der Einrichtung) verändert hat.
+// So ist "demo1234" garantiert wieder korrekt, egal was vorher passiert ist.
 const DEMO_ACCOUNT_EMAILS = ['admin@dbz.de', 'leitung@dbz.de', 'lehrer@dbz.de', 'sprecher@dbz.de', 'schueler@dbz.de', 'eltern@dbz.de'];
-router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
-  const results = DEMO_ACCOUNT_EMAILS.map((email) => {
+router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
+  const demoPasswordHash = await hashPassword('demo1234');
+  const results = [];
+  for (const email of DEMO_ACCOUNT_EMAILS) {
     const u = findUserByEmail(email);
-    if (!u) return { email, ok: false, error: 'Nicht gefunden' };
-    if (u.status === 'active') return { email, ok: true, changed: false };
+    if (!u) { results.push({ email, ok: false, error: 'Nicht gefunden' }); continue; }
     const before = { status: u.status };
+    const wasDisabled = u.status !== 'active';
     u.status = 'active';
-    audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status });
-    return { email, ok: true, changed: true };
-  });
+    u.passwordHash = demoPasswordHash;
+    audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status, passwordReset: true });
+    results.push({ email, ok: true, changed: true, wasDisabled });
+  }
   db.commit();
   res.json({ results });
 });

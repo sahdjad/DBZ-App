@@ -1645,29 +1645,37 @@ test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, s
   assert.equal(guard.data.results[0].ok, false, 'eigenes Konto wird nicht gelöscht');
 });
 
-test('Demo-Konten: Reaktivierungs-Endpoint setzt deaktivierte Demo-Konten zurück auf aktiv', async () => {
+test('Demo-Konten: Reaktivierungs-Endpoint setzt Status auf aktiv UND Passwort zwingend auf demo1234', async () => {
   const admin = await loginAs('admin@dbz.de');
   const list = (await admin('GET', '/admin/users')).data.users;
   const leitung = list.find((u) => u.email === 'leitung@dbz.de');
   assert.ok(leitung, 'Demo-Konto leitung@dbz.de existiert');
 
-  // Erst deaktivieren, um den Reaktivierungs-Fall zu erzeugen.
+  // Konto deaktivieren UND Passwort "verstellen" (simuliert z. B. ein
+  // versehentliches "Passwort zurücksetzen" während der Einrichtung).
   const disable = await admin('PATCH', `/admin/users/${leitung.id}`, { status: 'disabled' });
   assert.equal(disable.status, 200);
+  const drift = await admin('POST', `/admin/users/${leitung.id}/reset-password`, { newPassword: 'irgendwas1' });
+  assert.equal(drift.status, 200);
+
+  // Mit dem "verstellten" Passwort geht der Demo-Login nicht mehr.
+  const before = client();
+  const stillFails = await before('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'demo1234' });
+  assert.equal(stillFails.status, 401, 'demo1234 funktioniert nicht mehr nach Passwort-Drift');
 
   const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
   assert.equal(reactivate.status, 200);
   const leitungResult = reactivate.data.results.find((r) => r.email === 'leitung@dbz.de');
   assert.equal(leitungResult.ok, true);
-  assert.equal(leitungResult.changed, true);
+  assert.equal(leitungResult.wasDisabled, true);
 
   const after = (await admin('GET', '/admin/users')).data.users.find((u) => u.id === leitung.id);
   assert.equal(after.status, 'active');
 
-  // Nochmal aufrufen: schon aktiv -> changed:false.
-  const again = await admin('POST', '/admin/reactivate-demo-accounts', {});
-  const leitungAgain = again.data.results.find((r) => r.email === 'leitung@dbz.de');
-  assert.equal(leitungAgain.changed, false);
+  // demo1234 funktioniert jetzt wieder garantiert.
+  const login = client();
+  const success = await login('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'demo1234' });
+  assert.equal(success.status, 200, 'demo1234 ist nach Reaktivierung garantiert wieder korrekt');
 
   // Nur Leitung/Admin dürfen das.
   const teacher = await loginAs('lehrer@dbz.de');
