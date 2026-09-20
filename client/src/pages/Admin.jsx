@@ -278,17 +278,18 @@ function UsersTab() {
   };
 
   // Setzt die 6 Demo-Konten von der Login-Seite wieder auf aktiv UND ihr
-  // Passwort zwingend auf demo1234 zurück (z. B. nach versehentlichem
-  // Deaktivieren oder falls sich ein Passwort durch Tests verändert hat).
+  // Passwort zwingend auf demo1234 zurück. Fehlt eins komplett (z. B. durch
+  // versehentliches Löschen), wird es mit denselben Werten wie beim
+  // ursprünglichen Seeding neu angelegt.
   const reactivateDemo = async () => {
     setDemoBusy(true);
     try {
       const { results } = await api.post('/admin/reactivate-demo-accounts', {});
-      const missing = results.filter((r) => !r.ok);
-      toast.push(
-        missing.length ? `Erledigt, aber nicht gefunden: ${missing.map((r) => r.email).join(', ')}` : 'Alle 6 Demo-Konten aktiv, Passwort auf demo1234 zurückgesetzt',
-        missing.length ? 'error' : 'success',
-      );
+      const recreated = results.filter((r) => r.recreated).length;
+      const msg = recreated > 0
+        ? `Alle 6 Demo-Konten aktiv (${recreated} davon neu angelegt), Passwort auf demo1234 zurückgesetzt`
+        : 'Alle 6 Demo-Konten aktiv, Passwort auf demo1234 zurückgesetzt';
+      toast.push(msg, 'success');
       load();
     } catch (err) {
       toast.push(err.message, 'error');

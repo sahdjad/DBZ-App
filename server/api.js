@@ -4796,25 +4796,42 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   res.json({ results });
 });
 
-// Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx) in
-// einem Klick wieder aktivieren UND ihr Passwort zwingend auf "demo1234"
-// zurücksetzen -- z. B. wenn sie beim Aufräumen der eigenen echten Konten
-// versehentlich deaktiviert wurden, oder sich das Passwort durch Tests
-// (z. B. "Passwort zurücksetzen" während der Einrichtung) verändert hat.
-// So ist "demo1234" garantiert wieder korrekt, egal was vorher passiert ist.
-const DEMO_ACCOUNT_EMAILS = ['admin@dbz.de', 'leitung@dbz.de', 'lehrer@dbz.de', 'sprecher@dbz.de', 'schueler@dbz.de', 'eltern@dbz.de'];
+// Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx und
+// seed.js) in einem Klick wiederherstellen: aktivieren + Passwort zwingend
+// auf "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde
+// (z. B. versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben
+// festen IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs
+// sorgen dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch
+// auf z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
+const DEMO_ACCOUNT_DEFS = [
+  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
+  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
+  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
+  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
+  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
+  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
+];
 router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const demoPasswordHash = await hashPassword('demo1234');
   const results = [];
-  for (const email of DEMO_ACCOUNT_EMAILS) {
-    const u = findUserByEmail(email);
-    if (!u) { results.push({ email, ok: false, error: 'Nicht gefunden' }); continue; }
+  for (const def of DEMO_ACCOUNT_DEFS) {
+    let u = findUserByEmail(def.email);
+    if (!u) {
+      u = {
+        id: def.id, name: def.name, email: def.email, passwordHash: demoPasswordHash, role: def.role,
+        classIds: def.classIds || [], childIds: def.childIds || [], status: 'active', createdAt: new Date().toISOString(),
+      };
+      db.insert('users', u);
+      audit(req.user.id, 'user.create', 'user', u.id, null, { role: u.role, viaReactivateDemoAccounts: true });
+      results.push({ email: def.email, ok: true, recreated: true });
+      continue;
+    }
     const before = { status: u.status };
     const wasDisabled = u.status !== 'active';
     u.status = 'active';
     u.passwordHash = demoPasswordHash;
     audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status, passwordReset: true });
-    results.push({ email, ok: true, changed: true, wasDisabled });
+    results.push({ email: def.email, ok: true, changed: true, wasDisabled });
   }
   db.commit();
   res.json({ results });
