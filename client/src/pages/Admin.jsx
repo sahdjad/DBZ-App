@@ -232,6 +232,11 @@ function UsersTab() {
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
+  // Nur im Demo-Betrieb anzeigen -- in Produktion lehnt der Server die
+  // Anfrage ohnehin ab (IS_PRODUCTION in server/api.js), der Button würde
+  // also nur einen Fehler produzieren.
+  const [demoModeAvailable, setDemoModeAvailable] = useState(false);
+  useEffect(() => { api.get('/health').then((d) => setDemoModeAvailable(d.mode === 'demo')).catch(() => {}); }, []);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -303,9 +308,11 @@ function UsersTab() {
     <div className="space-y-4">
       <LinkAccountsAdminCard />
       <div className="flex justify-end gap-2 flex-wrap">
-        <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
-          <RotateCcw size={18} /> Demo-Konten reaktivieren
-        </Button>
+        {demoModeAvailable && (
+          <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
+            <RotateCcw size={18} /> Demo-Konten reaktivieren
+          </Button>
+        )}
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
             <XCircle size={18} /> {selected.length} löschen

@@ -391,10 +391,14 @@ function LinkedAccountsCard() {
               </label>
             </div>
             <Button type="submit" disabled={busy}><Link2 size={18} /> Konto verknüpfen</Button>
-            <p className="text-[11px] text-sage-muted">Verknüpfungen legt nur die Verwaltung an. Zwei beliebige Konten verbindest du im Bereich „Verwaltung".</p>
+            <p className="text-[11px] text-sage-muted">
+              Das verknüpft <strong>dein aktuelles</strong> Konto mit dem oben angegebenen (du musst dessen Passwort kennen).
+              Um zwei <strong>fremde</strong> Konten miteinander zu verknüpfen – ohne deren Passwort zu kennen –, nutze
+              stattdessen „Verwaltung → Nutzer → Konten verknüpfen".
+            </p>
           </form>
         ) : (
-          <p className="text-[11px] text-sage-muted">Verknüpfte Konten richtet die Verwaltung (Administrator/Leitung) ein. Wende dich an sie, wenn du mehrere Rollen zusammenführen möchtest.</p>
+          <p className="text-[11px] text-sage-muted">Nur Administrator/Leitung können Konten verknüpfen. Wende dich an sie, wenn du mehrere Rollen (z. B. Schüler- und Lehrerkonto) zusammenführen möchtest.</p>
         )}
       </div>
     </Card>

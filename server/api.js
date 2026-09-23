@@ -8,7 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
-import { db, newId, UPLOAD_DIR } from './store.js';
+import { db, newId, UPLOAD_DIR, useSupabase } from './store.js';
 import { persistUpload, readFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
@@ -52,11 +52,38 @@ const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex'
 
 const router = express.Router();
 
+// Betriebsmodus: "production" = dauerhaftes Backend (Supabase) angebunden,
+// "demo" = flüchtiges Datei-Backend (lokale Entwicklung oder ein eigenständig
+// deployter Vorführ-Server ohne Supabase-Zugangsdaten). Diese Unterscheidung
+// entscheidet, ob Demo-Login, Demo-Seeding und "Demo-Konten reaktivieren"
+// öffentlich erreichbar sein dürfen -- siehe DEMO_ACCOUNT_DEFS/-EMAILS unten,
+// /auth/login und /admin/reactivate-demo-accounts. Eine echte Trennung von
+// Demo- und Produktionsdaten bedeutet: Produktion läuft mit Supabase und OHNE
+// diese Konten; eine Vorführung läuft als eigener Prozess/eigene Datenbank
+// (z. B. derselbe Code ohne SUPABASE_URL/SUPABASE_SERVICE_KEY, oder ein
+// separates Supabase-Projekt) -- niemals derselbe Datenbestand.
+export const IS_PRODUCTION = useSupabase;
+
+// Die festen Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx
+// und seed.js). Zentral definiert, weil sowohl /auth/login (Produktions-Sperre)
+// als auch /admin/reactivate-demo-accounts (Wiederherstellung) sie brauchen.
+const DEMO_ACCOUNT_DEFS = [
+  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
+  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
+  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
+  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
+  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
+  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
+];
+const DEMO_ACCOUNT_EMAILS = new Set(DEMO_ACCOUNT_DEFS.map((d) => d.email));
+
 // Öffentlicher Health-/Diagnose-Endpunkt: zeigt an, ob der Server läuft und
-// welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal).
-// Enthält bewusst keine sensiblen Daten.
+// welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal)
+// UND ob Demo-Zugänge grundsätzlich erreichbar sind (mode). Enthält bewusst
+// keine sensiblen Daten -- die Login-Seite blendet die Demo-Kacheln danach
+// aus, das eigentliche Verbot erzwingt aber /auth/login serverseitig.
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, storage: db.backend, time: new Date().toISOString() });
+  res.json({ ok: true, storage: db.backend, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
 });
 
 // --- Datensatz-Helfer --------------------------------------------------------
@@ -251,6 +278,14 @@ router.post('/auth/login', async (req, res) => {
     return res.status(429).json({ error: 'Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.' });
 
   const user = findUserByEmail(email);
+  // Demo-Konten sind in Produktion nie erreichbar -- unabhängig davon, ob sie
+  // (noch) als isDemo markiert sind. Dieselbe generische Fehlermeldung wie bei
+  // falschen Zugangsdaten, damit kein Unterschied nach außen erkennbar ist
+  // (keine Bestätigung, dass "das ist ein Demo-Konto" oder "es existiert").
+  if (IS_PRODUCTION && (DEMO_ACCOUNT_EMAILS.has((email || '').trim().toLowerCase()) || user?.isDemo)) {
+    loginThrottle.fail(key);
+    return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
+  }
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     loginThrottle.fail(key);
     return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
@@ -4825,22 +4860,18 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   res.json({ results });
 });
 
-// Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx und
-// seed.js) in einem Klick wiederherstellen: aktivieren + Passwort zwingend
-// auf "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde
-// (z. B. versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben
-// festen IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs
-// sorgen dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch
-// auf z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
-const DEMO_ACCOUNT_DEFS = [
-  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
-  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
-  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
-  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
-  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
-  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
-];
+// Die 6 Demo-Konten von der Login-Seite (siehe DEMO_ACCOUNT_DEFS oben) in
+// einem Klick wiederherstellen: aktivieren + Passwort zwingend auf
+// "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde (z. B.
+// versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben festen
+// IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs sorgen
+// dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch auf
+// z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
+// In Produktion (Supabase) grundsätzlich gesperrt -- siehe IS_PRODUCTION
+// oben: Demo-Zugänge dürfen dort nie (wieder) erreichbar sein, auch nicht
+// über einen bereits angemeldeten Admin/Leitung-Zugang.
 router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
+  if (IS_PRODUCTION) return res.status(403).json({ error: 'In der Produktivumgebung nicht verfügbar' });
   const demoPasswordHash = await hashPassword('demo1234');
   const demoClass = findClass('class_3');
   if (demoClass && !demoClass.isDemo) demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { LogIn, Download } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { api } from '../lib/api.js';
 import { Button, Card, useToast } from '../components/ui.jsx';
 
 const DEMO = [
@@ -22,6 +23,11 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [logoOk, setLogoOk] = useState(true);
+  // Erst anzeigen, wenn der Server bestätigt hat, dass er im Demo-Modus läuft
+  // (Backend ohne Supabase) -- in Produktion bleiben Demo-Zugänge verborgen.
+  // Das ist nur die UI-Seite; die eigentliche Sperre erzwingt /auth/login
+  // serverseitig unabhängig davon (siehe IS_PRODUCTION in server/api.js).
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     const handler = (e) => {
@@ -30,6 +36,10 @@ export default function Login() {
     };
     window.addEventListener('beforeinstallprompt', handler);
     return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  useEffect(() => {
+    api.get('/health').then((d) => setDemoMode(d.mode === 'demo')).catch(() => setDemoMode(false));
   }, []);
 
   const install = async () => {
@@ -133,24 +143,26 @@ export default function Login() {
               Einladung? <Link to="/registrieren" className="text-mint-light hover:underline">Konto erstellen</Link>
             </p>
 
-            <div className="mt-5 pt-4 border-t border-line">
-              <p className="text-xs text-sage-muted mb-3">
-                Demo-Zugänge (Passwort <span className="font-mono text-sage">demo1234</span>):
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {DEMO.map((d) => (
-                  <button
-                    key={d.email}
-                    onClick={(e) => submit(e, { email: d.email, password: 'demo1234' })}
-                    disabled={busy}
-                    className="text-left rounded-lg border border-line px-3 py-2 hover:bg-subtle transition"
-                  >
-                    <div className="text-sm text-ivory">{d.label}</div>
-                    <div className="text-[11px] font-mono text-sage-muted truncate">{d.email}</div>
-                  </button>
-                ))}
+            {demoMode && (
+              <div className="mt-5 pt-4 border-t border-line">
+                <p className="text-xs text-sage-muted mb-3">
+                  Demo-Zugänge (Passwort <span className="font-mono text-sage">demo1234</span>):
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEMO.map((d) => (
+                    <button
+                      key={d.email}
+                      onClick={(e) => submit(e, { email: d.email, password: 'demo1234' })}
+                      disabled={busy}
+                      className="text-left rounded-lg border border-line px-3 py-2 hover:bg-subtle transition"
+                    >
+                      <div className="text-sm text-ivory">{d.label}</div>
+                      <div className="text-[11px] font-mono text-sage-muted truncate">{d.email}</div>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </Card>
 
           <p className="text-center text-xs text-white/60 mt-5">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
