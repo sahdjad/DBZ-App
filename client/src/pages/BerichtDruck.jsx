@@ -6,7 +6,9 @@ import { Button, Spinner } from '../components/ui.jsx';
 import { gradeLabel, avgLabel } from '../lib/grades.js';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'long' }) : '');
-const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
+// null (statt 0 %) heißt: keine erfassten Sitzungen im Zeitraum, nicht "0 % anwesend".
+const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : null);
+const rateLabel = (a) => (rate(a) == null ? 'Noch keine Daten' : `${rate(a)} %`);
 
 export default function BerichtDruck() {
   const { id } = useParams();
@@ -27,7 +29,7 @@ export default function BerichtDruck() {
 
   const d = report.data;
   const rows = [
-    ['Anwesenheitsquote', `${rate(d.attendance)} %`],
+    ['Anwesenheitsquote', rateLabel(d.attendance)],
     ['Unterrichtstage erfasst', d.attendance.sessions],
     ['Anwesend', d.attendance.present],
     ['Verspätet', d.attendance.late],

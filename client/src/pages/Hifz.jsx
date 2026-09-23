@@ -318,7 +318,9 @@ function ReadView({ role }) {
   const [data, setData] = useState(null);
   const [children, setChildren] = useState([]);
   const [childId, setChildId] = useState('');
-  const isStudent = role === 'schueler';
+  // Klassensprecher bleibt Schüler seiner Klasse: darf wie jeder Schüler
+  // eigene Hifz-Ziele einsehen und Audio dazu einreichen.
+  const isStudent = role === 'schueler' || role === 'klassensprecher';
 
   const loadSelf = () => api.get('/quran-goals').then(setData);
   useEffect(() => {

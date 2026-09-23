@@ -8,7 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
-import { db, newId, UPLOAD_DIR } from './store.js';
+import { db, newId, UPLOAD_DIR, useSupabase } from './store.js';
 import { persistUpload, readFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
@@ -52,11 +52,38 @@ const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex'
 
 const router = express.Router();
 
+// Betriebsmodus: "production" = dauerhaftes Backend (Supabase) angebunden,
+// "demo" = flüchtiges Datei-Backend (lokale Entwicklung oder ein eigenständig
+// deployter Vorführ-Server ohne Supabase-Zugangsdaten). Diese Unterscheidung
+// entscheidet, ob Demo-Login, Demo-Seeding und "Demo-Konten reaktivieren"
+// öffentlich erreichbar sein dürfen -- siehe DEMO_ACCOUNT_DEFS/-EMAILS unten,
+// /auth/login und /admin/reactivate-demo-accounts. Eine echte Trennung von
+// Demo- und Produktionsdaten bedeutet: Produktion läuft mit Supabase und OHNE
+// diese Konten; eine Vorführung läuft als eigener Prozess/eigene Datenbank
+// (z. B. derselbe Code ohne SUPABASE_URL/SUPABASE_SERVICE_KEY, oder ein
+// separates Supabase-Projekt) -- niemals derselbe Datenbestand.
+export const IS_PRODUCTION = useSupabase;
+
+// Die festen Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx
+// und seed.js). Zentral definiert, weil sowohl /auth/login (Produktions-Sperre)
+// als auch /admin/reactivate-demo-accounts (Wiederherstellung) sie brauchen.
+const DEMO_ACCOUNT_DEFS = [
+  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
+  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
+  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
+  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
+  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
+  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
+];
+const DEMO_ACCOUNT_EMAILS = new Set(DEMO_ACCOUNT_DEFS.map((d) => d.email));
+
 // Öffentlicher Health-/Diagnose-Endpunkt: zeigt an, ob der Server läuft und
-// welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal).
-// Enthält bewusst keine sensiblen Daten.
+// welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal)
+// UND ob Demo-Zugänge grundsätzlich erreichbar sind (mode). Enthält bewusst
+// keine sensiblen Daten -- die Login-Seite blendet die Demo-Kacheln danach
+// aus, das eigentliche Verbot erzwingt aber /auth/login serverseitig.
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, storage: db.backend, time: new Date().toISOString() });
+  res.json({ ok: true, storage: db.backend, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
 });
 
 // --- Datensatz-Helfer --------------------------------------------------------
@@ -251,6 +278,14 @@ router.post('/auth/login', async (req, res) => {
     return res.status(429).json({ error: 'Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.' });
 
   const user = findUserByEmail(email);
+  // Demo-Konten sind in Produktion nie erreichbar -- unabhängig davon, ob sie
+  // (noch) als isDemo markiert sind. Dieselbe generische Fehlermeldung wie bei
+  // falschen Zugangsdaten, damit kein Unterschied nach außen erkennbar ist
+  // (keine Bestätigung, dass "das ist ein Demo-Konto" oder "es existiert").
+  if (IS_PRODUCTION && (DEMO_ACCOUNT_EMAILS.has((email || '').trim().toLowerCase()) || user?.isDemo)) {
+    loginThrottle.fail(key);
+    return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
+  }
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     loginThrottle.fail(key);
     return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
@@ -1131,9 +1166,14 @@ router.get('/leadership/overview', requireAuth, requireRole(ROLES.SUPER_ADMIN, R
     return a.sessions ? ((a.present + a.late) / a.sessions) * 100 : null;
   };
 
+  // "students" zählt ALLE Schüler-Konten org-weit (auch ohne Klassenzuordnung,
+  // z. B. frisch angelegt/noch nicht zugeteilt) -- das kann höher sein als die
+  // Summe der Klassenlisten. unassignedStudents macht diese Differenz explizit
+  // sichtbar, statt sie stillschweigend in der Gesamtzahl zu verstecken.
   const counts = {
     classes: classes.length,
     students: students.length,
+    unassignedStudents: students.filter((s) => !(s.classIds || []).length).length,
     parents: users.filter((u) => u.role === ROLES.ELTERN).length,
     teachers: users.filter((u) => [ROLES.KLASSENLEHRER, ROLES.VERTRETUNG].includes(u.role)).length,
     pendingUsers: users.filter((u) => u.status === 'pending').length,
@@ -3716,25 +3756,33 @@ router.delete('/materials/:id', requireAuth, (req, res) => {
 // =============================================================================
 
 function penaltyText(p) {
-  return p.type === 'money' ? `${p.amount} €` : `${p.amount} Seiten`;
+  const base = p.type === 'money' ? `${p.amount} €` : p.type === 'pages' ? `${p.amount} Seiten` : p.description;
+  return p.extra ? `${base} + ${p.extra}` : base;
 }
 
 // Reichert eine Strafe mit Frist-/Zuschlags-Infos an (berechnet, nicht gespeichert).
+// "other" (sonstige Maßnahme, z. B. Reinigungsdienst) hat keinen Betrag/Zuschlag
+// -- ihr Erledigungsstatus läuft über dasselbe status-Feld wie bei Geld/Seiten
+// (pending -> approved -> settled), siehe /penalties/:id/settle.
 function penaltyView(p) {
   const o = org();
   const today = new Date().toISOString().slice(0, 10);
   const due = p.dueDate || null;
   const overdue = p.status === 'approved' && !!due && today > due;
+  if (p.type === 'other') {
+    return { ...p, dueDate: due, overdue, surcharge: 0, effectiveAmount: null };
+  }
   const surcharge = overdue ? (p.type === 'money' ? (o.penaltySurchargeMoney || 0) : (o.penaltySurchargePages || 0)) : 0;
   return { ...p, dueDate: due, overdue, surcharge, effectiveAmount: p.amount + surcharge };
 }
-// Offene Beträge einer Strafliste – Seiten & €. Gemeldete, aber noch nicht vom
+// Offene Beträge/Maßnahmen einer Strafliste. Gemeldete, aber noch nicht vom
 // Lehrer bestätigte Zahlungen (payment_pending) zählen weiterhin als offen.
 const OPEN_STATES = ['approved', 'payment_pending'];
 function openTotals(list) {
-  const t = { pages: 0, money: 0 };
+  const t = { pages: 0, money: 0, other: 0 };
   for (const p of list) {
     if (!OPEN_STATES.includes(p.status)) continue;
+    if (p.type === 'other') { t.other += 1; continue; }
     const v = penaltyView(p);
     if (p.type === 'money') t.money += v.effectiveAmount; else t.pages += v.effectiveAmount;
   }
@@ -3764,7 +3812,7 @@ function penaltyForManager(req, res) {
 
 // Strafe erfassen (Klassensprecher oder Verwalter der Klasse).
 router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLASSENSPRECHER]), (req, res) => {
-  const { classId, studentId, type, amount, reason } = req.body || {};
+  const { classId, studentId, type, amount, description, extra, reason } = req.body || {};
   const klass = findClass(classId);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canRecordPenalty(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
@@ -3772,9 +3820,14 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
   const student = findUserById(studentId);
   if (!student || !STUDENT_ROLES.includes(student.role) || !(student.classIds || []).includes(classId))
     return res.status(400).json({ error: 'Bitte einen gültigen Schüler dieser Klasse wählen' });
-  if (!['pages', 'money'].includes(type)) return res.status(400).json({ error: 'Ungültige Straf-Art' });
-  const amt = Number(amount);
-  if (!(amt > 0)) return res.status(400).json({ error: 'Bitte eine Menge größer 0 angeben' });
+  if (!['pages', 'money', 'other'].includes(type)) return res.status(400).json({ error: 'Ungültige Straf-Art' });
+  let amt = null;
+  if (type === 'other') {
+    if (!description || !description.trim()) return res.status(400).json({ error: 'Bitte die sonstige Maßnahme beschreiben' });
+  } else {
+    amt = Number(amount);
+    if (!(amt > 0)) return res.status(400).json({ error: 'Bitte eine Menge größer 0 angeben' });
+  }
   if (!reason || !reason.trim()) return res.status(400).json({ error: 'Bitte einen Grund angeben' });
 
   const isManager = canManageClass(req.user, classId);
@@ -3790,6 +3843,10 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
     studentName: student.name,
     type,
     amount: amt,
+    // Nur bei "sonstige Maßnahme" (description) bzw. bei einer verpflichtenden
+    // Zusatzmaßnahme aus dem Katalog (extra, z. B. "+ Gespräch mit Direktoren").
+    description: type === 'other' ? description.trim() : null,
+    extra: extra && String(extra).trim() ? String(extra).trim() : null,
     dueDate,
     reason: reason.trim(),
     status: isManager ? 'approved' : 'pending',
@@ -3950,9 +4007,11 @@ router.patch('/penalties/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, r
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (!['pending', 'approved'].includes(p.status)) return res.status(400).json({ error: 'Nur offene Strafen können angepasst werden' });
-  const { type, amount, reason } = req.body || {};
-  if (type && ['pages', 'money'].includes(type)) p.type = type;
-  if (amount !== undefined) { const a = Number(amount); if (a > 0) p.amount = a; }
+  const { type, amount, description, extra, reason } = req.body || {};
+  if (type && ['pages', 'money', 'other'].includes(type)) p.type = type;
+  if (amount !== undefined) { const a = Number(amount); if (a > 0) { p.amount = a; p.description = null; } }
+  if (typeof description === 'string' && description.trim()) { p.description = description.trim(); p.amount = null; }
+  if (extra !== undefined) p.extra = extra && String(extra).trim() ? String(extra).trim() : null;
   if (typeof reason === 'string' && reason.trim()) p.reason = reason.trim();
   db.commit();
   audit(req.user.id, 'penalty.update', 'penalty', p.id);
@@ -4825,22 +4884,18 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   res.json({ results });
 });
 
-// Die 6 Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx und
-// seed.js) in einem Klick wiederherstellen: aktivieren + Passwort zwingend
-// auf "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde
-// (z. B. versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben
-// festen IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs
-// sorgen dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch
-// auf z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
-const DEMO_ACCOUNT_DEFS = [
-  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
-  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
-  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
-  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
-  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
-  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
-];
+// Die 6 Demo-Konten von der Login-Seite (siehe DEMO_ACCOUNT_DEFS oben) in
+// einem Klick wiederherstellen: aktivieren + Passwort zwingend auf
+// "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde (z. B.
+// versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben festen
+// IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs sorgen
+// dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch auf
+// z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
+// In Produktion (Supabase) grundsätzlich gesperrt -- siehe IS_PRODUCTION
+// oben: Demo-Zugänge dürfen dort nie (wieder) erreichbar sein, auch nicht
+// über einen bereits angemeldeten Admin/Leitung-Zugang.
 router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
+  if (IS_PRODUCTION) return res.status(403).json({ error: 'In der Produktivumgebung nicht verfügbar' });
   const demoPasswordHash = await hashPassword('demo1234');
   const demoClass = findClass('class_3');
   if (demoClass && !demoClass.isDemo) demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.
@@ -4933,10 +4988,24 @@ router.delete('/admin/classes/:id/teachers/:userId', requireAuth, requireRole(RO
   res.json({ ok: true });
 });
 
+// Löst Akteur und betroffenen Datensatz zu einem lesbaren Namen auf, sofern
+// dieser noch existiert oder im before/after-Schnappschuss mitgespeichert wurde.
+// Erfindet keine Angaben: bleibt null, wenn nichts davon vorliegt.
+function auditEntityName(l) {
+  if (l.entityType === 'user') return findUserById(l.entityId)?.name || l.before?.name || l.after?.name || null;
+  if (l.entityType === 'class') return findClass(l.entityId)?.name || null;
+  return null;
+}
+
 router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   let logs = db.all('audit_logs');
   if (req.user.isDemo) logs = logs.filter((l) => findUserById(l.actorId)?.isDemo);
-  res.json({ logs: logs.slice(-200).reverse() });
+  const enriched = logs.slice(-200).reverse().map((l) => ({
+    ...l,
+    actorName: findUserById(l.actorId)?.name || null,
+    entityName: auditEntityName(l),
+  }));
+  res.json({ logs: enriched });
 });
 
 // Vollständiges Backup herunterladen (Leitung/Admin) – für Off-Site-Sicherung.
@@ -5072,51 +5141,67 @@ router.get('/export/roster.csv', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
 // Der Katalog (Kategorien/Verstöße) ist als Vorlage vorgegeben. Editierbar ist
 // die Konsequenz je Verstoß: schulweit (Admin/Leitung) und pro Klasse
 // (Klassenlehrer/Vertretung/Klassensprecher). Effektiv gilt: Klasse > Schule > Vorlage.
+// `structured` bildet die Maßnahme(n) hinter dem lesbaren `consequence`-Text
+// maschinenlesbar ab, damit das Erfassungsformular NIE den Freitext parsen
+// muss (fehleranfällig, siehe docs/PROJECT_DECISIONS). Von Hand anhand des
+// jeweiligen `consequence`-Texts übertragen, keine Beträge geändert. Form:
+//   { mode: 'alt', options: [Knoten, Knoten] }   – Lehrkraft wählt EINE Option
+//   { mode: 'all', parts: [Knoten, Knoten] }     – ALLE Teile gelten zusammen
+//   Blatt: { kind: 'money'|'pages', amount } ODER { kind: 'money'|'pages', min } (bei "ab X")
+//   Blatt: { kind: 'other', description }        – sonstige Maßnahme (Freitext-Beschreibung)
+const money = (amount) => ({ kind: 'money', amount });
+const moneyMin = (min) => ({ kind: 'money', min });
+const pages = (amount) => ({ kind: 'pages', amount });
+const pagesMin = (min) => ({ kind: 'pages', min });
+const other = (description) => ({ kind: 'other', description });
+const alt = (...options) => ({ mode: 'alt', options });
+const all = (...parts) => ({ mode: 'all', parts });
+
 const DEFAULT_PENALTY_CATALOG = [
   { id: 'verspaetung', title: 'Verspätungen und Fehlen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'v_30', label: 'Bis zu 30 Min unentschuldigt', consequence: '2 € oder 1 Seite' },
-    { id: 'v_45', label: 'Bis zu 45 Min unentschuldigt', consequence: '5 € oder 3 Seiten' },
-    { id: 'v_60', label: 'Bis zu 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten' },
-    { id: 'v_60plus', label: 'Ab 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten' },
-    { id: 'v_komplett', label: 'Komplettes unentschuldigtes Fehlen', consequence: '20 € oder Räumlichkeiten säubern' },
+    { id: 'v_30', label: 'Bis zu 30 Min unentschuldigt', consequence: '2 € oder 1 Seite', structured: alt(money(2), pages(1)) },
+    { id: 'v_45', label: 'Bis zu 45 Min unentschuldigt', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'v_60', label: 'Bis zu 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'v_60plus', label: 'Ab 1 Stunde unentschuldigt', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'v_komplett', label: 'Komplettes unentschuldigtes Fehlen', consequence: '20 € oder Räumlichkeiten säubern', structured: alt(money(20), other('Räumlichkeiten säubern')) },
   ] },
   { id: 'stoerungen', title: 'Störungen', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen. Uneinsichtigkeit kann bis zum Unterrichtsausschluss führen.', items: [
-    { id: 's_mehrfach', label: 'Mehrfache Unterrichtsstörungen', consequence: '2 € oder 1 Seite' },
-    { id: 's_auffaellig', label: 'Auffällige Störungen', consequence: '5 € oder 3 Seiten' },
-    { id: 's_regelmaessig', label: 'Regelmäßige mehrfache Unterrichtsstörungen', consequence: '10 € oder 4 Seiten + Gespräch mit Direktoren und/oder Eltern' },
+    { id: 's_mehrfach', label: 'Mehrfache Unterrichtsstörungen', consequence: '2 € oder 1 Seite', structured: alt(money(2), pages(1)) },
+    { id: 's_auffaellig', label: 'Auffällige Störungen', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 's_regelmaessig', label: 'Regelmäßige mehrfache Unterrichtsstörungen', consequence: '10 € oder 4 Seiten + Gespräch mit Direktoren und/oder Eltern', structured: all(alt(money(10), pages(4)), other('Gespräch mit Direktoren und/oder Eltern')) },
   ] },
   { id: 'hausaufgaben', title: 'Hausaufgaben', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'h_unvollstaendig', label: 'Unvollständige oder fehlende Hausaufgaben', consequence: '2 € oder 2 Seiten' },
-    { id: 'h_quiz', label: 'Fehlendes Quiz (Klassen 3a, 3b, 4 und 5)', consequence: 'Essen für die gesamte Klasse bringen' },
-    { id: 'h_3xfolge', label: '3-mal in Folge fehlende Hausaufgaben', consequence: 'Vor-/Nachsitzen' },
+    { id: 'h_unvollstaendig', label: 'Unvollständige oder fehlende Hausaufgaben', consequence: '2 € oder 2 Seiten', structured: alt(money(2), pages(2)) },
+    { id: 'h_quiz', label: 'Fehlendes Quiz (Klassen 3a, 3b, 4 und 5)', consequence: 'Essen für die gesamte Klasse bringen', structured: other('Essen für die gesamte Klasse bringen') },
+    { id: 'h_3xfolge', label: '3-mal in Folge fehlende Hausaufgaben', consequence: 'Vor-/Nachsitzen', structured: other('Vor-/Nachsitzen') },
   ] },
   { id: 'materialien', title: 'Unterrichtsmaterialien', note: 'Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'm_heft', label: 'Grünes Heft / Abu Laq Laq / DBZ Lehrbuch vergessen', consequence: '2 € oder 1 Seite' },
-    { id: 'm_koran', label: 'Koran vergessen', consequence: '2 € oder 2 Seiten' },
-    { id: 'm_schreibhefte', label: 'Schreibhefte vergessen', consequence: '2 € oder 2 Seiten' },
-    { id: 'm_mittel', label: 'Unterrichtsmittel im Klassenzimmer vergessen', consequence: '2 € oder 1 Seite' },
+    { id: 'm_heft', label: 'Grünes Heft / Abu Laq Laq / DBZ Lehrbuch vergessen', consequence: '2 € oder 1 Seite', structured: alt(money(2), pages(1)) },
+    { id: 'm_koran', label: 'Koran vergessen', consequence: '2 € oder 2 Seiten', structured: alt(money(2), pages(2)) },
+    { id: 'm_schreibhefte', label: 'Schreibhefte vergessen', consequence: '2 € oder 2 Seiten', structured: alt(money(2), pages(2)) },
+    { id: 'm_mittel', label: 'Unterrichtsmittel im Klassenzimmer vergessen', consequence: '2 € oder 1 Seite', structured: alt(money(2), pages(1)) },
   ] },
   { id: 'klassenzimmer', title: 'Ordnung & Sauberkeit – Klassenzimmer', note: 'Jede Klasse ist für sich verantwortlich. Der/die Klassenlehrer/in kann jederzeit hiervon abweichen.', items: [
-    { id: 'kz_tafel', label: 'Tafel nicht gereinigt', consequence: '2 € oder 1 Seite' },
-    { id: 'kz_licht', label: 'Licht/TV etc. nicht ausgeschaltet', consequence: '5 € oder 3 Seiten' },
-    { id: 'kz_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten' },
-    { id: 'kz_heizung', label: 'Heizung angelassen', consequence: '5 € oder 3 Seiten' },
-    { id: 'kz_stuehle', label: 'Stühle nicht hochgestellt', consequence: '5 € oder 3 Seiten' },
+    { id: 'kz_tafel', label: 'Tafel nicht gereinigt', consequence: '2 € oder 1 Seite', structured: alt(money(2), pages(1)) },
+    { id: 'kz_licht', label: 'Licht/TV etc. nicht ausgeschaltet', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'kz_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'kz_heizung', label: 'Heizung angelassen', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'kz_stuehle', label: 'Stühle nicht hochgestellt', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
   ] },
   { id: 'raeume', title: 'Ordnung & Sauberkeit – Räumlichkeiten (Ordnungsdienst)', note: 'Der Verein kann jederzeit hiervon abweichen. Zusätzlich: Verlängerung des Ordnungsdienstes um eine weitere Woche.', items: [
-    { id: 'r_treppe', label: 'Treppenhaus dreckig', consequence: '5 € oder 3 Seiten' },
-    { id: 'r_licht', label: 'Lichter nicht ausgeschaltet', consequence: '5 € oder 3 Seiten' },
-    { id: 'r_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten' },
-    { id: 'r_boden', label: 'Boden nicht sauber', consequence: '5 € oder 3 Seiten' },
-    { id: 'r_toiletten', label: 'Toiletten nicht gereinigt', consequence: '5 € oder 3 Seiten' },
-    { id: 'r_kueche', label: 'Küche nicht sauber', consequence: '10 € oder 6 Seiten' },
+    { id: 'r_treppe', label: 'Treppenhaus dreckig', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'r_licht', label: 'Lichter nicht ausgeschaltet', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'r_fenster', label: 'Fenster nicht geschlossen', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'r_boden', label: 'Boden nicht sauber', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'r_toiletten', label: 'Toiletten nicht gereinigt', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'r_kueche', label: 'Küche nicht sauber', consequence: '10 € oder 6 Seiten', structured: alt(money(10), pages(6)) },
   ] },
   { id: 'sonstiges', title: 'Sonstiges', note: 'Der Verein kann jederzeit hiervon abweichen.', items: [
-    { id: 'x_grundstueck', label: 'Verlassen des Grundstücks ohne Erlaubnis', consequence: '5 € oder 3 Seiten' },
-    { id: 'x_schuhe', label: 'Schuhe in den Räumlichkeiten', consequence: '5 € oder 3 Seiten' },
-    { id: 'x_fahrlaessig', label: 'Fahrlässiger Umgang mit den Räumlichkeiten', consequence: 'ab 5 € oder ab 3 Seiten' },
-    { id: 'x_aufzug', label: 'Benutzung des Aufzugs ohne Erlaubnis', consequence: '5 € oder 3 Seiten' },
-    { id: 'x_parkplatz', label: 'Rücksichtsloses Fahren auf dem Parkplatz', consequence: '10 € oder 6 Seiten' },
+    { id: 'x_grundstueck', label: 'Verlassen des Grundstücks ohne Erlaubnis', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'x_schuhe', label: 'Schuhe in den Räumlichkeiten', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'x_fahrlaessig', label: 'Fahrlässiger Umgang mit den Räumlichkeiten', consequence: 'ab 5 € oder ab 3 Seiten', structured: alt(moneyMin(5), pagesMin(3)) },
+    { id: 'x_aufzug', label: 'Benutzung des Aufzugs ohne Erlaubnis', consequence: '5 € oder 3 Seiten', structured: alt(money(5), pages(3)) },
+    { id: 'x_parkplatz', label: 'Rücksichtsloses Fahren auf dem Parkplatz', consequence: '10 € oder 6 Seiten', structured: alt(money(10), pages(6)) },
   ] },
 ];
 
@@ -5151,14 +5236,21 @@ function effectivePenaltyCatalog(classId) {
     id: cat.id,
     title: cat.title,
     note: cat.note,
-    items: cat.items.map((it) => ({
-      id: it.id,
-      label: it.label,
-      defaultConsequence: it.consequence,
-      schoolConsequence: school[it.id] ?? null,
-      classConsequence: klass[it.id] ?? null,
-      consequence: klass[it.id] ?? school[it.id] ?? it.consequence,
-    })),
+    items: cat.items.map((it) => {
+      const overridden = klass[it.id] ?? school[it.id] ?? null;
+      return {
+        id: it.id,
+        label: it.label,
+        defaultConsequence: it.consequence,
+        schoolConsequence: school[it.id] ?? null,
+        classConsequence: klass[it.id] ?? null,
+        consequence: overridden ?? it.consequence,
+        // Nur für den unveränderten Standardtext bekannt -- ein überschriebener
+        // Freitext hat keine bekannte Struktur, das Formular fragt dann
+        // manuell ab, statt den Text zu raten/parsen.
+        structured: overridden ? null : it.structured,
+      };
+    }),
   }));
 }
 

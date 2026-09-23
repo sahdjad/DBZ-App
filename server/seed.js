@@ -9,18 +9,38 @@
 //   schueler@dbz.de     Schüler (Yusuf)
 //   eltern@dbz.de       Eltern (verknüpft mit Yusuf)
 
-import { db, newId } from './store.js';
+import { db, newId, useSupabase } from './store.js';
 import { hashPassword } from './auth.js';
 import { DEFAULT_ORG } from './content.js';
 import { ROLES } from './rbac.js';
 import { attendanceStatusFor } from './domain.js';
 
+// Demo-Konten/-Klasse/-Beispieldaten NIE automatisch in einer produktiven
+// (Supabase-gestützten) Umgebung anlegen -- ein frischer Produktions-Deploy
+// bekäme sonst sofort öffentlich bekannte Zugänge (admin@dbz.de/demo1234
+// usw.) mit vollen Administratorrechten. Für lokale Entwicklung/eine eigens
+// deployte Vorführumgebung (kein Supabase konfiguriert) bleibt das Seeding
+// wie gehabt aktiv. Ein bewusstes Opt-in (SEED_DEMO_ACCOUNTS=1) erlaubt es
+// trotzdem, z. B. um eine separate Supabase-Instanz als Demo-Umgebung zu
+// befüllen -- niemals dieselbe wie die Produktionsdatenbank.
+const shouldSeedDemoData = !useSupabase || process.env.SEED_DEMO_ACCOUNTS === '1';
+
 export async function seed() {
   if (db.meta.seeded) return;
+
+  // Die Organisation wird immer angelegt (nötig, damit die App überhaupt
+  // läuft) -- nur die Demo-Konten/-Klasse/-Beispieldaten sind an das Opt-in
+  // oben gebunden.
+  db.insert('organizations', { ...DEFAULT_ORG });
+
+  if (!shouldSeedDemoData) {
+    db.meta.seeded = true;
+    db.commit();
+    return;
+  }
+
   const pw = await hashPassword('demo1234');
   const now = new Date().toISOString();
-
-  db.insert('organizations', { ...DEFAULT_ORG });
 
   const klasse3 = {
     id: 'class_3',

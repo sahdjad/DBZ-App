@@ -9,7 +9,10 @@ const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '');
 const penAmount = (p) => (p.effectiveAmount ?? p.amount); // inkl. Zuschlag bei Überfälligkeit
-const penText = (p) => (p.type === 'money' ? `${penAmount(p)} €` : `${penAmount(p)} Seiten`);
+function penText(p) {
+  const base = p.type === 'money' ? `${penAmount(p)} €` : p.type === 'pages' ? `${penAmount(p)} Seiten` : p.description;
+  return p.extra ? `${base} + ${p.extra}` : base;
+}
 
 const STATUS = {
   pending: { label: 'Wartet auf Genehmigung', tone: 'neutral' },
@@ -39,9 +42,10 @@ function debtSummary(list) {
   const byStudent = new Map();
   for (const p of list) {
     if (p.status !== 'approved') continue;
-    const cur = byStudent.get(p.studentId) || { studentId: p.studentId, studentName: p.studentName, money: 0, pages: 0, count: 0 };
+    const cur = byStudent.get(p.studentId) || { studentId: p.studentId, studentName: p.studentName, money: 0, pages: 0, other: 0, count: 0 };
     if (p.type === 'money') cur.money += penAmount(p);
-    else cur.pages += penAmount(p);
+    else if (p.type === 'pages') cur.pages += penAmount(p);
+    else cur.other += 1;
     cur.count += 1;
     byStudent.set(p.studentId, cur);
   }
@@ -52,6 +56,7 @@ function debtSummary(list) {
 function TotalsBar({ list, onToggle, open }) {
   const money = list.filter((p) => p.status === 'approved' && p.type === 'money').reduce((s, p) => s + penAmount(p), 0);
   const pages = list.filter((p) => p.status === 'approved' && p.type === 'pages').reduce((s, p) => s + penAmount(p), 0);
+  const other = list.filter((p) => p.status === 'approved' && p.type === 'other').length;
   const Wrap = onToggle ? 'button' : 'div';
   return (
     <Wrap type={onToggle ? 'button' : undefined} onClick={onToggle} className="flex flex-wrap gap-2 items-center text-left">
@@ -61,6 +66,11 @@ function TotalsBar({ list, onToggle, open }) {
       <span className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full bg-status-late/12 text-status-late">
         <FileText size={15} /> Offen: {pages} Seiten
       </span>
+      {other > 0 && (
+        <span className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full bg-status-late/12 text-status-late">
+          <Scale size={15} /> Offen: {other} sonstige
+        </span>
+      )}
       {onToggle && <span className="text-xs text-mint-light underline">{open ? 'Details ausblenden' : 'Details anzeigen'}</span>}
     </Wrap>
   );
@@ -90,14 +100,44 @@ function PenaltyRow({ p, actions }) {
   );
 }
 
-// Wandelt eine Katalog-Konsequenz ("3 Seiten", "2 €") in Art + Höhe um.
-function parseConsequence(text) {
-  const s = String(text || '');
-  const pages = s.match(/(\d+)\s*Seite/i);
-  if (pages) return { type: 'pages', amount: Number(pages[1]) };
-  const money = s.match(/(\d+(?:[.,]\d+)?)\s*(?:€|euro)/i);
-  if (money) return { type: 'money', amount: Number(money[1].replace(',', '.')) };
-  return null; // z. B. „Essen bringen" -> als Grund übernehmen
+// Liest ein "structured"-Blatt (money/pages/other) in einen Anzeigetext um -
+// nur zur Anzeige, niemals zum Rückschluss auf Beträge (die kommen direkt aus
+// den Zahlenfeldern des Knotens, nicht aus geparstem Text).
+function structuredLabel(node) {
+  if (!node) return '';
+  if (node.mode === 'alt') return node.options.map(structuredLabel).join(' oder ');
+  if (node.mode === 'all') return node.parts.map(structuredLabel).join(' + ');
+  if (node.kind === 'money') return `${node.min != null ? 'ab ' : ''}${node.amount ?? node.min} €`;
+  if (node.kind === 'pages') return `${node.min != null ? 'ab ' : ''}${node.amount ?? node.min} Seiten`;
+  return node.description;
+}
+
+// Sammelt alle money/pages-Blätter aus einem structured-Knoten (für den
+// Art-Umschalter im Formular: wechselt die Lehrkraft die Art, wird die
+// passende Höhe aus dem Katalog nachgeladen statt auf 1 zurückzuspringen).
+function collectAmountLeaves(node, out = []) {
+  if (!node) return out;
+  if (node.mode === 'alt') node.options.forEach((o) => collectAmountLeaves(o, out));
+  else if (node.mode === 'all') node.parts.forEach((p) => collectAmountLeaves(p, out));
+  else if (node.kind === 'money' || node.kind === 'pages') out.push(node);
+  return out;
+}
+
+// Wandelt einen Katalog-structured-Knoten in konkrete Formularwerte um. Bei
+// einer Wahlmöglichkeit ("oder") wird die erste Option vorbelegt - die
+// Lehrkraft kann die Art im Formular jederzeit umstellen. Bei einer
+// Kombination ("und") wird der Geld-/Seiten-/sonstige Teil vorbelegt und der
+// übrige, verpflichtende Teil als Zusatzmaßnahme (extra) übernommen.
+function pickFromStructured(node) {
+  if (node.mode === 'all') {
+    const mainNode = node.parts.find((p) => p.mode === 'alt' || p.kind === 'money' || p.kind === 'pages') || node.parts[0];
+    const extraParts = node.parts.filter((p) => p !== mainNode);
+    return { ...pickFromStructured(mainNode), extra: extraParts.map(structuredLabel).join(' + ') };
+  }
+  if (node.mode === 'alt') return pickFromStructured(node.options[0]);
+  if (node.kind === 'money') return { type: 'money', amount: node.amount ?? node.min ?? 1, description: '', extra: '' };
+  if (node.kind === 'pages') return { type: 'pages', amount: node.amount ?? node.min ?? 1, description: '', extra: '' };
+  return { type: 'other', description: node.description, amount: '', extra: '' };
 }
 
 function RecordForm({ onCreated }) {
@@ -106,7 +146,11 @@ function RecordForm({ onCreated }) {
   const [classId, setClassId] = useState('');
   const [students, setStudents] = useState([]);
   const [catalog, setCatalog] = useState([]);
-  const [form, setForm] = useState({ studentId: '', type: 'pages', amount: 5, reason: '', dueInDays: '' });
+  // amountLeaves: bekannte Geld-/Seiten-Höhen aus dem zuletzt gewählten
+  // Katalogeintrag, damit ein Art-Wechsel (Geld ↔ Seiten) die richtige Höhe
+  // nachlädt statt sie zu raten.
+  const [amountLeaves, setAmountLeaves] = useState([]);
+  const [form, setForm] = useState({ studentId: '', type: 'pages', amount: 5, description: '', extra: '', reason: '', dueInDays: '' });
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -120,26 +164,44 @@ function RecordForm({ onCreated }) {
     api.get(`/rules${q}`).then((d) => setCatalog(d.catalog || [])).catch(() => setCatalog([]));
   }, [classId]);
 
+  // Übernimmt die Auswahl aus dem Strafenkatalog. Nutzt IMMER die maschinen-
+  // lesbare `structured`-Angabe des Servers, nie ein Parsen von `consequence`
+  // (Freitext) - siehe DEFAULT_PENALTY_CATALOG in server/api.js. Ist der
+  // Eintrag schulisch/klassenweise mit einem freien Text überschrieben,
+  // liefert der Server structured:null; dann bleibt nur der Text als Hinweis
+  // im Grund, Art/Höhe muss die Lehrkraft selbst eintragen.
   const applyCatalog = (val) => {
     if (!val) return;
     const [cat, item] = val.split('::');
     const it = catalog.find((c) => c.id === cat)?.items.find((i) => i.id === item);
     if (!it) return;
-    const parsed = parseConsequence(it.consequence);
-    setForm((f) => ({
-      ...f,
-      reason: parsed ? it.label : `${it.label} → ${it.consequence}`,
-      ...(parsed ? { type: parsed.type, amount: parsed.amount } : {}),
-    }));
+    if (!it.structured) {
+      setAmountLeaves([]);
+      setForm((f) => ({ ...f, reason: `${it.label} → ${it.consequence}` }));
+      return;
+    }
+    setAmountLeaves(collectAmountLeaves(it.structured));
+    const picked = pickFromStructured(it.structured);
+    setForm((f) => ({ ...f, reason: it.label, ...picked }));
+  };
+
+  // Art (Geld/Seiten/Sonstige) umschalten - lädt bei Geld/Seiten die vom
+  // zuletzt gewählten Katalogeintrag bekannte Höhe nach, statt sie zu raten.
+  const changeType = (type) => {
+    const known = amountLeaves.find((l) => l.kind === type);
+    setForm((f) => ({ ...f, type, ...(known ? { amount: known.amount ?? known.min ?? f.amount } : {}) }));
   };
   useEffect(() => {
     if (!classId) return;
     api
       .get(`/classes/${classId}/students`)
       .then((d) => {
-        const only = d.students.filter((s) => s.role === 'schueler');
-        setStudents(only);
-        setForm((f) => ({ ...f, studentId: only[0]?.id || '' }));
+        // Der Server liefert hier bereits alle Schüler der Klasse inkl.
+        // Klassensprecher (STUDENT_ROLES) - kein zusätzlicher Rollenfilter
+        // nötig. Ein Klassensprecher bleibt Schüler seiner Klasse und muss
+        // hier genauso auswählbar sein wie jeder andere Schüler.
+        setStudents(d.students);
+        setForm((f) => ({ ...f, studentId: d.students[0]?.id || '' }));
       })
       .catch(() => setStudents([]));
   }, [classId]);
@@ -147,11 +209,13 @@ function RecordForm({ onCreated }) {
   const save = async (e) => {
     e.preventDefault();
     try {
-      const payload = { classId, studentId: form.studentId, type: form.type, amount: Number(form.amount), reason: form.reason };
+      const payload = { classId, studentId: form.studentId, type: form.type, reason: form.reason, extra: form.extra || undefined };
+      if (form.type === 'other') payload.description = form.description;
+      else payload.amount = Number(form.amount);
       if (form.dueInDays !== '') payload.dueInDays = Number(form.dueInDays);
       await api.post('/penalties', payload);
       toast.push('Strafe erfasst', 'success');
-      setForm((f) => ({ ...f, reason: '' }));
+      setForm((f) => ({ ...f, reason: '', extra: '' }));
       onCreated?.();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -199,17 +263,29 @@ function RecordForm({ onCreated }) {
           <div className="grid grid-cols-2 gap-3">
             <label className="block">
               <span className="text-sm text-sage">Art</span>
-              <select className="input mt-1" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              <select className="input mt-1" value={form.type} onChange={(e) => changeType(e.target.value)}>
                 <option value="pages">Seiten schreiben</option>
                 <option value="money">Geldstrafe (€)</option>
+                <option value="other">Sonstige Maßnahme</option>
               </select>
             </label>
-            <label className="block">
-              <span className="text-sm text-sage">{form.type === 'money' ? 'Betrag (€)' : 'Seiten'}</span>
-              <input type="number" min="1" step={form.type === 'money' ? '0.5' : '1'} className="input mt-1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
-            </label>
+            {form.type === 'other' ? (
+              <label className="block">
+                <span className="text-sm text-sage">Beschreibung</span>
+                <input type="text" className="input mt-1" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} required placeholder="z. B. Räumlichkeiten säubern" />
+              </label>
+            ) : (
+              <label className="block">
+                <span className="text-sm text-sage">{form.type === 'money' ? 'Betrag (€)' : 'Seiten'}</span>
+                <input type="number" min="1" step={form.type === 'money' ? '0.5' : '1'} className="input mt-1" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} required />
+              </label>
+            )}
           </div>
         </div>
+        <label className="block">
+          <span className="text-sm text-sage">Zusätzliche Pflichtmaßnahme (optional)</span>
+          <input type="text" className="input mt-1" value={form.extra} onChange={(e) => setForm({ ...form, extra: e.target.value })} placeholder="z. B. Gespräch mit Direktoren und/oder Eltern" />
+        </label>
         <label className="block">
           <span className="text-sm text-sage">Grund</span>
           <textarea className="input mt-1" rows={2} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required placeholder="z. B. Hausaufgabe wiederholt vergessen" />
@@ -285,7 +361,7 @@ function ManagerView() {
                 p={p}
                 actions={
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>
+                    {p.type !== 'other' && <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>}
                     <Button size="sm" onClick={() => act(p.id, 'approve')}><Check size={16} /> Genehmigen</Button>
                     <Button size="sm" variant="danger" onClick={() => reject(p.id)}><X size={16} /> Ablehnen</Button>
                   </>
@@ -326,6 +402,7 @@ function ManagerView() {
                 <div className="flex items-center gap-2 text-sm">
                   {d.money > 0 && <span className="font-mono text-mint-light">{d.money} €</span>}
                   {d.pages > 0 && <span className="font-mono text-sage">{d.pages} Seiten</span>}
+                  {d.other > 0 && <span className="font-mono text-sage">{d.other} sonstige</span>}
                   <span className="text-xs text-sage-muted">({d.count})</span>
                 </div>
               </div>
@@ -346,8 +423,8 @@ function ManagerView() {
                 p={p}
                 actions={
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>
-                    <Button size="sm" variant="ghost" onClick={() => convert(p)}>{p.type === 'money' ? '→ Seiten' : '→ Geld'}</Button>
+                    {p.type !== 'other' && <Button size="sm" variant="ghost" onClick={() => changeAmount(p)}>Höhe</Button>}
+                    {p.type !== 'other' && <Button size="sm" variant="ghost" onClick={() => convert(p)}>{p.type === 'money' ? '→ Seiten' : '→ Geld'}</Button>}
                     <Button size="sm" variant="outline" onClick={() => act(p.id, 'settle')}><Check size={16} /> Erledigt</Button>
                   </>
                 }

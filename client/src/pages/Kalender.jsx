@@ -312,6 +312,12 @@ function EventModal({ init, onClose, onSave, onDelete }) {
   });
   const set = (patch) => setF((x) => ({ ...x, ...patch }));
 
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const submit = () => {
     const payload = {
       id: f.id, title: f.title, date: f.date, allDay: f.allDay,
@@ -325,10 +331,16 @@ function EventModal({ init, onClose, onSave, onDelete }) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/40 grid place-items-center p-4" onClick={onClose}>
-      <Card className="w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+      <Card
+        className="w-full max-w-md p-5"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="event-modal-title"
+      >
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-display text-lg text-ivory">{f.id ? 'Termin bearbeiten' : 'Neuer Termin'}</h3>
-          <button onClick={onClose} className="text-sage hover:text-ivory"><X size={20} /></button>
+          <h3 id="event-modal-title" className="font-display text-lg text-ivory">{f.id ? 'Termin bearbeiten' : 'Neuer Termin'}</h3>
+          <button onClick={onClose} className="text-sage hover:text-ivory" aria-label="Schließen"><X size={20} /></button>
         </div>
         <div className="space-y-3">
           <label className="block"><span className="text-sm text-sage">Titel</span>

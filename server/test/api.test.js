@@ -929,6 +929,40 @@ test('Leitungs-Überblick: Kennzahlen aggregiert, nur für Leitung/Admin', async
   assert.equal((await teacher('GET', '/leadership/overview')).status, 403);
 });
 
+test('Leitungs-Überblick: Schülerzahl org-weit vs. Klassenzuordnung -- unassignedStudents erklärt die Differenz', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const admin = await loginAs('admin@dbz.de'); // super_admin: legt Nutzer sofort an (kein pending change_request)
+  const before = (await leitung('GET', '/leadership/overview')).data.counts;
+
+  // Schüler OHNE Klassenzuordnung anlegen -> zählt org-weit mit, aber in
+  // keiner Klassenliste.
+  const stamp = Date.now();
+  const mk = await admin('POST', '/admin/users', { name: 'Unzugeordnet', email: `unzugeordnet-${stamp}@dbz.de`, password: 'passwort1', role: 'schueler', classIds: [] });
+  assert.ok(mk.data.user, 'super_admin legt sofort an (kein pending)');
+
+  const after = (await leitung('GET', '/leadership/overview')).data;
+  assert.equal(after.counts.students, before.students + 1, 'org-weite Schülerzahl steigt um 1');
+  assert.equal(after.counts.unassignedStudents, before.unassignedStudents + 1, 'unassignedStudents steigt um 1');
+
+  const sumInClasses = after.classes.reduce((s, c) => s + c.students, 0);
+  assert.equal(after.counts.students - after.counts.unassignedStudents, sumInClasses, '"zugeordnet" entspricht exakt der Summe der Klassenlisten');
+});
+
+test('Audit-Log: löst Akteur- und Objektnamen aus tatsächlich gespeicherten Daten auf', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const yusuf = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'schueler@dbz.de');
+  const patch = await admin('PATCH', `/admin/users/${yusuf.id}`, { status: 'active' });
+  assert.equal(patch.status, 200);
+
+  const logs = (await admin('GET', '/admin/audit')).data.logs;
+  const entry = logs.find((l) => l.action === 'user.update' && l.entityId === yusuf.id);
+  assert.ok(entry, 'Audit-Eintrag für die Änderung vorhanden');
+  assert.equal(entry.actorName, 'System-Administrator', 'Akteur wird namentlich aufgelöst (kein Erfinden, nur Lookup)');
+  assert.equal(entry.entityName, yusuf.name, 'betroffener Nutzer wird namentlich aufgelöst');
+  assert.ok(entry.before && typeof entry.before === 'object', 'Vorher-Zustand bleibt wie gespeichert erhalten');
+  assert.ok(!('passwordHash' in entry.before) && !('passwordHash' in (entry.after || {})), 'kein Passwort-Hash im Audit-Log');
+});
+
 test('Kalender: eigener Termin mit Wiederholung erscheint, ist privat, editier-/löschbar', async () => {
   const student = await loginAs('schueler@dbz.de');
   const create = await student('POST', '/events', {
@@ -1592,6 +1626,70 @@ test('Regeln & Strafenkatalog: sichtbar, pro Klasse anpassbar, Schüler read-onl
   // Schüler darf nicht bearbeiten.
   assert.equal((await jreq(student, 'PUT', '/rules/catalog/class_3', { overrides: { v_30: '0' } })).status, 403);
   assert.equal((await jreq(student, 'PUT', '/rules/text/class_3', { text: 'hack' })).status, 403);
+});
+
+test('Strafenkatalog: structured bildet Alternative, Kombination und "sonstige" Maßnahme maschinenlesbar ab', async () => {
+  const student = await loginCookie('schueler@dbz.de');
+  const r = await jreq(student, 'GET', '/rules?classId=class_3');
+  const items = r.data.catalog.flatMap((c) => c.items);
+
+  // Reine Alternative ("oder"): 2 € oder 1 Seite.
+  const m_heft = items.find((i) => i.id === 'm_heft');
+  assert.equal(m_heft.consequence, '2 € oder 1 Seite');
+  assert.deepEqual(m_heft.structured, { mode: 'alt', options: [{ kind: 'money', amount: 2 }, { kind: 'pages', amount: 1 }] });
+
+  // Kombination ("und"): (10 € oder 4 Seiten) UND Gespräch.
+  const s_regelmaessig = items.find((i) => i.id === 's_regelmaessig');
+  assert.equal(s_regelmaessig.structured.mode, 'all');
+  assert.equal(s_regelmaessig.structured.parts.length, 2);
+  assert.deepEqual(s_regelmaessig.structured.parts[0], { mode: 'alt', options: [{ kind: 'money', amount: 10 }, { kind: 'pages', amount: 4 }] });
+  assert.deepEqual(s_regelmaessig.structured.parts[1], { kind: 'other', description: 'Gespräch mit Direktoren und/oder Eltern' });
+
+  // Reine "sonstige" Maßnahme ohne Geld/Seiten.
+  const h_quiz = items.find((i) => i.id === 'h_quiz');
+  assert.deepEqual(h_quiz.structured, { kind: 'other', description: 'Essen für die gesamte Klasse bringen' });
+
+  // Ein überschriebener Freitext hat KEINE bekannte Struktur mehr (kein Raten/Parsen).
+  const teacher = await loginCookie('lehrer@dbz.de');
+  assert.equal((await jreq(teacher, 'PUT', '/rules/catalog/class_3', { overrides: { m_koran: 'Individuell mit dem Lehrer klären' } })).status, 200);
+  const r2 = await jreq(student, 'GET', '/rules?classId=class_3');
+  const m_koran = r2.data.catalog.flatMap((c) => c.items).find((i) => i.id === 'm_koran');
+  assert.equal(m_koran.consequence, 'Individuell mit dem Lehrer klären');
+  assert.equal(m_koran.structured, null, 'überschriebener Freitext liefert structured:null statt geraten zu werden');
+});
+
+test('Strafen erfassen: "sonstige Maßnahme" (Beschreibung + Status) und Kombination (Pflicht-Zusatz)', async () => {
+  const teacher = await loginCookie('lehrer@dbz.de');
+  const student = (await jreq(teacher, 'GET', '/classes/class_3/students')).data.students.find((s) => s.email === 'schueler@dbz.de');
+  assert.ok(student, 'Testschüler vorhanden');
+
+  // "Sonstige Maßnahme": kein Betrag, sondern Beschreibung + normaler Erledigungsstatus.
+  const other = await jreq(teacher, 'POST', '/penalties', {
+    classId: 'class_3', studentId: student.id, type: 'other', description: 'Räumlichkeiten säubern', reason: 'Komplettes unentschuldigtes Fehlen',
+  });
+  assert.equal(other.status, 200);
+  assert.equal(other.data.penalty.type, 'other');
+  assert.equal(other.data.penalty.description, 'Räumlichkeiten säubern');
+  assert.equal(other.data.penalty.amount, null);
+  assert.equal(other.data.penalty.status, 'approved', 'von der Lehrkraft erfasst -> sofort genehmigt (Erledigungsstatus startet bei "Offen")');
+
+  // Ohne Beschreibung schlägt "sonstige Maßnahme" fehl (kein leerer Platzhalter).
+  const otherNoDescr = await jreq(teacher, 'POST', '/penalties', { classId: 'class_3', studentId: student.id, type: 'other', reason: 'x' });
+  assert.equal(otherNoDescr.status, 400);
+
+  // Kombination: Geldstrafe/Seiten UND eine verpflichtende Zusatzmaßnahme (extra).
+  const combo = await jreq(teacher, 'POST', '/penalties', {
+    classId: 'class_3', studentId: student.id, type: 'money', amount: 10, extra: 'Gespräch mit Direktoren und/oder Eltern', reason: 'Regelmäßige Störungen',
+  });
+  assert.equal(combo.status, 200);
+  assert.equal(combo.data.penalty.extra, 'Gespräch mit Direktoren und/oder Eltern');
+
+  // Als erledigt verbuchen funktioniert für "sonstige Maßnahme" genau wie für Geld/Seiten.
+  const settle = await jreq(teacher, 'POST', `/penalties/${other.data.penalty.id}/settle`, {});
+  assert.equal(settle.status, 200);
+  const list = await jreq(teacher, 'GET', '/penalties?classId=class_3');
+  const settled = list.data.penalties.find((p) => p.id === other.data.penalty.id);
+  assert.equal(settled.status, 'settled');
 });
 
 test('Check-in öffnen: bleibt bis zur Auto-Schließzeit offen', async () => {

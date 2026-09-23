@@ -232,6 +232,11 @@ function UsersTab() {
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [demoBusy, setDemoBusy] = useState(false);
+  // Nur im Demo-Betrieb anzeigen -- in Produktion lehnt der Server die
+  // Anfrage ohnehin ab (IS_PRODUCTION in server/api.js), der Button würde
+  // also nur einen Fehler produzieren.
+  const [demoModeAvailable, setDemoModeAvailable] = useState(false);
+  useEffect(() => { api.get('/health').then((d) => setDemoModeAvailable(d.mode === 'demo')).catch(() => {}); }, []);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -303,9 +308,11 @@ function UsersTab() {
     <div className="space-y-4">
       <LinkAccountsAdminCard />
       <div className="flex justify-end gap-2 flex-wrap">
-        <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
-          <RotateCcw size={18} /> Demo-Konten reaktivieren
-        </Button>
+        {demoModeAvailable && (
+          <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
+            <RotateCcw size={18} /> Demo-Konten reaktivieren
+          </Button>
+        )}
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
             <XCircle size={18} /> {selected.length} löschen
@@ -341,7 +348,7 @@ function UsersTab() {
         <EditUser
           user={editing}
           classes={classes}
-          students={users.filter((u) => u.role === 'schueler')}
+          students={users.filter((u) => u.role === 'schueler' || u.role === 'klassensprecher')}
           onDone={() => { setEditing(null); load(); }}
           onCancel={() => setEditing(null)}
         />
@@ -660,31 +667,166 @@ const WEIGHT_FIELDS = [
 ];
 function GradeWeightsCard({ weights, onChange, onSave }) {
   const w = weights || {};
-  const sum = WEIGHT_FIELDS.reduce((s, [k]) => s + (Number(w[k]) || 0), 0);
-  const set = (k, pct) => onChange({ ...w, [k]: Math.max(0, Math.min(100, Number(pct) || 0)) / 100 });
+  const raw = (k) => Math.round((Number(w[k]) || 0) * 100);
+  const sumRaw = WEIGHT_FIELDS.reduce((s, [k]) => s + raw(k), 0);
+  const set = (k, pts) => onChange({ ...w, [k]: Math.max(0, Math.min(100, Number(pts) || 0)) / 100 });
   return (
     <Card className="p-5">
-      <CardHeader title="Notengewichte" subtitle="Wie stark jeder Bereich in den Notenvorschlag einfließt" icon={Settings} />
+      <CardHeader title="Notengewichte" subtitle="Relative Gewichtung je Bereich – der tatsächliche Anteil wird automatisch auf 100 % normiert" icon={Settings} />
       <div className="p-4 space-y-2">
+        <div className="flex items-center gap-3 text-[11px] text-sage-muted px-1" aria-hidden="true">
+          <span className="w-32 shrink-0" />
+          <span className="flex-1">Relatives Gewicht</span>
+          <span className="w-20 text-center">Zahl</span>
+          <span className="w-24 text-right">Anteil</span>
+        </div>
         {WEIGHT_FIELDS.map(([k, label]) => {
-          const pct = Math.round((Number(w[k]) || 0) * 100);
-          const share = sum > 0 ? Math.round(((Number(w[k]) || 0) / sum) * 100) : 0;
+          const pts = raw(k);
+          const share = sumRaw > 0 ? Math.round((pts / sumRaw) * 100) : 0;
           return (
             <div key={k} className="flex items-center gap-3">
-              <span className="text-sm text-sage w-32 shrink-0">{label}</span>
-              <input type="range" min={0} max={100} value={pct} onChange={(e) => set(k, e.target.value)} className="flex-1" />
-              <input type="number" min={0} max={100} value={pct} onChange={(e) => set(k, e.target.value)} className="input w-20 py-1.5 text-sm text-center" />
-              <span className="text-xs text-sage-muted w-14 text-right">= {share}%</span>
+              <label htmlFor={`weight-${k}`} className="text-sm text-sage w-32 shrink-0">{label}</label>
+              <input id={`weight-${k}`} type="range" min={0} max={100} value={pts} onChange={(e) => set(k, e.target.value)} className="flex-1" aria-label={`${label}: relatives Gewicht`} />
+              <input type="number" min={0} max={100} value={pts} onChange={(e) => set(k, e.target.value)} className="input w-20 py-1.5 text-sm text-center" aria-label={`${label}: relatives Gewicht als Zahl`} />
+              <span className="text-xs text-sage-muted w-24 text-right">→ {share}% Anteil</span>
             </div>
           );
         })}
         <p className="text-[11px] text-sage-muted mt-2">
-          Die Werte werden automatisch ins Verhältnis gesetzt (aktuelle Summe {Math.round(sum * 100)}%). Bereiche ohne Daten werden fair auf die übrigen verteilt. Es bleibt ein Vorschlag – die Lehrkraft entscheidet.
+          Die Zahlen sind relative Gewichte, kein Prozentwert für sich genommen – sie werden automatisch so ins Verhältnis gesetzt, dass der tatsächliche Anteil an der Endnote (rechte Spalte) immer 100% ergibt. Bereiche ohne Daten werden fair auf die übrigen verteilt. Es bleibt ein Vorschlag – die Lehrkraft entscheidet.
         </p>
-        <Button onClick={onSave} disabled={sum <= 0}>Speichern</Button>
+        <Button onClick={onSave} disabled={sumRaw <= 0}>Speichern</Button>
       </div>
     </Card>
   );
+}
+
+// Übersetzt bekannte Aktionscodes in lesbaren Text; unbekannte Codes werden
+// generisch aus dem Rohwert abgeleitet (kein Erfinden von Bedeutung).
+const AUDIT_ACTION_LABELS = {
+  'user.password_change': 'Passwort geändert',
+  'user.password_reset': 'Passwort per Selbstbedienung zurückgesetzt',
+  'user.reset_password': 'Passwort zurückgesetzt',
+  'user.register': 'Registrierung (per Einladung)',
+  'user.register_open': 'Registrierung (offen)',
+  'user.create': 'Nutzer angelegt',
+  'user.update': 'Nutzer bearbeitet',
+  'user.delete': 'Nutzer gelöscht',
+  'user.klassensprecher_toggle': 'Klassensprecher-Status geändert',
+  'user.probation_toggle': 'Bewährungsstatus geändert',
+  'user.assign_class': 'Klasse zugewiesen',
+  'user.reject_registration': 'Registrierung abgelehnt',
+  'org.update': 'Schuleinstellungen geändert',
+  'session.start': 'Unterrichtseinheit gestartet',
+  'session.end': 'Unterrichtseinheit beendet',
+  'session.checkin_open': 'Anwesenheits-Check-in geöffnet',
+  'class.checkin_code_rotate': 'Check-in-Code erneuert',
+  'class.create': 'Klasse angelegt',
+  'class.teacher.add': 'Lehrkraft zur Klasse hinzugefügt',
+  'class.teacher.remove': 'Lehrkraft aus Klasse entfernt',
+  'attendance.checkin': 'Anwesenheit erfasst',
+  'attendance.correct': 'Anwesenheit korrigiert',
+  'absence.decide': 'Entschuldigung entschieden',
+  'absence.comment': 'Rückfrage zu Entschuldigung',
+  'assignment.create': 'Aufgabe erstellt',
+  'assignment.extend': 'Abgabefrist verlängert',
+  'submission.review': 'Abgabe korrigiert',
+  'protocol.review': 'Protokoll geprüft',
+  'behavior.create': 'Verhaltensvermerk erstellt',
+  'quran.goal': 'Qur’ān-Ziel gesetzt',
+  'quran.attempt': 'Qur’ān-Prüfung erfasst',
+  'quran.recording': 'Qur’ān-Aufnahme hochgeladen',
+  'exam.create': 'Prüfung erstellt',
+  'exam.publish': 'Prüfung veröffentlicht',
+  'exam.grade': 'Prüfung bewertet',
+  'exam.files': 'Prüfungsdateien geändert',
+  'exam.return': 'Prüfung zurückgegeben',
+  'report.generate': 'Bericht erstellt',
+  'report.update': 'Bericht aktualisiert',
+  'activity.create': 'Aktivität erstellt',
+  'activity.delete': 'Aktivität gelöscht',
+  'message.recall': 'Nachricht zurückgerufen',
+  'material.create': 'Material hochgeladen',
+  'material.bulk_create': 'Material hochgeladen (mehrere)',
+  'material.delete': 'Material gelöscht',
+  'penalty.create': 'Strafe erfasst',
+  'penalty.approve': 'Strafe genehmigt',
+  'penalty.reject': 'Strafe abgelehnt',
+  'penalty.settle': 'Strafe erledigt',
+  'penalty.update': 'Strafe bearbeitet',
+  'penalty.request_payment': 'Zahlung angefragt',
+  'penalty.confirm_payment': 'Zahlung bestätigt',
+  'penalty.decline_payment': 'Zahlung abgelehnt',
+  'penalty.delete': 'Strafe gelöscht',
+  'family.link': 'Kind verknüpft',
+  'family.unlink': 'Kind-Verknüpfung entfernt',
+  'account.link': 'Konto verknüpft',
+  'account.link.admin': 'Konto verknüpft (durch Verwaltung)',
+  'account.unlink': 'Konto-Verknüpfung entfernt',
+  'account.switch': 'Konto gewechselt',
+  'announcement.create': 'Ankündigung erstellt',
+  'announcement.delete': 'Ankündigung gelöscht',
+  'change_request.create': 'Änderungsantrag gestellt',
+  'change_request.approve': 'Änderungsantrag genehmigt',
+  'change_request.reject': 'Änderungsantrag abgelehnt',
+  'backup.download': 'Backup heruntergeladen',
+  'invite.create': 'Einladung erstellt',
+  'invite.revoke': 'Einladung widerrufen',
+  'export.attendance': 'Anwesenheit exportiert',
+  'export.roster': 'Klassenliste exportiert',
+  'rules.catalog.school': 'Strafenkatalog (Schule) geändert',
+  'rules.catalog.class': 'Strafenkatalog (Klasse) geändert',
+  'rules.text.school': 'Regeltext (Schule) geändert',
+  'rules.text.class': 'Regeltext (Klasse) geändert',
+  'calendar.token_rotate': 'Kalender-Link erneuert',
+};
+function auditActionLabel(action) {
+  if (AUDIT_ACTION_LABELS[action]) return AUDIT_ACTION_LABELS[action];
+  return action.split('.').map((p) => p.replace(/_/g, ' ')).join(' – ');
+}
+
+const AUDIT_ENTITY_LABELS = {
+  user: 'Nutzer', organization: 'Organisation', session: 'Unterrichtseinheit', class: 'Klasse',
+  attendance: 'Anwesenheit', absence_request: 'Entschuldigung', assignment: 'Aufgabe',
+  submission: 'Abgabe', protocol: 'Protokoll', behavior: 'Verhaltensvermerk', quran_goal: 'Qur’ān-Ziel',
+  exam: 'Prüfung', attempt: 'Prüfungsversuch', report: 'Bericht', activity: 'Aktivität', thread: 'Nachricht',
+  material: 'Material', penalty: 'Strafe', invite: 'Einladung', change_request: 'Änderungsantrag',
+};
+
+const AUDIT_FIELD_LABELS = {
+  role: 'Rolle', status: 'Status', classId: 'Klasse', classIds: 'Klassen', childIds: 'Kinder',
+  name: 'Name', email: 'E-Mail', until: 'bis', minutesLate: 'Minuten verspätet', released: 'freigegeben',
+  passed: 'bestanden', probation: 'Bewährung', passwordReset: 'Passwort zurückgesetzt', via: 'Weg',
+  count: 'Anzahl', with: 'mit', newDueAt: 'neue Frist', studentId: 'Schüler', outcome: 'Ergebnis',
+  tone: 'Einordnung', category: 'Kategorie', type: 'Typ', viaReactivateDemoAccounts: 'per Demo-Reaktivierung',
+  entityId: 'Datensatz',
+};
+
+function auditFormatValue(v) {
+  if (v === null || v === undefined || v === '') return '–';
+  if (typeof v === 'boolean') return v ? 'ja' : 'nein';
+  if (Array.isArray(v)) return v.length ? `${v.length}` : '–';
+  return String(v);
+}
+
+// Fasst before/after zu einer kurzen, nachvollziehbaren Änderungsliste zusammen –
+// zeigt ausschließlich Felder, die im gespeicherten Datensatz tatsächlich vorliegen.
+function auditChangeSummary(l) {
+  const before = l.before && typeof l.before === 'object' ? l.before : null;
+  const after = l.after && typeof l.after === 'object' ? l.after : null;
+  if (!before && !after) return null;
+  if (before && !after) return null; // z. B. Löschung – Objektspalte zeigt bereits „gelöscht"
+  const keys = new Set([...(before ? Object.keys(before) : []), ...(after ? Object.keys(after) : [])]);
+  const parts = [];
+  for (const k of keys) {
+    const label = AUDIT_FIELD_LABELS[k] || k;
+    const bv = before ? before[k] : undefined;
+    const av = after ? after[k] : undefined;
+    if (before && JSON.stringify(bv) === JSON.stringify(av)) continue;
+    if (!before) parts.push(`${label}: ${auditFormatValue(av)}`);
+    else parts.push(`${label}: ${auditFormatValue(bv)} → ${auditFormatValue(av)}`);
+  }
+  return parts.length ? parts.join(' · ') : null;
 }
 
 function AuditTab() {
@@ -693,20 +835,33 @@ function AuditTab() {
   if (!logs) return <Spinner />;
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="overflow-x-auto">
+      <p className="sm:hidden px-4 pt-3 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+      <div className="overflow-x-auto" role="region" aria-label="Audit-Log, seitlich scrollbar" tabIndex={0}>
         <table className="w-full text-sm">
           <thead><tr className="text-left text-sage-muted border-b border-line">
-            <th className="p-3">Zeit</th><th className="p-3">Aktion</th><th className="p-3">Objekt</th>
+            <th className="p-3">Zeit</th><th className="p-3">Wer</th><th className="p-3">Aktion</th>
+            <th className="p-3">Objekt</th><th className="p-3">Änderung</th>
           </tr></thead>
           <tbody>
-            {logs.map((l) => (
-              <tr key={l.id} className="border-b border-line">
-                <td className="p-3 text-sage-muted font-mono text-xs">{new Date(l.createdAt).toLocaleString('de-DE')}</td>
-                <td className="p-3 text-ivory font-mono text-xs">{l.action}</td>
-                <td className="p-3 text-sage-muted text-xs">{l.entityType}</td>
-              </tr>
-            ))}
-            {logs.length === 0 && <tr><td colSpan={3} className="p-4 text-sage-muted">Noch keine Einträge.</td></tr>}
+            {logs.map((l) => {
+              const entityLabel = AUDIT_ENTITY_LABELS[l.entityType] || l.entityType;
+              const change = auditChangeSummary(l);
+              const isDelete = l.before && !l.after;
+              return (
+                <tr key={l.id} className="border-b border-line align-top">
+                  <td className="p-3 text-sage-muted font-mono text-xs whitespace-nowrap">{new Date(l.createdAt).toLocaleString('de-DE')}</td>
+                  <td className="p-3 text-ivory text-xs whitespace-nowrap">{l.actorName || <span className="text-sage-muted italic">unbekannt/gelöscht</span>}</td>
+                  <td className="p-3 text-ivory text-xs" title={l.action}>{auditActionLabel(l.action)}</td>
+                  <td className="p-3 text-sage-muted text-xs whitespace-nowrap" title={l.entityId || undefined}>
+                    {entityLabel}{l.entityName ? ` „${l.entityName}“` : ''}
+                  </td>
+                  <td className="p-3 text-sage-muted text-xs">
+                    {isDelete ? <span className="italic">gelöscht</span> : (change || '–')}
+                  </td>
+                </tr>
+              );
+            })}
+            {logs.length === 0 && <tr><td colSpan={5} className="p-4 text-sage-muted">Noch keine Einträge.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -726,7 +881,7 @@ function InvitesTab() {
   useEffect(() => {
     load();
     api.get('/classes').then((d) => { setClasses(d.classes); setForm((f) => ({ ...f, classId: d.classes[0]?.id || '' })); });
-    api.get('/admin/users').then((d) => setStudents(d.users.filter((u) => u.role === 'schueler')));
+    api.get('/admin/users').then((d) => setStudents(d.users.filter((u) => u.role === 'schueler' || u.role === 'klassensprecher')));
   }, []);
 
   const create = async () => {

@@ -42,11 +42,12 @@ function ReplyThread({ request, onSent }) {
         <input
           className="input text-sm py-1.5"
           placeholder="Antworten …"
+          aria-label="Antwort auf die Rückfrage"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
         />
-        <Button size="sm" onClick={send} disabled={busy || !body.trim()}><Send size={14} /></Button>
+        <Button size="sm" onClick={send} disabled={busy || !body.trim()} aria-label="Antwort senden"><Send size={14} /></Button>
       </div>
     </div>
   );
