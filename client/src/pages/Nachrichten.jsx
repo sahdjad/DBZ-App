@@ -165,7 +165,7 @@ function Composer({ onSend, autoFocus }) {
           <textarea className="input flex-1 resize-none" rows={1} placeholder="Nachricht …" value={body} autoFocus={autoFocus}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }} />
-          <Button onClick={submit} disabled={busy || (!body.trim() && !file)}><Send size={18} /></Button>
+          <Button onClick={submit} disabled={busy || (!body.trim() && !file)} aria-label="Nachricht senden" title="Senden"><Send size={18} /></Button>
         </div>
       )}
     </div>
@@ -193,7 +193,7 @@ function NewThread({ onCancel, onOpen }) {
   return (
     <Card className="overflow-hidden">
       <div className="p-4 border-b border-line flex items-center gap-3">
-        <button onClick={onCancel} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
+        <button onClick={onCancel} className="text-sage hover:text-ivory" aria-label="Abbrechen"><ArrowLeft size={20} /></button>
         <span className="text-ivory">Neue Nachricht</span>
       </div>
       <div className="p-4">
@@ -283,7 +283,7 @@ function ThreadView({ id, onBack }) {
   return (
     <Card className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 220px)', minHeight: 380 }}>
       <div className="flex items-center gap-3 p-4 border-b border-line">
-        <button onClick={onBack} className="text-sage hover:text-ivory"><ArrowLeft size={20} /></button>
+        <button onClick={onBack} className="text-sage hover:text-ivory" aria-label="Zurück zur Übersicht"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
         <div className="min-w-0">
           <div className="text-ivory truncate">{data.otherName}</div>

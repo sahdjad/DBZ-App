@@ -42,11 +42,12 @@ function CommentThread({ request, onSent }) {
         <input
           className="input text-sm py-1.5"
           placeholder="Rückfrage / Antwort schreiben …"
+          aria-label="Rückfrage oder Antwort schreiben"
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && send()}
         />
-        <Button size="sm" onClick={send} disabled={busy || !body.trim()}><Send size={14} /></Button>
+        <Button size="sm" onClick={send} disabled={busy || !body.trim()} aria-label="Senden"><Send size={14} /></Button>
       </div>
     </div>
   );
