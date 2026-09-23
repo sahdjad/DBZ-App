@@ -72,27 +72,48 @@ function ManagerView() {
       <Card className="p-5">
         <CardHeader title="Aktivität erfassen" subtitle="Spiele, Aktivitäten & Abgaben – fließen in den Leistungsstand ein" icon={Gamepad2} />
         <div className="p-4 space-y-3">
-          <div className="flex gap-2 flex-wrap">
+          <div className="flex gap-2 flex-wrap items-end">
             {classes.length > 1 && (
-              <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
-                {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div>
+                <label htmlFor="akt-klasse" className="block text-xs text-sage-muted mb-1">Klasse</label>
+                <select id="akt-klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
             )}
-            <select className="input w-auto flex-1" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
-              {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
+            <div className="flex-1 min-w-[10rem]">
+              <label htmlFor="akt-schueler" className="block text-xs text-sage-muted mb-1">Schüler/in</label>
+              <select id="akt-schueler" className="input w-full" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+                {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
           </div>
           <form onSubmit={add} className="space-y-3">
-            <input className="input" placeholder="Titel (z. B. Vokabelspiel Runde 3)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-            <div className="flex gap-2 flex-wrap">
-              <select className="input w-auto" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-              </select>
-              <input type="number" min={0} className="input w-24" placeholder="Punkte" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} />
-              <span className="self-center text-sage-muted">/</span>
-              <input type="number" min={0} className="input w-24" placeholder="max." value={form.maxPoints} onChange={(e) => setForm({ ...form, maxPoints: e.target.value })} />
+            <div>
+              <label htmlFor="akt-titel" className="sr-only">Titel</label>
+              <input id="akt-titel" className="input" placeholder="Titel (z. B. Vokabelspiel Runde 3)" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
             </div>
-            <input className="input" placeholder="Notiz (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            <div className="flex gap-2 flex-wrap items-end">
+              <div>
+                <label htmlFor="akt-kategorie" className="block text-xs text-sage-muted mb-1">Kategorie</label>
+                <select id="akt-kategorie" className="input w-auto" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+                  {CATS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="akt-punkte" className="block text-xs text-sage-muted mb-1">Punkte</label>
+                <input id="akt-punkte" type="number" min={0} className="input w-24" placeholder="z. B. 8" value={form.points} onChange={(e) => setForm({ ...form, points: e.target.value })} />
+              </div>
+              <span className="self-center pb-2 text-sage-muted" aria-hidden="true">/</span>
+              <div>
+                <label htmlFor="akt-max" className="block text-xs text-sage-muted mb-1">Maximum</label>
+                <input id="akt-max" type="number" min={0} className="input w-24" placeholder="z. B. 10" value={form.maxPoints} onChange={(e) => setForm({ ...form, maxPoints: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="akt-notiz" className="sr-only">Notiz (optional)</label>
+              <input id="akt-notiz" className="input" placeholder="Notiz (optional)" value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
+            </div>
             <label className="flex items-center gap-2 text-sm text-sage">
               <input type="checkbox" checked={form.countsForGrade} onChange={(e) => setForm({ ...form, countsForGrade: e.target.checked })} />
               Zählt zur Note (abwählen, z. B. für Freizeit/nicht Unterrichtsrelevantes)

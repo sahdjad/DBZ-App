@@ -67,21 +67,74 @@ const ITEMS = {
   konto: { to: '/konto', label: 'Konto', icon: UserCog },
 };
 
+// Arbeitsbereich je Navigationspfad – für sichtbare Gruppierung im Menü
+// (docs/INFORMATION_ARCHITECTURE.md). Pfade ohne Eintrag bleiben ungruppiert
+// (Start, Konto).
+const NAV_GROUPS = {
+  '/ankuendigungen': 'Kommunikation', '/nachrichten': 'Kommunikation', '/benachrichtigungen': 'Kommunikation',
+  '/unterricht': 'Unterricht & Anwesenheit', '/klassenliste': 'Unterricht & Anwesenheit', '/checkin': 'Unterricht & Anwesenheit',
+  '/anwesenheit': 'Unterricht & Anwesenheit', '/abwesenheit': 'Unterricht & Anwesenheit', '/kalender': 'Unterricht & Anwesenheit',
+  '/korrektur': 'Unterricht & Anwesenheit', '/entschuldigungen': 'Unterricht & Anwesenheit', '/protokolle': 'Unterricht & Anwesenheit',
+  '/aufgaben': 'Unterricht & Anwesenheit',
+  '/quran': 'Lernen & Leistung', '/hifz': 'Lernen & Leistung', '/pruefungen': 'Lernen & Leistung',
+  '/materialien': 'Lernen & Leistung', '/berichte': 'Lernen & Leistung', '/aktivitaeten': 'Lernen & Leistung',
+  '/verhalten': 'Verhalten & Regeln', '/strafen': 'Verhalten & Regeln', '/regeln': 'Verhalten & Regeln',
+  '/admin': 'Verwaltung', '/dbz-online': 'Verwaltung',
+};
+
 function navForRole(role) {
   const k = (...keys) => keys.map((key) => ITEMS[key]);
   switch (role) {
     case 'schueler':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'anwesenheit', 'verhalten', 'strafen', 'regeln','berichte', 'aktivitaeten','abwesenheit', 'protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k(
+        'dashboard',
+        'ankuendigungen', 'nachrichten', 'benachrichtigungen',
+        'aufgaben', 'checkin', 'kalender', 'anwesenheit', 'abwesenheit', 'protokolle',
+        'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
+        'verhalten', 'strafen', 'regeln',
+        'dbzonline', 'konto',
+      );
     case 'klassensprecher':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'aufgaben', 'checkin', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'protokolle', 'anwesenheit', 'verhalten', 'strafen', 'regeln','berichte', 'aktivitaeten','abwesenheit', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k(
+        'dashboard',
+        'ankuendigungen', 'nachrichten', 'benachrichtigungen',
+        'aufgaben', 'checkin', 'kalender', 'anwesenheit', 'abwesenheit', 'protokolle',
+        'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
+        'verhalten', 'strafen', 'regeln',
+        'dbzonline', 'konto',
+      );
     case 'klassenlehrer':
     case 'vertretung':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'unterricht', 'klassenliste', 'aufgaben', 'kalender', 'quran', 'hifz', 'pruefungen', 'materialien', 'korrektur', 'entschuldigungen', 'anwesenheit', 'verhalten', 'strafen', 'regeln','berichte', 'aktivitaeten','protokolle', 'benachrichtigungen', 'dbzonline', 'konto');
+      return k(
+        'dashboard',
+        'ankuendigungen', 'nachrichten', 'benachrichtigungen',
+        'unterricht', 'klassenliste', 'aufgaben', 'kalender', 'korrektur', 'entschuldigungen', 'anwesenheit', 'protokolle',
+        'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
+        'verhalten', 'strafen', 'regeln',
+        'dbzonline', 'konto',
+      );
     case 'eltern':
-      return k('dashboard', 'ankuendigungen', 'nachrichten', 'kalender', 'quran', 'hifz', 'materialien', 'abwesenheit', 'verhalten', 'strafen', 'regeln','berichte', 'aktivitaeten','benachrichtigungen', 'dbzonline', 'konto');
+      return k(
+        'dashboard',
+        'ankuendigungen', 'nachrichten', 'benachrichtigungen',
+        'kalender', 'abwesenheit',
+        'quran', 'hifz', 'materialien', 'berichte', 'aktivitaeten',
+        'verhalten', 'strafen', 'regeln',
+        'dbzonline', 'konto',
+      );
     case 'super_admin':
     case 'leitung':
-      return k('dashboard', 'leitung', 'ankuendigungen', 'nachrichten', 'admin', 'klassenliste', 'aktivitaeten', 'strafen', 'regeln','benachrichtigungen', 'dbzonline', 'konto');
+      // Unterricht/Kalender/Korrekturen/Entschuldigungen/Protokolle sind serverseitig
+      // für Leitung/Admin bereits über die Klassenlisten-Sicht erreichbar (isAdmin()-
+      // Zweige in den jeweiligen Endpunkten) – bislang fehlten sie nur im Menü.
+      return k(
+        'dashboard', 'leitung',
+        'ankuendigungen', 'nachrichten', 'benachrichtigungen',
+        'unterricht', 'klassenliste', 'kalender', 'korrektur', 'entschuldigungen', 'protokolle', 'aktivitaeten',
+        'strafen', 'regeln',
+        'admin', 'dbzonline',
+        'konto',
+      );
     default:
       return k('dashboard', 'benachrichtigungen', 'konto');
   }
@@ -122,32 +175,42 @@ function badgeFor(to, badges) {
 }
 
 function NavItems({ items, badges, onNavigate }) {
+  let lastGroup;
   return (
     <nav className="dbz-scroll flex-1 px-3 pt-1 pb-6 space-y-1 overflow-y-auto overscroll-contain scroll-smooth" aria-label="Hauptmenü">
       {items.map(({ to, label, icon: Icon }) => {
         const count = badgeFor(to, badges);
+        const group = NAV_GROUPS[to];
+        const showHeader = group && group !== lastGroup;
+        lastGroup = group;
         return (
-          <NavLink
-            key={to}
-            to={to}
-            onClick={onNavigate}
-            className={({ isActive }) =>
-              [
-                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
-                isActive
-                  ? 'bg-hover text-ivory font-medium shadow-[inset_3px_0_0_rgb(var(--c-gold))]'
-                  : 'text-sage hover:text-ivory hover:bg-subtle',
-              ].join(' ')
-            }
-          >
-            <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
-            <span className="flex-1">{label}</span>
-            {count > 0 && (
-              <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono font-semibold">
-                {count > 99 ? '99+' : count}
-              </span>
+          <div key={to}>
+            {showHeader && (
+              <div className="px-3 pt-3 pb-1 text-[11px] font-mono uppercase tracking-wider text-sage-muted/70" role="presentation">
+                {group}
+              </div>
             )}
-          </NavLink>
+            <NavLink
+              to={to}
+              onClick={onNavigate}
+              className={({ isActive }) =>
+                [
+                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all duration-200',
+                  isActive
+                    ? 'bg-hover text-ivory font-medium shadow-[inset_3px_0_0_rgb(var(--c-gold))]'
+                    : 'text-sage hover:text-ivory hover:bg-subtle',
+                ].join(' ')
+              }
+            >
+              <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
+              <span className="flex-1">{label}</span>
+              {count > 0 && (
+                <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono font-semibold">
+                  {count > 99 ? '99+' : count}
+                </span>
+              )}
+            </NavLink>
+          </div>
         );
       })}
     </nav>
@@ -173,6 +236,13 @@ export default function AppLayout({ children, title }) {
   // Eigener Scroll-Bereich für den Hauptinhalt (unabhängig von der Seitenleiste)
   // mit weichem Verhalten & Rand-Abfedern.
   useEffect(() => attachScrollFeel(scrollRef.current), []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
 
   useEffect(() => {
     let alive = true;
@@ -243,7 +313,7 @@ export default function AppLayout({ children, title }) {
 
       {/* Mobile-Drawer */}
       {open && (
-        <div className="fixed inset-0 z-40 lg:hidden">
+        <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Hauptmenü">
           <div className="absolute inset-0 bg-black/60" onClick={() => setOpen(false)} />
           <div className="absolute inset-y-0 left-0 w-72 max-w-[80vw]">{Sidebar}</div>
         </div>

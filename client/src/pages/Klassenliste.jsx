@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -194,18 +194,19 @@ export default function Klassenliste() {
           <Card className="p-6 text-sage-muted text-sm">Keine Schüler gefunden.</Card>
         ) : (
           <Card className="overflow-hidden">
-            <div className="overflow-x-auto">
+            <p className="sm:hidden px-4 pt-3 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+            <div className="overflow-x-auto" role="region" aria-label="Klassenliste, seitlich scrollbar" tabIndex={0}>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-sage-muted border-b border-line">
                     <th className="py-3 px-4 font-medium">Name</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Anwesenheitsquote">Anw.</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Unentschuldigte Fehltage">Unent.</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Verspätung gesamt (Minuten)">Versp.</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Erledigte von gesamten Hausaufgaben">Erledigt</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Offene Aufgaben (davon überfällig)">Offen</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Offene Strafen">Strafen</th>
-                    <th className="py-3 px-3 font-medium text-center" title="Negative Verhaltensvermerke">Vermerke</th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Anwesenheitsquote">Anw.</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Unentschuldigte Fehltage">Unent.</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Verspätung gesamt in Minuten">Versp.</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Erledigte von allen gestellten Hausaufgaben">Erledigt</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Aufgaben, in Klammern die davon überfälligen">Offen</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Strafen (Geld/Seiten)">Strafen</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center"><abbr title="Negative Verhaltensvermerke">Vermerke</abbr></th>
                     <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
                     {isTeacher && <th className="py-3 px-3 font-medium text-center">Probezeit</th>}
                   </tr>
@@ -219,7 +220,13 @@ export default function Klassenliste() {
                     >
                       <td className="py-3 px-4 text-ivory whitespace-nowrap">
                         {r.probation && <CircleDot size={10} className="inline mr-1.5 -mt-0.5 text-blue-400" aria-label="Probezeit" />}
-                        {r.name}
+                        <Link
+                          to={`/profil/${r.id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:underline rounded"
+                        >
+                          {r.name}
+                        </Link>
                         {r.role === 'klassensprecher' && <Star size={13} className="inline ml-1.5 -mt-0.5 text-gold" aria-label="Klassensprecher(in)" />}
                       </td>
                       <td className={`py-3 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`} title={r.attendanceRate === null ? 'Noch keine Daten' : undefined}>
@@ -280,7 +287,7 @@ export default function Klassenliste() {
             </div>
           </Card>
         )}
-        <p className="text-[11px] text-sage-muted">Tipp: Auf eine Zeile tippen öffnet das Schülerprofil. „Aufgaben" zeigt offene Aufgaben, in Klammern die überfälligen.</p>
+        <p className="text-[11px] text-sage-muted">Tipp: Name antippen oder Zeile anklicken öffnet das Schülerprofil. Spalte „Offen" zeigt offene Aufgaben, die Zahl in Klammern die davon überfälligen. Abkürzungen in den Spaltenüberschriften zeigen beim Antippen/Hovern die volle Bezeichnung.</p>
       </div>
     </AppLayout>
   );

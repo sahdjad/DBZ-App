@@ -835,7 +835,8 @@ function AuditTab() {
   if (!logs) return <Spinner />;
   return (
     <Card className="p-0 overflow-hidden">
-      <div className="overflow-x-auto">
+      <p className="sm:hidden px-4 pt-3 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+      <div className="overflow-x-auto" role="region" aria-label="Audit-Log, seitlich scrollbar" tabIndex={0}>
         <table className="w-full text-sm">
           <thead><tr className="text-left text-sage-muted border-b border-line">
             <th className="p-3">Zeit</th><th className="p-3">Wer</th><th className="p-3">Aktion</th>

@@ -89,7 +89,8 @@ export default function Leitung() {
         {/* Je Klasse */}
         <Card className="overflow-hidden">
           <CardHeader title="Je Klasse" subtitle="Anwesenheit & offene Strafen" icon={Gauge} />
-          <div className="overflow-x-auto">
+          <p className="sm:hidden px-4 pb-1 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+          <div className="overflow-x-auto" role="region" aria-label="Je Klasse, seitlich scrollbar" tabIndex={0}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-sage-muted border-b border-line">
