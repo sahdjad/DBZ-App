@@ -9,7 +9,13 @@ import { GRADE_OPTIONS, gradeLabel, avgLabel } from '../lib/grades.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : '');
-const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : 0);
+// Anwesenheitsquote für den gewählten Zeitraum: (Anwesend + Verspätet) / alle
+// erfassten Sitzungen. Entschuldigtes Fehlen zählt NICHT als anwesend, senkt
+// die Quote aber auch nicht als unentschuldigt -- es fließt separat in den
+// "Unentschuldigt"-Wert ein. null (statt 0%) heißt: für den Zeitraum liegen
+// noch keine erfassten Sitzungen vor, nicht "0 % anwesend".
+const rate = (a) => (a.sessions ? Math.round(((a.present + a.late) / a.sessions) * 100) : null);
+const rateLabel = (a) => (rate(a) == null ? 'Noch keine Daten' : `${rate(a)}%`);
 const subjectName = (subjects, id) => subjects.find((s) => s.id === id)?.name || id;
 
 // Monatsauswahl für die Auswertung (Gesamt + letzte 6 Monate).
@@ -57,8 +63,13 @@ function ReportView({ report, subjects = [] }) {
   return (
     <div className="space-y-4">
       <GradesTable grades={report.grades} subjects={subjects} effectiveAverage={report.effectiveAverage} averageOverride={report.averageOverride} />
+      <p className="text-xs text-sage-muted">
+        Anwesenheitsquote = (Anwesend + Verspätet) ÷ alle erfassten Sitzungen im gewählten Zeitraum. Verspätungen zählen
+        als anwesend (mit separat ausgewiesener Minutenzahl); entschuldigtes wie unentschuldigtes Fehlen zählen beide
+        als nicht anwesend und senken die Quote gleichermaßen – sie unterscheiden sich nur in der Spalte „Unentschuldigt" unten.
+      </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <Stat label="Anwesenheitsquote" value={`${rate(d.attendance)}%`} />
+        <Stat label="Anwesenheitsquote" value={rateLabel(d.attendance)} tone={rate(d.attendance) == null ? 'neutral' : undefined} />
         <Stat label="Verspätungen" value={d.attendance.late} />
         <Stat label="Unentschuldigt" value={d.attendance.unexcused} tone={d.attendance.unexcused ? 'absent' : 'mint'} />
         <Stat label="Aufgaben bestanden" value={`${d.homework.passed}/${d.homework.total}`} />

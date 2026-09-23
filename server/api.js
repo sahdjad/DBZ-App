@@ -1166,9 +1166,14 @@ router.get('/leadership/overview', requireAuth, requireRole(ROLES.SUPER_ADMIN, R
     return a.sessions ? ((a.present + a.late) / a.sessions) * 100 : null;
   };
 
+  // "students" zählt ALLE Schüler-Konten org-weit (auch ohne Klassenzuordnung,
+  // z. B. frisch angelegt/noch nicht zugeteilt) -- das kann höher sein als die
+  // Summe der Klassenlisten. unassignedStudents macht diese Differenz explizit
+  // sichtbar, statt sie stillschweigend in der Gesamtzahl zu verstecken.
   const counts = {
     classes: classes.length,
     students: students.length,
+    unassignedStudents: students.filter((s) => !(s.classIds || []).length).length,
     parents: users.filter((u) => u.role === ROLES.ELTERN).length,
     teachers: users.filter((u) => [ROLES.KLASSENLEHRER, ROLES.VERTRETUNG].includes(u.role)).length,
     pendingUsers: users.filter((u) => u.status === 'pending').length,
@@ -4983,10 +4988,24 @@ router.delete('/admin/classes/:id/teachers/:userId', requireAuth, requireRole(RO
   res.json({ ok: true });
 });
 
+// Löst Akteur und betroffenen Datensatz zu einem lesbaren Namen auf, sofern
+// dieser noch existiert oder im before/after-Schnappschuss mitgespeichert wurde.
+// Erfindet keine Angaben: bleibt null, wenn nichts davon vorliegt.
+function auditEntityName(l) {
+  if (l.entityType === 'user') return findUserById(l.entityId)?.name || l.before?.name || l.after?.name || null;
+  if (l.entityType === 'class') return findClass(l.entityId)?.name || null;
+  return null;
+}
+
 router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   let logs = db.all('audit_logs');
   if (req.user.isDemo) logs = logs.filter((l) => findUserById(l.actorId)?.isDemo);
-  res.json({ logs: logs.slice(-200).reverse() });
+  const enriched = logs.slice(-200).reverse().map((l) => ({
+    ...l,
+    actorName: findUserById(l.actorId)?.name || null,
+    entityName: auditEntityName(l),
+  }));
+  res.json({ logs: enriched });
 });
 
 // Vollständiges Backup herunterladen (Leitung/Admin) – für Off-Site-Sicherung.

@@ -222,7 +222,7 @@ export default function Klassenliste() {
                         {r.name}
                         {r.role === 'klassensprecher' && <Star size={13} className="inline ml-1.5 -mt-0.5 text-gold" aria-label="Klassensprecher(in)" />}
                       </td>
-                      <td className={`py-3 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`}>
+                      <td className={`py-3 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`} title={r.attendanceRate === null ? 'Noch keine Daten' : undefined}>
                         {r.attendanceRate === null ? '–' : `${r.attendanceRate}%`}
                       </td>
                       <td className={`py-3 px-3 text-center font-mono ${r.unexcused > 0 ? 'text-status-absent' : 'text-sage-muted'}`}>

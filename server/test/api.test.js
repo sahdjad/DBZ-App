@@ -929,6 +929,40 @@ test('Leitungs-Überblick: Kennzahlen aggregiert, nur für Leitung/Admin', async
   assert.equal((await teacher('GET', '/leadership/overview')).status, 403);
 });
 
+test('Leitungs-Überblick: Schülerzahl org-weit vs. Klassenzuordnung -- unassignedStudents erklärt die Differenz', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const admin = await loginAs('admin@dbz.de'); // super_admin: legt Nutzer sofort an (kein pending change_request)
+  const before = (await leitung('GET', '/leadership/overview')).data.counts;
+
+  // Schüler OHNE Klassenzuordnung anlegen -> zählt org-weit mit, aber in
+  // keiner Klassenliste.
+  const stamp = Date.now();
+  const mk = await admin('POST', '/admin/users', { name: 'Unzugeordnet', email: `unzugeordnet-${stamp}@dbz.de`, password: 'passwort1', role: 'schueler', classIds: [] });
+  assert.ok(mk.data.user, 'super_admin legt sofort an (kein pending)');
+
+  const after = (await leitung('GET', '/leadership/overview')).data;
+  assert.equal(after.counts.students, before.students + 1, 'org-weite Schülerzahl steigt um 1');
+  assert.equal(after.counts.unassignedStudents, before.unassignedStudents + 1, 'unassignedStudents steigt um 1');
+
+  const sumInClasses = after.classes.reduce((s, c) => s + c.students, 0);
+  assert.equal(after.counts.students - after.counts.unassignedStudents, sumInClasses, '"zugeordnet" entspricht exakt der Summe der Klassenlisten');
+});
+
+test('Audit-Log: löst Akteur- und Objektnamen aus tatsächlich gespeicherten Daten auf', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const yusuf = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'schueler@dbz.de');
+  const patch = await admin('PATCH', `/admin/users/${yusuf.id}`, { status: 'active' });
+  assert.equal(patch.status, 200);
+
+  const logs = (await admin('GET', '/admin/audit')).data.logs;
+  const entry = logs.find((l) => l.action === 'user.update' && l.entityId === yusuf.id);
+  assert.ok(entry, 'Audit-Eintrag für die Änderung vorhanden');
+  assert.equal(entry.actorName, 'System-Administrator', 'Akteur wird namentlich aufgelöst (kein Erfinden, nur Lookup)');
+  assert.equal(entry.entityName, yusuf.name, 'betroffener Nutzer wird namentlich aufgelöst');
+  assert.ok(entry.before && typeof entry.before === 'object', 'Vorher-Zustand bleibt wie gespeichert erhalten');
+  assert.ok(!('passwordHash' in entry.before) && !('passwordHash' in (entry.after || {})), 'kein Passwort-Hash im Audit-Log');
+});
+
 test('Kalender: eigener Termin mit Wiederholung erscheint, ist privat, editier-/löschbar', async () => {
   const student = await loginAs('schueler@dbz.de');
   const create = await student('POST', '/events', {

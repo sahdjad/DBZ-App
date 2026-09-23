@@ -12,7 +12,7 @@ function rateColor(r) {
   return 'text-status-absent';
 }
 
-function Stat({ icon: Icon, label, value, tone, onClick }) {
+function Stat({ icon: Icon, label, value, sublabel, tone, onClick }) {
   return (
     <Card className={`p-4 flex items-center gap-3 ${onClick ? 'cursor-pointer hover:bg-hover transition' : ''}`} onClick={onClick}>
       <span className={`grid place-items-center h-10 w-10 rounded-lg shrink-0 ${tone || 'bg-mint/15 text-mint'}`}>
@@ -21,6 +21,7 @@ function Stat({ icon: Icon, label, value, tone, onClick }) {
       <div className="min-w-0">
         <div className="text-xl text-ivory font-mono leading-tight">{value}</div>
         <div className="text-xs text-sage-muted">{label}</div>
+        {sublabel && <div className="text-[11px] text-status-late mt-0.5">{sublabel}</div>}
       </div>
     </Card>
   );
@@ -41,7 +42,12 @@ export default function Leitung() {
       <div className="space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <Stat icon={Users} label="Klassen" value={counts.classes} />
-          <Stat icon={GraduationCap} label="Schüler" value={counts.students} />
+          <Stat
+            icon={GraduationCap}
+            label="Schüler"
+            value={counts.students}
+            sublabel={counts.unassignedStudents > 0 ? `${counts.students - counts.unassignedStudents} zugeordnet, ${counts.unassignedStudents} ohne Klasse` : undefined}
+          />
           <Stat icon={UserCheck} label="Eltern" value={counts.parents} />
           <Stat icon={Users} label="Lehrkräfte" value={counts.teachers} />
         </div>
@@ -99,7 +105,7 @@ export default function Leitung() {
                   <tr key={c.id} onClick={() => navigate('/klassenliste')} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
                     <td className="py-3 px-4 text-ivory whitespace-nowrap">{c.name}</td>
                     <td className="py-3 px-3 text-center font-mono">{c.students}</td>
-                    <td className={`py-3 px-3 text-center font-mono ${rateColor(c.attendanceRate)}`}>{c.attendanceRate === null ? '–' : `${c.attendanceRate}%`}</td>
+                    <td className={`py-3 px-3 text-center font-mono ${rateColor(c.attendanceRate)}`} title={c.attendanceRate === null ? 'Noch keine Daten' : undefined}>{c.attendanceRate === null ? '–' : `${c.attendanceRate}%`}</td>
                     <td className={`py-3 px-3 text-center font-mono ${c.unexcused > 0 ? 'text-status-absent' : 'text-sage-muted'}`}>{c.unexcused}</td>
                     <td className="py-3 px-3 text-center font-mono whitespace-nowrap">
                       {c.openMoney === 0 && c.openPages === 0 ? (
