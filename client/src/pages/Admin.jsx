@@ -348,7 +348,7 @@ function UsersTab() {
         <EditUser
           user={editing}
           classes={classes}
-          students={users.filter((u) => u.role === 'schueler')}
+          students={users.filter((u) => u.role === 'schueler' || u.role === 'klassensprecher')}
           onDone={() => { setEditing(null); load(); }}
           onCancel={() => setEditing(null)}
         />
@@ -733,7 +733,7 @@ function InvitesTab() {
   useEffect(() => {
     load();
     api.get('/classes').then((d) => { setClasses(d.classes); setForm((f) => ({ ...f, classId: d.classes[0]?.id || '' })); });
-    api.get('/admin/users').then((d) => setStudents(d.users.filter((u) => u.role === 'schueler')));
+    api.get('/admin/users').then((d) => setStudents(d.users.filter((u) => u.role === 'schueler' || u.role === 'klassensprecher')));
   }, []);
 
   const create = async () => {
