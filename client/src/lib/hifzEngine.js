@@ -126,20 +126,43 @@ export class HifzEngine {
       }
       offset = candidates[0];
     }
-    for (let i = offset; i < tokens.length && this.index < words.length; i++) {
+    // Field evidence (real device tests): real ASR transcripts sometimes
+    // contain a single stray extra token (stutter, filler, a duplicated/
+    // re-segmented chunk) that does not correspond to any expected word.
+    // Treated naively, that one stray token would stall the whole rest of
+    // the recitation. If the next word the reciter is expected to say
+    // appears a short distance further along in THIS SAME transcript, the
+    // token(s) in between are noise in what was HEARD -- skipping them
+    // reveals nothing that was not actually said, it only ignores clutter.
+    // A missing/wrong EXPECTED word is a different case and is deliberately
+    // NOT auto-skipped (see below): that would reveal a word the person
+    // never said, which this engine must never do.
+    const INSERTION_LOOKAHEAD = 3;
+    let i = offset;
+    while (i < tokens.length && this.index < words.length) {
       if (tokens[i] === words[this.index].token) {
         if (this.mismatch) this.history.push({ kind: 'recovered', index: this.index });
         this.history.push({ kind: this.hints.has(this.index) ? 'assisted-match' : 'transcript-match', index: this.index });
         this.index++;
         this.mismatch = null;
         this.status = this.index === words.length ? 'complete' : 'following';
-      } else {
-        const count = this.mismatch?.index === this.index ? this.mismatch.count + 1 : 1;
-        this.mismatch = { index: this.index, count, suspected: count >= this.confirmations && !this.dismissed.has(this.index) };
-        this.status = this.mismatch.suspected ? 'suspected' : 'uncertain';
-        this.history.push({ kind: 'transcript-deviation', index: this.index });
-        break; // never scan past a missing/wrong token
+        i++;
+        continue;
       }
+      let resync = -1;
+      for (let k = 1; k <= INSERTION_LOOKAHEAD && i + k < tokens.length; k++) {
+        if (tokens[i + k] === words[this.index].token) { resync = k; break; }
+      }
+      if (resync > 0) {
+        this.history.push({ kind: 'insertion-ignored', index: this.index });
+        i += resync;
+        continue;
+      }
+      const count = this.mismatch?.index === this.index ? this.mismatch.count + 1 : 1;
+      this.mismatch = { index: this.index, count, suspected: count >= this.confirmations && !this.dismissed.has(this.index) };
+      this.status = this.mismatch.suspected ? 'suspected' : 'uncertain';
+      this.history.push({ kind: 'transcript-deviation', index: this.index });
+      break; // never scan past a missing/wrong expected word
     }
     return this.snapshot();
   }

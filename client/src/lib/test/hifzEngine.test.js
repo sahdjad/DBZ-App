@@ -72,6 +72,28 @@ test('alif maqsura and hamza-on-waw/ya are folded for comparison too',()=>{
   assert.equal(normalize('سؤال'),normalize('سوال'));
   assert.equal(normalize('سئل'),normalize('سيل'));
 });
+test('a single stray extra word in the transcript is ignored, not a mistake',()=>{
+  const e=new HifzEngine(passage()); // كتاب قلم باب بيت
+  const s=send(e,'كتاب اه قلم باب بيت');
+  assert.equal(s.status,'complete'); assert.equal(s.index,4);
+  assert.ok(s.history.some(x=>x.kind==='insertion-ignored'));
+  assert.ok(!s.history.some(x=>x.kind==='transcript-deviation'));
+});
+test('a stray word too far ahead is not skipped (bounded lookahead)',()=>{
+  const p=passage(['كتاب','قلم','باب','بيت','شجرة']);
+  const e=new HifzEngine(p);
+  // 4 fremde Wörter vor "بيت" liegen außerhalb des Toleranzfensters (3).
+  const s=send(e,'كتاب قلم باب و و و و بيت');
+  assert.equal(s.index,3); // كتاب, قلم, باب erkannt; Rest bleibt ein echter Fehler
+  assert.notEqual(s.status,'complete');
+});
+test('a genuinely missing word is still never skipped (no false insertion-resync)',()=>{
+  const e=new HifzEngine(passage()); // كتاب قلم باب بيت
+  const s=send(e,'كتاب باب بيت'); // "قلم" ausgelassen
+  assert.equal(s.index,1);
+  assert.ok(!s.history.some(x=>x.kind==='insertion-ignored'));
+  assert.equal(s.status,'uncertain');
+});
 test('duplicate IDs, malformed and unordered data rejected',()=>{
   const p=passage();p.words[1].id=p.words[0].id;assert.throws(()=>validatePassage(p));
   const p2=passage();p2.words[2].position=9;assert.throws(()=>validatePassage(p2));

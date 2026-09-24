@@ -6,6 +6,12 @@
 // des Ziehens wird nur lokal (kein Netzwerk) die Live-Vorschau gezeigt;
 // navigiert wird erst beim Loslassen -- kein Sturm an Seitenanfragen pro
 // Pixel Wischweg.
+//
+// Leserichtung wie im echten Mushaf: Seite 1 RECHTS, Seite 604 LINKS.
+// dir="rtl" auf <input type="range"> wird nicht von allen Browsern (v.a.
+// iOS Safari) zuverlässig unterstützt -- stattdessen der Slider per CSS
+// horizontal gespiegelt (scaleX(-1)), das dreht Darstellung UND
+// Ziehrichtung garantiert gemeinsam um, unabhängig vom Browser.
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -17,18 +23,13 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
     const clamped = Math.max(1, Math.min(max, v));
     if (clamped !== page) onNavigate(clamped);
   };
-  // Als Portal direkt unter <body> gerendert: der Seiteninhalt liegt in
-  // AppLayout in einem Container mit will-change:transform (für die sanften
-  // Seitenübergangs-Animationen) -- das erzeugt selbst einen neuen
-  // Bezugsrahmen für position:fixed, wodurch die Leiste sonst NICHT am
-  // echten Bildschirmrand, sondern irgendwo mitten im Inhalt "fixiert" wäre.
   return createPortal(
     <div
       data-testid="page-scrubber"
       className="fixed bottom-20 lg:bottom-0 inset-x-0 z-20 nav-surface backdrop-blur border-t border-line px-4 py-2 flex items-center gap-3"
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
     >
-      <span className="text-[11px] text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
+      <span className="text-[11px] text-sage-muted tabular-nums w-8 shrink-0">{max}</span>
       <input
         type="range"
         min={1}
@@ -40,10 +41,11 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
         onTouchEnd={(e) => commit(Number(e.target.value))}
         onKeyUp={(e) => commit(Number(e.target.value))}
         className="flex-1 accent-mint h-6"
-        aria-label="Seite wählen (1 bis 604)"
+        style={{ transform: 'scaleX(-1)' }}
+        aria-label="Seite wählen (1 bis 604), Seite 1 rechts wie im gedruckten Mushaf"
         aria-valuetext={`Seite ${value}`}
       />
-      <span className="text-[11px] text-sage-muted tabular-nums w-8 shrink-0">{max}</span>
+      <span className="text-[11px] text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
       <span className="text-xs text-ivory tabular-nums w-16 text-center shrink-0 font-medium">Seite {value}</span>
     </div>,
     document.body,
