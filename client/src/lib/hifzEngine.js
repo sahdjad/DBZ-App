@@ -1,7 +1,23 @@
-/** Transcript follower, NOT a pronunciation/tajwid detector. */
+// Transcript follower, NOT a pronunciation/tajwid detector.
+//
+// Field evidence (real device tests, browser Web Speech API, ar-SA/ar):
+// the recognizer's transcript almost never carries the Uthmani mushaf's
+// hamza-bearing alif forms (\u0623/\u0625/\u0622/\u0671) or hamza-on-waw/ya (\u0624/\u0626) -- it returns
+// plain carrier letters. An earlier, stricter version of this function kept
+// those forms distinct "to not grade over pronunciation", but in practice
+// that meant almost nothing ever matched and the whole feature stayed
+// silent. Folding these well-known, systematic spelling variants for
+// COMPARISON only (never for what is shown on screen -- the original mushaf
+// text is untouched, see validatePassage below) is standard, well-documented
+// practice in Arabic text normalization, not an invented leniency: it
+// removes an orthographic mismatch that is not an actual mispronunciation.
 export function normalize(text) {
   return String(text).normalize('NFC')
-    .replace(/\u0671/g, '\u0627') // alif wasla only; preserve hamza distinctions
+    .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627') // hamza/wasla-bearing alif -> bare alif
+    .replace(/\u0649/g, '\u064A') // alif maqsura -> ya
+    .replace(/\u0624/g, '\u0648') // hamza on waw -> bare waw
+    .replace(/\u0626/g, '\u064A') // hamza on ya -> bare ya
+    .replace(/\u0621/g, '') // standalone hamza: frequently dropped by ASR transcripts
     .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
