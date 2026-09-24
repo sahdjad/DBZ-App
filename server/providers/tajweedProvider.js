@@ -7,6 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fetchJson } from './httpJson.js';
 
 const BASE = process.env.QURAN_COM_API_BASE || 'https://api.quran.com/api/v4';
 
@@ -36,12 +37,7 @@ function writeDisk(key, data) {
 
 async function fetchPage(n, page) {
   const url = `${BASE}/verses/by_chapter/${n}?fields=text_uthmani_tajweed,page_number,juz_number&per_page=50&page=${page}`;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12000);
-  const res = await fetch(url, { signal: ctrl.signal, headers: { accept: 'application/json' } });
-  clearTimeout(t);
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  return res.json();
+  return fetchJson(url);
 }
 
 /**

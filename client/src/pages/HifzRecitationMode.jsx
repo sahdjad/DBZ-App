@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Mic, Square, Lightbulb, RotateCcw, X, AlertTriangle, Eye, ArrowLeft, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react';
 import { Card, Button, Spinner } from '../components/ui.jsx';
+import PageScrubber from '../components/PageScrubber.jsx';
 import { api } from '../lib/api.js';
 import { HifzEngine } from '../lib/hifzEngine.js';
 import { BrowserSpeech } from '../lib/hifzSpeech.js';
@@ -425,6 +426,17 @@ export default function HifzRecitationMode({ surahs }) {
             <Button onClick={() => goPage(1)}>Nächste Seite <ArrowRight size={16} /></Button>
           )}
         </Card>
+      )}
+
+      {/* Beim Durchsuchen (vor "Los"): Seiten-Leiste zum Wischen/Ziehen direkt
+          zu einer Seite -- wie in der Lese-Ansicht. Während der laufenden
+          Übung ausgeblendet, damit man nicht versehentlich die Seite
+          wechselt und den Übungsstand verliert. */}
+      {!started && (
+        <>
+          <div className="h-16" aria-hidden="true" />
+          <PageScrubber page={page} onNavigate={loadPage} />
+        </>
       )}
     </div>
   );

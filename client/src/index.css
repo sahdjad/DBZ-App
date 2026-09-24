@@ -241,18 +241,14 @@
     box-shadow: 0 0 0 1px rgba(74, 170, 116, 0.35);
   }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
-  /* Verzierter Sure-Kopf über dem ersten Vers einer Sure auf der Seite. */
+  /* Sure-Kopf über dem ersten Vers einer Sure auf der Seite. Bewusst OHNE
+     Rahmen/Hintergrund/Karten-Optik: eine umrandete Box mittendrin sah wie
+     ein unerwarteter Absatz/Kasten im fließenden Seitentext aus (Rückmeldung
+     nach echtem Gerätetest, v.a. in der Tadschwid-Ansicht). Nur eine ruhige,
+     zentrierte Textzeile, die sich in den Lesefluss der Seite einfügt. */
   .mushaf-surah-head {
     text-align: center;
-    margin: 0.6rem auto 0.4rem;
-    padding: 0.35rem 0.75rem;
-    border-radius: 10px;
-    border: 1px solid #d8c9a6;
-    background: linear-gradient(180deg, rgba(21, 101, 63, 0.06), rgba(21, 101, 63, 0.02));
-  }
-  .dark .mushaf-surah-head {
-    border-color: #33463c;
-    background: linear-gradient(180deg, rgba(74, 170, 116, 0.10), rgba(74, 170, 116, 0.03));
+    margin: 0.5rem auto;
   }
 }
 

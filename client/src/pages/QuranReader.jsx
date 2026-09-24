@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
 import { ensurePageFont, isPageFontLoaded } from '../lib/mushafFont.js';
+import PageScrubber from '../components/PageScrubber.jsx';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
 
@@ -806,9 +807,17 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const fontPageRef = useRef(null); // aktuell benötigte Seitenschrift (gegen Wettläufe)
   const pageDataCache = useRef(new Map()); // Seiten-Daten für flüssiges Blättern
   const fetchPageData = (p) => api.get(`/quran/page/${p}`).then((d) => { pageDataCache.current.set(p, d.page); return d.page; });
-  const prefetchNeighbors = (p) => [p - 1, p + 1].forEach((q) => {
-    if (q >= 1 && q <= 604 && !pageDataCache.current.has(q)) fetchPageData(q).then((pg) => prefetchPageAudio(pg.surahs)).catch(() => {});
-  });
+  // Nur eine Seite vorausladen (vorwärts, die häufigste Leserichtung) statt
+  // beide Nachbarn, und ohne deren Audio gleich mitzuladen (das holt applyPage
+  // nach, sobald diese Seite wirklich angezeigt wird). Rückmeldung nach
+  // echtem Gerätetest: die ersten ein/zwei Seiten laden, danach bricht es ab
+  // -- passt zu einem knappen Anfragelimit bei der kostenlosen, anonymen
+  // quran.com-Anbindung, wenn mehrere Seiten gleichzeitig vorausgeladen
+  // werden. Weniger gleichzeitige Anfragen senken das Risiko spürbar.
+  const prefetchNeighbors = (p) => {
+    const q = p + 1;
+    if (q >= 1 && q <= 604 && !pageDataCache.current.has(q)) fetchPageData(q).catch(() => {});
+  };
   const applyPage = (pg) => {
     setData(pg);
     prefetchPageAudio(pg?.surahs);
@@ -998,7 +1007,13 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     const measure = () => {
       const el = pageElRef.current; if (!el) return;
       const inner = el.querySelector('.mushaf-lines'); if (!inner) return;
-      const lines = [...inner.querySelectorAll('.mushaf-line:not(.is-short)')];
+      // Normalerweise nur an "vollen" Zeilen messen (kurze Zeilen sind kein
+      // verlässliches Maß für die Seitenbreite). Sind ALLE Zeilen einer Seite
+      // kurz (z. B. Al-Fatiha), gäbe es sonst gar keine Messgrundlage mehr --
+      // dann eben an allen Zeilen messen, statt die Seite unvermessen (zu
+      // klein) zu lassen.
+      let lines = [...inner.querySelectorAll('.mushaf-line:not(.is-short)')];
+      if (!lines.length) lines = [...inner.querySelectorAll('.mushaf-line')];
       if (!lines.length) return;
       const REF = 100; // an fester Referenzgröße messen -> stabil, kein Pendeln
       const cs = getComputedStyle(el);
@@ -1231,7 +1246,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
                     {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
                   </div>
                 ))}
-                <p className={`mushaf-line ${line.words.length <= 6 || data.page === 1 ? 'is-short' : ''}`}>
+                <p className={`mushaf-line ${line.words.length <= 6 ? 'is-short' : ''}`}>
                   {line.words.map((w, i) => {
                     const cls = `mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`;
                     if (tajweed) {
@@ -1288,6 +1303,10 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
         </Card>
         </div>
       )}
+
+      {/* Platz für die feste untere Seiten-Leiste, damit sie nichts verdeckt. */}
+      {data && <div className="h-16" aria-hidden="true" />}
+      {data && <PageScrubber page={page} onNavigate={goto} />}
     </div>
   );
 }
