@@ -1008,9 +1008,15 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       const fontByWidth = (REF * targetInnerW) / maxNat;
       const fontByHeight = (availH - gaps - 6) / (numLines * 1.9);
       const fs = Math.max(12, Math.min(44, Math.min(fontByWidth, fontByHeight)));
-      const pageContentW = (maxNat * fs) / REF;
       setGlyphFs(fs);
-      setGlyphW(Math.min(availOuter, Math.ceil(pageContentW + hpad)));
+      // Die Seite bekommt IMMER die volle verfügbare Breite (nie die anhand
+      // der Schriftgröße gemessene, ungestreckte Wortbreite) -- sonst bliebe
+      // bei vielen Zeilen (Schriftgröße von der Höhe begrenzt) eine ganze
+      // Seitenhälfte leer, weil die einzelnen Zeilen dann schmaler wären als
+      // der Container. justify-content: space-between (siehe index.css
+      // .mushaf-page.is-glyph .mushaf-line) verteilt die Wörter danach über
+      // die volle Breite -- wie im gedruckten Mushaf.
+      setGlyphW(availOuter);
     };
     const raf = requestAnimationFrame(measure);
     window.addEventListener('resize', measure);
