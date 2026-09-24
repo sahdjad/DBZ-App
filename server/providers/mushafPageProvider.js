@@ -7,6 +7,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fetchJson } from './httpJson.js';
 
 const BASE = process.env.QURAN_COM_API_BASE || 'https://api.quran.com/api/v4';
 
@@ -29,18 +30,6 @@ function writeDisk(key, data) {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
     fs.writeFileSync(path.join(CACHE_DIR, `${key}.json`), JSON.stringify(data));
   } catch { /* Cache optional */ }
-}
-
-async function fetchJson(url) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12000);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, headers: { accept: 'application/json' } });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.json();
-  } finally {
-    clearTimeout(t);
-  }
 }
 
 // Sure-Metadaten (arabischer Name, Seitenbereich, Basmala ja/nein) – einmal laden.

@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fetchJson } from './httpJson.js';
 
 const BASE = process.env.TAFSIR_API_BASE || 'https://api.quran.com/api/v4';
 
@@ -74,12 +75,7 @@ export async function getTafsir(surah, ayah, editionKey = 'saadi') {
     : `${BASE}/tafsirs/${ed.id}/by_ayah/${s}:${a}`;
   let json;
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10000);
-    const res = await fetch(url, { signal: ctrl.signal, headers: { accept: 'application/json' } });
-    clearTimeout(t);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    json = await res.json();
+    json = await fetchJson(url, { timeoutMs: 10000 });
   } catch (err) {
     const e = new Error('Tafsir-Quelle nicht erreichbar');
     e.code = 'PROVIDER_UNAVAILABLE';
