@@ -22,11 +22,15 @@ import { BrowserSpeech } from '../lib/hifzSpeech.js';
 import { pageToHifzPassage } from '../lib/hifzPassage.js';
 import { ensurePageFont, isPageFontLoaded } from '../lib/mushafFont.js';
 
+// Bewusst zurückhaltend formuliert: ein einzelner unsicherer Treffer (Status
+// "uncertain") ist normal (ASR-Rauschen, kurze Pause) und soll nicht wie ein
+// Fehler wirken. Erst bei einer BESTÄTIGTEN, wiederholten Abweichung
+// ("suspected") wird konkret um Wiederholung gebeten.
 const STATUS_TEXT = {
   ready: 'Bereit. Mikrofon starten und ab dem ersten Wort rezitieren.',
   waiting: 'Bitte an der aktuellen Stelle wiederholen.',
-  following: 'Textfolge erkannt. Weiter rezitieren.',
-  uncertain: 'Nicht eindeutig erkannt. Bitte ab der aktuellen Stelle wiederholen.',
+  following: 'Weiter rezitieren.',
+  uncertain: 'Ich höre zu …',
   suspected: 'Mögliche Wortabweichung. Bitte wiederholen – das Mikrofon hört weiter zu.',
   complete: 'Seite durchlaufen. Das ist keine bestätigte Rezitationsbewertung.',
 };
