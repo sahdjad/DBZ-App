@@ -10,7 +10,7 @@
 import { api } from './api.js';
 import { cleanQuran } from './quranText.js';
 
-const MAX_WORDS = 2000;
+const MAX_WORDS = 8000; // deckt auch die längste Sure (al-Baqara) vollständig ab
 
 export class PassageTooLargeError extends Error {}
 export class EmptyPassageError extends Error {}
@@ -24,10 +24,14 @@ export async function buildHifzPassage({ surahFrom, ayahFrom, surahTo, ayahTo, t
 
   const words = [];
   let line = 0;
+  let bismillah = false;
   for (let s = Number(surahFrom); s <= Number(surahTo); s++) {
     const surah = await getSurah(s);
     const fromA = s === Number(surahFrom) ? Number(ayahFrom) : 1;
     const toA = s === Number(surahTo) ? Number(ayahTo) : surah.ayahCount;
+    // Die Basmala wird – wie in der Lese-Ansicht – nur dekorativ angezeigt,
+    // nie als zu erkennendes Wort erwartet (kein eigener Ayah-Vers).
+    if (s === Number(surahFrom) && fromA === 1 && surah.bismillah) bismillah = true;
     for (const ayah of surah.ayahs) {
       if (ayah.n < fromA || ayah.n > toA) continue;
       line += 1;
@@ -48,6 +52,7 @@ export async function buildHifzPassage({ surahFrom, ayahFrom, surahTo, ayahTo, t
     edition: 'quran-uthmani (Tanzil-Projekt)',
     riwaya: "Hafs ʿan ʿĀṣim",
     source: 'AlQuran Cloud API · derselbe Text, der auch in der Lese-Ansicht der DBZ-App angezeigt wird',
+    bismillah,
     words,
   };
 }

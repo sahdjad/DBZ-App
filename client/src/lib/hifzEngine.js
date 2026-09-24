@@ -12,8 +12,8 @@ export function validatePassage(input) {
     if (typeof input[key] !== 'string' || !input[key].trim() || input[key].length > 500)
       throw new Error(`Ungültiges Metadatenfeld: ${key}`);
   }
-  if (!Array.isArray(input.words) || input.words.length < 1 || input.words.length > 2000)
-    throw new Error('Ein Abschnitt benötigt 1–2000 Wörter.');
+  if (!Array.isArray(input.words) || input.words.length < 1 || input.words.length > 8000)
+    throw new Error('Ein Abschnitt benötigt 1–8000 Wörter.');
   const ids = new Set();
   let previous;
   const words = input.words.map(w => {

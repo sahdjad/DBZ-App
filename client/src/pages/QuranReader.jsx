@@ -4,11 +4,9 @@ import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Tra
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
-import { cleanQuran } from '../lib/quranText.js';
+import { cleanQuran, toArabicNum } from '../lib/quranText.js';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
-
-const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
 // Offizielle Mushaf-Seitenschrift (KFGQPC HAFS v1) je Seite laden. WICHTIG: die
 // Glyphen liegen im „Private Use Area"-Bereich – ohne die passende Schrift würden
@@ -502,7 +500,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
         <Spinner label="Sure wird geladen …" />
       ) : (
         <>
-          <Card className="p-5 mb-4 text-center hero-atmosphere">
+          <Card className="p-5 mb-4 text-center">
             {/* Sure-Navigation: vorherige / nächste + Auswahl */}
             <div className="flex items-center justify-center gap-3">
               <button onClick={goPrevSurah} disabled={Number(n) <= 1} aria-label="Vorherige Sure"
