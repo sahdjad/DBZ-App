@@ -1,58 +1,47 @@
-// Wandelt bereits geprüften, bereits angezeigten DBZ-Qur'an-Text (dieselbe
-// Quelle wie in QuranReader.jsx: /quran/surah/:n, Tanzil-Projekt "quran-uthmani")
-// in das Abschnittsformat der Hifz-Engine (client/src/lib/hifzEngine.js).
+// Wandelt eine bereits geprüfte, bereits angezeigte Mushaf-SEITE (dieselbe
+// Quelle wie in QuranReader.jsx/MushafReader: /quran/page/:p, quran.com API
+// v4 "verses/by_page") in das Abschnittsformat der Hifz-Engine
+// (client/src/lib/hifzEngine.js) um. Reine, ohne Netzwerkzugriff testbare
+// Funktion – die Seite selbst wird vom aufrufenden Code geladen.
 //
-// Erfindet keine Wortkoordinaten: „line" ist hier eine Zeilen-GRUPPE je Ayah
-// innerhalb des gewählten Abschnitts (nicht die gedruckte Mushaf-Seitenzeile –
-// dafür fehlen echte Positionsdaten, siehe README des Hifz-Moduls Punkt 9).
-// „position" ist die Wortnummer innerhalb der Ayah, gezählt am selben
-// Originaltext, der auch in der Lese-Ansicht erscheint.
-import { api } from './api.js';
+// Erfindet keine Wortkoordinaten: „line" ist die ECHTE gedruckte Mushaf-
+// Zeilennummer dieser Seite (line_number aus der Quelle) – nicht mehr eine
+// künstliche Gruppierung wie zuvor. „position" ist die Wortnummer innerhalb
+// der Ayah, gezählt in Lesereihenfolge auf dieser Seite (dieselbe Zählweise,
+// die auch das Wort-Mitlesen beim Audio in MushafReader nutzt).
 import { cleanQuran } from './quranText.js';
 
-const MAX_WORDS = 8000; // deckt auch die längste Sure (al-Baqara) vollständig ab
-
-export class PassageTooLargeError extends Error {}
 export class EmptyPassageError extends Error {}
 
-export async function buildHifzPassage({ surahFrom, ayahFrom, surahTo, ayahTo, title }) {
-  const surahCache = new Map();
-  const getSurah = async (n) => {
-    if (!surahCache.has(n)) surahCache.set(n, await api.get(`/quran/surah/${n}`).then((d) => d.surah));
-    return surahCache.get(n);
-  };
-
+export function pageToHifzPassage(pageData) {
   const words = [];
-  let line = 0;
-  let bismillah = false;
-  for (let s = Number(surahFrom); s <= Number(surahTo); s++) {
-    const surah = await getSurah(s);
-    const fromA = s === Number(surahFrom) ? Number(ayahFrom) : 1;
-    const toA = s === Number(surahTo) ? Number(ayahTo) : surah.ayahCount;
-    // Die Basmala wird – wie in der Lese-Ansicht – nur dekorativ angezeigt,
-    // nie als zu erkennendes Wort erwartet (kein eigener Ayah-Vers).
-    if (s === Number(surahFrom) && fromA === 1 && surah.bismillah) bismillah = true;
-    for (const ayah of surah.ayahs) {
-      if (ayah.n < fromA || ayah.n > toA) continue;
-      line += 1;
-      const tokens = cleanQuran(ayah.arabic).trim().split(/\s+/).filter(Boolean);
-      tokens.forEach((text, i) => {
-        words.push({ id: `${s}:${ayah.n}:${i + 1}`, surah: s, ayah: ayah.n, position: i + 1, line, text });
+  const counter = {};
+  for (const line of pageData.lines || []) {
+    for (const w of line.words || []) {
+      if (w.e) continue; // Ayah-Endzeichen ist kein zu rezitierendes Wort
+      const [s, a] = w.v.split(':').map(Number);
+      counter[w.v] = (counter[w.v] || 0) + 1;
+      words.push({
+        id: `${w.v}:${counter[w.v]}`,
+        surah: s,
+        ayah: a,
+        position: counter[w.v],
+        line: line.n,
+        text: cleanQuran(w.t),
+        glyph: w.g || null, // nur fürs Rendering (echte Seitenschrift), nicht Teil der Engine-Validierung
       });
-      if (words.length > MAX_WORDS) {
-        throw new PassageTooLargeError(`Dieser Abschnitt hat mehr als ${MAX_WORDS} Wörter und ist für die Auswendig-Übung zu groß. Bitte einen kürzeren Bereich wählen.`);
-      }
     }
   }
-  if (!words.length) throw new EmptyPassageError('Kein Text im gewählten Bereich gefunden.');
+  if (!words.length) throw new EmptyPassageError('Kein Text auf dieser Seite gefunden.');
 
   return {
-    id: `hifz:${surahFrom}:${ayahFrom}-${surahTo}:${ayahTo}`,
-    title: title || (surahFrom === surahTo ? `Sure ${surahFrom}, Ayah ${ayahFrom}–${ayahTo}` : `Sure ${surahFrom}–${surahTo}`),
-    edition: 'quran-uthmani (Tanzil-Projekt)',
+    id: `hifz:page:${pageData.page}`,
+    title: `Seite ${pageData.page}`,
+    edition: pageData.font === 'v1' ? 'KFGQPC Uthmanic HAFS v1 (offizielle Mushaf-Seitenschrift)' : 'quran-uthmani',
     riwaya: "Hafs ʿan ʿĀṣim",
-    source: 'AlQuran Cloud API · derselbe Text, der auch in der Lese-Ansicht der DBZ-App angezeigt wird',
-    bismillah,
+    source: 'quran.com API v4 (verses/by_page) · dieselbe Seite wie in der Mushaf-Lese-Ansicht',
+    page: pageData.page,
+    juz: pageData.juz,
     words,
   };
 }

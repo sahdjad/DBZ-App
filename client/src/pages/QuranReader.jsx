@@ -5,29 +5,9 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
+import { ensurePageFont, isPageFontLoaded } from '../lib/mushafFont.js';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
-
-// Offizielle Mushaf-Seitenschrift (KFGQPC HAFS v1) je Seite laden. WICHTIG: die
-// Glyphen liegen im „Private Use Area"-Bereich – ohne die passende Schrift würden
-// sie als wirre Ersatzzeichen erscheinen. Darum wird die Schrift per FontFace-API
-// wirklich geladen und die Seite erst DANN als Glyphen dargestellt/vermessen.
-// Ausgeliefert vom eigenen Server (font-src 'self').
-const loadedFontPages = new Set();
-const fontPromises = new Map();
-function ensurePageFont(page) {
-  const p = Number(page);
-  if (!(p >= 1 && p <= 604)) return Promise.resolve(false);
-  if (loadedFontPages.has(p)) return Promise.resolve(true);
-  if (fontPromises.has(p)) return fontPromises.get(p);
-  let pr;
-  try {
-    const ff = new FontFace(`qcf-p${p}`, `url('/api/quran/font/v1/${p}') format('woff2')`, { display: 'swap' });
-    pr = ff.load().then((f) => { document.fonts.add(f); loadedFontPages.add(p); return true; }).catch(() => false);
-  } catch { pr = Promise.resolve(false); }
-  fontPromises.set(p, pr);
-  return pr;
-}
 
 // Tadschwid-Regel -> Farbe (Konvention wie quran.com). Die Regel-Namen kommen
 // ausgeschrieben aus der Datenquelle, daher sind die Farben eindeutig.
@@ -832,7 +812,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       ensurePageFont(pg.fontPage); ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); // (Nachbarn) vorladen
       // In der Tadschwid-Ansicht wird die farbige Schrift genutzt (keine
       // Glyphenschrift) -> kein Warten. Sonst erst zeigen, wenn Schrift da ist.
-      if (tajweed || loadedFontPages.has(pg.fontPage)) setFontReady(true);
+      if (tajweed || isPageFontLoaded(pg.fontPage)) setFontReady(true);
       else { setFontReady(false); ensurePageFont(pg.fontPage).then(() => { if (fontPageRef.current === pg.fontPage) setFontReady(true); }); }
     } else { fontPageRef.current = null; setFontReady(true); }
     if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
@@ -996,7 +976,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
   // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
   useLayoutEffect(() => {
-    const canFit = data && (tajweed || (data.font === 'v1' && loadedFontPages.has(data.fontPage)));
+    const canFit = data && (tajweed || (data.font === 'v1' && isPageFontLoaded(data.fontPage)));
     if (!canFit) { setGlyphFs(null); setGlyphW(null); return; }
     const numLines = data.lines.length;
     const measure = () => {
@@ -1118,7 +1098,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   // Glyphen nur nutzen, wenn die Seitenschrift wirklich geladen ist (sonst
   // würden wirre Ersatzzeichen erscheinen) – sonst lesbarer Text-Fallback.
   // In der Tadschwid-Ansicht wird stattdessen der farbige Text gezeigt.
-  const glyph = !!(data && data.font === 'v1' && !tajweed && loadedFontPages.has(data.fontPage));
+  const glyph = !!(data && data.font === 'v1' && !tajweed && isPageFontLoaded(data.fontPage));
   const pageLayout = glyph || tajweed; // volle Seiten-Layout (Blocksatz, Auto-Fit, Zoom)
   const fontLoading = !!(data && data.font === 'v1' && !tajweed && !fontReady);
 
