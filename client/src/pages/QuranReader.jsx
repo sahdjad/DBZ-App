@@ -1025,6 +1025,16 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       lines.forEach((l) => { l.style.justifyContent = 'flex-start'; }); // natürliche Breite messen
       let maxNat = 0;
       lines.forEach((l) => { if (l.scrollWidth > maxNat) maxNat = l.scrollWidth; });
+      // Sure-Kopf/Basmala-Zeilen (z. B. auf Seite 2, Beginn einer Sure) sind
+      // DEUTLICH höher als eine normale Textzeile, aber die Höhenformel unten
+      // ging bisher von lauter gleich hohen Zeilen aus -- auf Seiten mit
+      // Sure-Kopf lief der Inhalt dadurch über den sichtbaren Bereich hinaus
+      // ("Seite verschoben", Rest wirkte wie eine leere Fläche). Ihre echte
+      // Höhe bei REF=100px lässt sich nicht zuverlässig messen (der Sure-Name
+      // kann bei so großer Referenzschrift selbst umbrechen und die Messung
+      // verfälschen) -- stattdessen ein fester, konservativer Schätzwert: ein
+      // Sure-Kopf (Name + Basmala) zählt wie ~3 zusätzliche Textzeilen.
+      const headCount = inner.querySelectorAll('.mushaf-surah-head').length;
       lines.forEach((l, i) => { l.style.justifyContent = prevJc[i] || ''; });
       el.style.width = prevW; el.style.maxWidth = prevMax; el.style.fontSize = prevFs;
       if (maxNat <= 0) return;
@@ -1037,7 +1047,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       const gaps = (numLines - 1) * 1.8;
       const availH = Math.max(260, window.innerHeight - rectTop - 16 - 20);
       const fontByWidth = (REF * targetInnerW) / maxNat;
-      const fontByHeight = (availH - gaps - 6) / (numLines * 1.9);
+      const fontByHeight = (availH - gaps - 6) / ((numLines + headCount * 3) * 1.9);
       const fs = Math.max(12, Math.min(44, Math.min(fontByWidth, fontByHeight)));
       setGlyphFs(fs);
       // Die Seite bekommt IMMER die volle verfügbare Breite (nie die anhand
@@ -1304,8 +1314,10 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
         </div>
       )}
 
-      {/* Platz für die feste untere Seiten-Leiste, damit sie nichts verdeckt. */}
-      {data && <div className="h-16" aria-hidden="true" />}
+      {/* Platz für die feste untere Seiten-Leiste (+ mobile Tab-Leiste darunter),
+          damit sie den letzten Zeilen der Seite nichts verdeckt. Gemessen:
+          Leiste 67px + mobile Tab-Leiste 65.5px = ~147px, mit Puffer h-40 (160px). */}
+      {data && <div className="h-40 lg:h-20" aria-hidden="true" />}
       {data && <PageScrubber page={page} onNavigate={goto} />}
     </div>
   );

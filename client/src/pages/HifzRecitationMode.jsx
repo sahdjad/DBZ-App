@@ -53,7 +53,7 @@ function StartPicker({ surahs, onOpenSurah, onOpenPage, busy, error }) {
     <Card className="p-5">
       <div className="p-1 mb-3">
         <div className="text-ivory font-medium">Seite wählen</div>
-        <div className="text-xs text-sage-muted mt-0.5">Wie bei Tarteel: Sure wählen, die Seite ansehen, dann auf „Los" drücken.</div>
+        <div className="text-xs text-sage-muted mt-0.5">Sure wählen -- die Seite öffnet sich sofort. Dann auf „Los" drücken.</div>
       </div>
       {error && (
         <div className="rounded-lg border border-status-absent/40 bg-status-absent/10 p-3 text-sm text-status-absent flex items-start gap-2 mb-3">
@@ -64,7 +64,11 @@ function StartPicker({ surahs, onOpenSurah, onOpenPage, busy, error }) {
         <label className="block">
           <span className="text-sm text-sage">Sure</span>
           <div className="flex gap-2 mt-1">
-            <select className="input" value={surah} onChange={(e) => setSurah(e.target.value)}>
+            <select
+              className="input"
+              value={surah}
+              onChange={(e) => { setSurah(e.target.value); onOpenSurah(Number(e.target.value)); }}
+            >
               {(surahs || []).map((s) => <option key={s.n} value={s.n}>{s.n}. {s.name}</option>)}
             </select>
             <Button loading={busy} onClick={() => onOpenSurah(Number(surah))}>Seite öffnen</Button>
@@ -73,7 +77,18 @@ function StartPicker({ surahs, onOpenSurah, onOpenPage, busy, error }) {
         <label className="block">
           <span className="text-sm text-sage">oder Seite direkt (1–604)</span>
           <div className="flex gap-2 mt-1">
-            <input inputMode="numeric" className="input" placeholder="z. B. 1" value={pageInput} onChange={(e) => setPageInput(e.target.value)} />
+            <input
+              inputMode="numeric"
+              className="input"
+              placeholder="z. B. 1"
+              value={pageInput}
+              onChange={(e) => setPageInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                const p = Number(pageInput);
+                if (p >= 1 && p <= 604) onOpenPage(p);
+              }}
+            />
             <Button variant="outline" disabled={busy} onClick={() => { const p = Number(pageInput); if (p >= 1 && p <= 604) onOpenPage(p); }}>Öffnen</Button>
           </div>
         </label>
@@ -438,7 +453,7 @@ export default function HifzRecitationMode({ surahs }) {
           wechselt und den Übungsstand verliert. */}
       {!started && (
         <>
-          <div className="h-16" aria-hidden="true" />
+          <div className="h-40 lg:h-20" aria-hidden="true" />
           <PageScrubber page={page} onNavigate={loadPage} />
         </>
       )}
