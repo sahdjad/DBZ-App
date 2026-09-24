@@ -4,6 +4,9 @@ import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Tra
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
+import { cleanQuran } from '../lib/quranText.js';
+import HifzRecitationMode from './HifzRecitationMode.jsx';
+import { HifzContent } from './Hifz.jsx';
 
 const toArabicNum = (n) => String(n).replace(/\d/g, (d) => '٠١٢٣٤٥٦٧٨٩'[d]);
 
@@ -27,11 +30,6 @@ function ensurePageFont(page) {
   fontPromises.set(p, pr);
   return pr;
 }
-
-// Entfernt NUR die „Null"-Zeichen für stumme Buchstaben (U+06DF/U+06E0), die
-// in der Mushaf-Schrift als große gefüllte Punkte erscheinen. Buchstaben,
-// Vokalzeichen, Sukun und Ayah-Zeichen bleiben unangetastet.
-const cleanQuran = (s) => (s || '').replace(/[۟۠]/g, '');
 
 // Tadschwid-Regel -> Farbe (Konvention wie quran.com). Die Regel-Namen kommen
 // ausgeschrieben aus der Datenquelle, daher sind die Farben eindeutig.
@@ -113,7 +111,14 @@ const stripHtml = (html) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
+const QURAN_TABS = [
+  ['lesen', 'Lesen'],
+  ['auswendig', 'Auswendig rezitieren'],
+  ['lernstand', 'Lernstand'],
+];
+
 export default function QuranReader() {
+  const [tab, setTab] = useState('lesen');
   const [surahs, setSurahs] = useState(null);
   const [marks, setMarks] = useState(null);
   const [selected, setSelected] = useState(null); // { n, ayah }
@@ -126,17 +131,30 @@ export default function QuranReader() {
 
   return (
     <AppLayout title="Qur'an">
-      {pageView ? (
-        <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null} initialTajweed={!!pageView.tajweed}
-          onBack={() => { setPageView(null); loadMarks(); }} onMarksChanged={loadMarks} />
-      ) : selected ? (
-        <SurahView n={selected.n} targetAyah={selected.ayah} surahs={surahs} onBack={() => { setSelected(null); loadMarks(); }}
-          onMarksChanged={loadMarks} onOpenPages={(surah, tajweed) => openPages({ surah, tajweed })}
-          onChangeSurah={(nn) => setSelected({ n: nn, ayah: null })} />
-      ) : (
-        <SurahList surahs={surahs} marks={marks} onSelect={(n, ayah) => setSelected({ n, ayah: ayah || null })}
-          onOpenPages={() => openPages()} onMarksChanged={loadMarks} />
+      <div className="flex items-center gap-2 mb-4 flex-wrap" role="tablist" aria-label="Qur'an-Bereich">
+        {QURAN_TABS.map(([k, label]) => (
+          <Button key={k} role="tab" aria-selected={tab === k} variant={tab === k ? 'primary' : 'outline'} size="sm" onClick={() => setTab(k)}>
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      {tab === 'lesen' && (
+        pageView ? (
+          <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null} initialTajweed={!!pageView.tajweed}
+            onBack={() => { setPageView(null); loadMarks(); }} onMarksChanged={loadMarks} />
+        ) : selected ? (
+          <SurahView n={selected.n} targetAyah={selected.ayah} surahs={surahs} onBack={() => { setSelected(null); loadMarks(); }}
+            onMarksChanged={loadMarks} onOpenPages={(surah, tajweed) => openPages({ surah, tajweed })}
+            onChangeSurah={(nn) => setSelected({ n: nn, ayah: null })} />
+        ) : (
+          <SurahList surahs={surahs} marks={marks} onSelect={(n, ayah) => setSelected({ n, ayah: ayah || null })}
+            onOpenPages={() => openPages()} onMarksChanged={loadMarks} />
+        )
       )}
+
+      {tab === 'auswendig' && <HifzRecitationMode surahs={surahs} />}
+      {tab === 'lernstand' && <HifzContent />}
     </AppLayout>
   );
 }
@@ -272,17 +290,23 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
 
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
 
+  // Schneller Suren-Wechsel: eine spät eintreffende Antwort für eine bereits
+  // verlassene Sure darf nicht mehr die aktuell angezeigte Sure überschreiben.
+  const loadReq = useRef(0);
+  const audioReq = useRef(0);
   const load = () => {
     setError(null); setData(null);
+    const req = ++loadReq.current;
     api.get(`/quran/surah/${n}`)
-      .then((d) => { setData(d.surah); setRange({ from: 1, to: d.surah.ayahCount }); })
-      .catch((e) => setError(e.message));
+      .then((d) => { if (req === loadReq.current) { setData(d.surah); setRange({ from: 1, to: d.surah.ayahCount }); } })
+      .catch((e) => { if (req === loadReq.current) setError(e.message); });
   };
   const loadAudio = (rec) => {
     setAudioErr(null); setAudio(null);
+    const req = ++audioReq.current;
     api.get(`/quran/audio/${n}?reciter=${rec || reciter}`)
-      .then((d) => setAudio(d.audio))
-      .catch((e) => setAudioErr(e.message));
+      .then((d) => { if (req === audioReq.current) setAudio(d.audio); })
+      .catch((e) => { if (req === audioReq.current) setAudioErr(e.message); });
   };
   useEffect(() => {
     stop(); load(); loadAudio(reciter); setTajweed(null);
@@ -815,12 +839,18 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     } else { fontPageRef.current = null; setFontReady(true); }
     if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
   };
+  // Schnelles Blättern/Springen: eine spät eintreffende Antwort für eine
+  // bereits verlassene Seite darf die inzwischen angezeigte Seite nicht ersetzen.
+  const pageReq = useRef(0);
   const loadPage = (p) => {
     setError(null);
     const cached = pageDataCache.current.get(p);
     if (cached) { applyPage(cached); prefetchNeighbors(p); return; }
     setData(null);
-    fetchPageData(p).then((pg) => { applyPage(pg); prefetchNeighbors(p); }).catch((e) => setError(e.message));
+    const req = ++pageReq.current;
+    fetchPageData(p)
+      .then((pg) => { if (req === pageReq.current) { applyPage(pg); prefetchNeighbors(p); } })
+      .catch((e) => { if (req === pageReq.current) setError(e.message); });
   };
   useEffect(() => { if (page != null) { stopAudio(); setSheetKey(null); setShowTafsir(false); loadPage(page); localStorage.setItem('dbz-mushaf-page', String(page)); window.scrollTo?.({ top: 0 }); } /* eslint-disable-next-line */ }, [page]);
   useEffect(() => () => { const a = elRef.current; if (a) { a.pause(); } }, []);

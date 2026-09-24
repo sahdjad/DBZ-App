@@ -1,0 +1,72 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { HifzEngine, normalize, validatePassage } from '../hifzEngine.js';
+// Neutral Arabic words, NOT Quran fixtures or a Quran source.
+const passage = (tokens = ['كتاب', 'قلم', 'باب', 'بيت']) => ({
+  id:'test', title:'Technischer Test', edition:'test', riwaya:'test', source:'synthetic non-Quran',
+  words:tokens.map((text,i)=>({ id:`test:${i}`, surah:1,ayah:1,position:i+1,line:1,text }))
+});
+function send(e, text, id = `s${e.seen.size}`, extra = {}) {
+  return e.accept({session:e.session,id,final:true,text,...extra});
+}
+test('matching final tokens advance in order',()=>{
+  const e=new HifzEngine(passage()); assert.equal(send(e,'كتاب قلم').index,2);
+  assert.equal(send(e,'باب بيت').status,'complete');
+});
+test('interim transcript never reveals',()=>{
+  const e=new HifzEngine(passage()); assert.equal(send(e,'كتاب قلم','x',{final:false}).index,0);
+  assert.equal(send(e,'كتاب','x').index,1);
+});
+test('duplicate event is ignored',()=>{
+  const e=new HifzEngine(passage()); send(e,'كتاب','x'); assert.equal(send(e,'قلم','x').index,1);
+});
+test('old session cannot mutate reset session',()=>{
+  const e=new HifzEngine(passage()); const session=e.session; e.reset();
+  assert.equal(send(e,'كتاب','x',{session}).index,0);
+});
+test('does not jump past omitted word',()=>{
+  const e=new HifzEngine(passage()); assert.equal(send(e,'كتاب باب بيت').index,1);
+});
+test('self correction resumes without skipping',()=>{
+  const e=new HifzEngine(passage()); send(e,'كتاب خطأ');
+  assert.equal(send(e,'قلم باب').index,3);
+});
+test('unambiguous suffix repetition is allowed',()=>{
+  const e=new HifzEngine(passage()); send(e,'كتاب قلم');
+  assert.equal(send(e,'كتاب قلم باب').index,3);
+});
+test('identical adjacent words remain conservative',()=>{
+  const e=new HifzEngine(passage(['كتاب','كتاب','باب'])); send(e,'كتاب');
+  const s=send(e,'كتاب'); assert.equal(s.index,1); assert.equal(s.status,'uncertain');
+});
+test('one mismatch is uncertain, second is suspected, never certified',()=>{
+  const e=new HifzEngine(passage()); assert.equal(send(e,'خطأ').status,'uncertain');
+  assert.equal(send(e,'خطأ').status,'suspected'); assert.equal(e.index,0);
+});
+test('dismissal prevents repeated red flag at same position',()=>{
+  const e=new HifzEngine(passage()); send(e,'خطأ');send(e,'خطأ');e.dismissMismatch();
+  send(e,'خطأ'); assert.equal(send(e,'خطأ').status,'uncertain');
+  assert.equal(send(e,'كتاب').index,1);
+});
+test('hint does not advance and subsequent match is assisted',()=>{
+  const e=new HifzEngine(passage()); assert.equal(e.hint().index,0);e.hint();
+  const s=send(e,'كتاب'); assert.equal(s.hints.length,1);
+  assert.ok(s.history.some(x=>x.kind==='assisted-match'));
+});
+test('empty or unreliable speech does not count as a mistake',()=>{
+  const e=new HifzEngine(passage());send(e,'   ');send(e,'كتاب','b',{reliable:false});
+  assert.equal(e.index,0);assert.equal(e.mismatch,null);
+});
+test('original text is preserved; vowel changes not graded',()=>{
+  const p=passage(['كِتَاب']);const e=new HifzEngine(p);
+  assert.equal(e.passage.words[0].text,'كِتَاب');assert.equal(send(e,'كتاب').index,1);
+  assert.notEqual(normalize('أمل'),normalize('امل'));
+});
+test('duplicate IDs, malformed and unordered data rejected',()=>{
+  const p=passage();p.words[1].id=p.words[0].id;assert.throws(()=>validatePassage(p));
+  const p2=passage();p2.words[2].position=9;assert.throws(()=>validatePassage(p2));
+  assert.throws(()=>validatePassage({}));
+});
+test('completion cannot be advanced further',()=>{
+  const e=new HifzEngine(passage(['كتاب']));send(e,'كتاب');assert.equal(send(e,'قلم').index,1);
+});

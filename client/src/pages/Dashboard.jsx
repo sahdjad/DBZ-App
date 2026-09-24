@@ -220,6 +220,9 @@ function AdminHome({ d }) {
   const s = d.stats;
   return (
     <div className="space-y-4">
+      {s.pendingUsers > 0 && (
+        <ActionCard to="/admin?tab=pending" icon={Users2} label="Registrierung(en) warten auf Freigabe" count={s.pendingUsers} />
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Stat label="Nutzer" value={s.users} />
         <Stat label="Schüler" value={s.students} />

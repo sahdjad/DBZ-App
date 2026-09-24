@@ -62,7 +62,7 @@ export default function Materialien() {
       {!list ? <Spinner /> : list.length === 0 ? (
         <Card className="p-8 text-center text-sage-muted">
           <FolderOpen size={32} className="mx-auto mb-3 opacity-50" />
-          Noch keine Materialien.
+          Noch keine Materialien. Hier erscheinen Dateien und Links, die deine Klasse zum Lernen bereitgestellt bekommt{isManager ? ' – oben rechts hochladen.' : '.'}
         </Card>
       ) : (
         <div className="space-y-5">

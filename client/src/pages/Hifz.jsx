@@ -10,13 +10,20 @@ const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const GOAL_TYPES = { new_hifz: 'Neu auswendig', murajaah: "Muraja'ah", consolidation: 'Festigung', test: 'Prüfung' };
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : 'offen');
 
-export default function Hifz() {
+// Reine Inhaltskomponente (ohne AppLayout) – wiederverwendbar als eigene
+// Seite (unten) UND als „Lernstand"-Tab im Qur'an-Bereich (QuranReader.jsx),
+// damit die Lernziel-/Bewertungslogik nicht doppelt existiert.
+export function HifzContent() {
   const { user } = useAuth();
   const [surahs, setSurahs] = useState([]);
   useEffect(() => { api.get('/surahs').then((d) => setSurahs(d.surahs)); }, []);
+  return MANAGER.includes(user.role) ? <ManagerView surahs={surahs} /> : <ReadView role={user.role} surahs={surahs} />;
+}
+
+export default function Hifz() {
   return (
     <AppLayout title="Hifz & Muraja'ah">
-      {MANAGER.includes(user.role) ? <ManagerView surahs={surahs} /> : <ReadView role={user.role} surahs={surahs} />}
+      <HifzContent />
     </AppLayout>
   );
 }
@@ -207,8 +214,15 @@ function ManagerView({ surahs }) {
   useEffect(() => {
     if (classId) api.get(`/classes/${classId}/students`).then((d) => { setStudents(d.students); setStudentId(d.students[0]?.id || ''); });
   }, [classId]);
-  const load = () => studentId && api.get(`/quran-goals?studentId=${studentId}`).then(setData);
-  useEffect(() => { setData(null); load(); }, [studentId]);
+  // Schneller Schülerwechsel: eine spät eintreffende Antwort für einen bereits
+  // verlassenen Schüler darf die inzwischen angezeigten Daten nicht überschreiben.
+  const loadReq = useRef(0);
+  const load = () => {
+    if (!studentId) return;
+    const req = ++loadReq.current;
+    api.get(`/quran-goals?studentId=${studentId}`).then((d) => { if (req === loadReq.current) setData(d); });
+  };
+  useEffect(() => { setData(null); load(); /* eslint-disable-next-line */ }, [studentId]);
 
   const assign = async (goal) => {
     try { await api.post('/quran-goals', { ...goal, studentId }); toast.push('Ziel zugewiesen', 'success'); setShowForm(false); load(); }

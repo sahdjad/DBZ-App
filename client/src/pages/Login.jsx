@@ -126,7 +126,7 @@ export default function Login() {
                   required
                 />
               </label>
-              <Button type="submit" size="lg" className="w-full" disabled={busy}>
+              <Button type="submit" size="lg" className="w-full" loading={busy}>
                 <LogIn size={18} /> {busy ? 'Anmelden …' : 'Anmelden'}
               </Button>
             </form>

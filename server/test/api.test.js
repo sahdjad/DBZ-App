@@ -929,6 +929,29 @@ test('Leitungs-Überblick: Kennzahlen aggregiert, nur für Leitung/Admin', async
   assert.equal((await teacher('GET', '/leadership/overview')).status, 403);
 });
 
+test('Dashboard: jede Rolle bekommt ihre eigene Startseiten-Kennung (nicht die des Lehrers)', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const dAdmin = await admin('GET', '/dashboard');
+  assert.equal(dAdmin.data.role, 'admin', 'Admin sieht die Verwaltungs-Startseite, nicht die Lehrer-Startseite');
+  assert.ok(dAdmin.data.stats, 'Admin-Kennzahlen vorhanden');
+
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.equal((await leitung('GET', '/dashboard')).data.role, 'admin');
+
+  const teacher = await loginAs('lehrer@dbz.de');
+  const dTeacher = await teacher('GET', '/dashboard');
+  assert.equal(dTeacher.data.role, 'lehrer');
+  assert.ok(Array.isArray(dTeacher.data.todaySessions));
+
+  const sprecher = await loginAs('sprecher@dbz.de');
+  const dSprecher = await sprecher('GET', '/dashboard');
+  assert.equal(dSprecher.data.role, 'klassensprecher', 'Klassensprecher bekommt eigene Kennung für die Zusatzkarte');
+  assert.ok(Array.isArray(dSprecher.data.openAssignments), 'bekommt trotzdem die Schüler-Felder (Aufgaben)');
+
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('GET', '/dashboard')).data.role, 'schueler');
+});
+
 test('Leitungs-Überblick: Schülerzahl org-weit vs. Klassenzuordnung -- unassignedStudents erklärt die Differenz', async () => {
   const leitung = await loginAs('leitung@dbz.de');
   const admin = await loginAs('admin@dbz.de'); // super_admin: legt Nutzer sofort an (kein pending change_request)
