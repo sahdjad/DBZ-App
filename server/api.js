@@ -4515,14 +4515,22 @@ router.get('/dashboard', requireAuth, (req, res) => {
     const open = assignments.filter((a) => ['not_opened', 'submitted', 'revision_required'].includes(a.studentStatus));
     return res.json({
       ...base,
-      role: 'schueler',
+      // Klassensprecher bleibt Schüler seiner Klasse (gleiche Felder), bekommt
+      // aber eine eigene role-Kennung, damit die Startseite zusätzlich die
+      // Klassensprecher-Karte (Protokoll) zeigen kann.
+      role: req.user.role === ROLES.KLASSENSPRECHER ? 'klassensprecher' : 'schueler',
       attendance: attendanceStats(req.user.id),
       openAssignments: open.sort(byDueThenNew).slice(0, 5),
       nextSession: nextSessionFor(req.user),
     });
   }
 
-  if (isClassManager(req.user)) {
+  // Nur echte Lehrkräfte (nicht Admin/Leitung) bekommen die Lehrer-Startseite:
+  // isClassManager()/CLASS_MANAGERS schließt Super-Admin/Leitung mit ein (für
+  // Berechtigungsprüfungen dort korrekt), die Startseiten-Auswahl braucht hier
+  // aber die engere Rolle, sonst sähe Admin/Leitung nie die eigene Verwaltungs-
+  // Startseite (bisheriger, unbemerkter Fehler: isClassManager traf zuerst zu).
+  if (TEACHING_ROLES.includes(req.user.role)) {
     const classes = visibleClasses(req.user);
     const todaySessions = classes
       .filter((c) => canManageClass(req.user, c.id))
@@ -4551,17 +4559,6 @@ router.get('/dashboard', requireAuth, (req, res) => {
       return child ? { id: child.id, name: child.name, attendance: attendanceStats(child.id) } : null;
     }).filter(Boolean);
     return res.json({ ...base, role: 'eltern', children });
-  }
-
-  if (req.user.role === ROLES.KLASSENSPRECHER) {
-    const classId = (req.user.classIds || [])[0];
-    const klass = findClass(classId);
-    return res.json({
-      ...base,
-      role: 'klassensprecher',
-      attendance: attendanceStats(req.user.id),
-      todaySession: klass ? sessionView(ensureTodaySession(klass), klass, req.user) : null,
-    });
   }
 
   // Admin/Leitung

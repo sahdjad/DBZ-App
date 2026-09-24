@@ -5,20 +5,24 @@ import { X, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
 const cx = (...c) => c.filter(Boolean).join(' ');
 
 // --- Button ------------------------------------------------------------------
+// loading=true zeigt einen Spinner, setzt aria-busy und deaktiviert den Button
+// automatisch (verhindert doppelte Übermittlung bei Formularen).
 export function Button({
   as: Tag = 'button',
   variant = 'primary',
   size = 'md',
+  loading = false,
   className = '',
   children,
+  disabled,
   ...props
 }) {
   const base =
     'inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50 disabled:pointer-events-none';
   const sizes = {
     sm: 'text-sm px-3 py-1.5',
-    md: 'text-sm px-4 py-2.5',
-    lg: 'text-base px-6 py-3',
+    md: 'text-sm px-4 py-2.5 min-h-[46px]',
+    lg: 'text-base px-6 py-3 min-h-[48px]',
   };
   const variants = {
     // Primär: tiefes Waldgrün, elfenbeinfarbene Schrift, weiche Tiefe.
@@ -31,7 +35,13 @@ export function Button({
     danger: 'border border-status-absent/40 text-status-absent hover:bg-status-absent/10',
   };
   return (
-    <Tag className={cx(base, sizes[size], variants[variant], className)} {...props}>
+    <Tag
+      className={cx(base, sizes[size], variants[variant], className)}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
+      {...props}
+    >
+      {loading && <span className="h-3.5 w-3.5 rounded-full border-2 border-current/30 border-t-current animate-spin motion-reduce:animate-none shrink-0" aria-hidden="true" />}
       {children}
     </Tag>
   );

@@ -126,7 +126,10 @@ function ManagerView() {
       )}
 
       {list.length === 0 ? (
-        <Card className="p-6 text-sage-muted">Noch keine Aufgaben erstellt.</Card>
+        <Card className="p-6 text-sage-muted">
+          <p>Hier erscheinen die Aufgaben, die du dieser Klasse stellst, mit Abgabestatus je Schüler.</p>
+          {!showForm && <Button size="sm" className="mt-3" onClick={() => setShowForm(true)}>Erste Aufgabe erstellen</Button>}
+        </Card>
       ) : (
         list.map((a) => (
           <Card key={a.id} className="p-4 flex items-center justify-between gap-3">
