@@ -716,6 +716,11 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const [playingKey, setPlayingKey] = useState(null); // "surah:ayah"
   const [playingWord, setPlayingWord] = useState(null); // "surah:ayah#wortNr" (Mitlesen)
   const [sheetKey, setSheetKey] = useState(null); // ausgewählte Ayah (Aktionsleiste)
+  const sheetRef = useRef(null);
+  // Aktionsleiste sichtbar ins Bild scrollen -- auf dem Handy sonst hinter
+  // der unteren Navigationsleiste "versteckt" (Nutzer muss sonst erst
+  // erraten, dass darunter noch etwas ist).
+  useEffect(() => { if (sheetKey && sheetRef.current) sheetRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); }, [sheetKey]);
   const [marked, setMarked] = useState(new Set()); // "s:a"
   const [tafsirEd, setTafsirEd] = useState('de');
   const [tafsir, setTafsir] = useState({}); // `${ed}:${s:a}` -> {…}
@@ -932,6 +937,17 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     if (cached) { playWith(cached, verseKey); return; } // Normalfall: bereits vorgeladen
     ensureAudio(s).then((ad) => playWith(ad, verseKey)).catch(() => toast.push('Audio konnte nicht geladen werden', 'error'));
   }
+  // Gut sichtbarer Abspiel-Knopf oben (statt nur über das Antippen eines
+  // Wortes erreichbar -- auf dem Handy sonst schwer zu finden). Startet ab
+  // der ersten Ayah dieser Seite bzw. pausiert/setzt fort, was schon läuft.
+  const topPlay = () => {
+    if (playingKey && !winRef.current.stopped) {
+      const el = elRef.current;
+      if (el) { if (elPaused) el.play().catch(() => {}); else el.pause(); }
+      return;
+    }
+    if (data?.firstVerse) playFrom(data.firstVerse);
+  };
 
   const tapWord = (verseKey) => { setSheetKey(verseKey); setShowTafsir(false); };
   const onPlaySheet = (verseKey) => {
@@ -1131,6 +1147,11 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
           </div>
           <Button size="sm" variant="outline" onClick={() => goto(page + 1)} disabled={!page || page >= 604}>Weiter <ChevronLeft size={16} /></Button>
         </div>
+        <div className="mt-3 flex justify-center">
+          <Button onClick={topPlay} disabled={!data}>
+            {playingKey && !winRef.current.stopped && !elPaused ? <><Pause size={16} /> Pause</> : <><Play size={16} /> Abspielen</>}
+          </Button>
+        </div>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
           <label className="flex items-center gap-1">
             <span className="text-sage-muted">Juzʼ</span>
@@ -1237,6 +1258,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
 
       {/* Aktionsleiste zur ausgewählten Ayah */}
       {sheetKey && (
+        <div ref={sheetRef}>
         <Card className="p-4 mt-4 border-mint/40">
           <div className="flex items-center justify-between mb-3">
             <div className="text-sm text-ivory">Sure {sheetKey.split(':')[0]} · Ayah {sheetKey.split(':')[1]}</div>
@@ -1264,6 +1286,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
           </div>
           {showTafsir && <TafsirPanel data={tafsir[`${tafsirEd}:${sheetKey}`]} edition={tafsirEd} onEdition={changeEd} />}
         </Card>
+        </div>
       )}
     </div>
   );

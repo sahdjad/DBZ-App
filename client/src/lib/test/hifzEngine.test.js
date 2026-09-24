@@ -60,7 +60,17 @@ test('empty or unreliable speech does not count as a mistake',()=>{
 test('original text is preserved; vowel changes not graded',()=>{
   const p=passage(['كِتَاب']);const e=new HifzEngine(p);
   assert.equal(e.passage.words[0].text,'كِتَاب');assert.equal(send(e,'كتاب').index,1);
-  assert.notEqual(normalize('أمل'),normalize('امل'));
+});
+test('hamza-bearing letter forms are folded for comparison (ASR rarely reproduces them), display text is untouched',()=>{
+  assert.equal(normalize('أمل'),normalize('امل'));
+  const p=passage(['أمل']);const e=new HifzEngine(p);
+  assert.equal(e.passage.words[0].text,'أمل'); // Mushaf-Schreibweise bleibt auf dem Bildschirm erhalten
+  assert.equal(send(e,'امل').index,1); // Erkennungstext ohne Hamza zählt trotzdem als Treffer
+});
+test('alif maqsura and hamza-on-waw/ya are folded for comparison too',()=>{
+  assert.equal(normalize('على'),normalize('علي'));
+  assert.equal(normalize('سؤال'),normalize('سوال'));
+  assert.equal(normalize('سئل'),normalize('سيل'));
 });
 test('duplicate IDs, malformed and unordered data rejected',()=>{
   const p=passage();p.words[1].id=p.words[0].id;assert.throws(()=>validatePassage(p));
