@@ -72,6 +72,26 @@ test('alif maqsura and hamza-on-waw/ya are folded for comparison too',()=>{
   assert.equal(normalize('سؤال'),normalize('سوال'));
   assert.equal(normalize('سئل'),normalize('سيل'));
 });
+test('ta marbuta is folded to ha for comparison (ASR transcripts routinely write it as ه)',()=>{
+  assert.equal(normalize('رحمة'),normalize('رحمه'));
+  const p=passage(['رحمة']);const e=new HifzEngine(p);
+  assert.equal(e.passage.words[0].text,'رحمة'); // Mushaf-Schreibweise bleibt erhalten
+  assert.equal(send(e,'رحمه').index,1);
+});
+test('a single mis-heard letter within a long-enough word is still accepted (bounded edit distance)',()=>{
+  const p=passage(['العالمين']);const e=new HifzEngine(p);
+  assert.equal(send(e,'العالمون').index,1); // ein Buchstabe abweichend, sonst identisch
+});
+test('two or more mis-heard letters are NOT tolerated (would risk accepting a different word)',()=>{
+  const p=passage(['العالمين']);const e=new HifzEngine(p);
+  const s=send(e,'العاصفين'); // zwei Buchstaben abweichend
+  assert.equal(s.index,0); assert.equal(s.status,'uncertain');
+});
+test('short words (<=3 letters) are never fuzzy-matched, only exact',()=>{
+  const p=passage(['من']);const e=new HifzEngine(p);
+  const s=send(e,'عن'); // ein Buchstabe abweichend, aber ein komplett anderes, kurzes Wort
+  assert.equal(s.index,0); assert.equal(s.status,'uncertain');
+});
 test('a single stray extra word in the transcript is ignored, not a mistake',()=>{
   const e=new HifzEngine(passage()); // كتاب قلم باب بيت
   const s=send(e,'كتاب اه قلم باب بيت');

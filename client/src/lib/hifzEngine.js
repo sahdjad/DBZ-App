@@ -18,8 +18,38 @@ export function normalize(text) {
     .replace(/\u0624/g, '\u0648') // hamza on waw -> bare waw
     .replace(/\u0626/g, '\u064A') // hamza on ya -> bare ya
     .replace(/\u0621/g, '') // standalone hamza: frequently dropped by ASR transcripts
+    .replace(/\u0629/g, '\u0647') // ta marbuta -> ha: ASR transcripts routinely write it as \u0647
     .replace(/[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u0640]/g, '')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = new Array(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0]; dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = tmp;
+    }
+  }
+  return dp[n];
+}
+// Toleriert einen einzelnen ASR-Buchstabenfehler INNERHALB eines Wortes
+// (z. B. ein falsch erkannter Laut) nach der Normalisierung oben -- ohne ein
+// komplett anderes, \u00E4hnlich aussehendes Wort f\u00E4lschlich als Treffer zu
+// werten. Nur ab 4 Zeichen und h\u00F6chstens 1 Bearbeitungsschritt Unterschied:
+// kurze W\u00F6rter (2-3 Buchstaben) sind im Arabischen oft eigene, unterschiedliche
+// W\u00F6rter (z. B. \u0645\u0646 / \u0639\u0646), da w\u00E4re jede Toleranz riskant.
+function closeEnough(a, b) {
+  if (a === b) return true;
+  if (a.length < 4 || b.length < 4) return false;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  return levenshtein(a, b) <= 1;
 }
 
 export function validatePassage(input) {
@@ -140,7 +170,7 @@ export class HifzEngine {
     const INSERTION_LOOKAHEAD = 3;
     let i = offset;
     while (i < tokens.length && this.index < words.length) {
-      if (tokens[i] === words[this.index].token) {
+      if (tokens[i] === words[this.index].token || closeEnough(tokens[i], words[this.index].token)) {
         if (this.mismatch) this.history.push({ kind: 'recovered', index: this.index });
         this.history.push({ kind: this.hints.has(this.index) ? 'assisted-match' : 'transcript-match', index: this.index });
         this.index++;

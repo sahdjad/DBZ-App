@@ -379,16 +379,19 @@ export default function HifzRecitationMode({ surahs }) {
                       <span
                         key={wi}
                         aria-hidden={!visible}
-                        style={glyph && visible ? { fontFamily: `qcf-p${pageData.fontPage}` } : undefined}
+                        style={glyph ? { fontFamily: `qcf-p${pageData.fontPage}` } : undefined}
                         className={[
                           'mushaf-word',
                           isCurrent && 'is-word-active',
                           isSuspected && 'ring-1 ring-status-absent/60 text-status-absent',
                           visible && !isCurrent && !isSuspected && wasHinted && 'text-sage-muted',
-                          !visible && 'invisible',
+                          // Verdecktes Wort behaelt seine echte Breite (kein Platzhalter-Text)
+                          // -- die Seite springt dadurch nicht bei jeder Aufdeckung, und wirkt
+                          // als ruhige Flaeche statt als Wort-fuer-Wort-Liste.
+                          !visible && 'mushaf-word-hidden',
                         ].filter(Boolean).join(' ')}
                       >
-                        {visible ? (glyph ? w.g || w.t : w.t) : '   '}{glyph && visible ? '' : ' '}
+                        {glyph ? w.g || w.t : w.t}{glyph ? '' : ' '}
                       </span>
                     );
                   })}

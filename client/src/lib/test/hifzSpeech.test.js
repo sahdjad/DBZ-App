@@ -31,8 +31,29 @@ test('stop invalidates pending callbacks and detaches handlers',()=>{
   old({resultIndex:0,results:[result('x')]});assert.equal(segments.length,0);
   assert.equal(r.onresult,null);assert.equal(r.aborted,true);
 });
-test('end pauses without automatic microphone restart',()=>{
-  const {adapter,states,r}=setup();r.onend();assert.equal(adapter.recognition,null);
+test('a benign browser-side end restarts listening automatically (field evidence: Arabic/ar-SA continuous sessions end on their own after a short pause even with continuous=true -- without an automatic restart the mic silently stops mid-recitation while the reciter keeps going, unnoticed)',()=>{
+  const {states,r}=setup();
+  r.onend();
+  const r2=Recognition.instances.at(-1);
+  assert.notEqual(r2,r); // eine frische Recognition-Instanz wurde gestartet
+  assert.equal(states.some(s=>s[0]==='paused'),false); // fürs UI unbemerkt
+  assert.equal(states.at(-1)[0],'listening');
+});
+test('the explicit stop() (Pause button) is never overridden by an automatic restart',()=>{
+  const {adapter,states,r}=setup();
+  const before=states.length;
+  adapter.stop();
+  assert.equal(r.onend,null); // stop() trennt die Handler -- kein onend kann mehr feuern
+  assert.equal(adapter.recognition,null);
+  assert.deepEqual(states.slice(before),[]); // kein neuer Zustand, kein Neustart
+});
+test('automatic restarts are capped to avoid a tight loop on a persistently broken device',()=>{
+  const {adapter,states}=setup();
+  const before=Recognition.instances.length;
+  for (let i=0;i<10;i++) Recognition.instances.at(-1).onend();
+  // Höchstens 6 automatische Neustarts (+ die ursprüngliche Instanz), dann
+  // wird ehrlich aufgegeben statt endlos weiterzuversuchen.
+  assert.equal(Recognition.instances.length-before,6);
   assert.equal(states.at(-1)[0],'paused');
 });
 test('permission error aborts and reports meaningful state',()=>{
