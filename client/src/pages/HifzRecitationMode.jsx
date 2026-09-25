@@ -182,6 +182,7 @@ export default function HifzRecitationMode({ surahs }) {
     try {
       const d = await api.get(`/quran/page/${target}`).then((r) => r.page);
       if (req !== pageReq.current) return;
+      try { localStorage.setItem('dbz-mushaf-page', String(target)); } catch { /* egal */ }
       setPageData(d); setPage(target); setStarted(false);
       engineRef.current = null; setEngineState(null);
       setCapture('idle'); setCaptureError(null); setInterim(''); setReadMode(false);
@@ -201,6 +202,18 @@ export default function HifzRecitationMode({ surahs }) {
     catch { setPageError('Seite konnte nicht ermittelt werden.'); setLoadingPage(false); }
   };
   const goPage = (delta) => { if (page != null) loadPage(page + delta); };
+
+  // Direkt wie in "Lesen" starten: sofort eine Seite zeigen (zuletzt
+  // angesehene Seite -- derselbe Schlüssel wie die Mushaf-Lese-Ansicht, damit
+  // beide Tabs auf derselben Seite bleiben -- sonst Seite 1), statt erst eine
+  // Sure aus einer Liste wählen zu müssen. Die Sure-Auswahl bleibt über
+  // "Andere Seite" weiterhin erreichbar.
+  useEffect(() => {
+    let saved = 1;
+    try { const n = Number(localStorage.getItem('dbz-mushaf-page')); if (n >= 1 && n <= 604) saved = n; } catch { /* egal */ }
+    loadPage(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const start = () => {
     if (!pageData || !consent) return;
