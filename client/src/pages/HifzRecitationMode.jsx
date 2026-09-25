@@ -20,7 +20,7 @@ import { api } from '../lib/api.js';
 import { HifzEngine } from '../lib/hifzEngine.js';
 import { BrowserSpeech } from '../lib/hifzSpeech.js';
 import { pageToHifzPassage } from '../lib/hifzPassage.js';
-import { ensurePageFont, isPageFontLoaded } from '../lib/mushafFont.js';
+import { ensurePageFont, isPageFontLoaded, useMushafAutoFit } from '../lib/mushafFont.js';
 
 // Bewusst zurückhaltend formuliert: ein einzelner unsicherer Treffer (Status
 // "uncertain") ist normal (ASR-Rauschen, kurze Pause) und soll nicht wie ein
@@ -117,6 +117,22 @@ export default function HifzRecitationMode({ surahs }) {
   const readModeRef = useRef(false);
   const heardRef = useRef(false);
   useEffect(() => { readModeRef.current = readMode; }, [readMode]);
+
+  // fontReady löst nur den Re-Render nach dem Ladeversuch aus; isPageFontLoaded
+  // ist die tatsächliche Quelle der Wahrheit (kann false bleiben, wenn das
+  // Laden fehlschlug) -- sonst würden bei Fehlschlag Ersatzzeichen erscheinen.
+  const glyph = !!(pageData?.font === 'v1' && fontReady && isPageFontLoaded(pageData.fontPage));
+  // Echte Seitenschrift + Auto-Fit-Layout (dieselbe Logik wie die
+  // Mushaf-Lese-Ansicht -- siehe useMushafAutoFit): die Seite füllt Breite UND
+  // Höhe des verfügbaren Platzes, statt einer festen, viewport-breitenbasierten
+  // Schriftgröße, die den tatsächlichen Kartenrahmen ignoriert (führte dazu,
+  // dass Zeilen nur die rechte Kartenhälfte füllten, links blieb es leer).
+  const pageElRef = useRef(null);
+  const { fs: glyphFs, width: glyphW } = useMushafAutoFit(pageElRef, {
+    active: glyph,
+    numLines: pageData?.lines.length || 0,
+    resetKey: pageData ? `${pageData.page}:${fontReady}` : null,
+  });
 
   if (!speechRef.current) {
     speechRef.current = new BrowserSpeech({
@@ -260,10 +276,6 @@ export default function HifzRecitationMode({ surahs }) {
 
   const matches = engineState?.history.filter((e) => e.kind === 'transcript-match').length || 0;
   const assisted = engineState?.history.filter((e) => e.kind === 'assisted-match').length || 0;
-  // fontReady löst nur den Re-Render nach dem Ladeversuch aus; isPageFontLoaded
-  // ist die tatsächliche Quelle der Wahrheit (kann false bleiben, wenn das
-  // Laden fehlschlug) -- sonst würden bei Fehlschlag Ersatzzeichen erscheinen.
-  const glyph = pageData?.font === 'v1' && fontReady && isPageFontLoaded(pageData.fontPage);
 
   // ---- Vor der Seitenwahl ----
   if (!pageData) {
@@ -322,16 +334,25 @@ export default function HifzRecitationMode({ surahs }) {
           Muster hinter dem Text. Vor "Los" voll sichtbar (wie bei Tarteel). */}
       {loadingPage && !pageData ? <Spinner label="Seite wird geladen …" /> : (
         <Card className="p-0 overflow-hidden">
-          <div className="mushaf-page px-4 py-5 sm:px-8 sm:py-7 font-mushaf" style={{ fontSize: 'clamp(1.3rem, 4.4vw, 1.85rem)' }}>
+          <div
+            ref={pageElRef}
+            className={`mushaf-page px-4 py-5 sm:px-8 sm:py-7 font-mushaf mx-auto ${glyph ? 'is-glyph' : ''}`}
+            style={{
+              fontSize: glyph ? (glyphFs ? `${glyphFs}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.3rem, 4.4vw, 1.85rem)',
+              width: glyph && glyphW ? `${glyphW}px` : undefined,
+              maxWidth: glyph ? '100%' : '44rem',
+            }}
+          >
+            <div className="mushaf-lines">
             {pageData.lines.map((line, li) => (
-              <div key={line.n}>
+              <div key={line.n} className="mushaf-line-wrap">
                 {(headerByLine[line.n] || []).map((h) => (
                   <div key={h.surah} className="mushaf-surah-head">
                     <div className="text-mint" style={{ fontSize: '1.05em' }} dir="rtl">سُورَةُ {h.name}</div>
                     {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.9em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
                   </div>
                 ))}
-                <p className={`mushaf-line ${line.words.length <= 6 || pageData.page === 1 ? 'is-short' : ''}`}>
+                <p className={`mushaf-line ${line.words.length <= 6 ? 'is-short' : ''}`}>
                   {line.words.map((w, wi) => {
                     const idx = trackableIndex[li][wi];
                     if (idx == null) {
@@ -361,6 +382,7 @@ export default function HifzRecitationMode({ surahs }) {
                 </p>
               </div>
             ))}
+            </div>
           </div>
         </Card>
       )}

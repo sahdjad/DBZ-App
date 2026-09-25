@@ -8,8 +8,14 @@
  *   veränderliche Daten – nie cachen).
  * - Navigationen (HTML) network-first mit Cache-Fallback (App startet offline).
  * - Statische Assets inkl. Qur'an-Schrift cache-first (schnell, offline da).
+ *
+ * WICHTIG bei jedem spürbaren App-Update: CACHE-Versionsnummer hochzählen.
+ * Nur so erkennt der Browser diese Datei als "geändert" und lädt die neue
+ * Version -- sonst bleibt eine schon offene Registerkarte (kein erneutes
+ * Laden = keine echte Navigation) auf unbestimmte Zeit auf dem alten Stand
+ * hängen, selbst nach vielen Deploys mit neuen JS-Bundles.
  */
-const CACHE = 'dbz-cache-v5'; // App-Shell + statische Assets (wird bei Updates ersetzt)
+const CACHE = 'dbz-cache-v6'; // App-Shell + statische Assets (wird bei Updates ersetzt)
 const DATA = 'dbz-quran-v1'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 
