@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
-import { ensurePageFont, isPageFontLoaded } from '../lib/mushafFont.js';
+import { ensurePageFont, isPageFontLoaded, useMushafAutoFit } from '../lib/mushafFont.js';
 import PageScrubber from '../components/PageScrubber.jsx';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
@@ -728,8 +728,6 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const [showTafsir, setShowTafsir] = useState(false);
   const [jump, setJump] = useState('');
   const [elPaused, setElPaused] = useState(false);
-  const [glyphFs, setGlyphFs] = useState(null); // per-Seite passende Schriftgröße (px)
-  const [glyphW, setGlyphW] = useState(null); // passende Seitenbreite (px) – Hochformat wie gedruckt
   const [tajweed, setTajweed] = useState(!!initialTajweed); // farbige Tadschwid-Seitenansicht
   const [fontReady, setFontReady] = useState(true); // Seitenschrift geladen?
   const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
@@ -997,76 +995,20 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const goto = (p) => setPage(clampPage(p));
   const doJump = () => { const p = Number(jump); if (p >= 1 && p <= 604) { goto(p); setJump(''); } else toast.push('Seite 1–604 eingeben'); };
 
-  // Passende Schriftgröße je Seite: die breiteste Zeile soll die volle Breite
-  // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
-  // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
-  useLayoutEffect(() => {
-    const canFit = data && (tajweed || (data.font === 'v1' && isPageFontLoaded(data.fontPage)));
-    if (!canFit) { setGlyphFs(null); setGlyphW(null); return; }
-    const numLines = data.lines.length;
-    const measure = () => {
-      const el = pageElRef.current; if (!el) return;
-      const inner = el.querySelector('.mushaf-lines'); if (!inner) return;
-      // Normalerweise nur an "vollen" Zeilen messen (kurze Zeilen sind kein
-      // verlässliches Maß für die Seitenbreite). Sind ALLE Zeilen einer Seite
-      // kurz (z. B. Al-Fatiha), gäbe es sonst gar keine Messgrundlage mehr --
-      // dann eben an allen Zeilen messen, statt die Seite unvermessen (zu
-      // klein) zu lassen.
-      let lines = [...inner.querySelectorAll('.mushaf-line:not(.is-short)')];
-      if (!lines.length) lines = [...inner.querySelectorAll('.mushaf-line')];
-      if (!lines.length) return;
-      const REF = 100; // an fester Referenzgröße messen -> stabil, kein Pendeln
-      const cs = getComputedStyle(el);
-      const hpad = parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0);
-      const rectTop = el.getBoundingClientRect().top;
-      const prevW = el.style.width, prevMax = el.style.maxWidth, prevFs = el.style.fontSize;
-      el.style.maxWidth = 'none'; el.style.width = ''; el.style.fontSize = `${REF}px`;
-      const prevJc = lines.map((l) => l.style.justifyContent);
-      lines.forEach((l) => { l.style.justifyContent = 'flex-start'; }); // natürliche Breite messen
-      let maxNat = 0;
-      lines.forEach((l) => { if (l.scrollWidth > maxNat) maxNat = l.scrollWidth; });
-      // Sure-Kopf/Basmala-Zeilen (z. B. auf Seite 2, Beginn einer Sure) sind
-      // DEUTLICH höher als eine normale Textzeile, aber die Höhenformel unten
-      // ging bisher von lauter gleich hohen Zeilen aus -- auf Seiten mit
-      // Sure-Kopf lief der Inhalt dadurch über den sichtbaren Bereich hinaus
-      // ("Seite verschoben", Rest wirkte wie eine leere Fläche). Ihre echte
-      // Höhe bei REF=100px lässt sich nicht zuverlässig messen (der Sure-Name
-      // kann bei so großer Referenzschrift selbst umbrechen und die Messung
-      // verfälschen) -- stattdessen ein fester, konservativer Schätzwert: ein
-      // Sure-Kopf (Name + Basmala) zählt wie ~3 zusätzliche Textzeilen.
-      const headCount = inner.querySelectorAll('.mushaf-surah-head').length;
-      lines.forEach((l, i) => { l.style.justifyContent = prevJc[i] || ''; });
-      el.style.width = prevW; el.style.maxWidth = prevMax; el.style.fontSize = prevFs;
-      if (maxNat <= 0) return;
-      // Verfügbarer Platz: volle Breite (bis 800px lesbar) und volle Höhe bis
-      // zum unteren Rand -> Schriftgröße füllt BEIDE Achsen; die Seite wird zum
-      // Hochformat wie im gedruckten Mushaf.
-      const docW = document.documentElement.clientWidth;
-      const availOuter = Math.min(docW - 16, 800);
-      const targetInnerW = Math.max(120, availOuter - hpad);
-      const gaps = (numLines - 1) * 1.8;
-      const availH = Math.max(260, window.innerHeight - rectTop - 16 - 20);
-      const fontByWidth = (REF * targetInnerW) / maxNat;
-      const fontByHeight = (availH - gaps - 6) / ((numLines + headCount * 3) * 1.9);
-      const fs = Math.max(12, Math.min(44, Math.min(fontByWidth, fontByHeight)));
-      setGlyphFs(fs);
-      // Die Seite bekommt IMMER die volle verfügbare Breite (nie die anhand
-      // der Schriftgröße gemessene, ungestreckte Wortbreite) -- sonst bliebe
-      // bei vielen Zeilen (Schriftgröße von der Höhe begrenzt) eine ganze
-      // Seitenhälfte leer, weil die einzelnen Zeilen dann schmaler wären als
-      // der Container. justify-content: space-between (siehe index.css
-      // .mushaf-page.is-glyph .mushaf-line) verteilt die Wörter danach über
-      // die volle Breite -- wie im gedruckten Mushaf.
-      setGlyphW(availOuter);
-    };
-    const raf = requestAnimationFrame(measure);
-    window.addEventListener('resize', measure);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
-    // eslint-disable-next-line
-  }, [data, fontReady, tajweed]);
-
   // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
   const pageElRef = useRef(null);
+
+  // Passende Schriftgröße je Seite (Auto-Fit, geteilt mit dem Auswendig-Modus
+  // -- siehe useMushafAutoFit): die breiteste Zeile soll die volle Breite
+  // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
+  // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
+  const canFit = !!(data && (tajweed || (data.font === 'v1' && isPageFontLoaded(data.fontPage))));
+  const { fs: glyphFs, width: glyphW } = useMushafAutoFit(pageElRef, {
+    active: canFit,
+    numLines: data?.lines.length || 0,
+    resetKey: data ? `${data.page}:${tajweed}:${fontReady}` : null,
+  });
+
   const dragRef = useRef({ active: false, x0: 0, y0: 0, dx: 0, horiz: false });
   const flipDirRef = useRef(null); // 'next' | 'prev' – für die Einblend-Animation
   const reduceRef = useRef(false);
