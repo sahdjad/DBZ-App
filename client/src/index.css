@@ -240,6 +240,24 @@
     color: #eafff3;
     box-shadow: 0 0 0 1px rgba(74, 170, 116, 0.35);
   }
+  /* Auswendig-Modus, noch nicht rezitiertes Wort: Text unsichtbar, aber die
+     echte Wortbreite bleibt erhalten (kein Platzhalter-Text) -- damit
+     springt die Seite beim Aufdecken nicht, und eine ruhige, weiche Fläche
+     ersetzt lauter einzeln wirkende Wortschnipsel. */
+  /* !important auf der Textfarbe ist hier bewusst: dieses Wort kann
+     GLEICHZEITIG als "aktuell" (is-word-active) oder "Abweichung vermutet"
+     (ring-status-absent/text-status-absent) markiert sein -- beide setzen
+     ebenfalls eine Textfarbe. Ohne !important würde je nach Reihenfolge der
+     Tailwind-Utilities im gebauten CSS mal die eine, mal die andere
+     gewinnen, und der Wortlaut könnte sichtbar durchscheinen, bevor er
+     tatsächlich richtig rezitiert wurde -- genau das darf nie passieren. */
+  .mushaf-word-hidden {
+    color: transparent !important;
+    background: rgba(21, 101, 63, 0.10);
+    box-shadow: none;
+    user-select: none;
+  }
+  .dark .mushaf-word-hidden { background: rgba(74, 170, 116, 0.14); }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
   /* Sure-Kopf über dem ersten Vers einer Sure auf der Seite. Bewusst OHNE
      Rahmen/Hintergrund/Karten-Optik: eine umrandete Box mittendrin sah wie
