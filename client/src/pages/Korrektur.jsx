@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CheckSquare, Paperclip, Play } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -73,6 +73,8 @@ function ReviewCard({ sub, onDone }) {
           {sub.files.map((f) => (
             f.mediaType?.startsWith('audio') ? (
               <audio key={f.id} controls src={`/api/submissions/${sub.id}/file/${f.id}`} className="w-full h-9" />
+            ) : f.mediaType?.startsWith('image') ? (
+              <ImageAttachment key={f.id} url={`/api/submissions/${sub.id}/file/${f.id}`} alt={f.originalName} />
             ) : (
               <a key={f.id} href={`/api/submissions/${sub.id}/file/${f.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-mint-light text-sm hover:underline">
                 <Paperclip size={16} /> {f.originalName}

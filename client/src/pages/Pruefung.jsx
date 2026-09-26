@@ -3,16 +3,18 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink, Printer, Mic, Square, Paperclip, FileText, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { useRecorder, mmss } from '../lib/recorder.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 
-// Datei anzeigen: Audio abspielbar, sonst als Öffnen/Download-Link.
+// Datei anzeigen: Audio abspielbar, Bild in App-interner Vorschau, sonst als
+// Öffnen/Download-Link.
 function FileView({ url, file }) {
-  const isAudio = String(file.mediaType || '').startsWith('audio');
-  if (isAudio) return <audio controls preload="none" className="w-full mt-1" src={url} />;
+  const mediaType = String(file.mediaType || '');
+  if (mediaType.startsWith('audio')) return <audio controls preload="none" className="w-full mt-1" src={url} />;
+  if (mediaType.startsWith('image')) return <ImageAttachment url={url} alt={file.originalName} className="mt-1" />;
   return (
     <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-mint-light hover:underline mt-1">
       <FileText size={15} /> {file.originalName || 'Datei öffnen'}

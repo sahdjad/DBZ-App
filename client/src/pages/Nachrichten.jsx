@@ -4,7 +4,7 @@ import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, Smile
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
@@ -217,7 +217,7 @@ function Attachment({ threadId, m }) {
   const url = `/api/threads/${threadId}/messages/${m.id}/file`;
   if (!m.file) return null;
   if (m.file.kind === 'image')
-    return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt={m.file.originalName} className="rounded-lg max-h-64 mt-1" /></a>;
+    return <ImageAttachment url={url} alt={m.file.originalName} className="mt-1" />;
   if (m.file.kind === 'audio')
     return <audio src={url} controls preload="none" className="mt-1 w-56 max-w-full" />;
   return (
