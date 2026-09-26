@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Arbeitsblätter zum Schuljahresstart – Deen Bildungszentrum</title>
+<style>
+  /* Keine externen Schrift-CDNs (DSGVO + Offline-Fähigkeit) – wie im
+     übrigen Projekt: Systemschriften mit denselben Marken-Fallbacks wie
+     tailwind.config.js (font-display / font-sans). Arabisch: lokal
+     gehostete Uthmanic-Hafs (echte Madinah-Mushaf-Schrift, wie im
+     Qur'an-Reader der App), Fallback Amiri Quran/Amiri/Noto Naskh Arabic. */
+  @font-face {
+    font-family: 'Uthmanic Hafs';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/UthmanicHafs.woff2') format('woff2');
+  }
+  @font-face {
+    font-family: 'Amiri Quran';
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url('/fonts/AmiriQuran.woff2') format('woff2');
+  }
+
+  :root {
+    --mint: #174D35;       /* DBZ-Primärgrün */
+    --mint-light: #1E6844;
+    --mint-wash: #EEF3EF;  /* sehr helle Grünfläche für Akzentflächen */
+    --mint-wash-strong: #E3ECE5;
+    --gold: #9E8A46;       /* Champagner-Gold-Akzent */
+    --paper: #FFFDF6;      /* cremeweißer Seitenhintergrund */
+    --card: #FFFFFF;
+    --line: #DFD8C1;       /* warme, dezente Rahmenfarbe */
+    --ink: #08281C;        /* Überschriften: tiefes Waldgrün */
+    --text: #2A3C30;       /* Fließtext */
+    --muted: #6C7A64;      /* gedämpfter Sekundärtext */
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #EDEAE0;
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 12.3px;
+    line-height: 1.5;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  h1, h2, h3 { font-family: Georgia, Cambria, "Times New Roman", serif; color: var(--ink); margin: 0; }
+
+  .font-arabic {
+    font-family: "Uthmanic Hafs", "Amiri Quran", Amiri, "Noto Naskh Arabic", "Geeza Pro", "Times New Roman", serif;
+    direction: rtl;
+    unicode-bidi: isolate;
+  }
+
+  /* ---------- Steuerleiste (nur Bildschirm) ---------- */
+  .toolbar {
+    max-width: 210mm;
+    margin: 6mm auto 4mm;
+    padding: 0 4mm;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .toolbar-hint { font-size: 12.5px; color: var(--muted); }
+  .print-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--mint);
+    color: #fff;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(23, 77, 53, 0.25);
+  }
+  .print-btn:hover { background: var(--mint-light); }
+  .print-btn svg { width: 17px; height: 17px; }
+
+  /* ---------- Seiten-Rahmen (Bildschirm-Vorschau einer A4-Seite) ---------- */
+  .page {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 10mm;
+    background: var(--paper);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.14);
+    padding: 14mm 15mm;
+  }
+  .page:last-of-type { margin-bottom: 24px; }
+
+  /* ---------- Kopfbereich ---------- */
+  .head { text-align: center; margin-bottom: 5mm; }
+  .head img { height: 15mm; margin-bottom: 3mm; }
+  .head h1 {
+    font-size: 21px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .head .subtitle {
+    margin-top: 2mm;
+    font-style: italic;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .dua-strip {
+    margin: 4mm auto 5mm;
+    max-width: 140mm;
+    text-align: center;
+    padding: 3mm 4mm 3.5mm;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .dua-strip .ar { font-size: 19px; color: var(--mint); line-height: 1.9; }
+  .dua-strip .de { font-size: 11.5px; color: var(--muted); margin-top: 1.5mm; font-style: italic; }
+  .dua-strip .ref { font-size: 10px; color: var(--gold); margin-top: 0.5mm; }
+
+  .fields-row {
+    display: flex;
+    gap: 8mm;
+    margin: 0 0 6mm;
+  }
+  .field { flex: 1; }
+  .field label {
+    display: block;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 2mm;
+  }
+  .field .fill-line { border-bottom: 1.2px solid var(--mint); height: 5mm; }
+
+  /* ---------- Abschnitte ---------- */
+  .section { margin-bottom: 5mm; break-inside: avoid; }
+  .section-head {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    margin-bottom: 3mm;
+  }
+  .section-num {
+    flex: none;
+    width: 7mm; height: 7mm;
+    border-radius: 999px;
+    background: var(--mint);
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .section-head h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+  .section-rule { border: none; border-top: 1px solid var(--line); margin: 0 0 3mm 10mm; }
+
+  .q { font-weight: 600; color: var(--ink); font-size: 12.5px; margin: 0 0 2mm; }
+  .hint { font-size: 10px; color: var(--muted); font-style: italic; margin: -1mm 0 2mm; }
+
+  .wline { border-bottom: 1px solid var(--line); height: 7mm; }
+  .wlines { margin-bottom: 3mm; }
+  .wlines.compact .wline { height: 6mm; }
+
+  /* ---------- Zufriedenheits-/Bewertungsskala ---------- */
+  .scale-block { margin-bottom: 4.5mm; }
+  .scale {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    max-width: 95mm;
+    margin: 4mm auto 1.5mm;
+  }
+  .scale::before {
+    content: "";
+    position: absolute;
+    left: 4.5mm; right: 4.5mm; top: 50%;
+    border-top: 1px solid var(--line);
+    z-index: 0;
+  }
+  .scale .dot {
+    position: relative;
+    z-index: 1;
+    width: 9mm; height: 9mm;
+    border-radius: 999px;
+    border: 1.4px solid var(--mint);
+    background: var(--paper);
+    color: var(--mint);
+    font-weight: 700;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .scale-labels {
+    display: flex;
+    justify-content: space-between;
+    max-width: 95mm;
+    margin: 0 auto;
+    font-size: 9.5px;
+    color: var(--muted);
+  }
+
+  .scale-row { display: flex; align-items: center; gap: 4mm; margin-bottom: 3mm; }
+  .scale-row .scale-row-label { flex: 0 0 46mm; font-size: 12px; font-weight: 600; color: var(--ink); }
+  .scale-row .dots { display: flex; gap: 4mm; }
+  .scale-row .dots .dot { width: 8mm; height: 8mm; font-size: 11px; }
+
+  /* ---------- Checkboxen ---------- */
+  .chk-item { display: flex; align-items: flex-start; gap: 2.6mm; margin-bottom: 2.2mm; font-size: 12px; }
+  .chk-box {
+    flex: none;
+    width: 3.6mm; height: 3.6mm;
+    margin-top: 0.6mm;
+    border: 1.4px solid var(--mint);
+    border-radius: 2px;
+  }
+  .chk-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 6mm; }
+  .chk-grid.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+  /* ---------- Zielkarten ---------- */
+  .card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; }
+  .goal-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 3.5mm 4.5mm 3.5mm;
+    break-inside: avoid;
+  }
+  .goal-card h3 {
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--mint);
+    margin-bottom: 2mm;
+  }
+  .goal-card .lead { font-size: 12px; margin-bottom: 1.5mm; }
+  .goal-card .examples { font-size: 9.5px; color: var(--muted); font-style: italic; margin-bottom: 2mm; }
+  .goal-card .wline { height: 5.5mm; }
+  .goal-card .hifz-extra {
+    margin-top: 2mm;
+    padding-top: 2mm;
+    border-top: 1px dashed var(--line);
+    font-size: 11px;
+  }
+  .goal-card .hifz-extra .fill-line { display:inline-block; border-bottom: 1px solid var(--mint); min-width: 55mm; height: 4.2mm; vertical-align: bottom; }
+
+  /* ---------- Hervorhebungsbox ---------- */
+  .highlight-box {
+    border: 1.6px solid var(--mint);
+    background: var(--mint-wash);
+    border-radius: 10px;
+    padding: 3.5mm 5mm 4mm;
+    break-inside: avoid;
+  }
+  .highlight-box .kicker {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--mint);
+    font-weight: 700;
+    margin-bottom: 1.5mm;
+  }
+  .highlight-box .lead { font-size: 13px; font-weight: 600; color: var(--ink); margin-bottom: 3mm; }
+  .highlight-box .wline { border-bottom-color: rgba(23,77,53,0.35); height: 6mm; }
+
+  .footer-dua {
+    text-align: center;
+    margin-top: 1mm;
+  }
+  .footer-dua .ar { font-size: 15px; color: var(--mint); }
+  .footer-dua .de { font-size: 10px; color: var(--muted); font-style: italic; margin-top: 1mm; }
+
+  .page-footer {
+    margin-top: 1mm;
+    padding-top: 1.5mm;
+    border-top: 1px solid var(--line);
+    text-align: center;
+    font-size: 9.5px;
+    color: var(--muted);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- Anonym-Banner (Blatt 2) ---------- */
+  .anon-banner {
+    display: flex;
+    align-items: center;
+    gap: 4mm;
+    border: 1.4px solid var(--gold);
+    background: #FBF8EF;
+    border-radius: 8px;
+    padding: 3.5mm 5mm;
+    margin-bottom: 6mm;
+  }
+  .anon-banner .badge {
+    flex: none;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #7A6A38;
+    border: 1.2px solid var(--gold);
+    border-radius: 999px;
+    padding: 1.5mm 4mm;
+    background: #fff;
+  }
+  .anon-banner .msg { font-size: 12px; color: #5C4F2A; }
+
+  .intro-text { font-size: 12px; color: var(--text); margin-bottom: 6mm; }
+
+  /* ---------- Druckoptimierung ---------- */
+  @page { size: A4; margin: 12mm; }
+  @media print {
+    html, body { background: #fff; font-size: 11.5px; }
+    .no-print { display: none !important; }
+    .page {
+      width: auto;
+      min-height: 0;
+      margin: 0;
+      box-shadow: none;
+      padding: 0;
+      break-after: page;
+    }
+    .page:last-of-type { break-after: auto; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="toolbar no-print">
+    <span class="toolbar-hint">Vorschau &middot; entspricht dem A4-Druckbild</span>
+    <button class="print-btn" onclick="window.print()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Als PDF drucken
+    </button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- ARBEITSBLATT 1 – Mein Rückblick & meine Ziele                 -->
+  <!-- ============================================================ -->
+  <section class="page">
+
+    <div class="head">
+      <img src="/logo.png" alt="Logo Deen Bildungszentrum" />
+      <h1>Mein Rückblick &amp; meine Ziele</h1>
+      <div class="subtitle">„Ein neues Schuljahr – eine neue Gelegenheit, zu lernen und zu wachsen.“</div>
+    </div>
+
+    <div class="dua-strip">
+      <div class="ar font-arabic">رَبِّ زِدْنِي عِلْمًا</div>
+      <div class="de">„Mein Herr, mehre mich an Wissen.“</div>
+      <div class="ref">Sūrah Ṭā-Hā 20:114</div>
+    </div>
+
+    <div class="fields-row">
+      <div class="field"><label>Name</label><div class="fill-line"></div></div>
+      <div class="field"><label>Klasse</label><div class="fill-line"></div></div>
+      <div class="field"><label>Datum</label><div class="fill-line"></div></div>
+    </div>
+
+    <!-- 1. Rückblick -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">1</span><h2>Rückblick auf das letzte Schuljahr</h2></div>
+      <hr class="section-rule" />
+
+      <div class="scale-block">
+        <p class="q">Wie zufrieden bist du insgesamt mit deinem letzten Schuljahr?</p>
+        <div class="scale">
+          <div class="dot">1</div><div class="dot">2</div><div class="dot">3</div><div class="dot">4</div><div class="dot">5</div>
+        </div>
+        <div class="scale-labels"><span>gar nicht zufrieden</span><span>sehr zufrieden</span></div>
+      </div>
+
+      <p class="q">Worauf bist du aus dem letzten Schuljahr besonders stolz?</p>
+      <div class="wlines"><div class="wline"></div><div class="wline"></div><div class="wline"></div></div>
+
+      <p class="q">Was hast du im letzten Jahr gelernt oder verbessert?</p>
+      <div class="chk-grid cols-3" style="margin-bottom:4mm;">
+        <div>
+          <div class="chk-item"><span class="chk-box"></span><span>Qurʾān / Arabisch</span></div>
+          <div class="wline"></div>
+        </div>
+        <div>
+          <div class="chk-item"><span class="chk-box"></span><span>Ḥifẓ</span></div>
+          <div class="wline"></div>
+        </div>
+        <div>
+          <div class="chk-item"><span class="chk-box"></span><span>Islamwissenschaft</span></div>
+          <div class="wline"></div>
+        </div>
+      </div>
+
+      <p class="q">Gab es ein Ziel, das du dir vorgenommen hattest, aber noch nicht erreicht hast?</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div></div>
+
+      <p class="q">Was möchtest du dieses Jahr besser machen?</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div></div>
+    </div>
+
+    <div class="page-footer">Deen Bildungszentrum &middot; Arbeitsblatt zum Schuljahresstart</div>
+  </section>
+
+  <!-- Seite 2 von Arbeitsblatt 1 -->
+  <section class="page">
+
+    <!-- 2. Meine Ziele -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">2</span><h2>Meine Ziele für dieses Schuljahr</h2></div>
+      <hr class="section-rule" />
+
+      <div class="card-grid">
+        <div class="goal-card">
+          <h3>A &middot; Qurʾān &amp; Arabisch lesen</h3>
+          <p class="lead">Mein Ziel:</p>
+          <p class="examples">z. B. flüssiger lesen &middot; Buchstaben sicher erkennen &middot; Aussprache verbessern &middot; Tajwīd anwenden</p>
+          <div class="wline"></div><div class="wline"></div>
+        </div>
+
+        <div class="goal-card">
+          <h3>B &middot; Ḥifẓ</h3>
+          <p class="lead">Dieses Jahr möchte ich:</p>
+          <div class="wline"></div><div class="wline"></div>
+          <div class="hifz-extra">Mein persönliches Ḥifẓ-Ziel: bis Sūrah <span class="fill-line"></span></div>
+        </div>
+
+        <div class="goal-card">
+          <h3>C &middot; Islamwissenschaft</h3>
+          <p class="lead">Das möchte ich dieses Jahr lernen oder besser verstehen:</p>
+          <div class="wline"></div><div class="wline"></div>
+        </div>
+
+        <div class="goal-card">
+          <h3>D &middot; Adab &amp; Verhalten</h3>
+          <p class="lead">Welche Eigenschaft möchtest du dieses Jahr besonders verbessern?</p>
+          <div class="chk-grid">
+            <div class="chk-item"><span class="chk-box"></span><span>Geduld</span></div>
+            <div class="chk-item"><span class="chk-box"></span><span>Respekt</span></div>
+            <div class="chk-item"><span class="chk-box"></span><span>Aufmerksamkeit</span></div>
+            <div class="chk-item"><span class="chk-box"></span><span>Ehrlichkeit</span></div>
+            <div class="chk-item"><span class="chk-box"></span><span>Hilfsbereitschaft</span></div>
+            <div class="chk-item"><span class="chk-box"></span><span>Disziplin</span></div>
+          </div>
+          <div class="chk-item" style="margin-top:0.5mm;"><span class="chk-box"></span><span>Andere:</span><span class="fill-line" style="flex:1; border-bottom:1px solid var(--line); margin-left:2mm;"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Umsetzung -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">3</span><h2>So will ich meine Ziele erreichen</h2></div>
+      <hr class="section-rule" />
+      <p class="q" style="margin-bottom:3mm;">Ich möchte …</p>
+      <div class="chk-grid" style="margin-bottom:4mm;">
+        <div class="chk-item"><span class="chk-box"></span><span>regelmäßig wiederholen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>meine Hausaufgaben zuverlässig erledigen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>im Unterricht aufmerksam zuhören</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Fragen stellen, wenn ich etwas nicht verstehe</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>regelmäßig Qurʾān lesen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>meinen Ḥifẓ wiederholen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>respektvoll mit Lehrern und Mitschülern umgehen</span></div>
+      </div>
+      <p class="q">Mein eigener Vorsatz:</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div></div>
+    </div>
+
+    <!-- 4. Wichtigstes Ziel -->
+    <div class="section" style="margin-bottom:0;">
+      <div class="section-head"><span class="section-num">4</span><h2>Mein wichtigstes Ziel</h2></div>
+      <hr class="section-rule" />
+      <div class="highlight-box">
+        <div class="kicker">Ein Ziel, das zählt</div>
+        <p class="lead">Wenn ich am Ende des Schuljahres nur EIN Ziel unbedingt erreicht haben möchte, dann ist es:</p>
+        <div class="wline"></div><div class="wline"></div><div class="wline"></div>
+      </div>
+    </div>
+
+    <div class="footer-dua">
+      <div class="ar font-arabic">اللَّهُمَّ انْفَعْنِي بِمَا عَلَّمْتَنِي وَعَلِّمْنِي مَا يَنْفَعُنِي</div>
+      <div class="de">„O Allah, lass mich von dem profitieren, was Du mich gelehrt hast, und lehre mich, was mir nützt.“</div>
+    </div>
+
+    <div class="page-footer">Deen Bildungszentrum &middot; Arbeitsblatt zum Schuljahresstart</div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- ARBEITSBLATT 2 – Deine Meinung zählt (anonymes Feedback)      -->
+  <!-- ============================================================ -->
+  <section class="page">
+
+    <div class="anon-banner">
+      <span class="badge">Anonym</span>
+      <span class="msg">Bitte schreibe deinen Namen <strong>nicht</strong> auf dieses Blatt.</span>
+    </div>
+
+    <div class="head" style="margin-bottom:4mm;">
+      <img src="/logo.png" alt="Logo Deen Bildungszentrum" />
+      <h1>Deine Meinung zählt</h1>
+      <div class="subtitle">„Hilf uns dabei, unseren Unterricht gemeinsam zu verbessern.“</div>
+    </div>
+
+    <p class="intro-text">Dieses Blatt ist anonym. Sei ehrlich, respektvoll und fair. Deine Rückmeldung hilft deinen Lehrern dabei, den Unterricht besser zu gestalten.</p>
+
+    <!-- 1. Bewertung -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">1</span><h2>Wie gefällt dir unser Unterricht?</h2></div>
+      <hr class="section-rule" />
+
+      <div class="scale-row">
+        <span class="scale-row-label">Qurʾān / Arabisch lesen</span>
+        <div class="dots"><div class="dot">1</div><div class="dot">2</div><div class="dot">3</div><div class="dot">4</div><div class="dot">5</div></div>
+      </div>
+      <div class="scale-row">
+        <span class="scale-row-label">Ḥifẓ</span>
+        <div class="dots"><div class="dot">1</div><div class="dot">2</div><div class="dot">3</div><div class="dot">4</div><div class="dot">5</div></div>
+      </div>
+      <div class="scale-row">
+        <span class="scale-row-label">Islamwissenschaft</span>
+        <div class="dots"><div class="dot">1</div><div class="dot">2</div><div class="dot">3</div><div class="dot">4</div><div class="dot">5</div></div>
+      </div>
+      <div class="scale-row" style="margin-bottom:0;">
+        <span class="scale-row-label">Unterricht insgesamt</span>
+        <div class="dots"><div class="dot">1</div><div class="dot">2</div><div class="dot">3</div><div class="dot">4</div><div class="dot">5</div></div>
+      </div>
+    </div>
+
+    <!-- 2. Was gefällt dir -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">2</span><h2>Was gefällt dir?</h2></div>
+      <hr class="section-rule" />
+      <p class="q">Was gefällt dir an unserem Unterricht besonders?</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div><div class="wline"></div></div>
+    </div>
+
+    <!-- 3. Verbesserung -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">3</span><h2>Was können wir verbessern?</h2></div>
+      <hr class="section-rule" />
+      <p class="q">Was sollten deine Lehrer anders oder besser machen?</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div><div class="wline"></div></div>
+      <p class="hint">Konstruktive Kritik ist ausdrücklich erwünscht.</p>
+    </div>
+
+    <div class="page-footer">Deen Bildungszentrum &middot; anonymes Schülerfeedback</div>
+  </section>
+
+  <!-- Seite 2 von Arbeitsblatt 2 -->
+  <section class="page">
+
+    <!-- 4. Mehr davon -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">4</span><h2>Davon wünsche ich mir mehr</h2></div>
+      <hr class="section-rule" />
+      <div class="chk-grid cols-3">
+        <div class="chk-item"><span class="chk-box"></span><span>Qurʾān lesen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Tajwīd</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Ḥifẓ</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Geschichten der Propheten</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Sīrah des Propheten ﷺ</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>ʿAqīdah</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Fiqh / praktische Regeln</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Adab und gutes Verhalten</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Duʿāʾ und Adhkār</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Fragen &amp; Antworten</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Gruppenarbeiten</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Quiz / Lernspiele</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Wiederholungsstunden</span></div>
+      </div>
+      <div class="chk-item" style="margin-top:0.5mm;"><span class="chk-box"></span><span>Andere Themen:</span><span class="fill-line" style="flex:1; border-bottom:1px solid var(--line); margin-left:2mm;"></span></div>
+    </div>
+
+    <!-- 5. So lerne ich am besten -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">5</span><h2>So lerne ich am besten</h2></div>
+      <hr class="section-rule" />
+      <div class="chk-grid cols-3">
+        <div class="chk-item"><span class="chk-box"></span><span>Wenn der Lehrer erklärt</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Gemeinsam lesen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Aufgaben auf Arbeitsblättern</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Fragen und Antworten</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Quiz</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Gruppenarbeit</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Praktische Übungen</span></div>
+        <div class="chk-item"><span class="chk-box"></span><span>Wiederholen</span></div>
+      </div>
+      <div class="chk-item" style="margin-top:0.5mm;"><span class="chk-box"></span><span>Sonstiges:</span><span class="fill-line" style="flex:1; border-bottom:1px solid var(--line); margin-left:2mm;"></span></div>
+    </div>
+
+    <!-- 6. Deine Idee -->
+    <div class="section">
+      <div class="section-head"><span class="section-num">6</span><h2>Deine Idee</h2></div>
+      <hr class="section-rule" />
+      <p class="q">Gibt es etwas, das du dieses Schuljahr gerne im Unterricht machen möchtest?</p>
+      <div class="wlines compact"><div class="wline"></div><div class="wline"></div><div class="wline"></div></div>
+    </div>
+
+    <!-- 7. Ehrliches Feedback -->
+    <div class="section" style="margin-bottom:5mm;">
+      <div class="section-head"><span class="section-num">7</span><h2>Ehrliches Feedback an deine Lehrer</h2></div>
+      <hr class="section-rule" />
+      <p class="q">Das wollte ich meinen Lehrern noch sagen:</p>
+      <div class="wlines"><div class="wline"></div><div class="wline"></div><div class="wline"></div><div class="wline"></div><div class="wline"></div></div>
+    </div>
+
+    <div class="footer-dua">
+      <div class="de" style="font-size:12px; color:var(--ink); font-style:normal; font-weight:600;">Jazāk Allāhu khayran für deine ehrliche Rückmeldung.</div>
+      <div class="de" style="margin-top:1.5mm;">Deine Antwort wird ohne Namen abgegeben.</div>
+    </div>
+
+    <div class="page-footer">Deen Bildungszentrum &middot; anonymes Schülerfeedback</div>
+  </section>
+
+</body>
+</html>
