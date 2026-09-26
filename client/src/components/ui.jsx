@@ -283,3 +283,47 @@ export function Spinner({ label = 'Lädt …' }) {
     </div>
   );
 }
+
+// Bild-Anhang: Tippen öffnet eine ganzflächige Vorschau INNERHALB der App,
+// statt über target="_blank" die Bilddatei direkt zu öffnen. In einer als
+// Homescreen-App installierten PWA gibt es keine echten Browser-Tabs -- ein
+// neuer Tab ersetzt dort das einzige Fenster, und "zurück" verlässt dadurch
+// die ganze App statt nur das Bild zu schließen (Rückmeldung nach echtem
+// Gerätetest: Foto hochladen, öffnen, dann kommt man nur über App-Neustart
+// zurück). Innerhalb der App schließen kostet dagegen nur einen Tap.
+export function ImageAttachment({ url, alt = '', className = '' }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={cx('block', className)}>
+        <img src={url} alt={alt} className="rounded-lg max-h-64" />
+      </button>
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-label={alt || 'Bild'}
+          onClick={() => setOpen(false)}
+        >
+          <div className="absolute inset-0 bg-black/90" />
+          <button
+            onClick={() => setOpen(false)}
+            aria-label="Schließen"
+            className="absolute z-10 p-2 rounded-full bg-black/40 text-ivory hover:bg-black/60"
+            style={{ top: 'max(env(safe-area-inset-top), 1rem)', right: '1rem' }}
+          >
+            <X size={22} />
+          </button>
+          <img src={url} alt={alt} className="relative max-w-full max-h-full object-contain" />
+        </div>
+      )}
+    </>
+  );
+}

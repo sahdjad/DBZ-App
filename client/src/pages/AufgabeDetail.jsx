@@ -3,7 +3,7 @@ import { useParams, Link } from 'react-router-dom';
 import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Camera } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 
@@ -105,10 +105,14 @@ export default function AufgabeDetail() {
           <div className="p-4 space-y-3">
             {sub.text && <p className="text-sage whitespace-pre-line">{sub.text}</p>}
             {sub.files?.map((f) => (
-              <a key={f.id} href={`/api/submissions/${sub.id}/file/${f.id}`} target="_blank" rel="noreferrer"
-                 className="flex items-center gap-2 text-mint-light hover:underline text-sm">
-                {f.mediaType?.startsWith('audio') ? <Play size={16} /> : <Paperclip size={16} />} {f.originalName}
-              </a>
+              f.mediaType?.startsWith('image') ? (
+                <ImageAttachment key={f.id} url={`/api/submissions/${sub.id}/file/${f.id}`} alt={f.originalName} />
+              ) : (
+                <a key={f.id} href={`/api/submissions/${sub.id}/file/${f.id}`} target="_blank" rel="noreferrer"
+                   className="flex items-center gap-2 text-mint-light hover:underline text-sm">
+                  {f.mediaType?.startsWith('audio') ? <Play size={16} /> : <Paperclip size={16} />} {f.originalName}
+                </a>
+              )
             ))}
             {review && (
               <div className="mt-3 rounded-lg border border-line bg-subtle p-3">
