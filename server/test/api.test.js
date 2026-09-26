@@ -301,6 +301,76 @@ test('Klassensprecher: Lehrer ernennt/entfernt direkt (eigene Klasse), fremde Kl
   assert.equal(demote.data.user.role, 'schueler');
 });
 
+test('Lehrer kann Schüler aus der eigenen Klasse entfernen (Konto bleibt bestehen), fremde Klasse geht nicht', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const admin = await loginAs('admin@dbz.de');
+  const email = `kick-test-${Date.now()}@dbz.de`;
+  const created = await admin('POST', '/admin/users', { name: 'Kick Test', email, password: 'demo1234', role: 'schueler', classIds: ['class_3'] });
+  assert.equal(created.status, 200);
+  const kickId = created.data.user.id;
+
+  const otherClass = await admin('POST', '/admin/classes', { name: 'Klasse Kick-Test' });
+  const otherTeacherEmail = `other-kick-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Anderer Lehrer', email: otherTeacherEmail, password: 'demo1234', role: 'klassenlehrer', classIds: [otherClass.data.class.id] });
+  const otherTeacher = await loginAs(otherTeacherEmail);
+  const denied = await otherTeacher('DELETE', `/classes/class_3/students/${kickId}`);
+  assert.equal(denied.status, 403, 'fremde Lehrkraft darf niemanden aus einer Klasse entfernen, die sie nicht leitet');
+
+  const before = await teacher('GET', '/classes/class_3/roster');
+  assert.ok(before.data.rows.some((r) => r.id === kickId), 'Testkonto ist zunächst in der Klasse');
+
+  const kick = await teacher('DELETE', `/classes/class_3/students/${kickId}`);
+  assert.equal(kick.status, 200);
+
+  const after = await teacher('GET', '/classes/class_3/roster');
+  assert.ok(!after.data.rows.some((r) => r.id === kickId), 'Testkonto ist nicht mehr in der Klasse');
+
+  // Konto selbst besteht weiter (nur die Klassenmitgliedschaft wurde entfernt).
+  const stillLogsIn = await loginAs(email);
+  const me = await stillLogsIn('GET', '/auth/me');
+  assert.equal(me.status, 200);
+  assert.equal(me.data.user.classIds.includes('class_3'), false);
+});
+
+test('Aufgabe löschen: nur erstellende Lehrkraft/Admin, zählt danach nicht mehr bei Schülern, Abgaben werden mitgelöscht', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const studentId = (await student('GET', '/auth/me')).data.user.id;
+
+  const created = await teacher('POST', '/assignments', { classId: 'class_3', title: 'Lösch-Test-Aufgabe', type: 'text' });
+  assert.equal(created.status, 200);
+  const asgId = created.data.assignment.id;
+
+  const form = new FormData();
+  form.set('text', 'Testantwort');
+  const submitted = await fetch(base + '/api/assignments/' + asgId + '/submit', {
+    method: 'POST',
+    headers: { cookie: await cookieFor('schueler@dbz.de') },
+    body: form,
+  });
+  assert.equal(submitted.status, 200);
+
+  const beforeList = await student('GET', '/assignments');
+  assert.ok(beforeList.data.assignments.some((a) => a.id === asgId), 'zählt vor dem Löschen für den Schüler');
+
+  const admin = await loginAs('admin@dbz.de');
+  const otherClass = await admin('POST', '/admin/classes', { name: 'Klasse Löschtest' });
+  const otherTeacherEmail = `other-del-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Anderer Lehrer 2', email: otherTeacherEmail, password: 'demo1234', role: 'klassenlehrer', classIds: [otherClass.data.class.id] });
+  const otherTeacher = await loginAs(otherTeacherEmail);
+  const denied = await otherTeacher('DELETE', `/assignments/${asgId}`);
+  assert.equal(denied.status, 403, 'fremde Lehrkraft (weder Ersteller noch Admin) darf die Aufgabe nicht löschen');
+
+  const del = await teacher('DELETE', `/assignments/${asgId}`);
+  assert.equal(del.status, 200);
+
+  const afterList = await student('GET', '/assignments');
+  assert.ok(!afterList.data.assignments.some((a) => a.id === asgId), 'zählt nach dem Löschen NICHT mehr für den Schüler');
+
+  const detail = await teacher('GET', `/assignments/${asgId}`);
+  assert.equal(detail.status, 404, 'Aufgabe ist wirklich verschwunden, nicht nur ausgeblendet');
+});
+
 test('Klassensprecher: sieht Heute-Status der Klasse (lesend), fremde Klasse nicht; normaler Schüler auch nicht', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const student = await loginAs('schueler@dbz.de');

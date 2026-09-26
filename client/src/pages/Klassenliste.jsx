@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -163,6 +163,23 @@ export default function Klassenliste() {
     }
   };
 
+  // Nur aus DIESER Klasse entfernen, nicht das ganze Konto löschen -- der
+  // Schüler bleibt (falls in weiteren Klassen) sonst erhalten.
+  const removeFromClass = async (e, row) => {
+    e.stopPropagation();
+    if (!window.confirm(`${row.name} wirklich aus ${currentClass?.name} entfernen? Das Konto selbst bleibt bestehen.`)) return;
+    setBusyId(row.id);
+    try {
+      await api.del(`/classes/${classId}/students/${row.id}`);
+      toast.push(`${row.name} aus der Klasse entfernt`, 'success');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const rows = useMemo(() => {
     const list = data?.rows || [];
     const s = q.trim().toLowerCase();
@@ -209,6 +226,7 @@ export default function Klassenliste() {
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Negative Verhaltensvermerke">Vermerke</abbr></th>
                     <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
                     {isTeacher && <th className="py-3 px-3 font-medium text-center">Probezeit</th>}
+                    {isTeacher && <th className="py-3 px-3 font-medium text-center">Klassenmitgliedschaft</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -277,6 +295,19 @@ export default function Klassenliste() {
                             className={`text-xs px-2.5 py-1 rounded-lg border transition ${r.probation ? 'border-blue-400/40 text-blue-400 bg-blue-400/10 hover:bg-blue-400/15' : 'border-line text-sage hover:bg-subtle'}`}
                           >
                             {r.probation ? 'Beenden' : 'Markieren'}
+                          </button>
+                        </td>
+                      )}
+                      {isTeacher && (
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            onClick={(e) => removeFromClass(e, r)}
+                            disabled={busyId === r.id}
+                            title={`${r.name} aus der Klasse entfernen`}
+                            aria-label={`${r.name} aus der Klasse entfernen`}
+                            className="text-xs px-2.5 py-1 rounded-lg border border-line text-sage-muted hover:text-status-absent hover:border-status-absent/40 hover:bg-status-absent/10 transition inline-flex items-center gap-1"
+                          >
+                            <UserMinus size={13} /> Entfernen
                           </button>
                         </td>
                       )}

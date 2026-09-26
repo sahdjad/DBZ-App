@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus } from 'lucide-react';
+import { BookOpen, Plus, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -8,6 +8,7 @@ import { useAuth } from '../lib/AuthContext.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
+const ADMIN = ['super_admin', 'leitung'];
 
 export default function Aufgaben() {
   const { user } = useAuth();
@@ -43,6 +44,7 @@ function StudentView() {
 
 function ManagerView() {
   const toast = useToast();
+  const { user } = useAuth();
   const [list, setList] = useState(null);
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
@@ -67,6 +69,17 @@ function ManagerView() {
       toast.push('Aufgabe erstellt', 'success');
       setShowForm(false);
       setForm((f) => ({ ...f, title: '', description: '', dueAt: '' }));
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    }
+  };
+
+  const remove = async (a) => {
+    if (!window.confirm(`"${a.title}" endgültig löschen? Abgaben dazu werden mitgelöscht und die Aufgabe zählt für Schüler nicht mehr.`)) return;
+    try {
+      await api.del(`/assignments/${a.id}`);
+      toast.push('Aufgabe gelöscht', 'success');
       load();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -140,6 +153,12 @@ function ManagerView() {
             <div className="flex items-center gap-2 shrink-0">
               <Badge tone="neutral">{a.submittedCount}/{a.targetCount} abgegeben</Badge>
               {a.pendingReview > 0 && <Badge tone="late">{a.pendingReview} offen</Badge>}
+              {(a.createdBy === user.id || ADMIN.includes(user.role)) && (
+                <button onClick={() => remove(a)} title="Aufgabe löschen" aria-label="Aufgabe löschen"
+                        className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10">
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           </Card>
         ))

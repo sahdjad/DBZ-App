@@ -8,7 +8,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
-import { db, newId, UPLOAD_DIR, useSupabase } from './store.js';
+import { db, newId, UPLOAD_DIR, isLiveDeployment } from './store.js';
 import { persistUpload, readFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
@@ -52,17 +52,21 @@ const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex'
 
 const router = express.Router();
 
-// Betriebsmodus: "production" = dauerhaftes Backend (Supabase) angebunden,
-// "demo" = flüchtiges Datei-Backend (lokale Entwicklung oder ein eigenständig
-// deployter Vorführ-Server ohne Supabase-Zugangsdaten). Diese Unterscheidung
-// entscheidet, ob Demo-Login, Demo-Seeding und "Demo-Konten reaktivieren"
-// öffentlich erreichbar sein dürfen -- siehe DEMO_ACCOUNT_DEFS/-EMAILS unten,
-// /auth/login und /admin/reactivate-demo-accounts. Eine echte Trennung von
-// Demo- und Produktionsdaten bedeutet: Produktion läuft mit Supabase und OHNE
-// diese Konten; eine Vorführung läuft als eigener Prozess/eigene Datenbank
-// (z. B. derselbe Code ohne SUPABASE_URL/SUPABASE_SERVICE_KEY, oder ein
-// separates Supabase-Projekt) -- niemals derselbe Datenbestand.
-export const IS_PRODUCTION = useSupabase;
+// Betriebsmodus: "production" = dieses Deployment bedient echte Nutzer und
+// darf niemals Demo-Konten anlegen/erreichbar lassen, "demo" = lokale
+// Entwicklung oder ein eigenständig deployter Vorführ-Server. Diese
+// Unterscheidung entscheidet, ob Demo-Login, Demo-Seeding und "Demo-Konten
+// reaktivieren" öffentlich erreichbar sein dürfen -- siehe
+// DEMO_ACCOUNT_DEFS/-EMAILS unten, /auth/login und
+// /admin/reactivate-demo-accounts.
+//
+// War früher fälschlich mit "Supabase konfiguriert?" gleichgesetzt -- ein
+// echtes Deployment kann aber auch OHNE Supabase (Datei-Speicherung) laufen,
+// wie dieses hier: dann blieb IS_PRODUCTION falsch auf false, Demo-Konten
+// wurden weiter angelegt UND blieben für echte, gerade registrierte Nutzer
+// sichtbar/erreichbar. isLiveDeployment (server/store.js) prüft zusätzlich
+// die vom Speicher-Backend unabhängige Umgebungsvariable DBZ_LIVE=1.
+export const IS_PRODUCTION = isLiveDeployment;
 
 // Die festen Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx
 // und seed.js). Zentral definiert, weil sowohl /auth/login (Produktions-Sperre)
@@ -1139,6 +1143,25 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
   res.json({ class: { id: klass.id, name: klass.name }, rows });
 });
 
+// Schüler(in) aus der eigenen Klasse entfernen (nicht das ganze Konto
+// löschen -- nur die Klassenmitgliedschaft). Bisher konnte nur Admin/Leitung
+// Klassenmitgliedschaften ändern; die Klassenlehrkraft sollte das für die
+// eigene Klasse direkt können, ohne den Umweg über die Verwaltung.
+router.delete('/classes/:id/students/:studentId', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const student = findUserById(req.params.studentId);
+  if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (!(student.classIds || []).includes(klass.id)) return res.status(400).json({ error: 'Nicht Mitglied dieser Klasse' });
+  student.classIds = student.classIds.filter((c) => c !== klass.id);
+  // Klassensprecher ohne verbleibende Klasse ergibt keinen Sinn -- zurück auf Schüler.
+  if (student.role === ROLES.KLASSENSPRECHER && !student.classIds.length) student.role = ROLES.SCHUELER;
+  db.commit();
+  audit(req.user.id, 'class.student.remove', 'class', klass.id, { studentId: student.id, name: student.name }, null);
+  res.json({ ok: true });
+});
+
 // Probezeit markieren/entfernen – NUR die Klassenlehrkraft/Vertretung der
 // eigenen Klasse, nicht Admin/Leitung (soll bewusst nur in der Lehreransicht
 // sichtbar/steuerbar sein, nicht in der allgemeinen Schülerliste).
@@ -1670,6 +1693,36 @@ router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
   );
   audit(req.user.id, 'assignment.create', 'assignment', a.id);
   res.json({ assignment: a });
+});
+
+// Aufgabe endgültig löschen -- z. B. alte Test-Einträge, die fälschlich als
+// "offen" in der Klassenliste/beim Schüler mitgezählt werden. Nur die
+// erstellende Lehrkraft oder Admin/Leitung dürfen löschen (gleiches Muster
+// wie DELETE /materials/:id). Zugehörige Abgaben werden mitgelöscht, damit
+// nichts verwaist zurückbleibt.
+router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const list = db.all('assignments');
+  const idx = list.findIndex((a) => a.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  const a = list[idx];
+  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (a.createdBy !== req.user.id && !isAdmin(req.user))
+    return res.status(403).json({ error: 'Nur die erstellende Lehrkraft oder Admin/Leitung dürfen diese Aufgabe löschen' });
+  list.splice(idx, 1);
+  const subs = db.all('submissions');
+  const removedSubIds = new Set();
+  for (let i = subs.length - 1; i >= 0; i--) {
+    if (subs[i].assignmentId !== a.id) continue;
+    removedSubIds.add(subs[i].id);
+    subs.splice(i, 1);
+  }
+  const reviews = db.all('reviews');
+  for (let i = reviews.length - 1; i >= 0; i--) if (removedSubIds.has(reviews[i].submissionId)) reviews.splice(i, 1);
+  const exts = db.all('extensions');
+  for (let i = exts.length - 1; i >= 0; i--) if (exts[i].assignmentId === a.id) exts.splice(i, 1);
+  db.commit();
+  audit(req.user.id, 'assignment.delete', 'assignment', a.id, { title: a.title }, null);
+  res.json({ ok: true });
 });
 
 /** IDs der Schüler, für die eine Aufgabe gilt. */

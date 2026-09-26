@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mic, Square, Upload, ArrowLeft, Paperclip, Play } from 'lucide-react';
+import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Camera } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
@@ -21,6 +21,7 @@ export default function AufgabeDetail() {
   const recRef = useRef(null);
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
+  const cameraInputRef = useRef(null);
 
   const load = () => api.get(`/assignments/${id}`).then(setData).catch((e) => toast.push(e.message, 'error'));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
@@ -142,6 +143,18 @@ export default function AufgabeDetail() {
                 )}
               </div>
             )}
+
+            <div className="rounded-lg border border-line p-4">
+              <div className="text-sm text-sage mb-2">Foto direkt aufnehmen (z. B. ein Hausaufgabenblatt)</div>
+              <Button onClick={() => cameraInputRef.current?.click()} variant="outline">
+                <Camera size={18} /> Foto aufnehmen
+              </Button>
+              {/* capture="environment" öffnet auf dem Handy direkt die Kamera
+                  (Rückkamera) statt erst die Datei-/Galerieauswahl -- kein
+                  Umweg über "erst in Fotos speichern, dann Datei suchen". */}
+              <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
+                     onChange={(e) => { if (e.target.files.length) setFiles((f) => [...f, ...Array.from(e.target.files)]); e.target.value = ''; }} />
+            </div>
 
             <label className="block">
               <span className="text-sm text-sage">Datei(en) hochladen (Audio, PDF, Bild – max. 25 MB)</span>
