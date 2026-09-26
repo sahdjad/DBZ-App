@@ -68,15 +68,23 @@ const router = express.Router();
 // die vom Speicher-Backend unabhängige Umgebungsvariable DBZ_LIVE=1.
 export const IS_PRODUCTION = isLiveDeployment;
 
+// Eigene, isolierte Klasse NUR für die Demo-Konten -- NIE "class_3" (das ist
+// die echte Pilot-Klasse mit echten Schülern). So bleiben die Demo-Konten
+// jederzeit für Vorführungen/Präsentationen reaktivierbar (siehe
+// /admin/reactivate-demo-accounts), ohne dass echte Schüler sie je in ihrer
+// eigenen Klassenliste/im Klassenchat sehen -- unabhängig davon, ob sie
+// gerade aktiv sind oder ob DBZ_LIVE gesetzt ist.
+const DEMO_CLASS_ID = 'class_demo';
+
 // Die festen Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx
 // und seed.js). Zentral definiert, weil sowohl /auth/login (Produktions-Sperre)
 // als auch /admin/reactivate-demo-accounts (Wiederherstellung) sie brauchen.
 const DEMO_ACCOUNT_DEFS = [
   { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
   { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
-  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: ['class_3'] },
-  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: ['class_3'] },
-  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: ['class_3'] },
+  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: [DEMO_CLASS_ID] },
+  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: [DEMO_CLASS_ID] },
+  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: [DEMO_CLASS_ID] },
   { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
 ];
 const DEMO_ACCOUNT_EMAILS = new Set(DEMO_ACCOUNT_DEFS.map((d) => d.email));
@@ -4947,8 +4955,20 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
 router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   if (IS_PRODUCTION) return res.status(403).json({ error: 'In der Produktivumgebung nicht verfügbar' });
   const demoPasswordHash = await hashPassword('demo1234');
-  const demoClass = findClass('class_3');
-  if (demoClass && !demoClass.isDemo) demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.
+  // Eigene Demo-Klasse anlegen, falls sie noch nicht existiert (z. B. weil
+  // die Konten früher in "class_3" liefen und diese Klasse inzwischen
+  // gelöscht/nie mit DEMO_CLASS_ID angelegt wurde) -- niemals class_3
+  // wiederverwenden, siehe Kommentar bei DEMO_CLASS_ID oben.
+  let demoClass = findClass(DEMO_CLASS_ID);
+  if (!demoClass) {
+    demoClass = {
+      id: DEMO_CLASS_ID, organizationId: org().id, name: 'Demo-Klasse (Vorführung)', type: 'presence', language: 'de',
+      weekday: 6, startTime: '14:00', endTime: '18:00', active: true, isDemo: true, createdAt: new Date().toISOString(),
+    };
+    db.insert('classes', demoClass);
+  } else if (!demoClass.isDemo) {
+    demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.
+  }
   const results = [];
   for (const def of DEMO_ACCOUNT_DEFS) {
     let u = findUserByEmail(def.email);
