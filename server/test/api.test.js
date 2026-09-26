@@ -1858,7 +1858,7 @@ test('Demo-Konten: sehen/bearbeiten keine echten Konten/Klassen, eigene Neuanlag
   assert.ok(userList.some((u) => u.email === 'leitung@dbz.de'), 'Demo-Konto bleibt sichtbar');
   const classList = (await admin('GET', '/classes')).data.classes;
   assert.ok(!classList.some((c) => c.id === realClass.id), 'echte Klasse ist für Demo-Admin unsichtbar');
-  assert.ok(classList.some((c) => c.id === 'class_3'), 'Demo-Klasse bleibt sichtbar');
+  assert.ok(classList.some((c) => c.id === 'class_demo'), 'Demo-Klasse bleibt sichtbar');
 
   // Demo-Admin darf das echte Konto/die echte Klasse nicht bearbeiten/löschen.
   const editReal = await admin('PATCH', `/admin/users/${realLeitung.id}`, { name: 'Umbenannt' });
@@ -1945,7 +1945,7 @@ test('Demo-Konten: komplett gelöschtes Demo-Konto wird mit fester ID neu angele
   assert.ok(restored, 'Konto existiert wieder');
   assert.equal(restored.id, 'user_sprecher', 'gleiche feste ID wie beim ursprünglichen Seeding');
   assert.equal(restored.role, 'klassensprecher');
-  assert.deepEqual(restored.classIds, ['class_3']);
+  assert.deepEqual(restored.classIds, ['class_demo']);
 
   const login2 = client();
   const success = await login2('POST', '/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' });
