@@ -9,21 +9,26 @@
 //   schueler@dbz.de     Schüler (Yusuf)
 //   eltern@dbz.de       Eltern (verknüpft mit Yusuf)
 
-import { db, newId, useSupabase } from './store.js';
+import { db, newId, isLiveDeployment } from './store.js';
 import { hashPassword } from './auth.js';
 import { DEFAULT_ORG } from './content.js';
 import { ROLES } from './rbac.js';
 import { attendanceStatusFor } from './domain.js';
 
-// Demo-Konten/-Klasse/-Beispieldaten NIE automatisch in einer produktiven
-// (Supabase-gestützten) Umgebung anlegen -- ein frischer Produktions-Deploy
-// bekäme sonst sofort öffentlich bekannte Zugänge (admin@dbz.de/demo1234
-// usw.) mit vollen Administratorrechten. Für lokale Entwicklung/eine eigens
-// deployte Vorführumgebung (kein Supabase konfiguriert) bleibt das Seeding
-// wie gehabt aktiv. Ein bewusstes Opt-in (SEED_DEMO_ACCOUNTS=1) erlaubt es
-// trotzdem, z. B. um eine separate Supabase-Instanz als Demo-Umgebung zu
-// befüllen -- niemals dieselbe wie die Produktionsdatenbank.
-const shouldSeedDemoData = !useSupabase || process.env.SEED_DEMO_ACCOUNTS === '1';
+// Demo-Konten/-Klasse/-Beispieldaten NIE automatisch in einem Deployment
+// anlegen, das echte Nutzer bedient (isLiveDeployment, server/store.js) --
+// ein frischer Produktions-Deploy bekäme sonst sofort öffentlich bekannte
+// Zugänge (admin@dbz.de/demo1234 usw.) mit vollen Administratorrechten, und
+// echte Nutzer sähen die Demo-Konten (z. B. eine Klassenlehrkraft "Ustadh
+// Yunus") in ihrer eigenen Klasse. isLiveDeployment ist absichtlich NICHT
+// nur an Supabase gekoppelt: ein echtes Deployment kann auch ohne Supabase
+// (Datei-Speicherung) laufen -- dafür die Umgebungsvariable DBZ_LIVE=1
+// setzen. Für lokale Entwicklung/eine eigens deployte Vorführumgebung
+// bleibt das Seeding wie gehabt aktiv. Ein bewusstes Opt-in
+// (SEED_DEMO_ACCOUNTS=1) erlaubt es trotzdem, z. B. um eine separate
+// Supabase-Instanz als Demo-Umgebung zu befüllen -- niemals dieselbe wie die
+// Produktionsdatenbank.
+const shouldSeedDemoData = !isLiveDeployment || process.env.SEED_DEMO_ACCOUNTS === '1';
 
 export async function seed() {
   if (db.meta.seeded) return;

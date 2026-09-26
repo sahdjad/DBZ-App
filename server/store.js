@@ -29,6 +29,16 @@ const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'app_state';
 const ROW_ID = process.env.SUPABASE_ROW_ID || 'dbz';
 export const useSupabase = Boolean(SUPABASE_URL && SUPABASE_KEY);
 
+// "Läuft dieses Deployment für echte Nutzer?" -- bisher fälschlich mit
+// useSupabase gleichgesetzt (siehe IS_PRODUCTION in api.js). Das trifft NICHT
+// zu, wenn ein echtes Deployment (wie dieses hier) ohne Supabase mit
+// Datei-Speicherung läuft: dann wurden Demo-Konten weiter angelegt UND
+// blieben für echte, gerade registrierte Nutzer sichtbar/erreichbar (z. B.
+// die Klassenlehrkraft "Ustadh Yunus" in der Klassenliste). Ein Deployment
+// mit Supabase gilt weiterhin automatisch als "live"; zusätzlich erlaubt
+// DBZ_LIVE=1 das unabhängig vom Speicher-Backend explizit zu erzwingen.
+export const isLiveDeployment = useSupabase || process.env.DBZ_LIVE === '1';
+
 function ensureDirs() {
   if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
   if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
