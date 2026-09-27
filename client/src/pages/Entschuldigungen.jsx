@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ClipboardCheck, MessageCircle, Send } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
 
 const TYPE_LABEL = { absent: 'Fehlt', late: 'Später', leave_early: 'Früher', other: 'Sonstiges' };
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
@@ -106,6 +106,8 @@ export default function Entschuldigungen() {
   };
 
   if (!list) return <AppLayout title="Entschuldigungen"><Spinner /></AppLayout>;
+  // Leitung/Admin: nur Einsicht, nach Klassen geordnet (entscheiden tut die Lehrkraft).
+  if (list.length && list.every((r) => r.readOnly)) return <ReadOnlyOverview list={list} />;
   const pending = list.filter((r) => r.status === 'pending');
   const needsInfo = list.filter((r) => r.status === 'needs_info');
   const decided = list.filter((r) => !['pending', 'needs_info'].includes(r.status));
@@ -147,6 +149,44 @@ export default function Entschuldigungen() {
             ))}
           </div>
         </Card>
+      )}
+    </AppLayout>
+  );
+}
+
+// Übersicht für Leitung/Admin: je Klasse, wer sich entschuldigt hat und wie
+// die Lehrkraft entschieden hat -- ohne Freitext und ohne Entscheidungsknöpfe.
+function ReadOnlyOverview({ list }) {
+  const [cls, setCls] = useState(null);
+  const groups = useMemo(() => {
+    const m = new Map();
+    list.forEach((r) => {
+      const g = m.get(r.classId) || { id: r.classId, name: r.className, items: [] };
+      g.items.push(r);
+      m.set(r.classId, g);
+    });
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true })).map((g) => {
+      const open = g.items.filter((r) => r.status === 'pending' || r.status === 'needs_info').length;
+      return { ...g, count: g.items.length, hint: open ? `${open} offen bei der Lehrkraft` : 'alles entschieden', tone: open ? 'warn' : null };
+    });
+  }, [list]);
+  const current = groups.find((g) => g.id === cls);
+  return (
+    <AppLayout title="Entschuldigungen">
+      <p className="text-sm text-sage-muted mb-4">Über Entschuldigungen entscheidet die Klassenlehrkraft. Hier siehst du nur, wer sich entschuldigt hat und wie entschieden wurde.</p>
+      <ClassFolders groups={groups} selected={cls} onSelect={setCls} />
+      {current && (
+        <div className="grid gap-2 lg:grid-cols-2 items-start">
+          {current.items.map((r) => (
+            <div key={r.id} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-card px-3 py-2.5">
+              <div className="text-sm min-w-0">
+                <div className="text-ivory truncate">{r.studentName}</div>
+                <div className="text-xs text-sage-muted">{TYPE_LABEL[r.requestType]} · {r.reasonCategory} · {r.sessionDate ? fmt(r.sessionDate) : fmt(r.createdAt)}</div>
+              </div>
+              <StatusBadge status={r.status} />
+            </div>
+          ))}
+        </div>
       )}
     </AppLayout>
   );

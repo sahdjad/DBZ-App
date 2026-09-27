@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ClipboardList } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
-const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
+// Freigeben/Zurückgeben tut die Lehrkraft der Klasse; Leitung/Admin lesen nur.
+const MANAGER = ['klassenlehrer', 'vertretung'];
+const LEADERSHIP = ['super_admin', 'leitung'];
 const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
 
 export default function Protokolle() {
@@ -28,6 +30,14 @@ export default function Protokolle() {
   }, []);
 
   const isManager = MANAGER.includes(user.role);
+  const isLeadership = LEADERSHIP.includes(user.role);
+  const [cls, setCls] = useState(null);
+  const groups = useMemo(() => {
+    const m = new Map();
+    (protocols || []).forEach((p) => { const g = m.get(p.classId) || { id: p.classId, name: p.className, count: 0 }; g.count++; m.set(p.classId, g); });
+    return [...m.values()].sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  }, [protocols]);
+  const shown = isLeadership ? (protocols || []).filter((p) => p.classId === cls) : protocols;
 
   const saveDraft = async (submit) => {
     try {
@@ -71,15 +81,17 @@ export default function Protokolle() {
         </Card>
       )}
 
+      {isLeadership && protocols && <ClassFolders groups={groups} selected={cls} onSelect={setCls} emptyText="Noch keine Protokolle." />}
+      {(!isLeadership || cls) && (
       <Card className="p-5">
         <CardHeader title="Protokolle" icon={ClipboardList} />
         <div className="grid gap-3 lg:grid-cols-2 items-start">
-          {!protocols ? <Spinner /> : protocols.length === 0 ? (
+          {!shown ? <Spinner /> : shown.length === 0 ? (
             <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
-          ) : protocols.map((p) => (
+          ) : shown.map((p) => (
             <div key={p.id} className="rounded-lg border border-line bg-subtle/40 p-4">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-sm text-sage-muted">{fmt(p.createdAt)} · {p.protocolType}</div>
+                <div className="text-sm text-sage-muted">{fmt(p.createdAt)} · {p.className}</div>
                 <StatusBadge status={p.status} />
               </div>
               <div className="mt-2 text-sm space-y-1">
@@ -97,6 +109,7 @@ export default function Protokolle() {
           ))}
         </div>
       </Card>
+      )}
     </AppLayout>
   );
 }

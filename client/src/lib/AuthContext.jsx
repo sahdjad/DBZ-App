@@ -30,7 +30,8 @@ export function AuthProvider({ children }) {
       } catch {
         setUser(null);
       } finally {
-        const wait = Math.max(0, 3500 - (Date.now() - start));
+        // Kurz, aber lang genug für die Logo-Animation (fühlt sich wie eine App an).
+        const wait = Math.max(0, 1400 - (Date.now() - start));
         setTimeout(() => setLoading(false), wait);
       }
     })();

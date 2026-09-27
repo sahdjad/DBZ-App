@@ -22,7 +22,22 @@
          mit Marken-Fallbacks. Marken-Schriften können später selbst gehostet werden. -->
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Sofort sichtbarer Start-Bildschirm (noch bevor JavaScript geladen ist):
+         wirkt wie eine echte App statt einer weißen Seite. React ersetzt ihn. -->
+    <style>
+      #boot{position:fixed;inset:0;display:grid;place-items:center;background:#062d1f;color:#f4efe2;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:9999}
+      #boot .m{position:relative;width:112px;height:112px;display:grid;place-items:center}
+      #boot svg{position:absolute;inset:0;animation:bspin 2.4s linear infinite}
+      #boot circle{fill:none;stroke:#d8c38a;stroke-width:3;stroke-linecap:round;stroke-dasharray:250 90;opacity:.9}
+      #boot img{width:64px;height:64px;border-radius:18px;animation:bpop .7s cubic-bezier(.22,.61,.36,1) both}
+      #boot .t{margin-top:18px;text-align:center;animation:bfade .8s ease .15s both}
+      #boot .t b{display:block;font-weight:600;font-size:19px;letter-spacing:.02em}
+      #boot .t span{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#9fb8a8}
+      @keyframes bspin{to{transform:rotate(360deg)}}
+      @keyframes bpop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
+      @keyframes bfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+    </style>
+    <div id="root"><div id="boot"><div><div class="m"><svg viewBox="0 0 112 112"><circle cx="56" cy="56" r="52"/></svg><img src="/logo.png" alt="DBZ" /></div><div class="t"><b>Deen Bildungszentrum</b><span>DBZ</span></div></div></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

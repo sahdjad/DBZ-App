@@ -276,11 +276,21 @@ export function Reveal({ children, className = '', delay = 0 }) {
   );
 }
 
-export function Spinner({ label = 'Lädt …' }) {
+// Lade-Anzeige im DBZ-Stil: kleines Logo mit kreisendem Ring und
+// wechselnden, freundlichen Hinweisen statt eines nüchternen "Lädt …".
+const LOAD_LINES = ['Einen Moment …', 'Bismillah …', 'Gleich geht\u2019s los …', 'Daten werden geholt …'];
+export function Spinner({ label }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (label !== undefined) return undefined;
+    const t = setInterval(() => setI((x) => (x + 1) % LOAD_LINES.length), 1600);
+    return () => clearInterval(t);
+  }, [label]);
+  const text = label !== undefined ? label : LOAD_LINES[i];
   return (
-    <div className="flex items-center justify-center gap-3 py-16 text-sage-muted" role="status">
-      <span className="h-5 w-5 rounded-full border-2 border-line border-t-mint animate-spin" />
-      <span className="text-sm">{label}</span>
+    <div className="flex flex-col items-center justify-center gap-3 py-14 text-sage-muted" role="status" aria-live="polite">
+      <span className="dbz-loader" aria-hidden="true"><img src="/logo.png" alt="" /></span>
+      {text && <span key={text} className="text-sm dbz-fade-in">{text}</span>}
     </div>
   );
 }
@@ -517,5 +527,43 @@ export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
       </div>
     </div>,
     document.body,
+  );
+}
+
+// --- Klassen-Ordner (Leitung/Admin) ------------------------------------------
+// Ordnung für viele Klassen: erst die Klassen als Kacheln, ein Tipp öffnet die
+// Einträge der Klasse. `groups`: [{ id, name, count, hint, tone }].
+export function ClassFolders({ groups, selected, onSelect, emptyText = 'Noch keine Klassen angelegt.', extra = null }) {
+  const current = groups.find((g) => g.id === selected);
+  if (current) {
+    return (
+      <div className="flex items-center gap-2 mb-4">
+        <Button variant="outline" size="sm" onClick={() => onSelect(null)}><ArrowLeft size={16} /> Alle Klassen</Button>
+        <h2 className="text-lg text-ivory truncate">{current.name}</h2>
+        {current.hint && <span className="text-xs text-sage-muted">{current.hint}</span>}
+      </div>
+    );
+  }
+  if (!groups.length && !extra) return <Card className="p-8 text-center text-sage-muted">{emptyText}</Card>;
+  return (
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-4">
+      {extra}
+      {groups.map((g) => (
+        <button
+          key={g.id}
+          type="button"
+          onClick={() => onSelect(g.id)}
+          className="group text-left rounded-2xl border border-line bg-card p-4 hover:border-mint/40 hover:bg-hover transition-all duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-ivory font-medium truncate">{g.name}</span>
+            {g.count != null && (
+              <span className={cx('text-xs font-mono px-2 py-0.5 rounded-full', g.tone === 'warn' ? 'bg-status-late/15 text-status-late' : 'bg-mint/10 text-mint')}>{g.count}</span>
+            )}
+          </div>
+          {g.hint && <div className="text-xs text-sage-muted mt-1 truncate">{g.hint}</div>}
+        </button>
+      ))}
+    </div>
   );
 }

@@ -5,6 +5,10 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, Button, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { openNotification, notifyBadgeRefresh } from '../lib/notify.js';
+import { useAuth } from '../lib/AuthContext.jsx';
+
+// Schüler/Eltern dürfen nichts löschen -- nur als gelesen markieren.
+const CAN_DELETE = ['super_admin', 'leitung', 'klassenlehrer', 'vertretung'];
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' });
 const dot = { info: 'bg-mint', warning: 'bg-status-late', danger: 'bg-status-absent' };
@@ -14,6 +18,8 @@ export default function Benachrichtigungen() {
   const navigate = useNavigate();
   const toast = useToast();
   const selection = useSelection();
+  const { user } = useAuth();
+  const canDelete = CAN_DELETE.includes(user?.role);
 
   const load = () => api.get('/notifications').then((d) => setItems(d.items));
   useEffect(() => { load(); }, []);
@@ -61,7 +67,7 @@ export default function Benachrichtigungen() {
         allIds={(items || []).map((n) => n.id)}
         actions={[
           { label: 'Gelesen', icon: CheckCheck, onClick: () => bulk('read') },
-          { label: 'Löschen', icon: Trash2, variant: 'danger', onClick: () => bulk('delete') },
+          ...(canDelete ? [{ label: 'Löschen', icon: Trash2, variant: 'danger', onClick: () => bulk('delete') }] : []),
         ]}
       />
     </AppLayout>

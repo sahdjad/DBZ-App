@@ -24,6 +24,8 @@ import {
   CLASS_MANAGERS,
   TEACHING_ROLES,
   STUDENT_ROLES,
+  canDecideForClass,
+  canDeleteHistory,
 } from './rbac.js';
 import {
   attendanceStatusFor,
@@ -104,7 +106,7 @@ router.get('/health', (_req, res) => {
 const byId = (coll, id) => db.all(coll).find((x) => x.id === id) || null;
 const findUserById = (id) => byId('users', id);
 const findUserByEmail = (email) =>
-  db.all('users').find((u) => u.email.toLowerCase() === (email || '').toLowerCase()) || null;
+  (email ? db.all('users').find((u) => u.email && u.email.toLowerCase() === String(email).trim().toLowerCase()) : null) || null;
 const findClass = (id) => byId('classes', id);
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
 // Gewichte für den Notenvorschlag: nur bekannte, positive Werte übernehmen,
@@ -123,7 +125,9 @@ function publicUser(u) {
   // "probation" bewusst nie über den allgemeinen Nutzer-Mapper ausgeben – das
   // ist nur für die Klassenlehrkraft in der Klassenliste sichtbar (eigene,
   // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
-  const { passwordHash, familyCode, probation, ...rest } = u;
+  // lastSeenAt ("zuletzt online") ebenfalls nie pauschal -- nur Mitarbeitende
+  // bekommen es gezielt (Klassenliste, Verwaltung, Nachrichten).
+  const { passwordHash, familyCode, probation, lastSeenAt, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role, ...(inSandbox() ? { demo: true } : {}) };
 }
 
@@ -154,25 +158,60 @@ function visibleClasses(user) {
   return classes.filter((c) => (user.classIds || []).includes(c.id));
 }
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// Heutiges Datum in Ortszeit der Schule (TZ, siehe tz.js) -- nicht UTC.
+const localDateKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayKey = () => localDateKey();
 
 /** Kombiniert ein Datum (YYYY-MM-DD) mit einer Uhrzeit (HH:MM) zu ISO. */
 function combineDateTime(dateKey, time) {
   return new Date(`${dateKey}T${time || '00:00'}:00`).toISOString();
 }
 
+// Gemeinsamer Unterricht der ganzen Schule an einem Tag (von Leitung/Admin
+// angelegt): an diesem Tag gelten für ALLE Klassen dieselben Zeiten und ein
+// gemeinsamer QR-Code. Die Anwesenheit landet trotzdem in der Sitzung der
+// jeweiligen Klasse (Statistik/Klassenliste bleiben stimmig).
+const schoolDayOn = (date) => db.all('school_days').find((d) => d.date === date) || null;
+
+// Verspätungsregeln einer Klasse (von der Lehrkraft einstellbar), sonst Schulstandard.
+function classRules(klass) {
+  const o = org();
+  return {
+    lateAfterMinutes: Number.isFinite(klass?.lateAfterMinutes) ? klass.lateAfterMinutes : (o.lateAfterMinutes ?? 5),
+    unexcusedLateAfterMinutes: Number.isFinite(klass?.unexcusedLateAfterMinutes) ? klass.unexcusedLateAfterMinutes : null,
+    checkinOpensBefore: Number.isFinite(klass?.checkinOpensBefore) ? klass.checkinOpensBefore : 15,
+  };
+}
+// Regeln, die für eine konkrete Sitzung gelten (Schultag hat Vorrang).
+function sessionRules(session) {
+  const klass = findClass(session.classId);
+  const base = classRules(klass);
+  const sd = session.schoolDayId ? byId('school_days', session.schoolDayId) : null;
+  if (sd && Number.isFinite(sd.lateAfterMinutes)) base.lateAfterMinutes = sd.lateAfterMinutes;
+  return base;
+}
+
 /** Findet oder erstellt die heutige Sitzung einer Klasse. */
 function ensureTodaySession(klass) {
   const date = todayKey();
+  const sd = schoolDayOn(date);
   let s = db.all('sessions').find((x) => x.classId === klass.id && x.date === date);
+  if (s && sd && s.schoolDayId !== sd.id && s.status === 'scheduled') {
+    // Schultag wurde nachträglich angelegt -> Zeiten der noch nicht begonnenen Sitzung übernehmen.
+    s.schoolDayId = sd.id;
+    s.scheduledStart = combineDateTime(date, sd.startTime);
+    s.scheduledEnd = combineDateTime(date, sd.endTime);
+    db.commit();
+  }
   if (!s) {
     s = {
       id: newId('sess'),
       classId: klass.id,
       subjectId: null,
       date,
-      scheduledStart: combineDateTime(date, klass.startTime),
-      scheduledEnd: combineDateTime(date, klass.endTime),
+      schoolDayId: sd?.id || null,
+      scheduledStart: combineDateTime(date, sd ? sd.startTime : klass.startTime),
+      scheduledEnd: combineDateTime(date, sd ? sd.endTime : klass.endTime),
       status: 'scheduled', // scheduled | active | ended
       qr: null,
       startedAt: null,
@@ -209,15 +248,17 @@ function doorCheckinOpen(session) {
   if (session.checkinOpenUntil && now < new Date(session.checkinOpenUntil).getTime()) return { open: true };
   if (session.status === 'ended') return { open: false, reason: 'Der Unterricht ist bereits beendet.', code: 'ended' };
   if (session.status === 'active') return { open: true };
-  // Automatisch nur am Unterrichtstag der Klasse (sonst nur manuell/aktiv geöffnet).
+  // Automatisch nur am Unterrichtstag der Klasse bzw. am gemeinsamen Schultag
+  // (sonst nur manuell/aktiv geöffnet).
   const klass = findClass(session.classId);
-  if (klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
+  if (!session.schoolDayId && klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
     return { open: false, reason: 'Heute ist kein Unterrichtstag dieser Klasse.', code: 'wrong_day' };
   const start = new Date(session.scheduledStart).getTime();
-  const EARLY_MS = 15 * 60000;
+  const end = new Date(session.scheduledEnd || session.scheduledStart).getTime();
+  const EARLY_MS = sessionRules(session).checkinOpensBefore * 60000;
   const windowMin = org().checkinWindowMinutes || 90;
   if (now < start - EARLY_MS) return { open: false, reason: 'Check-in öffnet automatisch kurz vor Unterrichtsbeginn.', code: 'too_early' };
-  if (now <= start + windowMin * 60000) return { open: true };
+  if (now <= Math.max(start + windowMin * 60000, end)) return { open: true };
   return { open: false, reason: 'Das Check-in-Fenster ist vorbei – du wirst als verspätet eingetragen.', code: 'window_over' };
 }
 
@@ -232,10 +273,21 @@ function requireAuth(req, res, next) {
   if (Boolean(payload.sb) !== inSandbox()) return res.status(401).json({ error: 'Sitzung ungültig' });
   const user = findUserById(payload.id);
   if (!user) return res.status(401).json({ error: 'Sitzung ungültig' });
-  if (user.status === 'disabled')
+  if (user.status === 'disabled' || (user.roleOf && findUserById(user.roleOf)?.status === 'disabled'))
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   req.user = user;
+  touchLastSeen(user);
   next();
+}
+
+// "Zuletzt online": höchstens alle 2 Minuten fortschreiben (Speicher-Schreiblast
+// gering halten). Sichtbar nur für Mitarbeitende, nie für Schüler/Eltern.
+const LAST_SEEN_EVERY_MS = 2 * 60000;
+function touchLastSeen(user) {
+  const now = Date.now();
+  if (user.lastSeenAt && now - new Date(user.lastSeenAt).getTime() < LAST_SEEN_EVERY_MS) return;
+  user.lastSeenAt = new Date(now).toISOString();
+  db.commit();
 }
 
 // Demo-Konten (isDemo=true, gesetzt über /admin/reactivate-demo-accounts) sind
@@ -332,8 +384,12 @@ router.post('/auth/login', async (req, res) => {
   if (user.status === 'disabled')
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   loginThrottle.succeed(key);
-  issueToken(res, user, { sb: inSandbox() });
-  res.json({ user: publicUser(user) });
+  // Mehrere Rollen: dort weitermachen, wo die Person zuletzt war.
+  const last = user.lastActiveAccountId && (user.linkedAccountIds || []).includes(user.lastActiveAccountId)
+    ? findUserById(user.lastActiveAccountId) : null;
+  const active = last && last.status === 'active' ? last : user;
+  issueToken(res, active, { sb: inSandbox() });
+  res.json({ user: publicUser(active) });
 });
 
 router.post('/auth/logout', (_req, res) => {
@@ -351,20 +407,35 @@ router.patch('/me', requireAuth, (req, res) => {
   const { name } = req.body || {};
   if (name && name.trim()) {
     req.user.name = name.trim();
+    // Rollenkonten derselben Person tragen denselben Namen.
+    personAccounts(req.user).forEach((a) => { if (a.id === req.user.id || !a.email || !req.user.email) a.name = name.trim(); });
     db.commit();
   }
   res.json({ user: publicUser(req.user) });
 });
 
+// Eine Einwilligung für alles (Datenschutz, Mikrofon, Kamera, Benachrichtigungen)
+// -- gilt für alle Rollen der Person.
+router.post('/me/consent', requireAuth, (req, res) => {
+  const at = new Date().toISOString();
+  const version = Number(req.body?.version) || 1;
+  personAccounts(req.user).forEach((a) => { a.consentAt = at; a.consentVersion = version; });
+  db.commit();
+  audit(req.user.id, 'user.consent', 'user', req.user.id, null, { version });
+  res.json({ user: publicUser(req.user) });
+});
+
 router.patch('/me/password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!(await verifyPassword(currentPassword || '', req.user.passwordHash)))
+  // Rollenkonten haben kein eigenes Passwort -> gilt für das Anmelde-Konto der Person.
+  const target = req.user.email ? req.user : (personAccounts(req.user).find((a) => a.email) || req.user);
+  if (!target.passwordHash || !(await verifyPassword(currentPassword || '', target.passwordHash)))
     return res.status(400).json({ error: 'Aktuelles Passwort ist falsch' });
   if (!newPassword || newPassword.length < 6)
     return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
-  req.user.passwordHash = await hashPassword(newPassword);
+  target.passwordHash = await hashPassword(newPassword);
   db.commit();
-  audit(req.user.id, 'user.password_change', 'user', req.user.id);
+  audit(req.user.id, 'user.password_change', 'user', target.id);
   res.json({ ok: true });
 });
 
@@ -485,6 +556,7 @@ router.post('/auth/register', async (req, res) => {
     childIds: inv.childId ? [inv.childId] : [],
     profile: pr.profile,
     status: 'active',
+    ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
@@ -518,6 +590,7 @@ router.post('/auth/register-open', async (req, res) => {
     childIds: [],
     profile: pr.profile,
     status: 'pending',
+    ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
@@ -635,8 +708,8 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
 // Klassen
 // =============================================================================
 
-router.get('/classes', requireAuth, (req, res) => {
-  const classes = visibleClasses(req.user).map((c) => ({
+function classView(c, user) {
+  return {
     id: c.id,
     name: c.name,
     type: c.type,
@@ -644,8 +717,14 @@ router.get('/classes', requireAuth, (req, res) => {
     weekday: c.weekday,
     startTime: c.startTime,
     endTime: c.endTime,
-    studentCount: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(c.id)).length,
-  }));
+    studentCount: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (u.classIds || []).includes(c.id)).length,
+    ...(canManageClass(user, c.id) ? { rules: classRules(c), canEdit: true } : {}),
+  };
+}
+router.get('/classes', requireAuth, (req, res) => {
+  const classes = visibleClasses(req.user)
+    .map((c) => classView(c, req.user))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
   res.json({ classes });
 });
 
@@ -782,7 +861,7 @@ router.get('/classes/:id/checkin-qr', requireAuth, (req, res) => {
     sessionId: session.id,
     window: doorCheckinOpen(session),
     checkinOpenUntil: session.checkinOpenUntil || null,
-    autoClose: org().checkinAutoClose || '16:00',
+    autoClose: new Date(session.scheduledEnd).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
   });
 });
 
@@ -802,7 +881,8 @@ router.post('/sessions/:id/checkin-open', requireAuth, (req, res) => {
   const s = byId('sessions', req.params.id);
   if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
   if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const close = todayAt(org().checkinAutoClose || '16:00');
+  // Schließt automatisch zum Unterrichtsende DIESER Klasse (jede Klasse hat eigene Zeiten).
+  const close = s.scheduledEnd ? new Date(s.scheduledEnd) : todayAt(org().checkinAutoClose || '16:00');
   const until = close.getTime() > Date.now() + 10 * 60000 ? close : new Date(Date.now() + 2 * 3600000);
   s.checkinOpenUntil = until.toISOString();
   if (s.status === 'ended') s.status = 'scheduled';
@@ -835,7 +915,19 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const myClassIds = req.user.classIds || [];
   let session = null;
   let forceLate = false; // nach Fensterende: automatisch als verspätet werten
-  if (String(token).startsWith('TUR-')) {
+  if (String(token).startsWith('SCH-')) {
+    // Gemeinsamer QR-Code der ganzen Schule (nur am angelegten Schultag gültig).
+    const sd = db.all('school_days').find((d) => d.code === token);
+    if (!sd || sd.date !== todayKey()) return res.status(400).json({ error: 'Dieser Schul-QR-Code gilt heute nicht.' });
+    const klass = findClass(myClassIds[0]);
+    if (!klass) return res.status(400).json({ error: 'Du bist noch keiner Klasse zugeordnet.' });
+    session = ensureTodaySession(klass);
+    const win = doorCheckinOpen(session);
+    if (!win.open) {
+      if (win.code === 'window_over' || win.code === 'ended') forceLate = true;
+      else return res.status(400).json({ error: win.reason });
+    }
+  } else if (String(token).startsWith('TUR-')) {
     // Fester Tür-QR der Klasse: gültig nur im automatischen/geöffneten Zeitfenster.
     const klass = db.all('classes').find((c) => c.checkinCode === token && myClassIds.includes(c.id));
     if (!klass) return res.status(400).json({ error: 'Dieser QR-Code gehört nicht zu deiner Klasse.' });
@@ -864,16 +956,19 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
     return res.json({ status: existing.status, minutesLate: existing.minutesLate, already: true });
 
   const now = new Date().toISOString();
+  const rules = sessionRules(session);
   let { status, minutesLate } = attendanceStatusFor({
     checkInAt: now,
     scheduledStart: session.scheduledStart,
-    lateAfterMinutes: org().lateAfterMinutes,
+    lateAfterMinutes: rules.lateAfterMinutes,
   });
   if (forceLate) {
     status = 'late';
     // Verspätung mindestens ab der Toleranzgrenze, damit nie 0 Minuten stehen.
-    if (!minutesLate || minutesLate < 1) minutesLate = (org().lateAfterMinutes || 5) + 1;
+    if (!minutesLate || minutesLate < 1) minutesLate = (rules.lateAfterMinutes || 5) + 1;
   }
+  // Ab der von der Lehrkraft festgelegten Grenze gilt die Verspätung als unentschuldigt.
+  const lateUnexcused = status === 'late' && rules.unexcusedLateAfterMinutes != null && minutesLate > rules.unexcusedLateAfterMinutes;
   const rec = {
     id: newId('att'),
     sessionId: session.id,
@@ -882,6 +977,7 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
     status,
     checkInAt: now,
     minutesLate,
+    lateUnexcused,
     source: 'qr',
     confirmedBy: null,
     note: null,
@@ -889,7 +985,7 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   };
   db.insert('attendance', rec);
   audit(req.user.id, 'attendance.checkin', 'attendance', rec.id, null, { status, minutesLate });
-  res.json({ status, minutesLate });
+  res.json({ status, minutesLate, lateUnexcused, className: findClass(session.classId)?.name });
 });
 
 // Live-Anwesenheit einer Sitzung (Verwalter).
@@ -908,6 +1004,7 @@ router.get('/sessions/:id/attendance', requireAuth, (req, res) => {
       name: st.name,
       status: rec ? rec.status : 'open',
       minutesLate: rec ? rec.minutesLate : null,
+      lateUnexcused: Boolean(rec?.lateUnexcused),
       checkInAt: rec ? rec.checkInAt : null,
       source: rec ? rec.source : null,
     };
@@ -923,6 +1020,9 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
   const { studentId, status, note } = req.body || {};
   const valid = ['present', 'late', 'excused', 'unexcused', 'left_early', 'remote', 'other'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Ungültiger Status' });
+  // Entschuldigt/unentschuldigt ist eine Entscheidung der Klassenlehrkraft.
+  if (['excused', 'unexcused'].includes(status) && !canDecideForClass(req.user, s.classId))
+    return res.status(403).json({ error: 'Ob jemand entschuldigt ist, entscheidet die Klassenlehrkraft' });
   const student = findUserById(studentId);
   if (!student || !(student.classIds || []).includes(s.classId))
     return res.status(400).json({ error: 'Schüler gehört nicht zur Klasse' });
@@ -1030,6 +1130,164 @@ router.post('/sessions/:id/reset', requireAuth, requireRole(CLASS_MANAGERS), (re
   db.commit();
   audit(req.user.id, 'session.reset', 'session', s.id, { removed }, null);
   res.json({ ok: true, removed, session: s });
+});
+
+// --- Unterrichtszeiten & Regeln je Klasse ------------------------------------
+// Jede Klasse hat eigene Zeiten (z. B. Klasse 3 samstags 14:00, Klasse 6
+// freitags 18:45) und eigene Pünktlichkeitsregeln. Die Lehrkraft der Klasse
+// stellt das selbst ein -- unabhängig von Leitung und anderen Klassen.
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+router.patch('/classes/:id/settings', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const b = req.body || {};
+  const before = { weekday: klass.weekday, startTime: klass.startTime, endTime: klass.endTime, lateAfterMinutes: klass.lateAfterMinutes, unexcusedLateAfterMinutes: klass.unexcusedLateAfterMinutes };
+  const startTime = b.startTime ?? klass.startTime;
+  const endTime = b.endTime ?? klass.endTime;
+  if (!HHMM.test(startTime) || !HHMM.test(endTime)) return res.status(400).json({ error: 'Uhrzeit bitte als HH:MM angeben' });
+  if (endTime <= startTime) return res.status(400).json({ error: 'Das Unterrichtsende muss nach dem Beginn liegen' });
+  const num = (v, min, max) => (v === null || v === '' ? null : Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Math.round(Number(v)))) : undefined);
+  const next = {};
+  if (b.weekday !== undefined) {
+    const wd = Number(b.weekday);
+    if (!Number.isInteger(wd) || wd < 0 || wd > 6) return res.status(400).json({ error: 'Ungültiger Wochentag' });
+    next.weekday = wd;
+  }
+  if (b.lateAfterMinutes !== undefined) { const v = num(b.lateAfterMinutes, 0, 120); if (v !== undefined) next.lateAfterMinutes = v; }
+  if (b.unexcusedLateAfterMinutes !== undefined) { const v = num(b.unexcusedLateAfterMinutes, 1, 300); if (v !== undefined) next.unexcusedLateAfterMinutes = v; }
+  if (b.checkinOpensBefore !== undefined) { const v = num(b.checkinOpensBefore, 0, 120); if (v !== undefined) next.checkinOpensBefore = v; }
+  // Erst prüfen, dann übernehmen (nichts Halbes speichern).
+  const rules = classRules({ ...klass, ...next });
+  if (rules.unexcusedLateAfterMinutes != null && rules.unexcusedLateAfterMinutes <= rules.lateAfterMinutes)
+    return res.status(400).json({ error: '„Unentschuldigt zu spät" muss später liegen als die Pünktlichkeits-Toleranz' });
+  Object.assign(klass, next, { startTime, endTime });
+  // Heutige, noch nicht begonnene Sitzung sofort an die neuen Zeiten anpassen.
+  const today = db.all('sessions').find((x) => x.classId === klass.id && x.date === todayKey());
+  if (today && today.status === 'scheduled' && !today.schoolDayId) {
+    today.scheduledStart = combineDateTime(today.date, klass.startTime);
+    today.scheduledEnd = combineDateTime(today.date, klass.endTime);
+  }
+  db.commit();
+  audit(req.user.id, 'class.settings', 'class', klass.id, before, { weekday: klass.weekday, startTime, endTime, ...rules });
+  res.json({ class: classView(klass, req.user) });
+});
+
+// Vergangene Unterrichtstage einer Klasse (zum Prüfen und Löschen von Testläufen).
+router.get('/classes/:id/sessions', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const att = db.all('attendance');
+  const list = db.all('sessions').filter((x) => x.classId === klass.id)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((x) => {
+      const recs = att.filter((a) => a.sessionId === x.id);
+      const c = (st) => recs.filter((a) => a.status === st).length;
+      return { id: x.id, date: x.date, status: x.status, schoolDay: Boolean(x.schoolDayId), entries: recs.length, present: c('present'), late: c('late'), excused: c('excused'), unexcused: c('unexcused') };
+    })
+    // Leere, nie begonnene Tage (nur beim Öffnen der Seite angelegt) sind kein Unterricht.
+    .filter((x) => x.entries > 0 || x.status !== 'scheduled' || x.date === todayKey());
+  res.json({ sessions: list });
+});
+
+function deleteSessionCascade(sess) {
+  const att = db.all('attendance');
+  let removed = 0;
+  for (let i = att.length - 1; i >= 0; i--) if (att[i].sessionId === sess.id) { att.splice(i, 1); removed++; }
+  const list = db.all('sessions');
+  const idx = list.findIndex((x) => x.id === sess.id);
+  if (idx >= 0) list.splice(idx, 1);
+  return removed;
+}
+router.post('/sessions/bulk-delete', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
+  let sessions = 0; let entries = 0;
+  for (const id of ids) {
+    const sess = byId('sessions', id);
+    if (!sess || !canManageClass(req.user, sess.classId)) continue;
+    entries += deleteSessionCascade(sess);
+    sessions++;
+    audit(req.user.id, 'session.delete', 'session', id, { date: sess.date, classId: sess.classId }, null);
+  }
+  db.commit();
+  res.json({ ok: true, sessions, entries });
+});
+
+// --- Gemeinsamer Schultag (ganze Koran-Schule) -------------------------------
+function schoolDayView(d, withCode = false) {
+  return {
+    id: d.id, date: d.date, title: d.title, startTime: d.startTime, endTime: d.endTime,
+    lateAfterMinutes: d.lateAfterMinutes ?? null, createdByName: d.createdByName,
+    isToday: d.date === todayKey(),
+    ...(withCode ? { code: d.code } : {}),
+  };
+}
+router.get('/school-days', requireAuth, (req, res) => {
+  const from = localDateKey(new Date(Date.now() - 14 * 86400000));
+  const list = db.all('school_days').filter((d) => d.date >= from).sort((a, b) => a.date.localeCompare(b.date));
+  res.json({ days: list.map((d) => schoolDayView(d, isAdmin(req.user))) });
+});
+router.post('/school-days', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const { date, startTime, endTime, title, lateAfterMinutes } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return res.status(400).json({ error: 'Bitte ein Datum wählen' });
+  if (date < todayKey()) return res.status(400).json({ error: 'Das Datum liegt in der Vergangenheit' });
+  if (!HHMM.test(startTime || '') || !HHMM.test(endTime || '') || endTime <= startTime) return res.status(400).json({ error: 'Bitte gültige Zeiten angeben (Ende nach Beginn)' });
+  if (schoolDayOn(date)) return res.status(409).json({ error: 'Für diesen Tag gibt es schon einen gemeinsamen Unterricht' });
+  const d = {
+    id: newId('sday'), date, startTime, endTime,
+    title: String(title || '').trim() || 'Gemeinsamer Unterricht',
+    lateAfterMinutes: Number.isFinite(Number(lateAfterMinutes)) && lateAfterMinutes !== '' && lateAfterMinutes !== null ? Math.max(0, Math.min(120, Number(lateAfterMinutes))) : null,
+    code: 'SCH-' + crypto.randomBytes(6).toString('base64url'),
+    createdBy: req.user.id, createdByName: req.user.name, createdAt: new Date().toISOString(),
+  };
+  db.insert('school_days', d);
+  audit(req.user.id, 'school_day.create', 'school_day', d.id, null, { date });
+  // Heute schon bestehende, noch nicht begonnene Klassen-Sitzungen übernehmen die Zeiten.
+  if (date === todayKey()) db.all('classes').filter((c) => c.active !== false).forEach((c) => ensureTodaySession(c));
+  const when = new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  db.all('users').filter((u) => u.status === 'active' && (STUDENT_ROLES.includes(u.role) || TEACHING_ROLES.includes(u.role) || u.role === ROLES.ELTERN))
+    .forEach((u) => notify(u.id, { type: 'event', level: 'info', title: `${d.title}: ${when}`, body: `Die ganze Schule hat gemeinsam Unterricht, ${startTime}–${endTime} Uhr. Eingecheckt wird mit dem gemeinsamen QR-Code.`, deepLink: '/kalender' }));
+  res.json({ day: schoolDayView(d, true) });
+});
+router.delete('/school-days/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const list = db.all('school_days');
+  const idx = list.findIndex((d) => d.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
+  const [d] = list.splice(idx, 1);
+  // Noch nicht begonnene Sitzungen dieses Tages fallen auf die Klassenzeiten zurück.
+  db.all('sessions').filter((x) => x.schoolDayId === d.id && x.status === 'scheduled').forEach((x) => {
+    const c = findClass(x.classId);
+    x.schoolDayId = null;
+    if (c) { x.scheduledStart = combineDateTime(x.date, c.startTime); x.scheduledEnd = combineDateTime(x.date, c.endTime); }
+  });
+  db.commit();
+  audit(req.user.id, 'school_day.delete', 'school_day', d.id, { date: d.date }, null);
+  res.json({ ok: true });
+});
+
+// Tagesüberblick für die Leitung: je Klasse nur ZAHLEN (keine Namen) --
+// wie viele sind da, wie viele zu spät, wie viele fehlen noch.
+router.get('/school/today', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const date = todayKey();
+  const users = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status === 'active');
+  const rows = db.all('classes').filter((c) => c.active !== false).map((c) => {
+    const sess = db.all('sessions').find((x) => x.classId === c.id && x.date === date);
+    const recs = sess ? db.all('attendance').filter((a) => a.sessionId === sess.id) : [];
+    const n = (st) => recs.filter((a) => a.status === st).length;
+    const students = users.filter((u) => (u.classIds || []).includes(c.id)).length;
+    return {
+      id: c.id, name: c.name, weekday: c.weekday, startTime: c.startTime, endTime: c.endTime,
+      // Eine nur beim Öffnen der Seite angelegte, leere Sitzung ist kein Unterricht.
+      lessonToday: c.weekday === new Date().getDay() || Boolean(schoolDayOn(date)) || Boolean(sess && (sess.status !== 'scheduled' || recs.length)),
+      status: sess?.status || null, students,
+      present: n('present'), late: n('late'), excused: n('excused'), unexcused: n('unexcused'),
+      lateUnexcused: recs.filter((a) => a.lateUnexcused).length,
+      open: Math.max(0, students - recs.length),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  res.json({ date, schoolDay: schoolDayOn(date) ? schoolDayView(schoolDayOn(date), true) : null, classes: rows });
 });
 
 // "Klasse neu starten": Test-/Probedaten einer Klasse gezielt löschen, damit
@@ -1240,6 +1498,7 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
       penaltyMoney,
       penaltyPages,
       negativeBehavior,
+      lastSeenAt: s.lastSeenAt || null,
       // Nur für die Klassenlehrkraft sichtbar (nicht für Leitung/Admin/Klassensprecher):
       // "wer ist auf Probezeit" bleibt Sache des Lehrers, nicht Teil der allgemeinen Klassenliste.
       ...(TEACHING_ROLES.includes(req.user.role) ? { probation: Boolean(s.probation) } : {}),
@@ -1247,6 +1506,30 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
   });
   rows.sort((a, b) => a.name.localeCompare(b.name, 'de'));
   res.json({ class: { id: klass.id, name: klass.name }, rows });
+});
+
+// Gesamte Koran-Schule alphabetisch (Leitung/Admin): wer ist in welcher
+// Klasse, Online oder Präsenz, und wann zuletzt in der App.
+router.get('/school/roster', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const classes = db.all('classes');
+  const rows = db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (!req.user.isDemo || u.isDemo))
+    .map((u) => {
+      const cls = (u.classIds || []).map((c) => classes.find((x) => x.id === c)).filter(Boolean);
+      const att = attendanceStats(u.id);
+      return {
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        classNames: cls.map((c) => c.name),
+        classType: cls[0]?.type || null,
+        status: u.status,
+        attendanceRate: att.sessions ? Math.round(((att.present + att.late) / att.sessions) * 100) : null,
+        lastSeenAt: u.lastSeenAt || null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  res.json({ rows });
 });
 
 // Schüler(in) aus der eigenen Klasse entfernen (nicht das ganze Konto
@@ -1406,7 +1689,7 @@ router.get('/calendar', requireAuth, (req, res) => {
   // Unterrichtstermine aus dem wöchentlichen Stundenplan
   for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dateKey = d.toISOString().slice(0, 10);
+    const dateKey = localDateKey(d);
     for (const c of classes) {
       if (c.weekday !== dow) continue;
       const sess = db.all('sessions').find((s) => s.classId === c.id && s.date === dateKey);
@@ -1493,7 +1776,7 @@ function expandEvent(ev, fromD, toD) {
   const end = until < toD ? until : toD;
   let cap = 0;
   for (const d = new Date(base); d <= end && cap < 400; cap++) {
-    if (d >= fromD) out.push(d.toISOString().slice(0, 10));
+    if (d >= fromD) out.push(localDateKey(d));
     if (rec.freq === 'daily') d.setDate(d.getDate() + 1);
     else if (rec.freq === 'weekly') d.setDate(d.getDate() + 7);
     else if (rec.freq === 'monthly') d.setMonth(d.getMonth() + 1);
@@ -1653,7 +1936,7 @@ function buildCalendarIcs(user) {
   const classes = visibleClasses(user);
   for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dateKey = d.toISOString().slice(0, 10);
+    const dateKey = localDateKey(d);
     for (const c of classes) {
       if (c.weekday !== dow) continue;
       push({ uid: `lesson-${c.id}-${dateKey}`, start: icsLocal(dateKey, c.startTime), end: icsLocal(dateKey, c.endTime), summary: `Unterricht: ${c.name}` });
@@ -1797,8 +2080,19 @@ router.get('/absence-requests', requireAuth, (req, res) => {
       const recs = db.all('attendance').filter((a) => a.studentId === r.studentId);
       const absences = recs.filter((a) => a.status === 'excused' || a.status === 'unexcused').length;
       const requestCount = db.all('absence_requests').filter((x) => x.studentId === r.studentId).length;
-      return { ...r, studentAbsences: absences, studentAbsenceRequests: requestCount };
-    });
+      return {
+        ...r,
+        className: findClass(r.classId)?.name || 'Ohne Klasse',
+        studentAbsences: absences,
+        studentAbsenceRequests: requestCount,
+        // Leitung/Admin: nur ansehen, nicht entscheiden.
+        readOnly: !canDecideForClass(req.user, r.classId),
+      };
+    }).map((r) => (r.readOnly
+      // Leitung/Admin sehen nur DASS und WIE jemand entschuldigt ist -- der
+      // Freitext und die Rückfragen bleiben zwischen Familie und Lehrkraft.
+      ? { ...r, comment: '', comments: [] }
+      : r));
   } else {
     list = [];
   }
@@ -1813,7 +2107,9 @@ router.get('/absence-requests', requireAuth, (req, res) => {
 router.post('/absence-requests/:id/decide', requireAuth, (req, res) => {
   const item = byId('absence_requests', req.params.id);
   if (!item) return res.status(404).json({ error: 'Antrag nicht gefunden' });
-  if (!canManageClass(req.user, item.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  // Entscheiden darf NUR die Lehrkraft der Klasse -- Leitung/Admin sehen die
+  // Anträge, haben aber bewusst keinen Einfluss auf die Entscheidung.
+  if (!canDecideForClass(req.user, item.classId)) return res.status(403).json({ error: 'Über Entschuldigungen entscheidet die Klassenlehrkraft' });
   const { decision } = req.body || {};
   const map = { approve: 'approved', reject: 'rejected', needs_info: 'needs_info' };
   if (!map[decision]) return res.status(400).json({ error: 'Ungültige Entscheidung' });
@@ -1846,7 +2142,7 @@ router.post('/absence-requests/:id/comments', requireAuth, (req, res) => {
   if (!item) return res.status(404).json({ error: 'Antrag nicht gefunden' });
   const isOwner = item.studentId === req.user.id;
   const isParent = req.user.role === ROLES.ELTERN && (req.user.childIds || []).includes(item.studentId);
-  const isManager = canManageClass(req.user, item.classId);
+  const isManager = canDecideForClass(req.user, item.classId);
   if (!isOwner && !isParent && !isManager) return res.status(403).json({ error: 'Kein Zugriff' });
 
   const body = (req.body?.body || '').trim();
@@ -2307,6 +2603,8 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
         id: s.id,
         assignmentId: s.assignmentId,
         assignmentTitle: a?.title,
+        assignmentDueAt: a?.dueAt || null,
+        classId: s.classId,
         className: findClass(s.classId)?.name,
         studentName: s.studentName,
         text: s.text,
@@ -2397,7 +2695,7 @@ router.get('/protocols', requireAuth, (req, res) => {
   } else if (!isAdmin(req.user)) {
     list = [];
   }
-  res.json({ protocols: [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')) });
+  res.json({ protocols: [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map((p) => ({ ...p, className: findClass(p.classId)?.name || 'Klasse' })) });
 });
 
 // Entwurf anlegen/aktualisieren (Klassensprecher der Klasse oder Verwalter).
@@ -3691,11 +3989,23 @@ router.get('/reports/:id', requireAuth, (req, res) => {
 // Direktnachrichten (sichere 1:1-Kommunikation)
 // =============================================================================
 
-// Rollen-Postfächer für Schüler/Eltern: sie schreiben nie eine einzelne
-// Person an, sondern ein Team. Mehrere Personen teilen sich diese Konten/
-// Postfächer, deshalb sehen Schüler/Eltern nie einen Personennamen -- nur die
-// Rolle und wofür sie zuständig ist (Rückmeldung aus dem Testlauf: Schüler
-// haben sonst oft die falsche Stelle angeschrieben).
+// Postfächer statt Personen
+//
+// Mitarbeitende treten nach außen NIE mit ihrem Namen auf, sondern als
+// Postfach: "DBZ-Leitung", "Systembetreuung" oder "Klassenleitung Klasse 3".
+// Mehrere Personen teilen sich ein Postfach (eine Antwort reicht für alle).
+// Nur Kolleg(inn)en im selben Postfach sehen, wer genau geschrieben hat.
+// Einzelne Personen anschreiben kann man nur als Schüler/Eltern.
+//
+// Wer darf wen anschreiben?
+//   Schüler MIT Klasse      -> nur die Klassenleitung der eigenen Klasse
+//   Schüler OHNE Klasse     -> DBZ-Leitung, Systembetreuung
+//   Eltern                  -> Klassenleitung der Kinder + DBZ-Leitung
+//                              (Kinder ohne Klasse: DBZ-Leitung + Systembetreuung)
+//   Lehrkräfte              -> DBZ-Leitung, Systembetreuung, andere Klassenleitungen,
+//                              Schüler/Eltern der eigenen Klasse(n), Rundnachricht an die Klasse
+//   Leitung/Admin           -> alle Postfächer, alle Schüler/Eltern, Rundnachrichten an alle
+// Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
 const INBOXES = {
   klasse: { label: 'Klassenleitung', description: 'Alles rund um deinen Unterricht: Aufgaben, Anwesenheit, Entschuldigungen und Fragen zum Stoff.' },
   leitung: { label: 'DBZ-Leitung', description: 'Persönliche Anliegen, Sorgen und Probleme sowie organisatorische Fragen der Schule – vertraulich.' },
@@ -3711,120 +4021,167 @@ function familyClassIds(family) {
   return [...set];
 }
 
-// Wer steht hinter einem Postfach? (aktive Konten)
-function inboxMemberIds(inbox, family) {
-  const active = db.all('users').filter((u) => u.status !== 'disabled');
-  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
-  if (inbox === 'system') {
-    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
-    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
-  }
-  if (inbox === 'leitung') {
-    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
-    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
-  }
-  return [];
-}
-
-// Postfach eines bestehenden Threads (gespeichert oder -- bei älteren Threads
-// -- aus den Rollen der Mitarbeiterseite abgeleitet).
-function threadInbox(t) {
-  if (t.inbox) return t.inbox;
-  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
-  if (!staff.length) return null;
-  if (staff.some((u) => u.role === ROLES.KLASSENLEHRER || u.role === ROLES.VERTRETUNG)) return 'klasse';
-  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
-  return 'system';
-}
-
-// Erlaubte Gesprächspartner: Schüler/Eltern -> nur die drei Rollen-Postfächer
-// (Klassenleitung ihrer Klasse(n), DBZ-Leitung, Systembetreuung). Lehrkräfte
-// -> Schüler/Eltern ihrer Klassen. Leitung/Admin -> Mitarbeitende.
-// Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
-function messageContacts(user) {
-  const users = db.all('users');
-  const active = (u) => u.status !== 'disabled' && u.id !== user.id;
-  if (isAdmin(user)) return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role));
-  if (isClassManager(user)) {
-    const myClasses = user.classIds || [];
-    const students = users.filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).some((c) => myClasses.includes(c)));
-    const studentIds = new Set(students.map((s) => s.id));
-    const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((ch) => studentIds.has(ch)));
-    return [...students, ...parents].filter(active);
-  }
-  return [];
-}
-function familyInboxes(user) {
-  if (!isFamily(user)) return [];
-  return Object.entries(INBOXES)
-    .filter(([key]) => inboxMemberIds(key, user).length > 0)
-    .map(([key, v]) => ({ id: `inbox:${key}`, name: v.label, roleLabel: v.label, description: v.description }));
-}
-const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId) || familyInboxes(user).some((c) => c.id === otherId);
-
 // Alle Lehrkräfte (Klassenlehrer + Vertretung) der angegebenen Klassen.
 function classManagersOfClasses(classIds) {
   const set = new Set(classIds);
   return db
     .all('users')
-    .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
+    .filter((u) => u.status !== 'disabled' && TEACHING_ROLES.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
 }
 
-
-// Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
-// eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
-// Lehrkräfte) beteiligt. Schreibt sie an die Leitung, werden ALLE Leitungs-/
-// Admin-Konten beteiligt (geteiltes Postfach, eine Antwort reicht für alle).
-// So entsteht keine Isolation (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/
-// Leitung bleibt ein direktes Zweiergespräch.
-function resolveThreadParticipants(initiator, recipient, inboxKey = null) {
-  let family = null;
-  let inbox = inboxKey;
-  if (inboxKey) family = initiator;
-  else if (!isStaff(initiator) && isStaff(recipient)) family = initiator;
-  else if (isStaff(initiator) && !isStaff(recipient)) family = recipient;
-
-  let ids;
-  if (family) {
-    if (!inbox) {
-      const staffSide = family === initiator ? recipient : initiator;
-      inbox = staffSide.role === ROLES.LEITUNG ? 'leitung' : staffSide.role === ROLES.SUPER_ADMIN ? 'system' : 'klasse';
-    }
-    ids = [family.id, ...inboxMemberIds(inbox, family), initiator.id];
-    if (recipient) ids.push(recipient.id);
-  } else {
-    ids = [initiator.id, recipient.id];
+// Postfach-Schlüssel: 'leitung' | 'system' | 'klasse:<classId>'
+// (bei Familien-Chats außerdem 'klasse' = Lehrkräfte aller Klassen der Familie).
+function boxLabel(key) {
+  if (key === 'leitung' || key === 'system' || key === 'klasse') return INBOXES[key].label;
+  if (String(key).startsWith('klasse:')) return `Klassenleitung ${findClass(key.slice(7))?.name || ''}`.trim();
+  return 'DBZ';
+}
+function boxMembers(key) {
+  const active = db.all('users').filter((u) => u.status !== 'disabled');
+  if (key === 'system') {
+    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
+    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
   }
-  const uniq = [...new Set(ids)];
+  if (key === 'leitung') {
+    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
+    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
+  }
+  if (String(key).startsWith('klasse:')) return classManagersOfClasses([key.slice(7)]).map((u) => u.id);
+  return [];
+}
+// Postfächer, für die eine mitarbeitende Person schreibt.
+function staffBoxes(u) {
+  if (u.role === ROLES.SUPER_ADMIN) return ['system'];
+  if (u.role === ROLES.LEITUNG) return ['leitung'];
+  if (TEACHING_ROLES.includes(u.role)) return (u.classIds || []).filter((c) => findClass(c)).map((c) => `klasse:${c}`);
+  return [];
+}
+// Familien-Postfach ('klasse' | 'leitung' | 'system') zu einem Mitarbeiter-Postfach.
+const familyInboxOfBox = (box) => (String(box).startsWith('klasse') ? 'klasse' : box);
+
+// Wer steht hinter einem Postfach eines Familien-Chats? (aktive Konten)
+function inboxMemberIds(inbox, family) {
+  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
+  return boxMembers(inbox);
+}
+
+// Postfach eines Familien-Threads (gespeichert oder -- bei älteren Threads --
+// aus den Rollen der Mitarbeiterseite abgeleitet).
+function threadInbox(t) {
+  if (t.kind === 'staff') return null;
+  if (t.inbox) return t.inbox;
+  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
+  if (!staff.length) return null;
+  if (staff.some((u) => TEACHING_ROLES.includes(u.role))) return 'klasse';
+  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
+  return 'system';
+}
+function threadFamily(t) {
+  if (t.kind === 'staff') return null;
+  if (t.familyId) return findUserById(t.familyId);
+  return t.participantIds.map(findUserById).find((u) => u && isFamily(u)) || null;
+}
+// Postfach-Beschriftung eines Familien-Chats (mit Klassenname, wenn eindeutig).
+function familyInboxLabel(t) {
+  const inbox = threadInbox(t);
+  if (inbox !== 'klasse') return INBOXES[inbox]?.label || 'DBZ';
+  const fam = threadFamily(t);
+  const cls = fam ? familyClassIds(fam) : [];
+  return cls.length === 1 ? boxLabel(`klasse:${cls[0]}`) : INBOXES.klasse.label;
+}
+
+// Postfächer, die eine Familie anschreiben darf.
+function familyInboxes(user) {
+  if (!isFamily(user)) return [];
+  const hasClass = familyClassIds(user).length > 0;
+  let keys;
+  if (STUDENT_ROLES.includes(user.role)) keys = hasClass ? ['klasse'] : ['leitung', 'system'];
+  else keys = hasClass ? ['klasse', 'leitung'] : ['leitung', 'system'];
+  return keys
+    .filter((key) => inboxMemberIds(key, user).length > 0)
+    .map((key) => {
+      const cls = familyClassIds(user);
+      const name = key === 'klasse' && cls.length === 1 ? boxLabel(`klasse:${cls[0]}`) : INBOXES[key].label;
+      return { id: `inbox:${key}`, name, roleLabel: name, description: INBOXES[key].description };
+    });
+}
+
+// Schüler/Eltern, die eine mitarbeitende Person einzeln anschreiben darf.
+function reachablePeople(user) {
+  const users = db.all('users').filter((u) => u.status === 'active' && isFamily(u) && (!user.isDemo || u.isDemo));
+  if (isAdmin(user)) return users;
+  if (!TEACHING_ROLES.includes(user.role)) return [];
+  const mine = new Set(user.classIds || []);
+  return users.filter((u) => familyClassIds(u).some((c) => mine.has(c)));
+}
+// Mitarbeiter-Postfächer, die eine mitarbeitende Person anschreiben darf.
+function reachableBoxes(user) {
+  if (!isStaff(user)) return [];
+  const own = new Set(staffBoxes(user));
+  const keys = ['leitung', 'system', ...db.all('classes').filter((c) => c.active !== false).map((c) => `klasse:${c.id}`)];
+  return keys.filter((k) => !own.has(k) && boxMembers(k).length > 0);
+}
+// Rundnachricht-Ziele.
+function broadcastTargets(user) {
+  const out = [];
+  const people = db.all('users').filter((u) => u.status === 'active' && (!user.isDemo || u.isDemo));
+  const students = (cid) => people.filter((u) => STUDENT_ROLES.includes(u.role) && (cid ? (u.classIds || []).includes(cid) : true));
+  const parents = (cid) => people.filter((u) => u.role === ROLES.ELTERN && (cid ? familyClassIds(u).includes(cid) : true));
+  if (isAdmin(user)) {
+    out.push({ id: 'all:students', name: 'Alle Schüler', ids: students().map((u) => u.id) });
+    out.push({ id: 'all:parents', name: 'Alle Eltern', ids: parents().map((u) => u.id) });
+    out.push({ id: 'all:families', name: 'Alle Schüler und Eltern', ids: [...students(), ...parents()].map((u) => u.id) });
+  }
+  const classes = isAdmin(user) ? db.all('classes') : db.all('classes').filter((c) => (user.classIds || []).includes(c.id));
+  if (isAdmin(user) || TEACHING_ROLES.includes(user.role)) {
+    classes.forEach((c) => {
+      out.push({ id: `class:${c.id}:students`, name: `${c.name}: alle Schüler`, ids: students(c.id).map((u) => u.id) });
+      out.push({ id: `class:${c.id}:parents`, name: `${c.name}: alle Eltern`, ids: parents(c.id).map((u) => u.id) });
+    });
+  }
+  return out.filter((t) => t.ids.length > 0);
+}
+
+// Beteiligte eines Familien-Threads: die Familie + ALLE Mitglieder des
+// Postfachs (Klassenteam / Leitung / Systembetreuung) -- keine Isolation
+// einzelner Lehrkräfte mit einem Kind (Vermeidung von Fitna).
+function familyThreadParticipants(family, inbox, sender) {
+  const ids = [...new Set([family.id, ...inboxMemberIds(inbox, family), sender.id])];
   const names = {};
-  uniq.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
-  return { participantIds: uniq, participantNames: names, group: uniq.length > 2, inbox: family ? inbox : null };
+  ids.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
+  return { participantIds: ids, participantNames: names };
+}
+function staffThreadParticipants(boxes, sender) {
+  const ids = [...new Set([...boxes.flatMap(boxMembers), sender.id])];
+  const names = {};
+  ids.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
+  return { participantIds: ids, participantNames: names };
+}
+function findFamilyThread(familyId, inbox) {
+  return db.all('threads').find((x) => x.kind !== 'staff' && (x.familyId || threadFamily(x)?.id) === familyId && threadInbox(x) === inbox) || null;
+}
+const sameBoxes = (a, b) => [...a].sort().join('|') === [...b].sort().join('|');
+
+// Postfach, für das `user` in diesem Thread spricht.
+function viewerBox(t, user) {
+  if (t.kind === 'staff') return (t.boxes || []).find((b) => boxMembers(b).includes(user.id) || staffBoxes(user).includes(b)) || null;
+  if (isStaff(user)) return threadInbox(t);
+  return null;
 }
 
-const sortedIds = (arr) => [...arr].sort().join('|');
-
-// Anzeigename eines Threads aus Sicht des Betrachters. Zweiergespräch: die
-// andere Person. Gruppengespräch: eine Lehrkraft sieht die Familienseite, die
-// Familie sieht das Lehrerteam.
+// Anzeigename eines Threads aus Sicht des Betrachters.
 function threadTitle(t, viewer) {
-  if (isFamily(viewer)) {
-    const inbox = threadInbox(t);
-    if (inbox) return INBOXES[inbox].label;
+  if (t.kind === 'staff') {
+    const mine = viewerBox(t, viewer);
+    const other = (t.boxes || []).find((b) => b !== mine) || t.boxes?.[0];
+    return boxLabel(other);
   }
-  const others = t.participantIds.filter((id) => id !== viewer.id);
-  if (others.length <= 1) return t.participantNames[others[0]] || 'Unbekannt';
-  const isMgr = CLASS_MANAGERS.includes(viewer.role);
-  const wanted = others.filter((id) => {
-    const u = findUserById(id);
-    if (!u) return false;
-    return isMgr ? !CLASS_MANAGERS.includes(u.role) : CLASS_MANAGERS.includes(u.role);
-  });
-  const ids = wanted.length ? wanted : others;
-  // Geteiltes Leitungs-Postfach: statt einzelner Namen einheitlich "DBZ-Leitung"
-  // anzeigen (kann mehrere Personen sein, ist aber EIN Team/Posteingang).
-  if (ids.length > 1 && ids.every((id) => [ROLES.LEITUNG, ROLES.SUPER_ADMIN].includes(findUserById(id)?.role)))
-    return 'DBZ-Leitung';
-  return ids.map((id) => t.participantNames[id]).filter(Boolean).join(', ') || 'Unbekannt';
+  if (isFamily(viewer)) return familyInboxLabel(t);
+  const fam = threadFamily(t);
+  if (fam) return fam.name + (fam.role === ROLES.ELTERN ? ' (Eltern)' : '');
+  // Ältere Direktgespräche zwischen Mitarbeitenden: Postfach statt Name.
+  const other = t.participantIds.map(findUserById).find((u) => u && u.id !== viewer.id);
+  return other ? (staffBoxes(other)[0] ? boxLabel(staffBoxes(other)[0]) : other.name) : 'Unbekannt';
 }
 
 // Erlaubte Reaktionen (bewusst kleine, passende Auswahl).
@@ -3844,17 +4201,37 @@ function msgPreview(m) {
   return '';
 }
 
-/** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
-// Absendername aus Sicht des Betrachters: Schüler/Eltern sehen bei
-// Mitarbeitenden nur das Postfach (z. B. "Klassenleitung"), nie den Namen.
+// Absendername aus Sicht des Betrachters: Mitarbeitende erscheinen als
+// Postfach; nur Kolleg(inn)en desselben Postfachs sehen zusätzlich den Namen.
 function senderLabel(m, t, viewer) {
-  if (viewer && t && isFamily(viewer) && m.senderId !== viewer.id) {
-    const sender = findUserById(m.senderId);
-    if (!sender || isStaff(sender)) return INBOXES[threadInbox(t)]?.label || 'DBZ';
-  }
-  return m.senderName;
+  const sender = findUserById(m.senderId);
+  const staffSender = sender ? isStaff(sender) : Boolean(m.box);
+  if (!staffSender) return m.senderName;
+  const box = m.box || (t?.kind === 'staff' ? staffBoxes(sender || {})[0] : threadInbox(t || {}));
+  const label = t && t.kind !== 'staff' && familyInboxOfBox(box) === threadInbox(t) ? familyInboxLabel(t) : boxLabel(box);
+  if (!viewer || isFamily(viewer)) return label;
+  const colleague = viewer.id !== m.senderId && (box === viewerBox(t, viewer) || (sender && staffBoxes(sender).some((b) => staffBoxes(viewer).includes(b))));
+  return colleague ? `${label} · ${m.senderName}` : label;
 }
 
+// Hat die "andere Seite" die Nachricht gelesen? (nur für Mitarbeitende sichtbar)
+function readInfo(m, t, viewer) {
+  if (!viewer || !isStaff(viewer) || !t) return null;
+  const reads = t.reads || {};
+  if (t.kind === 'staff') {
+    const mine = viewerBox(t, viewer);
+    if (m.box && m.box !== mine) return null;
+    const others = (t.boxes || []).filter((b) => b !== mine).flatMap(boxMembers);
+    const at = others.map((id) => reads[id]).filter((r) => r && r >= m.createdAt).sort()[0];
+    return { seen: Boolean(at), at: at || null };
+  }
+  const fam = threadFamily(t);
+  if (!fam || m.senderId === fam.id) return null;
+  const at = reads[fam.id];
+  return { seen: Boolean(at && at >= m.createdAt), at: at && at >= m.createdAt ? at : null };
+}
+
+/** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
 function messageView(m, t = null, viewer = null) {
   const senderName = senderLabel(m, t, viewer);
   if (m.recalled) {
@@ -3872,11 +4249,13 @@ function messageView(m, t = null, viewer = null) {
     file,
     reactions: m.reactions || {},
     recalled: false,
+    broadcast: Boolean(m.broadcastId),
+    ...(viewer && isStaff(viewer) ? { read: readInfo(m, t, viewer) } : {}),
   };
 }
 
 /** Baut eine neue Nachricht (inkl. optionaler Datei) aus dem Request. */
-async function buildMessage(req) {
+async function buildMessage(req, box = null) {
   const now = new Date().toISOString();
   const msg = {
     id: newId('msg'),
@@ -3885,6 +4264,7 @@ async function buildMessage(req) {
     body: (req.body?.body || '').trim(),
     createdAt: now,
     reactions: {},
+    ...(box ? { box } : {}),
   };
   if (req.file) {
     await persistUpload(req.file);
@@ -3905,12 +4285,14 @@ function threadListView(t, viewer) {
   const last = msgs[msgs.length - 1] || null;
   const readAt = t.reads?.[userId] || '';
   const unread = msgs.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
-  const inbox = threadInbox(t);
+  const staffView = isStaff(viewer);
+  let inboxLabel = null;
+  if (staffView) inboxLabel = t.kind === 'staff' ? `als ${boxLabel(viewerBox(t, viewer))}` : `an ${familyInboxLabel(t)}`;
   return {
     id: t.id,
     otherName: threadTitle(t, viewer),
-    // Für Mitarbeitende sichtbar, an welches Postfach die Familie geschrieben hat.
-    inboxLabel: inbox && !isFamily(viewer) ? INBOXES[inbox].label : null,
+    kind: t.kind === 'staff' ? 'staff' : 'family',
+    inboxLabel,
     group: t.participantIds.length > 2,
     lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
@@ -3918,19 +4300,29 @@ function threadListView(t, viewer) {
   };
 }
 
-function notifyThreadMessage(t, msg, sender) {
+function notifyThreadMessage(t, msg, sender, only = null) {
   t.participantIds
-    .filter((id) => id !== sender.id)
+    .filter((id) => id !== sender.id && (!only || only.includes(id)))
     .forEach((id) => {
       const viewer = findUserById(id);
-      const from = viewer ? senderLabel(msg, t, viewer) : sender.name;
+      const from = viewer ? senderLabel(msg, t, viewer) : boxLabel(msg.box);
       notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${from}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
     });
 }
 
 router.get('/message-contacts', requireAuth, (req, res) => {
   if (isFamily(req.user)) return res.json({ contacts: familyInboxes(req.user) });
-  res.json({ contacts: messageContacts(req.user).map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] })) });
+  if (!isStaff(req.user)) return res.json({ contacts: [] });
+  const boxes = reachableBoxes(req.user).map((k) => ({
+    id: `box:${k}`, name: boxLabel(k),
+    description: k === 'leitung' ? 'Organisation, Schüler-Anliegen, Entscheidungen' : k === 'system' ? 'Technik, Konten, App-Probleme' : 'Lehrkräfte dieser Klasse',
+  }));
+  const people = reachablePeople(req.user)
+    .map((u) => ({ id: u.id, name: u.name, roleLabel: u.role === ROLES.ELTERN ? 'Eltern' : ROLE_LABELS[u.role], classNames: familyClassIds(u).map((c) => findClass(c)?.name).filter(Boolean) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const broadcasts = broadcastTargets(req.user).map(({ id, name, ids }) => ({ id: `bc:${id}`, name, count: ids.length }));
+  const sendAs = staffBoxes(req.user).map((k) => ({ key: k, label: boxLabel(k) }));
+  res.json({ contacts: [], boxes, people, broadcasts, sendAs });
 });
 
 // "Für mich löschen" (wie bei WhatsApp): der Verlauf bis zu diesem Zeitpunkt
@@ -3941,55 +4333,178 @@ const clearedAt = (t, userId) => t.clearedAt?.[userId] || '';
 const visibleMessages = (t, userId) => t.messages.filter((m) => m.createdAt > clearedAt(t, userId));
 
 router.get('/threads', requireAuth, (req, res) => {
+  const staffView = isStaff(req.user);
   const list = db
     .all('threads')
-    .filter((t) => t.participantIds.includes(req.user.id) && visibleMessages(t, req.user.id).length > 0)
+    .filter((t) => t.participantIds.includes(req.user.id))
+    .filter((t) => {
+      const msgs = visibleMessages(t, req.user.id);
+      if (!msgs.length) return false;
+      // Rundnachrichten erscheinen bei den Mitarbeitenden als EIN Eintrag
+      // (siehe /broadcasts); einzelne Chats tauchen erst auf, wenn jemand antwortet.
+      if (staffView && msgs.every((m) => m.broadcastId)) return false;
+      return true;
+    })
     .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
     .map((t) => threadListView(t, req.user));
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
 });
 
-router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
-  const { recipientId } = req.body || {};
-  const inboxKey = String(recipientId || '').startsWith('inbox:') ? String(recipientId).slice(6) : null;
-  const recipient = inboxKey ? null : findUserById(recipientId);
-  if (inboxKey ? !INBOXES[inboxKey] : !recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
-  if (!canMessage(req.user, String(recipientId))) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
-  // Schüler/Eltern schreiben ausschließlich Rollen-Postfächer an.
-  if (!inboxKey && isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
-  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+// Absender-Postfach für Mitarbeitende bestimmen (Lehrkraft mit mehreren
+// Klassen wählt; sonst das einzige Postfach).
+function pickSenderBox(user, wanted) {
+  const own = staffBoxes(user);
+  if (wanted && own.includes(wanted)) return wanted;
+  return own[0] || null;
+}
 
-  const msg = await buildMessage(req);
-  const now = msg.createdAt;
-  const { participantIds, participantNames, inbox } = resolveThreadParticipants(req.user, recipient, inboxKey);
-  // Bestehenden Thread mit exakt derselben Teilnehmergruppe (und demselben
-  // Postfach) wiederverwenden.
-  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds) && (threadInbox(x) || null) === (inbox || null));
-  if (!t) {
-    t = {
-      id: newId('thread'),
-      participantIds,
-      participantNames,
-      inbox,
-      messages: [msg],
-      reads: { [req.user.id]: now },
-      createdAt: now,
-      lastMessageAt: now,
-    };
-    db.insert('threads', t);
+router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
+  const recipientId = String(req.body?.recipientId || '');
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  const now = new Date().toISOString();
+  let t;
+  let msg;
+
+  if (recipientId.startsWith('inbox:')) {
+    // Familie -> Postfach
+    const inbox = recipientId.slice(6);
+    if (!INBOXES[inbox]) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+    if (!familyInboxes(req.user).some((c) => c.id === recipientId)) return res.status(403).json({ error: 'An dieses Postfach kannst du nicht schreiben' });
+    msg = await buildMessage(req);
+    const { participantIds, participantNames } = familyThreadParticipants(req.user, inbox, req.user);
+    t = findFamilyThread(req.user.id, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: req.user.id, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+      t.familyId = req.user.id;
+    }
+  } else if (recipientId.startsWith('box:')) {
+    // Postfach -> Postfach (Mitarbeitende untereinander)
+    const target = recipientId.slice(4);
+    if (!reachableBoxes(req.user).includes(target)) return res.status(403).json({ error: 'An dieses Postfach kannst du nicht schreiben' });
+    const from = pickSenderBox(req.user, req.body?.asBox);
+    if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+    msg = await buildMessage(req, from);
+    const boxes = [from, target];
+    const { participantIds, participantNames } = staffThreadParticipants(boxes, req.user);
+    t = db.all('threads').find((x) => x.kind === 'staff' && sameBoxes(x.boxes || [], boxes));
+    if (!t) {
+      t = { id: newId('thread'), kind: 'staff', boxes, participantIds, participantNames, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+    }
   } else {
-    // Team/Namen aktuell halten (falls sich die Klassenzuordnung geändert hat).
-    t.participantIds = participantIds;
-    t.participantNames = { ...t.participantNames, ...participantNames };
-    if (inbox) t.inbox = inbox;
-    t.messages.push(msg);
-    t.lastMessageAt = now;
-    t.reads = t.reads || {};
-    t.reads[req.user.id] = now;
-    db.commit();
+    // Mitarbeitende -> einzelne(r) Schüler/Eltern
+    const recipient = findUserById(recipientId);
+    if (!recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+    if (isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
+    if (!reachablePeople(req.user).some((u) => u.id === recipient.id)) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+    const from = pickSenderBox(req.user, req.body?.asBox);
+    if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+    const inbox = familyInboxOfBox(from);
+    msg = await buildMessage(req, from);
+    const { participantIds, participantNames } = familyThreadParticipants(recipient, inbox, req.user);
+    t = findFamilyThread(recipient.id, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: recipient.id, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+      t.familyId = recipient.id;
+    }
   }
+  t.messages.push(msg);
+  t.lastMessageAt = now;
+  t.reads = t.reads || {};
+  t.reads[req.user.id] = now;
+  db.commit();
   notifyThreadMessage(t, msg, req.user);
   res.json({ threadId: t.id });
+});
+
+// --- Rundnachrichten ---------------------------------------------------------
+// Eine Nachricht an viele (alle Schüler, alle Eltern, eine Klasse …). Jede(r)
+// Empfänger(in) bekommt sie in den eigenen Chat mit dem Absender-Postfach --
+// Antworten landen dort, niemand sieht die Antworten der anderen.
+router.post('/broadcasts', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
+  const targetId = String(req.body?.target || '').replace(/^bc:/, '');
+  const target = broadcastTargets(req.user).find((x) => x.id === targetId);
+  if (!target) return res.status(403).json({ error: 'Diese Empfängergruppe ist nicht erlaubt' });
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  const from = pickSenderBox(req.user, req.body?.asBox);
+  if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+  const inbox = familyInboxOfBox(from);
+  const base = await buildMessage(req, from);
+  const bc = {
+    id: newId('bcast'), box: from, senderId: req.user.id, senderName: req.user.name,
+    target: target.id, targetLabel: target.name, body: base.body, file: base.file || null,
+    recipientIds: target.ids, threadIds: {}, createdAt: base.createdAt,
+  };
+  const threads = db.all('threads');
+  for (const rid of target.ids) {
+    const recipient = findUserById(rid);
+    if (!recipient) continue;
+    const { participantIds, participantNames } = familyThreadParticipants(recipient, inbox, req.user);
+    let t = findFamilyThread(rid, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: rid, messages: [], reads: {}, createdAt: base.createdAt };
+      threads.push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+    }
+    const m = { ...base, id: newId('msg'), reactions: {}, broadcastId: bc.id };
+    t.messages.push(m);
+    t.lastMessageAt = base.createdAt;
+    t.reads = t.reads || {};
+    t.reads[req.user.id] = base.createdAt;
+    bc.threadIds[rid] = t.id;
+    // Nur die Empfänger(innen) benachrichtigen, nicht jedes Mal das ganze Postfach.
+    notifyThreadMessage(t, m, req.user, [rid]);
+  }
+  db.insert('broadcasts', bc);
+  audit(req.user.id, 'message.broadcast', 'broadcast', bc.id, null, { target: target.id, count: target.ids.length });
+  res.json({ broadcast: broadcastView(bc) });
+});
+
+function broadcastView(bc) {
+  const read = bc.recipientIds.filter((rid) => {
+    const t = byId('threads', bc.threadIds?.[rid]);
+    return t && (t.reads?.[rid] || '') >= bc.createdAt;
+  }).length;
+  const replies = bc.recipientIds.filter((rid) => {
+    const t = byId('threads', bc.threadIds?.[rid]);
+    return t && t.messages.some((m) => m.senderId === rid && m.createdAt > bc.createdAt);
+  }).length;
+  return {
+    id: bc.id, fromLabel: boxLabel(bc.box), senderName: bc.senderName, targetLabel: bc.targetLabel,
+    body: bc.body, hasFile: Boolean(bc.file), createdAt: bc.createdAt,
+    total: bc.recipientIds.length, read, replies,
+  };
+}
+router.get('/broadcasts', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const mine = new Set(staffBoxes(req.user));
+  const list = db.all('broadcasts').filter((b) => mine.has(b.box) || b.senderId === req.user.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(broadcastView);
+  res.json({ broadcasts: list });
+});
+// Wer hat eine Rundnachricht gelesen? (Namen nur für das Absender-Postfach)
+router.get('/broadcasts/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const bc = byId('broadcasts', req.params.id);
+  if (!bc || !(staffBoxes(req.user).includes(bc.box) || bc.senderId === req.user.id)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const rows = bc.recipientIds.map((rid) => {
+    const u = findUserById(rid);
+    const t = byId('threads', bc.threadIds?.[rid]);
+    const at = t?.reads?.[rid];
+    return { id: rid, name: u?.name || 'Gelöschtes Konto', roleLabel: u?.role === ROLES.ELTERN ? 'Eltern' : 'Schüler', readAt: at && at >= bc.createdAt ? at : null, threadId: t?.id || null, lastSeenAt: u?.lastSeenAt || null };
+  }).sort((a, b) => (a.readAt ? 1 : 0) - (b.readAt ? 1 : 0) || a.name.localeCompare(b.name, 'de'));
+  res.json({ broadcast: broadcastView(bc), recipients: rows });
 });
 
 // Mehrfachauswahl in der Chat-Liste: als gelesen markieren oder für mich löschen.
@@ -3997,6 +4512,8 @@ router.post('/threads/bulk', requireAuth, (req, res) => {
   const { ids, action } = req.body || {};
   if (!Array.isArray(ids) || !ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
   if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  // Schüler/Eltern dürfen Verläufe nicht löschen (alles bleibt nachvollziehbar).
+  if (action === 'delete' && !canDeleteHistory(req.user)) return res.status(403).json({ error: 'Nachrichten können nur von Lehrkräften und der Leitung gelöscht werden' });
   const now = new Date().toISOString();
   const wanted = new Set(ids.map(String));
   let changed = 0;
@@ -4020,13 +4537,22 @@ router.get('/threads/:id', requireAuth, (req, res) => {
   // Zugehörige Nachrichten-Benachrichtigungen als gelesen markieren (Badges/Zähler).
   markNotificationsRead(req.user.id, (n) => n.type === 'message' && n.groupId === t.id);
   db.commit();
+  const staffView = isStaff(req.user);
+  const fam = threadFamily(t);
+  let subtitle = null;
+  if (t.kind === 'staff') subtitle = `Du schreibst als ${boxLabel(viewerBox(t, req.user))}`;
+  else if (staffView) subtitle = `Postfach ${familyInboxLabel(t)} · alle im Postfach lesen mit`;
+  else subtitle = 'Wird vom ganzen Team gelesen';
   res.json({
     thread: {
       id: t.id,
       otherName: threadTitle(t, req.user),
+      subtitle,
       group: t.participantIds.length > 2,
       messages: visibleMessages(t, req.user.id).map((m) => messageView(m, t, req.user)),
       meId: req.user.id,
+      // "Zuletzt online" der Familie -- nur für Mitarbeitende, nie umgekehrt.
+      ...(staffView && fam ? { lastSeenAt: fam.lastSeenAt || null } : {}),
     },
   });
 });
@@ -4035,7 +4561,15 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   const t = byId('threads', req.params.id);
   if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
-  const msg = await buildMessage(req);
+  const msg = await buildMessage(req, isStaff(req.user) ? (viewerBox(t, req.user) || staffBoxes(req.user)[0] || null) : null);
+  // Teilnehmer aktuell halten (z. B. neue Lehrkraft in der Klasse, neue Leitung).
+  const fam = threadFamily(t);
+  if (t.kind === 'staff') Object.assign(t, staffThreadParticipants(t.boxes || [], req.user), { participantNames: { ...t.participantNames, ...staffThreadParticipants(t.boxes || [], req.user).participantNames } });
+  else if (fam && threadInbox(t)) {
+    const p = familyThreadParticipants(fam, threadInbox(t), req.user);
+    t.participantIds = [...new Set([...p.participantIds])];
+    t.participantNames = { ...t.participantNames, ...p.participantNames };
+  }
   t.messages.push(msg);
   t.lastMessageAt = msg.createdAt;
   t.reads = t.reads || {};
@@ -4273,7 +4807,7 @@ function penaltyText(p) {
 // (pending -> approved -> settled), siehe /penalties/:id/settle.
 function penaltyView(p) {
   const o = org();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKey();
   const due = p.dueDate || null;
   const overdue = p.status === 'approved' && !!due && today > due;
   if (p.type === 'other') {
@@ -4341,7 +4875,7 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
   const now = new Date().toISOString();
   // Frist: explizit übergeben oder Org-Standard; 0 = keine Frist.
   const dueDays = Number.isFinite(Number(req.body?.dueInDays)) ? Math.max(0, Number(req.body.dueInDays)) : (org().penaltyDueDays || 0);
-  const dueDate = dueDays > 0 ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10) : null;
+  const dueDate = dueDays > 0 ? localDateKey(new Date(Date.now() + dueDays * 86400000)) : null;
   const p = {
     id: newId('pen'),
     classId,
@@ -4585,7 +5119,8 @@ router.delete('/penalties/:id', requireAuth, (req, res) => {
   if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
   const p = list[idx];
   const own = p.createdBy === req.user.id && p.status === 'pending';
-  if (!own && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!own && !isAdmin(req.user) && !(TEACHING_ROLES.includes(req.user.role) && canManageClass(req.user, p.classId)))
+    return res.status(403).json({ error: 'Kein Zugriff' });
   list.splice(idx, 1);
   db.commit();
   audit(req.user.id, 'penalty.delete', 'penalty', p.id);
@@ -4708,7 +5243,7 @@ function unreadCountFor(userId) {
 }
 
 function linkedAccountView(u) {
-  return { id: u.id, name: u.name, role: u.role, roleLabel: ROLE_LABELS[u.role] || u.role, unread: unreadCountFor(u.id) };
+  return { id: u.id, name: u.name, role: u.role, roleLabel: ROLE_LABELS[u.role] || u.role, classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean), unread: unreadCountFor(u.id) };
 }
 
 // Alle mit dem aktuellen Konto verknüpften (aktiven) Konten.
@@ -4782,8 +5317,160 @@ router.post('/me/switch/:id', requireAuth, (req, res) => {
   const target = findUserById(req.params.id);
   if (!target || target.status === 'disabled') return res.status(404).json({ error: 'Konto nicht verfügbar' });
   issueToken(res, target, { sb: inSandbox() });
+  // Zuletzt genutzte Rolle merken: beim nächsten Anmelden startet die Person
+  // direkt dort (z. B. Lehrkraft statt Schüler-Ansicht).
+  personAccounts(target).forEach((a) => { if (a.email) a.lastActiveAccountId = target.id; });
+  db.commit();
   audit(req.user.id, 'account.switch', 'user', target.id);
   res.json({ user: publicUser(target) });
+});
+
+// =============================================================================
+// Mehrere Rollen pro Person
+//
+// Eine Person meldet sich EINMAL an (E-Mail + Passwort ihres Hauptkontos). Die
+// Verwaltung kann ihr danach weitere Rollen geben (z. B. Schüler in Klasse 6 +
+// Klassenlehrer in Klasse 3 + DBZ-Leitung). Jede Rolle ist technisch ein
+// eigenes, verknüpftes Rollenkonto OHNE eigene E-Mail/Passwort -- so bleiben
+// die Daten sauber getrennt (Schüler-Anwesenheit ≠ Lehrer-Klassenzuordnung),
+// und die Person wechselt oben im Menü einfach die Rolle.
+// Rechte: System-Administrator vergibt jede Rolle, die DBZ-Leitung höchstens
+// "DBZ-Leitung" (nie System-Administrator).
+// =============================================================================
+
+function personAccounts(u) {
+  const ids = new Set([u.id]);
+  const queue = [u.id];
+  while (queue.length) {
+    const x = findUserById(queue.shift());
+    (x?.linkedAccountIds || []).forEach((l) => { if (!ids.has(l)) { ids.add(l); queue.push(l); } });
+  }
+  return [...ids].map(findUserById).filter(Boolean);
+}
+function linkAllAccounts(accounts) {
+  accounts.forEach((a) => {
+    a.linkedAccountIds = a.linkedAccountIds || [];
+    accounts.forEach((b) => { if (a.id !== b.id && !a.linkedAccountIds.includes(b.id)) a.linkedAccountIds.push(b.id); });
+  });
+}
+const canGrantRole = (actor, role) => actor.role === ROLES.SUPER_ADMIN || (actor.role === ROLES.LEITUNG && role !== ROLES.SUPER_ADMIN);
+function roleAccountView(u) {
+  return {
+    id: u.id,
+    role: u.role,
+    roleLabel: ROLE_LABELS[u.role] || u.role,
+    classIds: u.classIds || [],
+    classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
+    childNames: (u.childIds || []).map((c) => findUserById(c)?.name).filter(Boolean),
+    status: u.status,
+    // Hauptkonto = das mit E-Mail/Passwort (dort meldet sich die Person an).
+    login: Boolean(u.email),
+    email: u.email || null,
+  };
+}
+function cleanRoleClassIds(role, classIds) {
+  const ids = (Array.isArray(classIds) ? classIds : []).filter((c) => findClass(c));
+  if (TEACHING_ROLES.includes(role)) return [...new Set(ids)];
+  if (STUDENT_ROLES.includes(role)) return ids.slice(0, 1); // Schüler ohne Klasse ist erlaubt
+  return [];
+}
+
+router.get('/admin/users/:id/roles', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  const accounts = personAccounts(u);
+  const main = accounts.find((a) => a.email) || u;
+  res.json({
+    person: { id: main.id, name: main.name, email: main.email || null },
+    accounts: accounts.map(roleAccountView),
+    grantable: ALL_ROLES.filter((r) => canGrantRole(req.user, r)),
+  });
+});
+
+router.post('/admin/users/:id/roles', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
+  const { role } = req.body || {};
+  if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
+  if (!canGrantRole(req.user, role)) return res.status(403).json({ error: 'Die DBZ-Leitung kann höchstens die Rolle „DBZ-Leitung" vergeben' });
+  const accounts = personAccounts(u);
+  const main = accounts.find((a) => a.email) || u;
+  const classIds = cleanRoleClassIds(role, req.body?.classIds);
+  const existing = accounts.find((a) => a.role === role || (STUDENT_ROLES.includes(role) && STUDENT_ROLES.includes(a.role)));
+  let account;
+  if (existing) {
+    if (existing.status !== 'disabled') return res.status(409).json({ error: `${main.name} hat diese Rolle bereits` });
+    // Früher entzogene Rolle wieder aktivieren (alte Daten bleiben erhalten).
+    existing.status = 'active';
+    existing.role = role;
+    existing.classIds = classIds;
+    existing.name = main.name;
+    account = existing;
+  } else {
+    account = {
+      id: newId('user'),
+      name: main.name,
+      email: null,
+      passwordHash: null,
+      role,
+      classIds,
+      childIds: [],
+      status: 'active',
+      roleOf: main.id,
+      isDemo: Boolean(u.isDemo),
+      consentAt: main.consentAt || null,
+      createdAt: new Date().toISOString(),
+    };
+    db.insert('users', account);
+    accounts.push(account);
+  }
+  linkAllAccounts(accounts);
+  db.commit();
+  audit(req.user.id, 'user.role_add', 'user', account.id, null, { person: main.id, role, classIds });
+  notify(account.id, {
+    type: 'account_linked', level: 'info', title: `Neue Rolle: ${ROLE_LABELS[role]}`,
+    body: 'Du kannst jetzt unten im Menü (bei deinem Namen) zwischen deinen Rollen wechseln.', deepLink: '/dashboard',
+  });
+  // Das letzte Wort hat der System-Administrator: über jede neue Rolle informieren.
+  if (req.user.role !== ROLES.SUPER_ADMIN) superAdminIds().forEach((id) => notify(id, {
+    type: 'approval', level: 'info', title: 'Rolle vergeben',
+    body: `${req.user.name} hat ${main.name} die Rolle „${ROLE_LABELS[role]}" gegeben.`, deepLink: '/admin',
+  }));
+  res.json({ account: roleAccountView(account) });
+});
+
+// Klassen einer Rolle ändern (z. B. Lehrkraft übernimmt zusätzlich Klasse 4).
+router.patch('/admin/users/:id/roles/:accountId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  const acc = findUserById(req.params.accountId);
+  if (!u || !acc || !personAccounts(u).some((a) => a.id === acc.id)) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, acc)) return;
+  if (!canGrantRole(req.user, acc.role)) return res.status(403).json({ error: 'Keine Berechtigung für diese Rolle' });
+  const before = { classIds: acc.classIds };
+  acc.classIds = cleanRoleClassIds(acc.role, req.body?.classIds);
+  db.commit();
+  audit(req.user.id, 'user.role_classes', 'user', acc.id, before, { classIds: acc.classIds });
+  res.json({ account: roleAccountView(acc) });
+});
+
+// Rolle entziehen: das Rollenkonto wird deaktiviert (Verlauf bleibt erhalten,
+// die Rolle lässt sich später wieder vergeben). Das Anmelde-Konto selbst wird
+// hier nicht angetastet (dafür "Deaktivieren" in der Nutzerliste).
+router.delete('/admin/users/:id/roles/:accountId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  const acc = findUserById(req.params.accountId);
+  if (!u || !acc || !personAccounts(u).some((a) => a.id === acc.id)) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, acc)) return;
+  if (acc.email) return res.status(400).json({ error: 'Das ist das Anmelde-Konto der Person. Rolle hier über „Rolle ändern" anpassen oder das Konto deaktivieren.' });
+  if (!canGrantRole(req.user, acc.role)) return res.status(403).json({ error: 'Keine Berechtigung für diese Rolle' });
+  if (acc.id === req.user.id) return res.status(400).json({ error: 'Die eigene aktive Rolle kann nicht entzogen werden – wechsle vorher die Rolle' });
+  if (acc.role === ROLES.SUPER_ADMIN && db.all('users').filter((x) => x.role === ROLES.SUPER_ADMIN && x.status !== 'disabled').length <= 1)
+    return res.status(400).json({ error: 'Der letzte System-Administrator kann nicht entfernt werden' });
+  acc.status = 'disabled';
+  db.commit();
+  audit(req.user.id, 'user.role_remove', 'user', acc.id, { role: acc.role }, null);
+  res.json({ ok: true });
 });
 
 // =============================================================================
@@ -4823,12 +5510,37 @@ function canSeeAnnouncement(user, a) {
   return announcementAudienceUsers(a).some((u) => u.id === user.id);
 }
 
-function announcementView(a) {
+// Erlaubte Reaktionen auf Ankündigungen (wie bei WhatsApp).
+const ANNOUNCEMENT_REACTIONS = ['❤️', '👍', '👎', '😂', '🤲', '😮'];
+
+function announcementFrom(a) {
+  if (a.fromLabel) return a.fromLabel;
+  const author = findUserById(a.authorId);
+  if (a.audience?.type === 'class' && TEACHING_ROLES.includes(a.authorRole)) return boxLabel(`klasse:${a.audience.classId}`);
+  return boxLabel(staffBoxes(author || { role: a.authorRole })[0] || (a.authorRole === ROLES.SUPER_ADMIN ? 'system' : 'leitung'));
+}
+function canSeeAnnouncementReads(user, a) {
+  return a.authorId === user.id || isAdmin(user) || (a.audience?.type === 'class' && TEACHING_ROLES.includes(user.role) && canManageClass(user, a.audience.classId));
+}
+function announcementView(a, viewer = null) {
   let audienceLabel = 'Ganze Schule';
   if (a.audience.type === 'class') audienceLabel = findClass(a.audience.classId)?.name || 'Klasse';
   else if (a.audience.type === 'role') audienceLabel = ROLE_LABELS[a.audience.role] || a.audience.role;
   else if (a.audience.type === 'classType') audienceLabel = CLASS_TYPE_LABELS[a.audience.classType] || 'Klassen';
-  return { ...a, audienceLabel };
+  const { readBy, reactions, authorName, ...rest } = a;
+  const fromLabel = announcementFrom(a);
+  const reactionSummary = {};
+  Object.entries(reactions || {}).forEach(([emoji, ids]) => { if (ids.length) reactionSummary[emoji] = { count: ids.length, mine: Boolean(viewer && ids.includes(viewer.id)) }; });
+  const view = { ...rest, audienceLabel, fromLabel, reactions: reactionSummary };
+  // Mitarbeitende sehen zusätzlich, wer geschrieben hat, und wie viele gelesen haben.
+  if (viewer && isStaff(viewer)) {
+    view.authorName = authorName;
+    if (canSeeAnnouncementReads(viewer, a)) {
+      const audience = announcementAudienceUsers(a).filter((u) => u.id !== a.authorId && u.status === 'active');
+      view.readStats = { read: audience.filter((u) => readBy?.[u.id]).length, total: audience.length };
+    }
+  }
+  return view;
 }
 
 router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
@@ -4854,6 +5566,10 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
     authorId: req.user.id,
     authorName: req.user.name,
     authorRole: req.user.role,
+    // Absender nach außen = Postfach (z. B. "Klassenleitung Klasse 3"), nicht die Person.
+    fromLabel: aud.type === 'class' && TEACHING_ROLES.includes(req.user.role) ? boxLabel(`klasse:${aud.classId}`) : boxLabel(staffBoxes(req.user)[0] || 'leitung'),
+    readBy: {},
+    reactions: {},
     title: title.trim(),
     body: body.trim(),
     priority: priority === 'high' ? 'high' : 'normal',
@@ -4869,25 +5585,60 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
       notify(u.id, {
         type: 'announcement',
         level: a.priority === 'high' ? 'warning' : 'info',
-        title: `Ankündigung: ${a.title}`,
+        title: `${a.fromLabel}: ${a.title}`,
         body: a.body.slice(0, 140),
         deepLink: '/ankuendigungen',
         refId: a.id,
         groupId: a.id,
       }),
     );
-  res.json({ announcement: announcementView(a) });
+  res.json({ announcement: announcementView(a, req.user) });
 });
 
 router.get('/announcements', requireAuth, (req, res) => {
-  const list = db
+  const now = new Date().toISOString();
+  let touched = false;
+  const visible = db
     .all('announcements')
     .filter((a) => canSeeAnnouncement(req.user, a))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map(announcementView);
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Lesebestätigung: beim Öffnen der Liste gilt jede sichtbare Ankündigung als gelesen.
+  visible.forEach((a) => {
+    if (a.authorId === req.user.id) return;
+    a.readBy = a.readBy || {};
+    if (!a.readBy[req.user.id]) { a.readBy[req.user.id] = now; touched = true; }
+  });
+  const list = visible.map((a) => announcementView(a, req.user));
   // Ankündigungen gelten als gelesen, sobald die Liste geöffnet wird.
-  if (markNotificationsRead(req.user.id, (n) => n.type === 'announcement')) db.commit();
+  if (markNotificationsRead(req.user.id, (n) => n.type === 'announcement') || touched) db.commit();
   res.json({ announcements: list });
+});
+
+// Reaktion auf eine Ankündigung setzen/entfernen (alle, die sie sehen dürfen).
+router.post('/announcements/:id/react', requireAuth, (req, res) => {
+  const a = byId('announcements', req.params.id);
+  if (!a || !canSeeAnnouncement(req.user, a)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const emoji = String(req.body?.emoji || '');
+  if (!ANNOUNCEMENT_REACTIONS.includes(emoji)) return res.status(400).json({ error: 'Ungültige Reaktion' });
+  a.reactions = a.reactions || {};
+  // Eine Reaktion pro Person (wie WhatsApp): andere Reaktion ersetzt die alte.
+  const had = (a.reactions[emoji] || []).includes(req.user.id);
+  Object.keys(a.reactions).forEach((k) => { a.reactions[k] = a.reactions[k].filter((id) => id !== req.user.id); if (!a.reactions[k].length) delete a.reactions[k]; });
+  if (!had) a.reactions[emoji] = [...(a.reactions[emoji] || []), req.user.id];
+  db.commit();
+  res.json({ announcement: announcementView(a, req.user) });
+});
+
+// Wer hat gelesen / reagiert? (Autor, Leitung/Admin, Lehrkraft der Zielklasse)
+router.get('/announcements/:id/readers', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const a = byId('announcements', req.params.id);
+  if (!a || !canSeeAnnouncementReads(req.user, a)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const reactionOf = (uid) => Object.entries(a.reactions || {}).find(([, ids]) => ids.includes(uid))?.[0] || null;
+  const rows = announcementAudienceUsers(a)
+    .filter((u) => u.id !== a.authorId && u.status === 'active')
+    .map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] || u.role, readAt: a.readBy?.[u.id] || null, reaction: reactionOf(u.id), lastSeenAt: u.lastSeenAt || null }))
+    .sort((x, y) => (x.readAt ? 1 : 0) - (y.readAt ? 1 : 0) || x.name.localeCompare(y.name, 'de'));
+  res.json({ readers: rows });
 });
 
 router.delete('/announcements/:id', requireAuth, (req, res) => {
@@ -4930,6 +5681,7 @@ router.post('/notifications/bulk', requireAuth, (req, res) => {
   const { ids, action } = req.body || {};
   if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
   if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  if (action === 'delete' && !canDeleteHistory(req.user)) return res.status(403).json({ error: 'Benachrichtigungen können nur als gelesen markiert werden' });
   const wanted = new Set(ids.map(String));
   const notes = db.all('notifications');
   let changed = 0;
@@ -4992,7 +5744,7 @@ function upcomingFor(user, days = 14, limit = 5) {
   const classes = visibleClasses(user);
   for (let d = new Date(today); d <= end; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dk = d.toISOString().slice(0, 10);
+    const dk = localDateKey(d);
     for (const c of classes) if (c.weekday === dow) events.push({ date: dk, type: 'lesson', title: c.name, time: `${c.startTime}–${c.endTime}` });
   }
   const addDue = (a, due, who) => {
@@ -5027,7 +5779,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
     .filter((a) => canSeeAnnouncement(req.user, a))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 3)
-    .map(announcementView);
+    .map((a) => announcementView(a, req.user));
   const upcoming = upcomingFor(req.user);
   const unreadMessages = unreadMessagesFor(req.user.id);
 
@@ -5272,7 +6024,19 @@ router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.
 
 router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const list = req.user.isDemo ? db.all('users').filter((u) => u.isDemo) : db.all('users');
-  res.json({ users: list.map(publicUser) });
+  res.json({
+    users: list.map((u) => {
+      const others = (u.linkedAccountIds || []).map(findUserById).filter((x) => x && x.status !== 'disabled');
+      const main = u.email ? u : others.find((x) => x.email);
+      return {
+        ...publicUser(u),
+        lastSeenAt: u.lastSeenAt || null,
+        classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
+        otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
+        loginEmail: main?.email || null,
+      };
+    }),
+  });
 });
 
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
@@ -5313,7 +6077,10 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   const { name, role, classIds, childIds, status } = req.body || {};
   const before = { role: u.role, status: u.status, classIds: u.classIds, childIds: u.childIds };
 
-  if (name && name.trim()) u.name = name.trim();
+  if (name && name.trim()) {
+    u.name = name.trim();
+    personAccounts(u).forEach((a) => { if (!a.email) a.name = u.name; });
+  }
 
   if (role && role !== u.role) {
     if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
@@ -5351,6 +6118,8 @@ function hardDeleteUser(u) {
   const arr = db.all('users');
   const idx = arr.findIndex((x) => x.id === u.id);
   arr.splice(idx, 1);
+  // Rollenkonten (ohne eigene Anmeldung) gehören zur Person und gehen mit.
+  for (let i = arr.length - 1; i >= 0; i--) if (arr[i].roleOf === u.id && !arr[i].email) arr.splice(i, 1);
   arr.forEach((x) => {
     if (x.childIds?.includes(u.id)) x.childIds = x.childIds.filter((id) => id !== u.id);
     if (x.linkedAccountIds?.includes(u.id)) x.linkedAccountIds = x.linkedAccountIds.filter((id) => id !== u.id);

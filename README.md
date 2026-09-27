@@ -95,6 +95,7 @@ Siehe `.env.example`:
 | `EMAIL_API_URL`| HTTP-Endpunkt für E-Mail-Versand (sonst „log"-Modus)| optional              |
 | `EMAIL_API_KEY`| Bearer-Token für die E-Mail-API                     | optional              |
 | `EMAIL_FROM`   | Absenderadresse                                     | optional              |
+| `TZ` / `SCHOOL_TZ` | Zeitzone der Schule (Standard `Europe/Berlin`, wird automatisch gesetzt) | nein |
 
 Ohne `EMAIL_API_URL` läuft der E-Mail-Provider im „log"-Modus (E-Mails werden nur
 protokolliert). Passwort-Reset-Links werden aus Sicherheitsgründen **nie** an den
@@ -156,8 +157,40 @@ Modell unter NVIDIA CC-BY-4.0). Es läuft vollständig auf dem Gerät
 (onnxruntime-web im Web Worker) – kostenlos, ohne dass Audio das Gerät
 verlässt. Der Server lädt das Modell (~85 MB) beim ersten Abruf einmal von der
 offiziellen Release, prüft die SHA-256-Prüfsumme und liefert es dann selbst aus
-(`/api/asr/model`); Handys speichern es danach dauerhaft. Die
-Browser-Spracherkennung bleibt als Alternative wählbar.
+(`/api/asr/model`); Handys speichern es danach dauerhaft. Die frühere
+Browser-Spracherkennung ist entfernt (zu ungenau).
+
+Der Wortabgleich (`client/src/lib/hifzEngine.js`) gleicht typische
+Erkennungs-/Aussprachevarianten an (ص/س, ط/ت, ض/د, ظ/ذ, ق/ك, ح/ه, gedehnte
+Laute, zusammengezogene Wörter) und findet nach unklaren Stellen wieder
+Anschluss; dabei übersprungene Wörter werden rot als „ausgelassen" markiert,
+nie als rezitiert. Gemessen an 70+ echten, teils nicht professionellen
+Aufnahmen aus dem Tilawa-Testkorpus stieg die Trefferquote so deutlich, ohne
+zusätzliche falsch aufgedeckte Wörter.
+
+## Rollen, Postfächer & Organisation
+
+- **Eine Anmeldung pro Person, beliebig viele Rollen:** Die Verwaltung gibt
+  einer Person unter *Verwaltung → Nutzer → Bearbeiten → Rolle hinzufügen*
+  weitere Rollen (z. B. Schüler in Klasse 6 + Klassenlehrer in Klasse 3 +
+  DBZ-Leitung). Die Person wechselt unten im Menü die Rolle – ohne zweites
+  Konto oder Passwort. System-Administrator vergibt jede Rolle, die DBZ-Leitung
+  höchstens „DBZ-Leitung".
+- **Postfächer statt Namen:** Mitarbeitende schreiben immer als „DBZ-Leitung",
+  „Systembetreuung" oder „Klassenleitung Klasse X". Schüler mit Klasse
+  erreichen nur ihre Klassenleitung, Schüler ohne Klasse die DBZ-Leitung und
+  die Systembetreuung. Rundnachrichten (alle Schüler/Eltern, eine Klasse)
+  kommen einzeln an, Antworten landen als eigener Chat im Postfach.
+  Lesebestätigung und „zuletzt online" sehen nur Mitarbeitende.
+- **Unterricht je Klasse:** Jede Lehrkraft stellt Wochentag, Beginn, Ende,
+  Pünktlichkeits-Toleranz und „unentschuldigt zu spät ab" selbst ein; der
+  Tür-QR-Code gilt nur für die eigene Klasse. Für Tage, an denen die ganze
+  Schule gemeinsam Unterricht hat, legt die Leitung einen **Schultag** mit
+  gemeinsamem QR-Code an.
+- **Einwilligung:** einmal bei der Registrierung (bzw. einmalig nach dem
+  nächsten Login für bestehende Konten) für Datenschutz, Mikrofon, Kamera und
+  Benachrichtigungen; die Geräte-Berechtigungen werden danach in einem Schritt
+  angefragt.
 
 ## Deployment (kostenlos möglich)
 

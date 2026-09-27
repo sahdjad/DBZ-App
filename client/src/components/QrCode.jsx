@@ -28,6 +28,20 @@ export function QrImage({ value, size = 220 }) {
   return <img src={src} style={{ width: size, height: size }} alt="QR-Code zum Einchecken" className="rounded-lg" />;
 }
 
+// Mittig gesetzter QR-Code auf DBZ-grünem Muster-Hintergrund (Tür-QR,
+// Sitzungs-Code, Schultag). Kinder: Aktionen unter dem Code.
+export function QrStage({ value, title, subtitle, caption, size = 220, children }) {
+  return (
+    <div className="qr-stage">
+      {title && <div className="font-display text-xl mb-1">{title}</div>}
+      {subtitle && <div className="text-xs uppercase tracking-[0.2em] text-[#d8c38a] mb-4">{subtitle}</div>}
+      <div className="qr-tile"><QrImage value={value} size={size} /></div>
+      {caption && <div className="mt-4 text-base font-bold uppercase tracking-wide text-[#f6d27a]">{caption}</div>}
+      {children && <div className="mt-4 w-full flex flex-col items-center gap-2">{children}</div>}
+    </div>
+  );
+}
+
 // Nur den QR-Code drucken (ein sauberes Blatt), NICHT die ganze Webseite.
 // Öffnet ein eigenes Druckfenster mit hochauflösendem QR -> genau eine Seite.
 export async function printQrCode(code, title = '', subtitle = '') {

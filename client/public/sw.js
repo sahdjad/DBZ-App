@@ -15,7 +15,7 @@
  * Laden = keine echte Navigation) auf unbestimmte Zeit auf dem alten Stand
  * hängen, selbst nach vielen Deploys mit neuen JS-Bundles.
  */
-const CACHE = 'dbz-cache-v7'; // App-Shell + statische Assets (wird bei Updates ersetzt)
+const CACHE = 'dbz-cache-v8'; // App-Shell + statische Assets (wird bei Updates ersetzt)
 const DATA = 'dbz-quran-v1'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 

@@ -54,7 +54,9 @@ export default function Konto() {
         </Card>
 
         <ThemeCard />
-        <NotificationsCard />
+        {/* Für Schüler/Eltern sind Benachrichtigungen Pflicht -- die Einstellung
+            entfällt dort (Aktivieren übernimmt der Hinweis oben in der App). */}
+        {CAN_DISABLE_PUSH.includes(user?.role) && <NotificationsCard />}
 
         {user.role === 'eltern' && <ParentChildrenCard />}
         {LINKABLE.includes(user.role) && <FamilyCodeCard />}

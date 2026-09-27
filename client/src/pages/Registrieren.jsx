@@ -4,6 +4,7 @@ import { BookMarked, UserPlus, CheckCircle2, Plus, X } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Button, Card, Spinner, useToast } from '../components/ui.jsx';
+import { ConsentCheckbox } from '../components/Consent.jsx';
 
 const emptyGuardian = () => ({ name: '', phones: [''], email: '' });
 const emptyProfile = {
@@ -214,6 +215,7 @@ export default function Registrieren() {
 
   // Bei Schüler/Klassensprecher ersetzen Vor-/Nachname aus den Anmeldedaten
   // das separate Namensfeld (weniger Doppelerfassung).
+  const [consent, setConsent] = useState(false);
   const showsProfileFields = openMode || invite?.role === 'schueler' || invite?.role === 'klassensprecher';
   const nameFor = () => (showsProfileFields ? `${profile.firstName} ${profile.lastName}`.trim() : form.name);
 
@@ -221,7 +223,7 @@ export default function Registrieren() {
     e.preventDefault();
     setBusy(true);
     try {
-      await register({ token, ...form, name: nameFor(), ...profile });
+      await register({ token, ...form, name: nameFor(), ...profile, consent });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -234,7 +236,7 @@ export default function Registrieren() {
     e.preventDefault();
     setBusy(true);
     try {
-      await registerOpen({ ...form, name: nameFor(), ...profile });
+      await registerOpen({ ...form, name: nameFor(), ...profile, consent });
       setOpenDone(true);
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -291,7 +293,8 @@ export default function Registrieren() {
                     <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} />
                   </label>
                   <ProfileFields profile={profile} setProfile={setProfile} />
-                  <Button type="submit" size="lg" className="w-full" disabled={busy}><UserPlus size={18} /> {busy ? 'Wird gesendet …' : 'Anmeldung senden'}</Button>
+                  <ConsentCheckbox checked={consent} onChange={setConsent} />
+                  <Button type="submit" size="lg" className="w-full" disabled={busy || !consent}><UserPlus size={18} /> {busy ? 'Wird gesendet …' : 'Anmeldung senden'}</Button>
                   <button type="button" onClick={() => setOpenMode(false)} className="text-sm text-mint-light hover:underline w-full text-center">
                     Ich habe doch einen Einladungscode
                   </button>
@@ -337,7 +340,8 @@ export default function Registrieren() {
                     {showsProfileFields && (
                       <ProfileFields profile={profile} setProfile={setProfile} />
                     )}
-                    <Button type="submit" size="lg" className="w-full" disabled={busy}><UserPlus size={18} /> {busy ? 'Konto wird erstellt …' : 'Konto erstellen'}</Button>
+                    <ConsentCheckbox checked={consent} onChange={setConsent} />
+                    <Button type="submit" size="lg" className="w-full" disabled={busy || !consent}><UserPlus size={18} /> {busy ? 'Konto wird erstellt …' : 'Konto erstellen'}</Button>
                   </form>
                 </>
               ) : null}

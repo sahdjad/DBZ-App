@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Megaphone, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import { Megaphone, Plus, Trash2, AlertTriangle, CheckCheck, SmilePlus, X } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, Spinner, useToast, useBackToClose } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { lastSeenLabel } from '../lib/format.js';
+
+const REACTIONS = ['❤️', '👍', '👎', '😂', '🤲', '😮'];
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMIN = ['super_admin', 'leitung'];
@@ -29,6 +32,13 @@ export default function Ankuendigungen() {
   };
 
   const isManager = MANAGER.includes(user.role);
+  const [readersOf, setReadersOf] = useState(null);
+  const react = async (id, emoji) => {
+    try {
+      const { announcement } = await api.post(`/announcements/${id}/react`, { emoji });
+      setList((l) => l.map((x) => (x.id === id ? announcement : x)));
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
 
   return (
     <AppLayout title="Ankündigungen">
@@ -55,18 +65,83 @@ export default function Ankuendigungen() {
                     <h3 className="text-ivory">{a.title}</h3>
                     <Badge tone="neutral">{a.audienceLabel}</Badge>
                   </div>
-                  <div className="text-xs text-sage-muted mt-1">{a.authorName} · {fmt(a.createdAt)}</div>
+                  <div className="text-xs text-sage-muted mt-1">{a.fromLabel}{a.authorName ? ` · ${a.authorName}` : ''} · {fmt(a.createdAt)}</div>
                 </div>
                 {(a.authorId === user.id || ADMIN.includes(user.role)) && (
                   <button onClick={() => remove(a.id)} className="text-status-absent p-1 shrink-0" aria-label="Löschen"><Trash2 size={16} /></button>
                 )}
               </div>
               <p className="text-sage mt-3 whitespace-pre-line">{a.body}</p>
+              <ReactionBar a={a} onReact={(e) => react(a.id, e)} />
+              {a.readStats && (
+                <button type="button" onClick={() => setReadersOf(a)} className="mt-2 text-xs text-mint inline-flex items-center gap-1 hover:underline">
+                  <CheckCheck size={14} /> Gelesen von {a.readStats.read}/{a.readStats.total}
+                </button>
+              )}
             </Card>
           ))}
         </div>
       )}
+      {readersOf && <ReadersSheet a={readersOf} onClose={() => setReadersOf(null)} />}
     </AppLayout>
+  );
+}
+
+// Emoji-Reaktionen wie bei WhatsApp: eine Reaktion pro Person, erneutes
+// Antippen nimmt sie zurück.
+function ReactionBar({ a, onReact }) {
+  const [open, setOpen] = useState(false);
+  const entries = Object.entries(a.reactions || {});
+  return (
+    <div className="mt-3 flex items-center gap-1.5 flex-wrap">
+      {entries.map(([e, r]) => (
+        <button key={e} type="button" onClick={() => onReact(e)} aria-pressed={r.mine}
+          className={['text-sm px-2 py-0.5 rounded-full border transition active:scale-95', r.mine ? 'bg-mint/15 border-mint/40 text-mint' : 'bg-subtle border-line text-sage-muted'].join(' ')}>
+          {e} {r.count}
+        </button>
+      ))}
+      {open ? (
+        <span className="inline-flex gap-1 bg-card border border-line rounded-full px-2 py-0.5 shadow-sm">
+          {REACTIONS.map((e) => (
+            <button key={e} type="button" onClick={() => { onReact(e); setOpen(false); }} className="text-lg hover:scale-125 transition" aria-label={`Mit ${e} reagieren`}>{e}</button>
+          ))}
+        </span>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="p-1 text-sage-muted hover:text-ivory" aria-label="Reagieren"><SmilePlus size={18} /></button>
+      )}
+    </div>
+  );
+}
+
+// Wer hat gelesen (nur Mitarbeitende).
+function ReadersSheet({ a, onClose }) {
+  const [rows, setRows] = useState(null);
+  useBackToClose(true, onClose); // Zurück-Taste schließt nur diese Liste
+  useEffect(() => { api.get(`/announcements/${a.id}/readers`).then((d) => setRows(d.readers)).catch(() => setRows([])); }, [a.id]);
+  const read = (rows || []).filter((r) => r.readAt);
+  const unread = (rows || []).filter((r) => !r.readAt);
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 lg:inset-0 lg:m-auto lg:h-fit lg:max-w-md lg:rounded-2xl rounded-t-2xl bg-card border-t lg:border border-line p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[80vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="font-display text-lg text-ivory truncate">Gelesen: {a.title}</h2>
+          <button onClick={onClose} aria-label="Schließen" className="text-sage hover:text-ivory p-1"><X size={20} /></button>
+        </div>
+        {!rows ? <Spinner /> : (
+          <div className="space-y-4">
+            <section>
+              <div className="text-xs uppercase tracking-wide text-sage-muted mb-1">Noch nicht gelesen ({unread.length})</div>
+              <ul className="divide-y divide-line">{unread.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} <span className="text-[11px] text-sage-muted">{r.roleLabel}</span></span><span className="text-[11px] text-sage-muted shrink-0">online {lastSeenLabel(r.lastSeenAt)}</span></li>)}</ul>
+            </section>
+            <section>
+              <div className="text-xs uppercase tracking-wide text-sage-muted mb-1">Gelesen ({read.length})</div>
+              <ul className="divide-y divide-line">{read.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} {r.reaction}</span><span className="text-[11px] text-sage-muted shrink-0">{fmt(r.readAt)}</span></li>)}</ul>
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

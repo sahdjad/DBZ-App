@@ -5,6 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
+import { lastSeenLabel } from '../lib/format.js';
 
 const TABS = [
   ['users', 'Nutzer', Users2],
@@ -221,6 +222,17 @@ function PendingTab() {
   );
 }
 
+// Rollen-Abschnitte der Nutzerliste (Reihenfolge = Hierarchie).
+const ROLE_SECTIONS = [
+  ['super_admin', 'Systembetreuung'],
+  ['leitung', 'DBZ-Leitung'],
+  ['klassenlehrer', 'Lehrkräfte'],
+  ['vertretung', 'Vertretungslehrkräfte'],
+  ['klassensprecher', 'Klassensprecher'],
+  ['schueler', 'Schüler'],
+  ['eltern', 'Eltern'],
+];
+
 function UsersTab() {
   const toast = useToast();
   const { user: me } = useAuth();
@@ -231,6 +243,9 @@ function UsersTab() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [q, setQ] = useState('');
+  const [openSections, setOpenSections] = useState(() => new Set(['super_admin', 'leitung', 'klassenlehrer']));
+  const [showDisabled, setShowDisabled] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -248,11 +263,8 @@ function UsersTab() {
     }
   };
 
-  // Das eigene Konto lässt sich nie mit auswählen/löschen.
-  const selectable = (users || []).filter((u) => u.id !== me?.id);
-  const allSelected = selectable.length > 0 && selected.length === selectable.length;
-  const toggleAll = () => setSelected(allSelected ? [] : selectable.map((u) => u.id));
   const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const toggleSection = (key) => setOpenSections((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const bulkDelete = async () => {
     if (!selected.length) return;
@@ -277,10 +289,15 @@ function UsersTab() {
   };
 
   if (!users) return <Spinner />;
+  const needle = q.trim().toLowerCase();
+  const visible = users.filter((u) => (showDisabled || u.status !== 'disabled')
+    && (!needle || [u.name, u.email, u.loginEmail, ...(u.classNames || [])].some((x) => String(x || '').toLowerCase().includes(needle))));
+  const byName = (a, b) => a.name.localeCompare(b.name, 'de');
+  const disabledCount = users.filter((u) => u.status === 'disabled').length;
   return (
     <div className="space-y-4">
-      <LinkAccountsAdminCard />
-      <div className="flex justify-end gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
+        <input className="input flex-1 min-w-[12rem]" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
             <XCircle size={18} /> {selected.length} löschen
@@ -288,6 +305,9 @@ function UsersTab() {
         )}
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
+      <p className="text-xs text-sage-muted">
+        Tipp: Neue Personen am besten per <b>Einladung</b> anmelden lassen. Braucht jemand danach weitere Rollen (z. B. Schüler UND Lehrkraft UND Leitung), bei der Person auf <b>Bearbeiten → Rolle hinzufügen</b> – kein zweites Konto, kein zweites Passwort.
+      </p>
       {show && (
         <Card className="p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
@@ -322,32 +342,133 @@ function UsersTab() {
         />
       )}
 
-      <Card className="p-0 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="text-left text-sage-muted border-b border-line">
-              <th className="p-3 w-8"><input type="checkbox" checked={allSelected} onChange={toggleAll} /></th>
-              <th className="p-3">Name</th><th className="p-3">E-Mail</th><th className="p-3">Rolle</th><th className="p-3">Status</th><th className="p-3"></th>
-            </tr></thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.id} className="border-b border-line">
-                  <td className="p-3">
-                    {u.id !== me?.id && (
-                      <input type="checkbox" checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
-                    )}
-                  </td>
-                  <td className="p-3 text-ivory">{u.name}</td>
-                  <td className="p-3 text-sage-muted font-mono text-xs">{u.email}</td>
-                  <td className="p-3">{u.roleLabel}</td>
-                  <td className="p-3"><Badge tone={u.status === 'active' ? 'present' : 'late'}>{u.status}</Badge></td>
-                  <td className="p-3 text-right"><Button size="sm" variant="ghost" onClick={() => setEditing(u)}>Bearbeiten</Button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {ROLE_SECTIONS.map(([role, title]) => {
+        const list = visible.filter((u) => u.role === role).sort(byName);
+        if (!list.length && needle) return null;
+        const open = Boolean(needle) || openSections.has(role);
+        return (
+          <Card key={role} className="p-0 overflow-hidden">
+            <button type="button" onClick={() => toggleSection(role)} aria-expanded={open}
+              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-hover">
+              <span className="text-ivory font-medium">{title}</span>
+              <span className="flex items-center gap-2 text-sm text-sage-muted">
+                <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-mint/10 text-mint">{list.length}</span>
+                <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+              </span>
+            </button>
+            {open && (
+              list.length === 0 ? <p className="px-4 pb-4 text-sm text-sage-muted">Niemand in dieser Rolle.</p> : (
+                <ul className="divide-y divide-line border-t border-line">
+                  {list.map((u) => (
+                    <li key={u.id} className="flex items-center gap-3 px-4 py-2.5">
+                      {u.id !== me?.id ? (
+                        <input type="checkbox" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
+                      ) : <span className="w-[13px]" />}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-ivory truncate flex items-center gap-2">
+                          {u.name}
+                          {u.status !== 'active' && <Badge tone="late">{u.status === 'pending' ? 'wartet' : 'inaktiv'}</Badge>}
+                        </div>
+                        <div className="text-xs text-sage-muted truncate">
+                          {[
+                            u.classNames?.length ? u.classNames.join(', ') : null,
+                            u.otherRoles?.length ? `auch: ${u.otherRoles.join(', ')}` : null,
+                            u.email || (u.loginEmail ? `Anmeldung über ${u.loginEmail}` : null),
+                          ].filter(Boolean).join(' · ')}
+                        </div>
+                      </div>
+                      <span className="hidden sm:block text-xs text-sage-muted whitespace-nowrap" title="Zuletzt online">{lastSeenLabel(u.lastSeenAt)}</span>
+                      <Button size="sm" variant="ghost" onClick={() => { setEditing(u); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Bearbeiten</Button>
+                    </li>
+                  ))}
+                </ul>
+              )
+            )}
+          </Card>
+        );
+      })}
+      {disabledCount > 0 && (
+        <label className="flex items-center gap-2 text-sm text-sage-muted">
+          <input type="checkbox" checked={showDisabled} onChange={(e) => setShowDisabled(e.target.checked)} />
+          Deaktivierte Konten / entzogene Rollen anzeigen ({disabledCount})
+        </label>
+      )}
+      <details className="rounded-2xl border border-line bg-card">
+        <summary className="px-4 py-3 cursor-pointer text-sm text-sage">Erweitert: zwei bestehende Konten verknüpfen</summary>
+        <div className="p-2"><LinkAccountsAdminCard /></div>
+      </details>
+    </div>
+  );
+}
+
+// Alle Rollen einer Person an einem Ort: hinzufügen, Klassen anpassen, entziehen.
+function PersonRolesCard({ userId, classes, onChanged }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [role, setRole] = useState('');
+  const [cls, setCls] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get(`/admin/users/${userId}/roles`).then(setData).catch((e) => toast.push(e.message, 'error'));
+  useEffect(() => { load(); }, [userId]);
+  if (!data) return <Spinner label="Rollen laden …" />;
+  const active = data.accounts.filter((a) => a.status !== 'disabled');
+  const has = (r) => active.some((a) => a.role === r || (['schueler', 'klassensprecher'].includes(r) && ['schueler', 'klassensprecher'].includes(a.role)));
+  const options = ROLES.filter(([v]) => data.grantable.includes(v) && !has(v));
+  const needsClass = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'].includes(role);
+  const multi = ['klassenlehrer', 'vertretung'].includes(role);
+  const add = async () => {
+    if (!role) return;
+    setBusy(true);
+    try {
+      await api.post(`/admin/users/${userId}/roles`, { role, classIds: cls });
+      toast.push('Rolle hinzugefügt', 'success');
+      setRole(''); setCls([]);
+      load(); onChanged?.();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  const remove = async (a) => {
+    if (!window.confirm(`Rolle „${a.roleLabel}" entziehen? Der bisherige Verlauf bleibt gespeichert; die Rolle lässt sich später wieder vergeben.`)) return;
+    try { await api.del(`/admin/users/${userId}/roles/${a.id}`); toast.push('Rolle entzogen', 'success'); load(); onChanged?.(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  return (
+    <div className="rounded-xl border border-line p-3 space-y-3">
+      <div className="text-sm text-sage">Rollen von <span className="text-ivory">{data.person.name}</span> <span className="text-sage-muted">(Anmeldung: {data.person.email || '–'})</span></div>
+      <ul className="space-y-1.5">
+        {data.accounts.map((a) => (
+          <li key={a.id} className={`flex items-center gap-2 text-sm ${a.status === 'disabled' ? 'opacity-50' : ''}`}>
+            <Badge tone={a.status === 'disabled' ? 'neutral' : 'mint'}>{a.roleLabel}</Badge>
+            <span className="text-sage-muted truncate flex-1">{a.classNames.join(', ') || (['schueler', 'klassensprecher'].includes(a.role) ? 'noch ohne Klasse' : '')}{a.status === 'disabled' ? ' · entzogen' : ''}</span>
+            {!a.login && a.status !== 'disabled' && <Button size="sm" variant="ghost" onClick={() => remove(a)}>Entziehen</Button>}
+          </li>
+        ))}
+      </ul>
+      {options.length > 0 && (
+        <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-end border-t border-line pt-3">
+          <label className="block">
+            <span className="text-sm text-sage">Rolle hinzufügen</span>
+            <select className="input mt-1" value={role} onChange={(e) => { setRole(e.target.value); setCls([]); }}>
+              <option value="">– Rolle wählen –</option>
+              {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </label>
+          <Button onClick={add} disabled={!role || busy}><Plus size={16} /> Hinzufügen</Button>
+          {needsClass && (
+            <div className="sm:col-span-2 flex flex-wrap gap-2">
+              <span className="text-xs text-sage-muted w-full">{multi ? 'Klassen der Lehrkraft' : 'Klasse (optional – kann später zugewiesen werden)'}</span>
+              {classes.map((c) => {
+                const on = cls.includes(c.id);
+                return (
+                  <button key={c.id} type="button" onClick={() => setCls(on ? cls.filter((x) => x !== c.id) : multi ? [...cls, c.id] : [c.id])}
+                    className={['px-3 py-1.5 rounded-lg border text-sm', on ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage'].join(' ')}>
+                    {c.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
-      </Card>
+      )}
     </div>
   );
 }
@@ -397,7 +518,7 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
   const showClasses = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'].includes(f.role);
   return (
     <Card className="p-5 border-mint/30">
-      <CardHeader title={`Bearbeiten: ${user.name}`} subtitle={user.email} icon={Users2} />
+      <CardHeader title={`Bearbeiten: ${user.name}`} subtitle={user.email || (user.loginEmail ? `${user.roleLabel} · Anmeldung über ${user.loginEmail}` : user.roleLabel)} icon={Users2} />
       <div className="p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input label="Name" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
@@ -444,13 +565,15 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
           </div>
         )}
 
-        <div className="rounded-lg border border-line p-3">
+        <PersonRolesCard userId={user.id} classes={classes} />
+
+        {(user.email || !user.loginEmail) && <div className="rounded-lg border border-line p-3">
           <div className="text-sm text-sage mb-2 flex items-center gap-2"><KeyRound size={16} /> Passwort zurücksetzen</div>
           <div className="flex gap-2">
             <input type="text" className="input" placeholder="Neues Passwort (mind. 6 Zeichen)" value={pw} onChange={(e) => setPw(e.target.value)} />
             <Button variant="outline" onClick={resetPw}>Zurücksetzen</Button>
           </div>
-        </div>
+        </div>}
 
         <div className="flex gap-2">
           <Button onClick={save}>Speichern</Button>

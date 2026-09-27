@@ -36,6 +36,7 @@ import {
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Avatar, Button, Spinner, useToast } from './ui.jsx';
+import { ConsentGate } from './Consent.jsx';
 
 // Rollen-abhängige Navigation (docs/INFORMATION_ARCHITECTURE.md).
 const ITEMS = {
@@ -52,6 +53,7 @@ const ITEMS = {
   abwesenheit: { to: '/abwesenheit', label: 'Abwesenheit melden', icon: CalendarX },
   entschuldigungen: { to: '/entschuldigungen', label: 'Entschuldigungen', icon: ClipboardCheck },
   korrektur: { to: '/korrektur', label: 'Korrektur', icon: CheckSquare },
+  abgaben: { to: '/abgaben', label: 'Abgaben', icon: CheckSquare },
   verhalten: { to: '/verhalten', label: 'Verhalten', icon: Sparkles },
   strafen: { to: '/strafen', label: 'Strafen', icon: Scale },
   regeln: { to: '/regeln', label: 'Regeln & Katalog', icon: BookOpen },
@@ -75,7 +77,7 @@ const NAV_GROUPS = {
   '/ankuendigungen': 'Kommunikation', '/nachrichten': 'Kommunikation', '/benachrichtigungen': 'Kommunikation',
   '/unterricht': 'Unterricht & Anwesenheit', '/klassenliste': 'Unterricht & Anwesenheit', '/checkin': 'Unterricht & Anwesenheit',
   '/anwesenheit': 'Unterricht & Anwesenheit', '/abwesenheit': 'Unterricht & Anwesenheit', '/kalender': 'Unterricht & Anwesenheit',
-  '/korrektur': 'Unterricht & Anwesenheit', '/entschuldigungen': 'Unterricht & Anwesenheit', '/protokolle': 'Unterricht & Anwesenheit',
+  '/korrektur': 'Unterricht & Anwesenheit', '/abgaben': 'Unterricht & Anwesenheit', '/entschuldigungen': 'Unterricht & Anwesenheit', '/protokolle': 'Unterricht & Anwesenheit',
   '/aufgaben': 'Unterricht & Anwesenheit',
   '/quran': 'Lernen & Leistung', '/hifz': 'Lernen & Leistung', '/pruefungen': 'Lernen & Leistung',
   '/materialien': 'Lernen & Leistung', '/berichte': 'Lernen & Leistung', '/aktivitaeten': 'Lernen & Leistung',
@@ -125,13 +127,13 @@ function navForRole(role) {
       );
     case 'super_admin':
     case 'leitung':
-      // Unterricht/Kalender/Korrekturen/Entschuldigungen/Protokolle sind serverseitig
-      // für Leitung/Admin bereits über die Klassenlisten-Sicht erreichbar (isAdmin()-
-      // Zweige in den jeweiligen Endpunkten) – bislang fehlten sie nur im Menü.
+      // Leitung/Admin unterrichten nicht selbst: statt "Korrektur" nur
+      // "Abgaben" (ansehen), Entschuldigungen nur einsehen, alles nach Klassen
+      // geordnet. "Unterricht" = Tagesüberblick + gemeinsamer Schultag.
       return k(
         'dashboard', 'leitung',
         'ankuendigungen', 'nachrichten', 'benachrichtigungen',
-        'unterricht', 'klassenliste', 'kalender', 'korrektur', 'entschuldigungen', 'protokolle', 'aktivitaeten',
+        'unterricht', 'klassenliste', 'kalender', 'abgaben', 'entschuldigungen', 'protokolle', 'aktivitaeten',
         'strafen', 'regeln',
         'admin', 'dbzonline',
         'konto',
@@ -227,7 +229,7 @@ function setAppBadge(n) {
 }
 
 export default function AppLayout({ children, title }) {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -291,7 +293,7 @@ export default function AppLayout({ children, title }) {
           type="button"
           onClick={() => setSwitcherOpen(true)}
           className="w-full flex items-center gap-3 px-2 py-2.5 rounded-xl hover:bg-subtle transition-colors"
-          aria-label="Konto wechseln"
+          aria-label="Rolle wechseln"
         >
           <Avatar name={user?.name} size={36} />
           <div className="leading-tight min-w-0 flex-1 text-left">
@@ -344,6 +346,7 @@ export default function AppLayout({ children, title }) {
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
             mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
         {user && !user.demo && <PushNudge user={user} />}
+        {user && <ConsentGate user={user} onDone={refresh} />}
         {user?.demo && (
           <div className="shrink-0 bg-status-late/15 text-status-late text-xs px-4 py-1.5 text-center border-b border-status-late/30" role="note">
             Demo-Modus – nur zum Ausprobieren. Nichts wird gespeichert, es gibt keinen Zugriff auf echte Daten.
@@ -402,7 +405,7 @@ function MobileTabBar({ items, badges, user, onAccount }) {
         type="button"
         onClick={onAccount}
         className="relative flex-1 flex flex-col items-center gap-1 pt-2.5 pb-1 text-[11px] text-sage-muted"
-        aria-label="Konto wechseln"
+        aria-label="Rolle wechseln"
       >
         <span className="relative">
           <Avatar name={user?.name} size={22} />
@@ -450,15 +453,15 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 lg:inset-0 lg:m-auto lg:h-fit lg:max-w-sm lg:rounded-2xl rounded-t-2xl bg-card border-t lg:border border-line p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display text-lg text-ivory">Konto wechseln</h2>
+          <h2 className="font-display text-lg text-ivory">Rolle wechseln</h2>
           <button onClick={onClose} aria-label="Schließen" className="text-sage hover:text-ivory p-1"><X size={20} /></button>
         </div>
 
         <div className="flex items-center gap-3 px-2 py-2.5 rounded-xl bg-subtle mb-2">
           <Avatar name={currentUser?.name} size={36} />
           <div className="min-w-0 flex-1">
-            <div className="text-sm text-ivory truncate">{currentUser?.name}</div>
-            <div className="text-[11px] text-sage-muted truncate">{currentUser?.roleLabel}</div>
+            <div className="text-sm text-ivory truncate">{currentUser?.roleLabel}</div>
+            <div className="text-[11px] text-sage-muted truncate">{currentUser?.name} · aktiv</div>
           </div>
           <Check size={18} className="text-mint shrink-0" aria-hidden="true" />
         </div>
@@ -467,7 +470,7 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
           <div className="py-4"><Spinner /></div>
         ) : accounts.length === 0 ? (
           <p className="text-sm text-sage-muted px-2 py-3">
-            Noch keine weiteren Konten verknüpft. Richte das im Bereich „Konto" ein.
+            Du hast nur diese eine Rolle. Weitere Rollen (z. B. Lehrkraft und Schüler) vergibt die DBZ-Leitung.
           </p>
         ) : (
           <ul className="space-y-1">
@@ -481,9 +484,9 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
                 >
                   <Avatar name={a.name} size={36} />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-ivory truncate">{a.name}</div>
+                    <div className="text-sm text-ivory truncate">{a.roleLabel}</div>
                     <div className="text-[11px] text-sage-muted truncate">
-                      {a.roleLabel}{a.unread > 0 ? ` · ${a.unread} ungelesen` : ''}
+                      {[a.name !== currentUser?.name ? a.name : null, a.classNames?.join(', ') || null, a.unread > 0 ? `${a.unread} ungelesen` : null].filter(Boolean).join(' · ') || ' '}
                     </div>
                   </div>
                   {busyId === a.id && <span className="h-4 w-4 rounded-full border-2 border-line border-t-mint animate-spin shrink-0" role="status" aria-label="Wird gewechselt" />}

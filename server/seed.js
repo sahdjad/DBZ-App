@@ -81,6 +81,7 @@ export async function seedDemoData() {
     classIds: [],
     childIds: [],
     status: 'active',
+    consentAt: now, // Demo: Einwilligungs-Kasten nicht bei jeder Vorführung zeigen
     createdAt: now,
     ...extra,
   });
