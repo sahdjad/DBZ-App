@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus } from 'lucide-react';
+import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -100,6 +100,69 @@ function ClassInviteCard({ classId, className }) {
   );
 }
 
+// "Klasse neu starten": Test-/Probedaten gezielt löschen, damit der echte
+// Betrieb bei null beginnt. Schüler und Einstellungen bleiben erhalten; der
+// Server legt vorher automatisch eine Sicherung an.
+const RESET_SCOPES = [
+  ['attendance', 'Anwesenheit & Unterrichtssitzungen', 'alle Check-ins, Verspätungen, Fehlzeiten, Sitzungen'],
+  ['absences', 'Entschuldigungen & Krankmeldungen', 'alle Abwesenheitsmeldungen dieser Klasse'],
+  ['assignments', 'Aufgaben & Abgaben', 'alle Hausaufgaben samt Abgaben und Bewertungen'],
+  ['behavior', 'Verhalten & Mitarbeit', 'Verhaltens- und Mitarbeitseinträge'],
+  ['penalties', 'Strafen', 'alle erfassten Strafen'],
+  ['protocols', 'Protokolle', 'Unterrichtsprotokolle'],
+];
+function ClassResetCard({ classId, className, onDone }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [scopes, setScopes] = useState(['attendance', 'absences', 'assignments']);
+  const [confirmName, setConfirmName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toggle = (k) => setScopes((s) => (s.includes(k) ? s.filter((x) => x !== k) : [...s, k]));
+  const run = async () => {
+    setBusy(true);
+    try {
+      const { counts } = await api.post(`/classes/${classId}/reset-data`, { scopes, confirmName });
+      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+      toast.push(`Klasse neu gestartet – ${total} Einträge gelöscht (Sicherung wurde angelegt)`, 'success');
+      setOpen(false); setConfirmName('');
+      onDone();
+    } catch (err) { toast.push(err.message, 'error'); }
+    finally { setBusy(false); }
+  };
+  return (
+    <Card className="p-0 overflow-hidden">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between p-4 text-left">
+        <span className="flex items-center gap-2 text-ivory font-medium"><RotateCcw size={17} /> Klasse neu starten (Testdaten löschen)</span>
+        {open ? <ChevronUp size={16} className="text-sage-muted" /> : <ChevronDown size={16} className="text-sage-muted" />}
+      </button>
+      {open && (
+        <div className="p-4 space-y-3 border-t border-line">
+          <p className="text-sm text-sage">
+            Löscht die ausgewählten Daten von <b>{className}</b> endgültig – z. B. nach Probedurchläufen, damit der echte
+            Unterricht bei null beginnt. Schüler, Klassenzuordnung, Materialien und Regeln bleiben erhalten. Vorher wird
+            automatisch eine Sicherung angelegt.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {RESET_SCOPES.map(([k, l, d]) => (
+              <label key={k} className={`flex items-start gap-2 rounded-lg border p-2.5 cursor-pointer ${scopes.includes(k) ? 'border-status-absent/50 bg-status-absent/5' : 'border-line'}`}>
+                <input type="checkbox" className="mt-1" checked={scopes.includes(k)} onChange={() => toggle(k)} />
+                <span><span className="block text-sm text-ivory">{l}</span><span className="block text-[11px] text-sage-muted">{d}</span></span>
+              </label>
+            ))}
+          </div>
+          <label className="block">
+            <span className="text-sm text-sage">Zur Bestätigung den Klassennamen eingeben: <b>{className}</b></span>
+            <input className="input mt-1" value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder={className} />
+          </label>
+          <Button variant="danger" loading={busy} disabled={!scopes.length || confirmName.trim() !== className} onClick={run}>
+            <RotateCcw size={16} /> Ausgewählte Daten endgültig löschen
+          </Button>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function rateColor(r) {
   if (r === null) return 'text-sage-muted';
   if (r >= 90) return 'text-status-present';
@@ -192,6 +255,9 @@ export default function Klassenliste() {
     <AppLayout title="Klassenliste">
       <div className="space-y-4">
         {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}
+        {currentClass && ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'].includes(user.role) && (
+          <ClassResetCard classId={classId} className={currentClass.name} onDone={load} />
+        )}
         <div className="flex flex-wrap items-center gap-3">
           {classes && classes.length > 1 && (
             <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>

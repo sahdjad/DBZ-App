@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { attachScrollFeel } from '../lib/scroll.js';
+import { getPushState, enablePush, iosNeedsInstall } from '../lib/push.js';
 import {
   LayoutDashboard,
   BookOpen,
@@ -342,6 +343,12 @@ export default function AppLayout({ children, title }) {
 
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
             mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
+        {user && !user.demo && <PushNudge user={user} />}
+        {user?.demo && (
+          <div className="shrink-0 bg-status-late/15 text-status-late text-xs px-4 py-1.5 text-center border-b border-status-late/30" role="note">
+            Demo-Modus – nur zum Ausprobieren. Nichts wird gespeichert, es gibt keinen Zugriff auf echte Daten.
+          </div>
+        )}
         <main ref={scrollRef} className="dbz-scroll flex-1 overflow-y-auto overscroll-contain">
           <div className="px-4 lg:px-8 py-6 max-w-7xl w-full mx-auto pb-[calc(6.5rem+env(safe-area-inset-bottom))] lg:pb-12">{children}</div>
         </main>
@@ -486,6 +493,55 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
           </ul>
         )}
       </div>
+    </div>
+  );
+}
+
+// Pflicht-Benachrichtigungen: Schüler, Klassensprecher und Eltern sollen neue
+// Aufgaben, Materialien, Termine und Nachrichten sofort als Push sehen. Solange
+// Push auf diesem Gerät nicht aktiv ist, erscheint dieser Hinweis (er lässt
+// sich nicht dauerhaft wegklicken). Lehrkräfte/Leitung sehen ihn nicht.
+const PUSH_REQUIRED = ['schueler', 'klassensprecher', 'eltern'];
+function PushNudge({ user }) {
+  const [state, setState] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    if (!PUSH_REQUIRED.includes(user.role)) return undefined;
+    let alive = true;
+    (async () => {
+      let s = await getPushState().catch(() => ({ supported: false }));
+      // Erlaubnis schon erteilt, aber (noch) kein Abo -> still anmelden.
+      if (s.supported && s.permission === 'granted' && !s.subscribed) {
+        try { await enablePush(); s = await getPushState(); } catch { /* egal */ }
+      }
+      if (alive) setState(s);
+    })();
+    return () => { alive = false; };
+  }, [user.role]);
+  if (!PUSH_REQUIRED.includes(user.role) || !state || hidden || state.subscribed) return null;
+  const ios = iosNeedsInstall();
+  if (!state.supported && !ios) return null;
+  const enable = async () => {
+    setBusy(true);
+    try { await enablePush(); setState(await getPushState()); } catch { setState(await getPushState().catch(() => state)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="shrink-0 bg-mint/10 border-b border-mint/30 px-4 py-2 text-sm flex flex-wrap items-center gap-2" role="note">
+      <span className="text-ivory flex-1 min-w-[12rem]">
+        {ios
+          ? 'Benachrichtigungen sind Pflicht: Auf dem iPhone bitte „Teilen" → „Zum Home-Bildschirm" wählen und die App von dort öffnen.'
+          : state.permission === 'denied'
+            ? 'Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen erlauben – sie sind für dein Konto Pflicht.'
+            : 'Bitte Benachrichtigungen einschalten, damit du neue Aufgaben, Termine und Nachrichten sofort bekommst.'}
+      </span>
+      {!ios && state.permission !== 'denied' && (
+        <button onClick={enable} disabled={busy} className="rounded-lg bg-mint text-onaccent px-3 py-1.5 text-sm font-medium disabled:opacity-60">
+          {busy ? 'Einen Moment …' : 'Jetzt einschalten'}
+        </button>
+      )}
+      <button onClick={() => setHidden(true)} className="text-xs text-sage-muted underline">Später</button>
     </div>
   );
 }

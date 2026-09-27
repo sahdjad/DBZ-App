@@ -251,6 +251,12 @@
      Tailwind-Utilities im gebauten CSS mal die eine, mal die andere
      gewinnen, und der Wortlaut könnte sichtbar durchscheinen, bevor er
      tatsächlich richtig rezitiert wurde -- genau das darf nie passieren. */
+  .mushaf-word-missed {
+    color: rgb(var(--c-absent)) !important;
+    text-decoration: underline wavy;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.35em;
+  }
   .mushaf-word-hidden {
     color: transparent !important;
     background: rgba(21, 101, 63, 0.10);

@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, GraduationCap, CheckCircle2, Clock, Send, ExternalLink, Printer, Mic, Square, Paperclip, FileText, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { useRecorder, mmss } from '../lib/recorder.js';
 
@@ -14,12 +14,7 @@ const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 function FileView({ url, file }) {
   const mediaType = String(file.mediaType || '');
   if (mediaType.startsWith('audio')) return <audio controls preload="none" className="w-full mt-1" src={url} />;
-  if (mediaType.startsWith('image')) return <ImageAttachment url={url} alt={file.originalName} className="mt-1" />;
-  return (
-    <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-mint-light hover:underline mt-1">
-      <FileText size={15} /> {file.originalName || 'Datei öffnen'}
-    </a>
-  );
+  return <FileAttachment url={url} name={file.originalName} mediaType={mediaType} icon={FileText} className="mt-1" />;
 }
 
 // Aufgaben-Anhänge einer Prüfung (Audio/PDF) rendern.

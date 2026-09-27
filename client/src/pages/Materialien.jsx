@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Plus, FileText, Link2 as LinkIcon, StickyNote, ExternalLink, Trash2, Paperclip, UploadCloud } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -114,13 +114,7 @@ function MaterialCard({ m, canDelete, onDelete }) {
         </a>
       )}
       {m.materialType === 'file' && (
-        m.mediaType?.startsWith('image') ? (
-          <ImageAttachment url={`/api/materials/${m.id}/file`} alt={m.fileName} className="mt-3" />
-        ) : (
-          <a href={`/api/materials/${m.id}/file`} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-mint-light text-sm hover:underline">
-            <Paperclip size={14} /> {m.fileName || 'Datei öffnen'}
-          </a>
-        )
+        <FileAttachment url={`/api/materials/${m.id}/file`} name={m.fileName} mediaType={m.mediaType} className="mt-3" />
       )}
     </Card>
   );

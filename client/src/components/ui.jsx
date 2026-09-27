@@ -1,6 +1,7 @@
 // Wiederverwendbare, token-basierte UI-Komponenten.
-import { createContext, useContext, useCallback, useEffect, useState } from 'react';
-import { X, CheckCircle2, AlertTriangle, Info } from 'lucide-react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X, CheckCircle2, AlertTriangle, Info, ArrowLeft, Download, Paperclip } from 'lucide-react';
 
 const cx = (...c) => c.filter(Boolean).join(' ');
 
@@ -284,46 +285,237 @@ export function Spinner({ label = 'Lädt …' }) {
   );
 }
 
-// Bild-Anhang: Tippen öffnet eine ganzflächige Vorschau INNERHALB der App,
-// statt über target="_blank" die Bilddatei direkt zu öffnen. In einer als
-// Homescreen-App installierten PWA gibt es keine echten Browser-Tabs -- ein
-// neuer Tab ersetzt dort das einzige Fenster, und "zurück" verlässt dadurch
-// die ganze App statt nur das Bild zu schließen (Rückmeldung nach echtem
-// Gerätetest: Foto hochladen, öffnen, dann kommt man nur über App-Neustart
-// zurück). Innerhalb der App schließen kostet dagegen nur einen Tap.
-export function ImageAttachment({ url, alt = '', className = '' }) {
-  const [open, setOpen] = useState(false);
+// Hardware-/Gesten-"Zurück" (Android-Zurücktaste, iOS-Wischgeste) soll eine
+// offene Vorschau schließen statt die ganze installierte App zu verlassen:
+// beim Öffnen einen eigenen Verlaufseintrag anlegen; "Zurück" entfernt genau
+// diesen Eintrag und schließt die Vorschau. Schließen per Knopf räumt den
+// Eintrag wieder auf (history.back), damit kein toter Eintrag zurückbleibt.
+// Globale Verwaltung: EIN Verlaufseintrag für offene Overlays (auch wenn
+// mehrere gestapelt sind). Schließen per Knopf geht nur dann einen Schritt
+// zurück, wenn der Overlay-Eintrag wirklich oben liegt -- und das verzögert,
+// damit ein sofortiges Wieder-Öffnen (z. B. React-StrictMode, Wechsel
+// zwischen zwei Dialogen) den Eintrag weiterverwendet statt ihn zu verlieren.
+// Sonst ging die App im Test eine Seite zu weit zurück.
+const overlayStack = [];
+let pendingBacks = 0;
+let backTimer = null;
+let popListening = false;
+const onOverlayEntry = () => window.history.state?.dbzOverlay === true;
+function onGlobalPop() {
+  if (pendingBacks > 0) { pendingBacks--; return; }
+  if (onOverlayEntry()) return; // z. B. Vorwärts-Navigation zurück auf den Eintrag
+  const top = overlayStack.pop();
+  if (top) { top.closedByBack = true; top.close(); }
+}
+export function useBackToClose(open, onClose) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    if (!popListening) { window.addEventListener('popstate', onGlobalPop); popListening = true; }
+    if (backTimer) { clearTimeout(backTimer); backTimer = null; }
+    if (!onOverlayEntry()) {
+      try { window.history.pushState({ ...(window.history.state || {}), dbzOverlay: true }, ''); } catch { /* egal */ }
+    }
+    const entry = { closedByBack: false, close: () => closeRef.current() };
+    overlayStack.push(entry);
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      const i = overlayStack.indexOf(entry);
+      if (i >= 0) overlayStack.splice(i, 1);
+      if (entry.closedByBack || overlayStack.length) return;
+      backTimer = setTimeout(() => {
+        backTimer = null;
+        if (!overlayStack.length && onOverlayEntry()) {
+          pendingBacks++;
+          try { window.history.back(); } catch { pendingBacks--; }
+        }
+      }, 30);
+    };
   }, [open]);
+}
+
+// Vollbild-Vorschau innerhalb der App (kein neuer Tab: in der installierten
+// Handy-App gibt es keine echten Tabs -- ein neues Fenster ersetzte dort die
+// App, und "zurück" verließ die ganze App). Deutlicher "Zurück"-Knopf oben
+// links, Schließen per Tippen daneben, Zurück-Taste oder Escape.
+export function PreviewOverlay({ title, onClose, children, downloadUrl, downloadName }) {
+  useBackToClose(true, onClose);
+  // Per Portal direkt in <body>: sonst begrenzt ein Vorfahr (Transform/
+  // Scroll-Container) "position: fixed", und Kopf-/Fußleiste lägen darüber.
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label={title || 'Vorschau'}>
+      <div className="flex items-center justify-between gap-2 px-3 text-white" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)', paddingBottom: '0.5rem' }}>
+        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25">
+          <ArrowLeft size={18} /> Zurück
+        </button>
+        <span className="min-w-0 flex-1 truncate text-center text-sm text-white/80">{title}</span>
+        {downloadUrl ? (
+          <a href={downloadUrl} download={downloadName || true} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25">
+            <Download size={16} /> Speichern
+          </a>
+        ) : <span className="w-10" />}
+      </div>
+      <div className="relative flex-1 min-h-0" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+        {children}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+export function ImageAttachment({ url, alt = '', className = '' }) {
+  const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={cx('block', className)}>
         <img src={url} alt={alt} className="rounded-lg max-h-64" />
       </button>
       {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-label={alt || 'Bild'}
-          onClick={() => setOpen(false)}
-        >
-          <div className="absolute inset-0 bg-black/90" />
-          <button
-            onClick={() => setOpen(false)}
-            aria-label="Schließen"
-            className="absolute z-10 p-2 rounded-full bg-black/40 text-ivory hover:bg-black/60"
-            style={{ top: 'max(env(safe-area-inset-top), 1rem)', right: '1rem' }}
-          >
-            <X size={22} />
-          </button>
-          <img src={url} alt={alt} className="relative max-w-full max-h-full object-contain" />
-        </div>
+        <PreviewOverlay title={alt || 'Bild'} onClose={() => setOpen(false)} downloadUrl={url} downloadName={alt || undefined}>
+          <div className="absolute inset-0 flex items-center justify-center p-2" onClick={() => setOpen(false)}>
+            <img src={url} alt={alt} className="max-w-full max-h-full object-contain" onClick={(e) => e.stopPropagation()} />
+          </div>
+        </PreviewOverlay>
       )}
     </>
+  );
+}
+
+// Beliebiger Anhang: Bild -> Bildvorschau, Audio -> Player, PDF -> In-App-
+// Dokumentansicht, sonst Vorschau mit "Speichern" (öffnet nie einen neuen Tab).
+export function FileAttachment({ url, name, mediaType = '', className = '', icon: Icon = Paperclip }) {
+  const [open, setOpen] = useState(false);
+  const type = String(mediaType || '');
+  if (type.startsWith('image')) return <ImageAttachment url={url} alt={name} className={className} />;
+  if (type.startsWith('audio')) return <audio controls preload="none" src={url} className={cx('w-full max-w-sm h-10', className)} />;
+  const isPdf = type === 'application/pdf' || /\.pdf$/i.test(name || '');
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)} className={cx('inline-flex items-center gap-2 text-mint-light text-sm hover:underline text-left', className)}>
+        <Icon size={16} className="shrink-0" /> <span className="break-all">{name || 'Datei öffnen'}</span>
+      </button>
+      {open && (
+        <PreviewOverlay title={name || 'Datei'} onClose={() => setOpen(false)} downloadUrl={url} downloadName={name}>
+          {isPdf ? (
+            <iframe src={url} title={name || 'Dokument'} className="absolute inset-0 h-full w-full bg-white" />
+          ) : (
+            <div className="absolute inset-0 grid place-items-center p-6 text-center text-white/80 text-sm">
+              <div>
+                <p className="mb-4">Für diese Datei gibt es keine Vorschau.</p>
+                <a href={url} download={name || true} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-white"><Download size={16} /> Datei speichern</a>
+              </div>
+            </div>
+          )}
+        </PreviewOverlay>
+      )}
+    </>
+  );
+}
+
+// --- Mehrfachauswahl (wie in WhatsApp/Telegram) -------------------------------
+// Auswahlmodus über "Auswählen" oder langes Drücken auf einen Eintrag; im
+// Auswahlmodus schaltet ein Tippen die Markierung um. Die Aktionsleiste
+// erscheint unten (über der Handy-Navigation).
+export function useSelection() {
+  const [active, setActive] = useState(false);
+  const [ids, setIds] = useState(() => new Set());
+  const toggle = useCallback((id) => setIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  }), []);
+  const start = useCallback((id) => { setActive(true); if (id != null) setIds(new Set([id])); }, []);
+  const clear = useCallback(() => { setActive(false); setIds(new Set()); }, []);
+  const setAll = useCallback((all) => setIds(new Set(all)), []);
+  return { active, ids, count: ids.size, has: (id) => ids.has(id), toggle, start, clear, setAll };
+}
+
+// Langes Drücken (500 ms) auf Touch-Geräten, Rechtsklick am Computer.
+export function useLongPress(onLong, ms = 500) {
+  const timer = useRef(null);
+  const fired = useRef(false);
+  const cancel = () => { clearTimeout(timer.current); timer.current = null; };
+  return {
+    handlers: {
+      onTouchStart: () => { fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onLong(); }, ms); },
+      onTouchEnd: cancel,
+      onTouchMove: cancel,
+      onContextMenu: (e) => { e.preventDefault(); fired.current = true; onLong(); },
+    },
+    // Verhindert, dass nach dem langen Drücken zusätzlich ein "Tippen" ausgelöst wird.
+    wasLongPress: () => { const f = fired.current; fired.current = false; return f; },
+  };
+}
+
+export function SelectCheck({ checked }) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cx('grid h-5 w-5 shrink-0 place-items-center rounded-full border-2 transition',
+        checked ? 'border-mint bg-mint text-onaccent' : 'border-line')}
+    >
+      {checked && <CheckCircle2 size={14} strokeWidth={3} />}
+    </span>
+  );
+}
+
+export function SelectionBar({ selection, allIds, actions }) {
+  if (!selection.active) return null;
+  const allSelected = allIds.length > 0 && selection.count === allIds.length;
+  return (
+    <>
+    {/* Platzhalter: so lassen sich auch die letzten Einträge über die feste Leiste scrollen. */}
+    <div className="h-28" aria-hidden="true" />
+    <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 lg:left-64">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-line bg-card shadow-lg p-2 flex flex-wrap items-center gap-2">
+        <span className="px-2 text-sm text-ivory">{selection.count} ausgewählt</span>
+        <Button size="sm" variant="ghost" onClick={() => (allSelected ? selection.setAll([]) : selection.setAll(allIds))}>
+          {allSelected ? 'Keine' : 'Alle'}
+        </Button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          {actions.map((a) => (
+            <Button key={a.label} size="sm" variant={a.variant || 'outline'} disabled={!selection.count || a.disabled} onClick={a.onClick}>
+              {a.icon && <a.icon size={15} />} {a.label}
+            </Button>
+          ))}
+          <Button size="sm" variant="ghost" onClick={selection.clear}><X size={15} /> Abbrechen</Button>
+        </div>
+      </div>
+    </div>
+    </>
+  );
+}
+
+// Auswahl-Dialog mit mehreren klar beschriebenen Möglichkeiten (z. B.
+// "nur ausblenden" vs. "endgültig löschen"). options: [{ key, label,
+// description, variant }]. onChoose(key) | onClose().
+export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
+  useBackToClose(true, onClose);
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
+        <h3 className="text-lg text-ivory">{title}</h3>
+        {message && <p className="mt-1 text-sm text-sage">{message}</p>}
+        <div className="mt-4 grid gap-2">
+          {options.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => onChoose(o.key)}
+              className={cx('rounded-xl border p-3 text-left transition',
+                o.variant === 'danger' ? 'border-status-absent/40 hover:bg-status-absent/10' : 'border-line hover:bg-hover')}
+            >
+              <span className={cx('block font-medium', o.variant === 'danger' ? 'text-status-absent' : 'text-ivory')}>{o.label}</span>
+              {o.description && <span className="block text-xs text-sage-muted mt-0.5">{o.description}</span>}
+            </button>
+          ))}
+          <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }

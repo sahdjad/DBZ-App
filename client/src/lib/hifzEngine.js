@@ -11,8 +11,19 @@
 // text is untouched, see validatePassage below) is standard, well-documented
 // practice in Arabic text normalization, not an invented leniency: it
 // removes an orthographic mismatch that is not an actual mispronunciation.
-export function normalize(text) {
-  return String(text).normalize('NFC')
+// Uthmani-Rechtschreibung vs. heutige Schreibweise (Feldtest mit der NVIDIA-
+// Erkennung): der Mushaf schreibt ein langes a oft nur als kleines, hoch-
+// gestelltes Alif (U+0670) -- "سَمَٰوَٰتٍ", "ذَٰلِكَ" -- oder über einem stummen
+// Waw -- "ٱلْحَيَوٰةَ", "ٱلصَّلَوٰةَ". Die Erkennung schreibt dafür "سماوات",
+// "ذلك", "الحياة", "الصلاة". Das ist reine Rechtschreibung, kein Rezitations-
+// fehler: Waw direkt + kleines Alif (stummer Waw-Träger) -> Alif; sonst
+// kleines Alif -> Alif. Die zweite Form (kleines Alif weggelassen) deckt die
+// Wörter ab, die man heute ohne Alif schreibt (ذلك، هذا، الرحمن، لكن).
+const expandDagger = (t) => t.replace(/\u0648\u0670/g, '\u0627').replace(/\u0649\u0670/g, '\u0649').replace(/\u0670/g, '\u0627');
+
+export function normalize(text, { dagger = 'alif' } = {}) {
+  const src = String(text).normalize('NFC');
+  return (dagger === 'alif' ? expandDagger(src) : src)
     .replace(/[\u0622\u0623\u0625\u0671]/g, '\u0627') // hamza/wasla-bearing alif -> bare alif
     .replace(/\u0649/g, '\u064A') // alif maqsura -> ya
     .replace(/\u0624/g, '\u0648') // hamza on waw -> bare waw
@@ -52,6 +63,17 @@ function closeEnough(a, b) {
   return levenshtein(a, b) <= 1;
 }
 
+// Wortanfang, den die Erkennung an einer Satz-/Fenstergrenze abgeschnitten
+// hat (z. B. "وم" statt "ومن", "الفل" statt "الفلق"): höchstens ein
+// fehlender Buchstabe am Ende und mindestens zwei erkannte Buchstaben.
+function truncatedOf(token, word) {
+  // Bei Zwei-Buchstaben-Wörtern (z. B. "شي" für شيء) bleibt nach dem
+  // Abschneiden oft nur der erste Buchstabe übrig.
+  return (token.length >= 2 || word.length === 2) && word.length - token.length === 1 && word.startsWith(token);
+}
+const tokenMatches = (token, word) => token === word || closeEnough(token, word) || truncatedOf(token, word);
+const wordMatches = (token, w) => tokenMatches(token, w.token) || (w.alt !== w.token && tokenMatches(token, w.alt));
+
 export function validatePassage(input) {
   if (!input || typeof input !== 'object') throw new Error('Abschnitt fehlt.');
   for (const key of ['id', 'title', 'edition', 'riwaya', 'source']) {
@@ -82,7 +104,7 @@ export function validatePassage(input) {
     }
     previous = w;
     return Object.freeze({ id: w.id, surah: w.surah, ayah: w.ayah,
-      position: w.position, line: w.line, text: w.text, token });
+      position: w.position, line: w.line, text: w.text, token, alt: normalize(w.text, { dagger: 'drop' }) || token });
   });
   return Object.freeze({ id: input.id, title: input.title, edition: input.edition,
     riwaya: input.riwaya, source: input.source, words: Object.freeze(words) });
@@ -103,13 +125,15 @@ export class HifzEngine {
     this.hints = new Set();
     this.dismissed = new Set();
     this.history = [];
+    this.missed = new Set();
+    this.backlog = [];
     this.mismatch = null;
     this.status = 'ready';
     return this.snapshot();
   }
   snapshot() {
     return { session: this.session, index: this.index, total: this.passage.words.length,
-      status: this.status, hints: [...this.hints],
+      status: this.status, hints: [...this.hints], missed: [...this.missed],
       mismatch: this.mismatch ? { ...this.mismatch } : null,
       history: this.history.map(e => ({ ...e })) };
   }
@@ -137,16 +161,23 @@ export class HifzEngine {
     if (typeof text !== 'string' || text.length > 10000) throw new Error('Ungültiges Transkript.');
     if (this.seen.size >= 10000) throw new Error('Sitzungslimit erreicht. Bitte neu beginnen.');
     this.seen.add(id);
-    const tokens = normalize(text).split(' ').filter(Boolean);
-    if (!tokens.length) return this.snapshot();
+    const fresh = normalize(text).split(' ').filter(Boolean);
+    if (!fresh.length) return this.snapshot();
     if (!reliable) { this.status = 'uncertain'; return this.snapshot(); }
     const words = this.passage.words;
+    // Streaming-Erkennung liefert oft nur 1-2 Wörter je Segment. Nach einer
+    // Abweichung bleiben die noch nicht zugeordneten Wörter deshalb kurz im
+    // Gedächtnis (backlog) und werden mit dem nächsten Segment zusammen
+    // ausgewertet -- sonst ließe sich ein ausgelassenes Wort nie erkennen.
+    const backlog = this.backlog;
+    this.backlog = [];
+    const tokens = [...backlog, ...fresh];
 
     // Allow only an exact, unambiguous suffix repetition ending at the frontier.
     // If the repeated prefix also equals the next words, do not guess advancement.
     let offset = 0;
     const candidates = [];
-    for (let length = 1; length <= Math.min(this.index, tokens.length, 12); length++) {
+    for (let length = 1; !backlog.length && length <= Math.min(this.index, tokens.length, 12); length++) {
       const suffix = words.slice(this.index - length, this.index).map(w => w.token);
       if (suffix.every((t, i) => t === tokens[i])) candidates.push(length);
     }
@@ -169,29 +200,53 @@ export class HifzEngine {
     // never said, which this engine must never do.
     const INSERTION_LOOKAHEAD = 3;
     let i = offset;
+    const advance = (consumed) => {
+      if (this.mismatch) this.history.push({ kind: 'recovered', index: this.index });
+      this.history.push({ kind: this.hints.has(this.index) ? 'assisted-match' : 'transcript-match', index: this.index });
+      this.index++;
+      this.mismatch = null;
+      this.status = this.index === words.length ? 'complete' : 'following';
+      i += consumed;
+    };
+    const at = (k, w) => k < tokens.length && w < words.length && wordMatches(tokens[k], words[w]);
     while (i < tokens.length && this.index < words.length) {
-      if (tokens[i] === words[this.index].token || closeEnough(tokens[i], words[this.index].token)) {
-        if (this.mismatch) this.history.push({ kind: 'recovered', index: this.index });
-        this.history.push({ kind: this.hints.has(this.index) ? 'assisted-match' : 'transcript-match', index: this.index });
-        this.index++;
-        this.mismatch = null;
-        this.status = this.index === words.length ? 'complete' : 'following';
-        i++;
-        continue;
-      }
+      const expected = words[this.index];
+      if (wordMatches(tokens[i], expected)) { advance(1); continue; }
+      // Von der Erkennung in zwei Teile zerlegtes Wort ("ال" + "فلق").
+      if (i + 1 < tokens.length && [expected.token, expected.alt].includes(tokens[i] + tokens[i + 1])) { advance(2); continue; }
       let resync = -1;
-      for (let k = 1; k <= INSERTION_LOOKAHEAD && i + k < tokens.length; k++) {
-        if (tokens[i + k] === words[this.index].token) { resync = k; break; }
+      // Wörter aus dem Gedächtnis zählen nicht gegen das Toleranzfenster.
+      const lookahead = INSERTION_LOOKAHEAD + Math.max(0, backlog.length - i);
+      for (let k = 1; k <= lookahead && i + k < tokens.length; k++) {
+        if (tokens[i + k] === expected.token || tokens[i + k] === expected.alt) { resync = k; break; }
       }
       if (resync > 0) {
         this.history.push({ kind: 'insertion-ignored', index: this.index });
         i += resync;
         continue;
       }
+      // Übersprungenes Wort (wie bei Tarteel): passen die NÄCHSTEN ZWEI
+      // erwarteten Wörter eindeutig und direkt hintereinander (höchstens ein
+      // Störwort davor), wurde das aktuelle Wort ausgelassen -- oder die
+      // Erkennung hat es verschluckt. Es wird dann NICHT als rezitiert
+      // gezählt, sondern sichtbar als Fehler ("ausgelassen") markiert, und
+      // die Übung läuft weiter, statt an einer Stelle hängen zu bleiben,
+      // obwohl die Person korrekt weiterrezitiert.
+      let skipAt = -1;
+      for (const k of [i, i + 1, i + 2]) if (at(k, this.index + 1) && at(k + 1, this.index + 2)) { skipAt = k; break; }
+      if (skipAt >= 0) {
+        this.missed.add(this.index);
+        this.history.push({ kind: 'skipped', index: this.index });
+        this.index++;
+        this.mismatch = null;
+        i = skipAt;
+        continue;
+      }
       const count = this.mismatch?.index === this.index ? this.mismatch.count + 1 : 1;
       this.mismatch = { index: this.index, count, suspected: count >= this.confirmations && !this.dismissed.has(this.index) };
       this.status = this.mismatch.suspected ? 'suspected' : 'uncertain';
       this.history.push({ kind: 'transcript-deviation', index: this.index });
+      this.backlog = tokens.slice(i).slice(-4);
       break; // never scan past a missing/wrong expected word
     }
     return this.snapshot();

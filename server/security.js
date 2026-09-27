@@ -6,6 +6,9 @@
 // - media-src erlaubt die Rezitator-Audio-CDNs (Qur'an-Reader, <audio> im Browser):
 //   quranicaudio.com (durchgehende Sure-Aufnahmen) und islamic.network (Reserve)
 // - style-src 'unsafe-inline' für React-Inline-Styles (z. B. Fortschrittsbalken)
+// - script-src 'wasm-unsafe-eval': nötig, damit die On-Device-Spracherkennung
+//   (WebAssembly, onnxruntime-web) kompilieren darf. Erlaubt ausdrücklich KEIN
+//   JavaScript-eval(), nur das Kompilieren von WebAssembly-Modulen.
 const CSP = [
   "default-src 'self'",
   "base-uri 'self'",
@@ -15,7 +18,7 @@ const CSP = [
   "img-src 'self' data:",
   "font-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "script-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
   "worker-src 'self'",
   "connect-src 'self'",
   "media-src 'self' https://download.quranicaudio.com https://*.quranicaudio.com https://cdn.islamic.network",

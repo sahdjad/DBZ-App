@@ -128,9 +128,16 @@ Abgedeckt u. a.: falsches Passwort, Rollen-Scope, QR-Check-in (Serverzeit, kein
 Doppel-Check-in), Abwesenheits-Genehmigung, Hausaufgaben-Abgabe + Korrekturqueue,
 klassenübergreifende Zugriffssperre.
 
-## Demo-Zugänge
+## Demo-Zugänge (Vorführ-Sandkasten)
 
-Passwort für alle: `demo1234`
+Für Vorführungen und Interessenten gibt es feste Demo-Zugänge. Sie melden sich
+**nicht** an der echten Datenbank an, sondern an einem eigenen, flüchtigen
+Demo-Datenbestand (Sandkasten): alles ist benutzbar, aber nichts wird
+gespeichert (täglich bzw. nach jedem Neustart wieder Ausgangszustand), und es
+gibt keinerlei Zugriff auf echte Konten, Klassen, Nachrichten oder Dateien. Die
+Zugänge stehen bewusst nicht auf der Anmeldeseite.
+
+Passwort für alle: `demo1234` (änderbar über die Umgebungsvariable `DEMO_PASSWORD`)
 
 | Rolle           | E-Mail          |
 | --------------- | --------------- |
@@ -140,6 +147,17 @@ Passwort für alle: `demo1234`
 | Klassensprecher | sprecher@dbz.de |
 | Schüler         | schueler@dbz.de |
 | Eltern          | eltern@dbz.de   |
+
+## Qur'an-Spracherkennung (Auswendig-Modus)
+
+Standard ist ein NVIDIA-FastConformer-Modell, speziell für den Qur'an
+feinjustiert (aus dem MIT-Projekt [Tilawa](https://github.com/yazinsai/tilawa),
+Modell unter NVIDIA CC-BY-4.0). Es läuft vollständig auf dem Gerät
+(onnxruntime-web im Web Worker) – kostenlos, ohne dass Audio das Gerät
+verlässt. Der Server lädt das Modell (~85 MB) beim ersten Abruf einmal von der
+offiziellen Release, prüft die SHA-256-Prüfsumme und liefert es dann selbst aus
+(`/api/asr/model`); Handys speichern es danach dauerhaft. Die
+Browser-Spracherkennung bleibt als Alternative wählbar.
 
 ## Deployment (kostenlos möglich)
 

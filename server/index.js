@@ -2,7 +2,7 @@
 // zusätzlich das gebaute Frontend (client/dist) und die API auf einem Port aus.
 
 import { createApp } from './app.js';
-import { seed } from './seed.js';
+import { seed, removeLegacyDemoAccounts } from './seed.js';
 import { scheduleMaintenance } from './maintenance.js';
 import { initStore, flushStore } from './store.js';
 import { ensureFileBucket } from './files.js';
@@ -26,6 +26,7 @@ if (process.env.NODE_ENV === 'production') {
 await initStore();
 await ensureFileBucket(); // Datei-Bucket (Supabase Storage) sicherstellen
 await seed();
+removeLegacyDemoAccounts();
 const app = createApp();
 
 const server = app.listen(PORT, () => {

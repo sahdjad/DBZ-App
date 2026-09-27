@@ -12,7 +12,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { UPLOAD_DIR } from './store.js';
+import { UPLOAD_DIR, inSandbox } from './store.js';
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/+$/, '');
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -57,7 +57,8 @@ export async function ensureFileBucket() {
  * werden geloggt, brechen den Upload-Vorgang aber nicht ab (lokale Kopie bleibt).
  */
 export async function persistUpload(file) {
-  if (!useSupabaseFiles || !file) return;
+  // Demo-Sandkasten: Dateien bleiben nur lokal/flüchtig, nie im echten Speicher.
+  if (!useSupabaseFiles || !file || inSandbox()) return;
   try {
     const bytes = fs.readFileSync(path.join(UPLOAD_DIR, file.filename));
     const res = await fetch(objectUrl(file.filename), {

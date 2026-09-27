@@ -8,7 +8,8 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
-import { db, newId, UPLOAD_DIR, isLiveDeployment } from './store.js';
+import { db, newId, UPLOAD_DIR, isLiveDeployment, runInSandbox, inSandbox, resetSandbox } from './store.js';
+import { seedDemoData } from './seed.js';
 import { persistUpload, readFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
@@ -45,6 +46,8 @@ import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js
 import { getMushafFont } from './providers/mushafFontProvider.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
 import { createLoginThrottle } from './security.js';
+import { backupNow } from './maintenance.js';
+import { ASR_FILES, ensureAsrFile } from './asr.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
 const loginThrottle = createLoginThrottle({ max: 8, windowMs: 10 * 60 * 1000 });
@@ -52,42 +55,40 @@ const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex'
 
 const router = express.Router();
 
-// Betriebsmodus: "production" = dieses Deployment bedient echte Nutzer und
-// darf niemals Demo-Konten anlegen/erreichbar lassen, "demo" = lokale
-// Entwicklung oder ein eigenständig deployter Vorführ-Server. Diese
-// Unterscheidung entscheidet, ob Demo-Login, Demo-Seeding und "Demo-Konten
-// reaktivieren" öffentlich erreichbar sein dürfen -- siehe
-// DEMO_ACCOUNT_DEFS/-EMAILS unten, /auth/login und
-// /admin/reactivate-demo-accounts.
-//
-// War früher fälschlich mit "Supabase konfiguriert?" gleichgesetzt -- ein
-// echtes Deployment kann aber auch OHNE Supabase (Datei-Speicherung) laufen,
-// wie dieses hier: dann blieb IS_PRODUCTION falsch auf false, Demo-Konten
-// wurden weiter angelegt UND blieben für echte, gerade registrierte Nutzer
-// sichtbar/erreichbar. isLiveDeployment (server/store.js) prüft zusätzlich
-// die vom Speicher-Backend unabhängige Umgebungsvariable DBZ_LIVE=1.
+// Betriebsmodus: "production" = dieses Deployment bedient echte Nutzer
+// (Supabase oder DBZ_LIVE=1), "demo" = lokale Entwicklung. Wird nur noch zur
+// Diagnose angezeigt: Demo-Zugänge sind seit dem Demo-Sandkasten (siehe
+// unten) überall gefahrlos, weil sie nie echte Daten berühren.
 export const IS_PRODUCTION = isLiveDeployment;
 
-// Eigene, isolierte Klasse NUR für die Demo-Konten -- NIE "class_3" (das ist
-// die echte Pilot-Klasse mit echten Schülern). So bleiben die Demo-Konten
-// jederzeit für Vorführungen/Präsentationen reaktivierbar (siehe
-// /admin/reactivate-demo-accounts), ohne dass echte Schüler sie je in ihrer
-// eigenen Klassenliste/im Klassenchat sehen -- unabhängig davon, ob sie
-// gerade aktiv sind oder ob DBZ_LIVE gesetzt ist.
-const DEMO_CLASS_ID = 'class_demo';
+// --- Demo-Sandkasten ----------------------------------------------------------
+// Die festen Demo-Zugänge (Passwort: DEMO_PASSWORD, standardmäßig demo1234)
+// melden sich NICHT an der echten Datenbank an, sondern an einem eigenen,
+// flüchtigen Demo-Datenbestand im Arbeitsspeicher (server/store.js,
+// runInSandbox). Dort ist alles wie in der echten App benutzbar, aber:
+// - nichts wird gespeichert (nach Neustart/nächtlich wieder Ausgangszustand),
+// - es gibt keinen Weg zu echten Konten, Klassen, Nachrichten oder Dateien,
+// - echte Nutzer sehen die Demo-Konten nirgends.
+// Existiert in der echten Datenbank ein echtes (nicht als Demo markiertes)
+// Konto mit einer dieser E-Mail-Adressen, gilt weiterhin das echte Konto.
+const DEMO_ACCOUNT_EMAILS = new Set(['admin@dbz.de', 'leitung@dbz.de', 'lehrer@dbz.de', 'sprecher@dbz.de', 'schueler@dbz.de', 'amina@dbz.de', 'eltern@dbz.de']);
+let sandboxReady = null;
+function ensureSandbox() {
+  // Muss innerhalb von runInSandbox aufgerufen werden.
+  if (db.all('organizations').length) return Promise.resolve();
+  if (!sandboxReady) sandboxReady = seedDemoData().finally(() => { sandboxReady = null; });
+  return sandboxReady;
+}
+// Täglich frischer Ausgangszustand für Vorführungen.
+setInterval(() => resetSandbox(), 24 * 60 * 60 * 1000).unref?.();
 
-// Die festen Demo-Konten von der Login-Seite (siehe client/src/pages/Login.jsx
-// und seed.js). Zentral definiert, weil sowohl /auth/login (Produktions-Sperre)
-// als auch /admin/reactivate-demo-accounts (Wiederherstellung) sie brauchen.
-const DEMO_ACCOUNT_DEFS = [
-  { id: 'user_admin', name: 'System-Administrator', email: 'admin@dbz.de', role: ROLES.SUPER_ADMIN },
-  { id: 'user_leitung', name: 'Br. Leitung', email: 'leitung@dbz.de', role: ROLES.LEITUNG },
-  { id: 'user_lehrer', name: 'Ustadh Yunus', email: 'lehrer@dbz.de', role: ROLES.KLASSENLEHRER, classIds: [DEMO_CLASS_ID] },
-  { id: 'user_sprecher', name: 'Bilal', email: 'sprecher@dbz.de', role: ROLES.KLASSENSPRECHER, classIds: [DEMO_CLASS_ID] },
-  { id: 'user_yusuf', name: 'Yusuf', email: 'schueler@dbz.de', role: ROLES.SCHUELER, classIds: [DEMO_CLASS_ID] },
-  { id: 'user_eltern', name: 'Abu Yusuf', email: 'eltern@dbz.de', role: ROLES.ELTERN, childIds: ['user_yusuf'] },
-];
-const DEMO_ACCOUNT_EMAILS = new Set(DEMO_ACCOUNT_DEFS.map((d) => d.email));
+// Jede Anfrage mit einem Demo-Token läuft komplett im Sandkasten.
+router.use((req, res, next) => {
+  const payload = readToken(req);
+  if (!payload?.sb) return next();
+  req.sandbox = true;
+  runInSandbox(() => { ensureSandbox().then(() => next(), next); });
+});
 
 // Öffentlicher Health-/Diagnose-Endpunkt: zeigt an, ob der Server läuft und
 // welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal)
@@ -123,7 +124,7 @@ function publicUser(u) {
   // ist nur für die Klassenlehrkraft in der Klassenliste sichtbar (eigene,
   // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
   const { passwordHash, familyCode, probation, ...rest } = u;
-  return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role };
+  return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role, ...(inSandbox() ? { demo: true } : {}) };
 }
 
 /** Minimaler Klassenlisten-Eintrag (docs/SECURITY_PRIVACY.md §8). */
@@ -225,6 +226,10 @@ function doorCheckinOpen(session) {
 function requireAuth(req, res, next) {
   const payload = readToken(req);
   if (!payload) return res.status(401).json({ error: 'Nicht angemeldet' });
+  // Doppelter Boden: ein Demo-Token gilt ausschließlich im Sandkasten -- nie
+  // gegen die echte Datenbank (Demo- und echte Konten könnten dieselbe
+  // interne ID haben, z. B. "user_admin").
+  if (Boolean(payload.sb) !== inSandbox()) return res.status(401).json({ error: 'Sitzung ungültig' });
   const user = findUserById(payload.id);
   if (!user) return res.status(401).json({ error: 'Sitzung ungültig' });
   if (user.status === 'disabled')
@@ -270,7 +275,7 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => cb(null, `${newId('file')}${path.extname(file.originalname)}`),
 });
-const upload = multer({
+const rawUpload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB (Audio-Kostenkontrolle, COST_STRATEGY.md)
   fileFilter: (_req, file, cb) => {
@@ -278,6 +283,18 @@ const upload = multer({
     else cb(new Error('Dateityp nicht erlaubt (nur Audio, PDF, Bild)'));
   },
 });
+// multer liest den Upload über Stream-Ereignisse; dabei kann der
+// Sandkasten-Kontext (AsyncLocalStorage) verloren gehen. Deshalb nach dem
+// Upload ausdrücklich wieder in den Sandkasten wechseln -- sonst könnte eine
+// Demo-Anfrage mit Datei in die ECHTE Datenbank schreiben.
+const keepSandbox = (mw) => (req, res, next) => mw(req, res, (err) => (req.sandbox ? runInSandbox(() => next(err)) : next(err)));
+const upload = {
+  single: (...a) => keepSandbox(rawUpload.single(...a)),
+  array: (...a) => keepSandbox(rawUpload.array(...a)),
+  fields: (...a) => keepSandbox(rawUpload.fields(...a)),
+  any: (...a) => keepSandbox(rawUpload.any(...a)),
+  none: (...a) => keepSandbox(rawUpload.none(...a)),
+};
 
 // =============================================================================
 // Auth
@@ -289,15 +306,23 @@ router.post('/auth/login', async (req, res) => {
   if (loginThrottle.blocked(key))
     return res.status(429).json({ error: 'Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.' });
 
-  const user = findUserByEmail(email);
-  // Demo-Konten sind in Produktion nie erreichbar -- unabhängig davon, ob sie
-  // (noch) als isDemo markiert sind. Dieselbe generische Fehlermeldung wie bei
-  // falschen Zugangsdaten, damit kein Unterschied nach außen erkennbar ist
-  // (keine Bestätigung, dass "das ist ein Demo-Konto" oder "es existiert").
-  if (IS_PRODUCTION && (DEMO_ACCOUNT_EMAILS.has((email || '').trim().toLowerCase()) || user?.isDemo)) {
-    loginThrottle.fail(key);
-    return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
+  const normEmail = String(email || '').trim().toLowerCase();
+  const realUser = findUserByEmail(email);
+  if (DEMO_ACCOUNT_EMAILS.has(normEmail) && (!realUser || realUser.isDemo)) {
+    // Demo-Zugang -> Anmeldung im abgeschotteten Sandkasten.
+    return runInSandbox(async () => {
+      await ensureSandbox();
+      const demoUser = findUserByEmail(normEmail);
+      if (!demoUser || !(await verifyPassword(password || '', demoUser.passwordHash))) {
+        loginThrottle.fail(key);
+        return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
+      }
+      loginThrottle.succeed(key);
+      issueToken(res, demoUser, { sb: true });
+      res.json({ user: publicUser(demoUser) });
+    });
   }
+  const user = realUser;
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     loginThrottle.fail(key);
     return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
@@ -307,7 +332,7 @@ router.post('/auth/login', async (req, res) => {
   if (user.status === 'disabled')
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   loginThrottle.succeed(key);
-  issueToken(res, user);
+  issueToken(res, user, { sb: inSandbox() });
   res.json({ user: publicUser(user) });
 });
 
@@ -318,7 +343,7 @@ router.post('/auth/logout', (_req, res) => {
 
 router.get('/auth/me', (req, res) => {
   const payload = readToken(req);
-  if (!payload) return res.json({ user: null });
+  if (!payload || Boolean(payload.sb) !== inSandbox()) return res.json({ user: null });
   res.json({ user: publicUser(findUserById(payload.id)) });
 });
 
@@ -466,7 +491,7 @@ router.post('/auth/register', async (req, res) => {
   inv.usedCount += 1;
   db.commit();
   audit(user.id, 'user.register', 'user', user.id, null, { via: 'invite', role: inv.intendedRole });
-  issueToken(res, user);
+  issueToken(res, user, { sb: inSandbox() });
   res.json({ user: publicUser(user) });
 });
 
@@ -977,6 +1002,79 @@ function attendanceStats(studentId, win, opts = {}) {
   return out;
 }
 
+// Einzelnen Anwesenheitseintrag löschen (z. B. Probe-/Testlauf): der Schüler
+// hat danach für diese Sitzung wieder "keinen Eintrag" und zählt nicht mehr.
+router.delete('/sessions/:id/attendance/:studentId', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const s = byId('sessions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+  if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const list = db.all('attendance');
+  const idx = list.findIndex((a) => a.sessionId === s.id && a.studentId === req.params.studentId);
+  if (idx < 0) return res.status(404).json({ error: 'Kein Eintrag vorhanden' });
+  const [removed] = list.splice(idx, 1);
+  db.commit();
+  audit(req.user.id, 'attendance.delete', 'attendance', removed.id, { status: removed.status, studentId: removed.studentId }, null);
+  res.json({ ok: true });
+});
+
+// Ganze Sitzung zurücksetzen: alle Anwesenheitseinträge dieser Sitzung
+// löschen und die Sitzung wieder auf "geplant" stellen.
+router.post('/sessions/:id/reset', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const s = byId('sessions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+  if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const list = db.all('attendance');
+  let removed = 0;
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].sessionId === s.id) { list.splice(i, 1); removed++; }
+  Object.assign(s, { status: 'scheduled', qr: null, startedAt: null, endedAt: null, checkinOpenUntil: null });
+  db.commit();
+  audit(req.user.id, 'session.reset', 'session', s.id, { removed }, null);
+  res.json({ ok: true, removed, session: s });
+});
+
+// "Klasse neu starten": Test-/Probedaten einer Klasse gezielt löschen, damit
+// der echte Betrieb bei null beginnt. Schüler, Klassenzuordnung, Materialien,
+// Regeln und Einstellungen bleiben unangetastet. Vorher wird automatisch eine
+// Sicherung angelegt. Nur Lehrkräfte der Klasse sowie Leitung/Admin.
+const CLASS_RESET_SCOPES = ['attendance', 'absences', 'assignments', 'behavior', 'penalties', 'protocols'];
+router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const scopes = (Array.isArray(req.body?.scopes) ? req.body.scopes : []).filter((x) => CLASS_RESET_SCOPES.includes(x));
+  if (!scopes.length) return res.status(400).json({ error: 'Bitte auswählen, was gelöscht werden soll' });
+  if (String(req.body?.confirmName || '').trim() !== klass.name) return res.status(400).json({ error: 'Zur Bestätigung bitte den Klassennamen genau eingeben' });
+  backupNow();
+  const inClass = (x) => x.classId === klass.id;
+  const drop = (collection, pred) => {
+    const list = db.all(collection);
+    let n = 0;
+    for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) { list.splice(i, 1); n++; }
+    return n;
+  };
+  const counts = {};
+  if (scopes.includes('attendance')) {
+    const sessionIds = new Set(db.all('sessions').filter(inClass).map((x) => x.id));
+    counts.attendance = drop('attendance', (a) => sessionIds.has(a.sessionId) || inClass(a));
+    counts.sessions = drop('sessions', inClass);
+  }
+  if (scopes.includes('absences')) counts.absences = drop('absence_requests', inClass);
+  if (scopes.includes('assignments')) {
+    const list = db.all('assignments').filter(inClass);
+    list.forEach(deleteAssignmentCascade);
+    counts.assignments = list.length;
+  }
+  if (scopes.includes('behavior')) {
+    counts.behavior = drop('behavior_records', inClass);
+    counts.activities = drop('activities', inClass);
+  }
+  if (scopes.includes('penalties')) counts.penalties = drop('penalties', inClass);
+  if (scopes.includes('protocols')) counts.protocols = drop('protocols', inClass);
+  db.commit();
+  audit(req.user.id, 'class.reset_data', 'class', klass.id, null, { scopes, counts });
+  res.json({ ok: true, counts });
+});
+
 router.get('/me/attendance', requireAuth, (req, res) => {
   res.json({ stats: attendanceStats(req.user.id, null, { withRecords: true }) });
 });
@@ -1242,6 +1340,57 @@ router.get('/leadership/overview', requireAuth, requireRole(ROLES.SUPER_ADMIN, R
 
 // Liefert Termine (Unterricht aus dem Klassen-Stundenplan + Hausaufgaben-Fristen)
 // für einen Datumsbereich, rollenabhängig gefiltert.
+// --- Gemeinsame Termine: Klasse / ganze Schule --------------------------------
+// scope 'class': nur für diese Klasse (Schüler, Eltern, Lehrkräfte der Klasse);
+//   anlegen/ändern/löschen NUR Lehrkräfte dieser Klasse. Der Klassensprecher
+//   kann Termine vorschlagen (status 'pending'), die erst nach Bestätigung
+//   durch eine Lehrkraft sichtbar werden. Leitung/Admin sehen Klassen-Termine
+//   (farbig nach Klasse), mischen sich aber nicht ein (nur lesen).
+// scope 'school': von Leitung/Admin, sichtbar für die ganze Schule.
+const CLASS_COLORS = ['#2563EB', '#DB2777', '#D97706', '#7C3AED', '#0D9488', '#DC2626', '#4F46E5', '#65A30D'];
+function classColor(classId) {
+  const ids = db.all('classes').map((c) => c.id).sort();
+  const i = Math.max(0, ids.indexOf(classId));
+  return CLASS_COLORS[i % CLASS_COLORS.length];
+}
+const isClassTeacher = (user, classId) => TEACHING_ROLES.includes(user.role) && (user.classIds || []).includes(classId);
+function viewerClassIds(user) {
+  if (STUDENT_ROLES.includes(user.role) || TEACHING_ROLES.includes(user.role)) return user.classIds || [];
+  if (user.role === ROLES.ELTERN) return familyClassIds(user);
+  return null; // Leitung/Admin: alle
+}
+function canSeeSharedEvent(user, ev) {
+  if (ev.scope === 'school') return true;
+  if (ev.scope !== 'class') return ev.userId === user.id;
+  if (ev.status === 'pending') return ev.userId === user.id || isClassTeacher(user, ev.classId);
+  const ids = viewerClassIds(user);
+  return ids === null || ids.includes(ev.classId);
+}
+function canEditSharedEvent(user, ev) {
+  if (ev.scope === 'school') return isAdmin(user);
+  if (ev.scope === 'class') return isClassTeacher(user, ev.classId) || (ev.status === 'pending' && ev.userId === user.id);
+  return ev.userId === user.id;
+}
+function classAudienceIds(classId) {
+  const users = db.all('users').filter((u) => u.status !== 'disabled');
+  const students = users.filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(classId));
+  const sIds = new Set(students.map((u) => u.id));
+  const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((c) => sIds.has(c)));
+  const teachers = users.filter((u) => TEACHING_ROLES.includes(u.role) && (u.classIds || []).includes(classId));
+  return [...students, ...parents, ...teachers].map((u) => u.id);
+}
+function announceSharedEvent(ev, actor) {
+  const when = new Date(`${ev.date}T00:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = ev.allDay ? '' : ev.startTime ? `, ${ev.startTime} Uhr` : '';
+  const who = ev.scope === 'school' ? 'DBZ' : findClass(ev.classId)?.name || 'Klasse';
+  const recipients = ev.scope === 'school'
+    ? db.all('users').filter((u) => u.status !== 'disabled').map((u) => u.id)
+    : classAudienceIds(ev.classId);
+  recipients.filter((id) => id !== actor.id).forEach((id) => notify(id, {
+    type: 'event', level: 'info', title: `Neuer Termin (${who}): ${ev.title}`, body: `${when}${time}`, deepLink: '/kalender', refId: ev.id,
+  }));
+}
+
 router.get('/calendar', requireAuth, (req, res) => {
   const from = (req.query.from || todayKey()).slice(0, 10);
   const to = (req.query.to || from).slice(0, 10);
@@ -1294,13 +1443,23 @@ router.get('/calendar', requireAuth, (req, res) => {
     db.all('assignments').filter((a) => canManageClass(req.user, a.classId)).forEach((a) => add(a, a.dueAt));
   }
 
-  // Persönliche Termine (nur eigene) inkl. Wiederholung
-  for (const ev of db.all('events').filter((e) => e.userId === req.user.id)) {
+  // Persönliche Termine (nur eigene) sowie Klassen-/Schultermine inkl. Wiederholung
+  for (const ev of db.all('events').filter((e) => canSeeSharedEvent(req.user, e))) {
+    const shared = ev.scope === 'class' || ev.scope === 'school';
     for (const occ of expandEvent(ev, fromD, toD)) {
       events.push({
         id: ev.id,
         date: occ,
-        type: 'personal',
+        type: shared ? ev.scope : 'personal',
+        scope: ev.scope || 'personal',
+        classId: ev.classId || null,
+        className: ev.classId ? findClass(ev.classId)?.name || null : null,
+        color: ev.scope === 'class' ? classColor(ev.classId) : null,
+        status: ev.status || 'approved',
+        editable: canEditSharedEvent(req.user, ev),
+        canApprove: ev.scope === 'class' && ev.status === 'pending' && isClassTeacher(req.user, ev.classId),
+        createdByName: shared ? (ev.createdByLabel || null) : null,
+        recurrence: ev.recurrence || null,
         title: ev.title,
         time: ev.allDay ? '' : [ev.startTime, ev.endTime].filter(Boolean).join('–'),
         startTime: ev.startTime || null,
@@ -1357,11 +1516,27 @@ router.get('/events', requireAuth, (req, res) => {
 
 router.post('/events', requireAuth, (req, res) => {
   const { title, date, startTime, endTime, allDay, category, note, recurrence } = req.body || {};
+  const scope = ['class', 'school'].includes(req.body?.scope) ? req.body.scope : 'personal';
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ error: 'Gültiges Datum erforderlich' });
+  let classId = null;
+  let status = 'approved';
+  if (scope === 'school' && !isAdmin(req.user)) return res.status(403).json({ error: 'Schulweite Termine dürfen nur die DBZ-Leitung und die Systembetreuung eintragen' });
+  if (scope === 'class') {
+    classId = String(req.body?.classId || '');
+    if (!findClass(classId)) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+    const isSprecher = req.user.role === ROLES.KLASSENSPRECHER && (req.user.classIds || []).includes(classId);
+    if (!isClassTeacher(req.user, classId) && !isSprecher)
+      return res.status(403).json({ error: 'Klassentermine dürfen nur die Lehrkräfte dieser Klasse eintragen' });
+    if (isSprecher) status = 'pending';
+  }
   const ev = {
     id: newId('evt'),
     userId: req.user.id,
+    scope,
+    classId,
+    status,
+    createdByLabel: scope === 'school' ? 'DBZ-Leitung' : scope === 'class' ? (status === 'pending' ? 'Klassensprecher' : 'Klassenleitung') : null,
     title: title.trim(),
     date,
     allDay: !!allDay,
@@ -1373,12 +1548,41 @@ router.post('/events', requireAuth, (req, res) => {
     createdAt: new Date().toISOString(),
   };
   db.insert('events', ev);
+  if (scope !== 'personal') audit(req.user.id, 'event.create', 'event', ev.id, null, { scope, classId, status });
+  if (status === 'approved' && scope !== 'personal') announceSharedEvent(ev, req.user);
+  if (status === 'pending') {
+    classAudienceIds(classId).filter((id) => TEACHING_ROLES.includes(findUserById(id)?.role)).forEach((id) => notify(id, {
+      type: 'event_proposal', level: 'warning', title: `Terminvorschlag vom Klassensprecher: ${ev.title}`, body: 'Bitte im Kalender bestätigen oder ablehnen.', deepLink: '/kalender', refId: ev.id,
+    }));
+  }
   res.json({ event: ev });
+});
+
+// Terminvorschlag des Klassensprechers bestätigen (wird dann für die Klasse
+// sichtbar + alle werden benachrichtigt) oder ablehnen (wird gelöscht).
+router.post('/events/:id/decide', requireAuth, (req, res) => {
+  const ev = byId('events', req.params.id);
+  if (!ev || ev.scope !== 'class' || ev.status !== 'pending') return res.status(404).json({ error: 'Kein offener Vorschlag' });
+  if (!isClassTeacher(req.user, ev.classId)) return res.status(403).json({ error: 'Nur Lehrkräfte dieser Klasse' });
+  const approve = req.body?.approve === true;
+  if (approve) {
+    ev.status = 'approved';
+    ev.approvedBy = req.user.id;
+    announceSharedEvent(ev, req.user);
+  } else {
+    const list = db.all('events');
+    list.splice(list.indexOf(ev), 1);
+  }
+  notify(ev.userId, { type: 'event', level: approve ? 'info' : 'warning', title: approve ? `Dein Terminvorschlag wurde bestätigt: ${ev.title}` : `Dein Terminvorschlag wurde abgelehnt: ${ev.title}`, body: '', deepLink: '/kalender', refId: ev.id });
+  db.commit();
+  audit(req.user.id, approve ? 'event.approve' : 'event.reject', 'event', ev.id);
+  res.json({ ok: true });
 });
 
 router.patch('/events/:id', requireAuth, (req, res) => {
   const ev = byId('events', req.params.id);
-  if (!ev || ev.userId !== req.user.id) return res.status(404).json({ error: 'Termin nicht gefunden' });
+  if (!ev || !canSeeSharedEvent(req.user, ev)) return res.status(404).json({ error: 'Termin nicht gefunden' });
+  if (!canEditSharedEvent(req.user, ev)) return res.status(403).json({ error: 'Diesen Termin darfst du nicht ändern' });
   const b = req.body || {};
   if (b.title !== undefined) ev.title = String(b.title).trim() || ev.title;
   if (b.date !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(b.date)) ev.date = b.date;
@@ -1394,10 +1598,14 @@ router.patch('/events/:id', requireAuth, (req, res) => {
 
 router.delete('/events/:id', requireAuth, (req, res) => {
   const list = db.all('events');
-  const idx = list.findIndex((e) => e.id === req.params.id && e.userId === req.user.id);
+  const idx = list.findIndex((e) => e.id === req.params.id && canSeeSharedEvent(req.user, e));
   if (idx < 0) return res.status(404).json({ error: 'Termin nicht gefunden' });
-  list.splice(idx, 1);
+  if (!canEditSharedEvent(req.user, list[idx])) return res.status(403).json({ error: 'Diesen Termin darfst du nicht löschen' });
+  const [removed] = list.splice(idx, 1);
+  const notes = db.all('notifications');
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i].refId === removed.id) notes.splice(i, 1);
   db.commit();
+  if (removed.scope && removed.scope !== 'personal') audit(req.user.id, 'event.delete', 'event', removed.id, { title: removed.title, scope: removed.scope }, null);
   res.json({ ok: true });
 });
 
@@ -1451,8 +1659,8 @@ function buildCalendarIcs(user) {
       push({ uid: `lesson-${c.id}-${dateKey}`, start: icsLocal(dateKey, c.startTime), end: icsLocal(dateKey, c.endTime), summary: `Unterricht: ${c.name}` });
     }
   }
-  // Persönliche Termine (inkl. Wiederholung)
-  for (const ev of db.all('events').filter((e) => e.userId === user.id)) {
+  // Persönliche Termine sowie Klassen-/Schultermine (inkl. Wiederholung)
+  for (const ev of db.all('events').filter((e) => canSeeSharedEvent(user, e) && e.status !== 'pending')) {
     for (const occ of expandEvent(ev, fromD, toD)) {
       if (ev.allDay) push({ uid: `ev-${ev.id}-${occ}`, start: icsDate(occ), allDay: true, summary: ev.title, desc: ev.note });
       else push({ uid: `ev-${ev.id}-${occ}`, start: icsLocal(occ, ev.startTime), end: ev.endTime ? icsLocal(occ, ev.endTime) : undefined, summary: ev.title, desc: ev.note });
@@ -1669,38 +1877,105 @@ router.post('/absence-requests/:id/comments', requireAuth, (req, res) => {
 
 router.get('/subjects', requireAuth, (_req, res) => res.json({ subjects: SUBJECTS }));
 
-router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
-  const { classId, title, description, subjectId, type, dueAt, targetStudentIds } = req.body || {};
-  if (!canManageClass(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (!title || !title.trim()) return res.status(400).json({ error: 'Titel ist erforderlich' });
-  const validTypes = ['audio', 'text', 'file', 'quran', 'mixed'];
+const ASSIGNMENT_TYPES = ['audio', 'text', 'file', 'quran', 'mixed'];
+function createAssignment(actor, { classId, title, description, subjectId, type, dueAt, targetStudentIds }, extra = {}) {
   const a = {
     id: newId('asg'),
     classId,
     subjectId: findSubject(subjectId) ? subjectId : null,
     title: title.trim(),
     description: description || '',
-    type: validTypes.includes(type) ? type : 'mixed',
+    type: ASSIGNMENT_TYPES.includes(type) ? type : 'mixed',
     opensAt: new Date().toISOString(),
     dueAt: dueAt || null,
     targetType: targetStudentIds?.length ? 'students' : 'class',
     targetStudentIds: targetStudentIds || [],
-    createdBy: req.user.id,
+    createdBy: actor.id,
     createdAt: new Date().toISOString(),
+    ...extra,
   };
   db.insert('assignments', a);
-  // Zielschüler benachrichtigen.
+  // Zielschüler (Pflicht-Benachrichtigung inkl. Push) informieren.
   targetsFor(a).forEach((sid) =>
     notify(sid, {
       type: 'assignment_new',
       level: 'info',
       title: 'Neue Hausaufgabe',
-      body: `${a.title}`,
-      deepLink: '/aufgaben',
+      body: `${a.title}${a.dueAt ? ` · bis ${new Date(a.dueAt).toLocaleDateString('de-DE', { day: 'numeric', month: 'short' })}` : ''}`,
+      deepLink: `/aufgaben/${a.id}`,
+      refId: a.id,
     }),
   );
-  audit(req.user.id, 'assignment.create', 'assignment', a.id);
-  res.json({ assignment: a });
+  audit(actor.id, 'assignment.create', 'assignment', a.id);
+  return a;
+}
+
+router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const body = req.body || {};
+  if (!canManageClass(req.user, body.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!body.title || !body.title.trim()) return res.status(400).json({ error: 'Titel ist erforderlich' });
+  res.json({ assignment: createAssignment(req.user, body) });
+});
+
+// --- Aufgaben-Vorschläge des Klassensprechers ---------------------------------
+// Getrennt von echten Aufgaben gespeichert: ein unbestätigter Vorschlag zählt
+// nirgends (Statistik, Klassenliste, Schüleransicht). Erst die Lehrkraft macht
+// daraus per Bestätigung eine echte Aufgabe (optional mit Änderungen).
+router.post('/assignment-proposals', requireAuth, requireRole(ROLES.KLASSENSPRECHER), (req, res) => {
+  const { classId, title, description, subjectId, type, dueAt } = req.body || {};
+  if (!(req.user.classIds || []).includes(classId)) return res.status(403).json({ error: 'Nur für die eigene Klasse' });
+  if (!title || !title.trim()) return res.status(400).json({ error: 'Titel ist erforderlich' });
+  const p = {
+    id: newId('aprop'), classId, title: title.trim(), description: description || '', subjectId: subjectId || null,
+    type: ASSIGNMENT_TYPES.includes(type) ? type : 'mixed', dueAt: dueAt || null,
+    proposedBy: req.user.id, proposedByName: req.user.name, status: 'pending', createdAt: new Date().toISOString(),
+  };
+  db.insert('assignment_proposals', p);
+  classManagersOfClasses([classId]).filter((u) => TEACHING_ROLES.includes(u.role)).forEach((u) => notify(u.id, {
+    type: 'assignment_proposal', level: 'warning', title: `Aufgabenvorschlag vom Klassensprecher: ${p.title}`,
+    body: 'Bitte unter „Aufgaben" bestätigen oder ablehnen.', deepLink: '/aufgaben', refId: p.id,
+  }));
+  res.json({ proposal: p });
+});
+
+router.get('/assignment-proposals', requireAuth, (req, res) => {
+  let list = db.all('assignment_proposals').filter((p) => p.status === 'pending');
+  if (req.user.role === ROLES.KLASSENSPRECHER) list = list.filter((p) => p.proposedBy === req.user.id);
+  else if (TEACHING_ROLES.includes(req.user.role)) list = list.filter((p) => (req.user.classIds || []).includes(p.classId));
+  else list = [];
+  res.json({ proposals: list.map((p) => ({ ...p, className: findClass(p.classId)?.name || null })) });
+});
+
+router.post('/assignment-proposals/:id/decide', requireAuth, (req, res) => {
+  const p = byId('assignment_proposals', req.params.id);
+  if (!p || p.status !== 'pending') return res.status(404).json({ error: 'Kein offener Vorschlag' });
+  if (!(TEACHING_ROLES.includes(req.user.role) && (req.user.classIds || []).includes(p.classId)))
+    return res.status(403).json({ error: 'Nur Lehrkräfte dieser Klasse' });
+  const approve = req.body?.approve === true;
+  p.status = approve ? 'approved' : 'rejected';
+  p.decidedBy = req.user.id;
+  p.decidedAt = new Date().toISOString();
+  let assignment = null;
+  if (approve) {
+    const edits = req.body?.edits || {};
+    assignment = createAssignment(req.user, {
+      classId: p.classId,
+      title: String(edits.title || p.title),
+      description: edits.description ?? p.description,
+      subjectId: edits.subjectId ?? p.subjectId,
+      type: edits.type || p.type,
+      dueAt: edits.dueAt ?? p.dueAt,
+    }, { proposedBy: p.proposedBy });
+    p.assignmentId = assignment.id;
+  }
+  notify(p.proposedBy, {
+    type: 'assignment_proposal', level: approve ? 'info' : 'warning',
+    title: approve ? `Dein Aufgabenvorschlag wurde bestätigt: ${p.title}` : `Dein Aufgabenvorschlag wurde abgelehnt: ${p.title}`,
+    body: '', deepLink: '/aufgaben', refId: p.id,
+  });
+  db.commit();
+  audit(req.user.id, approve ? 'assignment_proposal.approve' : 'assignment_proposal.reject', 'assignment_proposal', p.id);
+  res.json({ ok: true, assignment });
 });
 
 // Aufgabe endgültig löschen -- z. B. alte Test-Einträge, die fälschlich als
@@ -1708,15 +1983,15 @@ router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
 // erstellende Lehrkraft oder Admin/Leitung dürfen löschen (gleiches Muster
 // wie DELETE /materials/:id). Zugehörige Abgaben werden mitgelöscht, damit
 // nichts verwaist zurückbleibt.
-router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+// Endgültig löschen: die Aufgabe verschwindet komplett -- samt Abgaben,
+// Bewertungen und Fristverlängerungen, sie zählt nirgends mehr (als hätte es
+// sie nie gegeben). Jede Lehrkraft der Klasse darf das (nicht nur die
+// erstellende -- sonst blieben z. B. Aufgaben ehemaliger/Test-Konten für
+// immer stehen).
+function deleteAssignmentCascade(a) {
   const list = db.all('assignments');
-  const idx = list.findIndex((a) => a.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
-  const a = list[idx];
-  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (a.createdBy !== req.user.id && !isAdmin(req.user))
-    return res.status(403).json({ error: 'Nur die erstellende Lehrkraft oder Admin/Leitung dürfen diese Aufgabe löschen' });
-  list.splice(idx, 1);
+  const idx = list.findIndex((x) => x.id === a.id);
+  if (idx >= 0) list.splice(idx, 1);
   const subs = db.all('submissions');
   const removedSubIds = new Set();
   for (let i = subs.length - 1; i >= 0; i--) {
@@ -1728,9 +2003,44 @@ router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req
   for (let i = reviews.length - 1; i >= 0; i--) if (removedSubIds.has(reviews[i].submissionId)) reviews.splice(i, 1);
   const exts = db.all('extensions');
   for (let i = exts.length - 1; i >= 0; i--) if (exts[i].assignmentId === a.id) exts.splice(i, 1);
+  const notes = db.all('notifications');
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i].refId === a.id) notes.splice(i, 1);
+}
+
+router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const a = byId('assignments', req.params.id);
+  if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  deleteAssignmentCascade(a);
   db.commit();
   audit(req.user.id, 'assignment.delete', 'assignment', a.id, { title: a.title }, null);
   res.json({ ok: true });
+});
+
+// Mehrfachauswahl: archivieren (nur aus der eigenen Übersicht ausblenden --
+// alle Daten, Abgaben und Statistiken bleiben erhalten, jederzeit
+// wiederherstellbar), wiederherstellen oder endgültig löschen.
+router.post('/assignments/bulk', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 1000) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['archive', 'unarchive', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const results = [];
+  for (const id of ids) {
+    const a = byId('assignments', String(id));
+    if (!a) { results.push({ id, ok: false, error: 'nicht gefunden' }); continue; }
+    if (!canManageClass(req.user, a.classId)) { results.push({ id, ok: false, error: 'Kein Zugriff' }); continue; }
+    if (action === 'delete') {
+      deleteAssignmentCascade(a);
+      audit(req.user.id, 'assignment.delete', 'assignment', a.id, { title: a.title }, null);
+    } else {
+      a.archived = action === 'archive';
+      a.archivedAt = a.archived ? new Date().toISOString() : null;
+      audit(req.user.id, `assignment.${action}`, 'assignment', a.id);
+    }
+    results.push({ id, ok: true });
+  }
+  db.commit();
+  res.json({ results });
 });
 
 /** IDs der Schüler, für die eine Aufgabe gilt. */
@@ -1760,9 +2070,10 @@ router.get('/assignments', requireAuth, (req, res) => {
     return res.json({ assignments: list.sort(byDueThenNew) });
   }
   if (isClassManager(req.user)) {
+    const showArchived = req.query.archived === '1';
     const list = db
       .all('assignments')
-      .filter((a) => canManageClass(req.user, a.classId))
+      .filter((a) => canManageClass(req.user, a.classId) && Boolean(a.archived) === showArchived)
       .map((a) => {
         const targets = targetsFor(a);
         const subs = db.all('submissions').filter((s) => s.assignmentId === a.id);
@@ -1984,9 +2295,11 @@ router.get('/submissions/:id/file/:fileId', requireAuth, async (req, res) => {
 
 // Korrekturqueue einer Klasse (Verwalter).
 router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  // Ausgeblendete Abgaben und Abgaben archivierter Aufgaben erscheinen nicht
+  // mehr in der Korrektur-Liste (Daten bleiben erhalten).
   const subs = db
     .all('submissions')
-    .filter((s) => canManageClass(req.user, s.classId))
+    .filter((s) => canManageClass(req.user, s.classId) && !s.hiddenInQueue && !byId('assignments', s.assignmentId)?.archived)
     .map((s) => {
       const a = byId('assignments', s.assignmentId);
       const review = db.all('reviews').find((r) => r.submissionId === s.id);
@@ -2008,6 +2321,22 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
       return (b.submittedAt || '').localeCompare(a.submittedAt || '');
     });
   res.json({ submissions: subs });
+});
+
+// Korrektur-Liste aufräumen: Abgaben nur aus der Liste ausblenden. Die Abgabe,
+// ihre Bewertung und alle Statistiken bleiben unverändert erhalten.
+router.post('/review-queue/hide', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
+  let hidden = 0;
+  for (const id of ids) {
+    const sub = byId('submissions', String(id));
+    if (!sub || !canManageClass(req.user, sub.classId)) continue;
+    sub.hiddenInQueue = true;
+    hidden++;
+  }
+  db.commit();
+  res.json({ ok: true, hidden });
 });
 
 // Abgabe bewerten / Feedback (Verwalter, auditiert, bewusste Freigabe).
@@ -2272,6 +2601,23 @@ const RECITERS = [
   ...AYAH_RECITERS.map((r) => ({ id: r.id, name: r.name, mode: 'ayah', follow: false })),
 ];
 router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
+
+// On-Device-Spracherkennung (Auswendig-Modus): Modell + Wortschatz. Nur für
+// angemeldete Nutzer (Bandbreite), mit sehr langer Cache-Dauer -- der Inhalt
+// ist über die feste Prüfsumme unveränderlich.
+router.get('/asr/:file(model|vocab)', requireAuth, async (req, res) => {
+  const def = ASR_FILES[req.params.file];
+  try {
+    const file = await ensureAsrFile(req.params.file);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('ETag', `"${def.sha256}"`);
+    res.type(def.type);
+    res.sendFile(file);
+  } catch (err) {
+    console.error('[asr]', err.message);
+    res.status(503).json({ error: 'Das Spracherkennungs-Modell ist gerade nicht verfügbar. Bitte später erneut versuchen.' });
+  }
+});
 
 // Ayah-für-Ayah-Audio (Rezitatoren ohne Sure-Zeitmarken). Der Client spielt die
 // Ayah-Dateien nacheinander ab und hebt die laufende Ayah hervor.
@@ -3345,13 +3691,59 @@ router.get('/reports/:id', requireAuth, (req, res) => {
 // Direktnachrichten (sichere 1:1-Kommunikation)
 // =============================================================================
 
-// Erlaubte Gesprächspartner: Schüler/Eltern <-> Lehrkräfte der jeweiligen Klasse
-// UND die DBZ-Leitung/Sekretariat (schulweit, unabhängig von der Klasse).
+// Rollen-Postfächer für Schüler/Eltern: sie schreiben nie eine einzelne
+// Person an, sondern ein Team. Mehrere Personen teilen sich diese Konten/
+// Postfächer, deshalb sehen Schüler/Eltern nie einen Personennamen -- nur die
+// Rolle und wofür sie zuständig ist (Rückmeldung aus dem Testlauf: Schüler
+// haben sonst oft die falsche Stelle angeschrieben).
+const INBOXES = {
+  klasse: { label: 'Klassenleitung', description: 'Alles rund um deinen Unterricht: Aufgaben, Anwesenheit, Entschuldigungen und Fragen zum Stoff.' },
+  leitung: { label: 'DBZ-Leitung', description: 'Persönliche Anliegen, Sorgen und Probleme sowie organisatorische Fragen der Schule – vertraulich.' },
+  system: { label: 'Systembetreuung', description: 'Technische Probleme mit der App: Anmeldung, Fehler, Benachrichtigungen.' },
+};
+const isFamily = (u) => STUDENT_ROLES.includes(u.role) || u.role === ROLES.ELTERN;
+const isStaff = (u) => CLASS_MANAGERS.includes(u.role);
+
+function familyClassIds(family) {
+  if (STUDENT_ROLES.includes(family.role)) return family.classIds || [];
+  const set = new Set();
+  (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => set.add(c)));
+  return [...set];
+}
+
+// Wer steht hinter einem Postfach? (aktive Konten)
+function inboxMemberIds(inbox, family) {
+  const active = db.all('users').filter((u) => u.status !== 'disabled');
+  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
+  if (inbox === 'system') {
+    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
+    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
+  }
+  if (inbox === 'leitung') {
+    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
+    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
+  }
+  return [];
+}
+
+// Postfach eines bestehenden Threads (gespeichert oder -- bei älteren Threads
+// -- aus den Rollen der Mitarbeiterseite abgeleitet).
+function threadInbox(t) {
+  if (t.inbox) return t.inbox;
+  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
+  if (!staff.length) return null;
+  if (staff.some((u) => u.role === ROLES.KLASSENLEHRER || u.role === ROLES.VERTRETUNG)) return 'klasse';
+  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
+  return 'system';
+}
+
+// Erlaubte Gesprächspartner: Schüler/Eltern -> nur die drei Rollen-Postfächer
+// (Klassenleitung ihrer Klasse(n), DBZ-Leitung, Systembetreuung). Lehrkräfte
+// -> Schüler/Eltern ihrer Klassen. Leitung/Admin -> Mitarbeitende.
 // Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
 function messageContacts(user) {
   const users = db.all('users');
   const active = (u) => u.status !== 'disabled' && u.id !== user.id;
-  const isLeitung = (u) => u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN;
   if (isAdmin(user)) return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role));
   if (isClassManager(user)) {
     const myClasses = user.classIds || [];
@@ -3360,16 +3752,15 @@ function messageContacts(user) {
     const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((ch) => studentIds.has(ch)));
     return [...students, ...parents].filter(active);
   }
-  if (STUDENT_ROLES.includes(user.role))
-    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => (user.classIds || []).includes(c)))));
-  if (user.role === ROLES.ELTERN) {
-    const childClasses = new Set();
-    (user.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => childClasses.add(c)));
-    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => childClasses.has(c)))));
-  }
   return [];
 }
-const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId);
+function familyInboxes(user) {
+  if (!isFamily(user)) return [];
+  return Object.entries(INBOXES)
+    .filter(([key]) => inboxMemberIds(key, user).length > 0)
+    .map(([key, v]) => ({ id: `inbox:${key}`, name: v.label, roleLabel: v.label, description: v.description }));
+}
+const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId) || familyInboxes(user).some((c) => c.id === otherId);
 
 // Alle Lehrkräfte (Klassenlehrer + Vertretung) der angegebenen Klassen.
 function classManagersOfClasses(classIds) {
@@ -3379,12 +3770,6 @@ function classManagersOfClasses(classIds) {
     .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
 }
 
-// Alle aktiven Leitungs-/Admin-Konten – das "Sekretariat" teilt sich EIN
-// Postfach: schreibt jemand die Leitung an, sehen/beantworten alle denselben
-// Thread (statt dass 5 Leitungen 5 getrennte Nachrichten bekommen).
-function leitungAndAdminIds() {
-  return db.all('users').filter((u) => u.status !== 'disabled' && (u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
-}
 
 // Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
 // eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
@@ -3392,37 +3777,28 @@ function leitungAndAdminIds() {
 // Admin-Konten beteiligt (geteiltes Postfach, eine Antwort reicht für alle).
 // So entsteht keine Isolation (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/
 // Leitung bleibt ein direktes Zweiergespräch.
-function resolveThreadParticipants(initiator, recipient) {
-  const isMgr = (u) => CLASS_MANAGERS.includes(u.role);
+function resolveThreadParticipants(initiator, recipient, inboxKey = null) {
   let family = null;
-  if (!isMgr(initiator) && isMgr(recipient)) family = initiator;
-  else if (isMgr(initiator) && !isMgr(recipient)) family = recipient;
+  let inbox = inboxKey;
+  if (inboxKey) family = initiator;
+  else if (!isStaff(initiator) && isStaff(recipient)) family = initiator;
+  else if (isStaff(initiator) && !isStaff(recipient)) family = recipient;
 
   let ids;
   if (family) {
-    const target = family === initiator ? recipient : initiator;
-    let teamIds;
-    if (target.role === ROLES.LEITUNG || target.role === ROLES.SUPER_ADMIN) {
-      teamIds = leitungAndAdminIds();
-    } else {
-      let classIds = [];
-      if (STUDENT_ROLES.includes(family.role)) classIds = family.classIds || [];
-      else if (family.role === ROLES.ELTERN) {
-        const s = new Set();
-        (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => s.add(c)));
-        classIds = [...s];
-      }
-      teamIds = classManagersOfClasses(classIds).map((m) => m.id);
+    if (!inbox) {
+      const staffSide = family === initiator ? recipient : initiator;
+      inbox = staffSide.role === ROLES.LEITUNG ? 'leitung' : staffSide.role === ROLES.SUPER_ADMIN ? 'system' : 'klasse';
     }
-    // Sicherstellen, dass der ursprüngliche Empfänger/Absender dabei ist.
-    ids = [family.id, ...teamIds, initiator.id, recipient.id];
+    ids = [family.id, ...inboxMemberIds(inbox, family), initiator.id];
+    if (recipient) ids.push(recipient.id);
   } else {
     ids = [initiator.id, recipient.id];
   }
   const uniq = [...new Set(ids)];
   const names = {};
   uniq.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
-  return { participantIds: uniq, participantNames: names, group: uniq.length > 2 };
+  return { participantIds: uniq, participantNames: names, group: uniq.length > 2, inbox: family ? inbox : null };
 }
 
 const sortedIds = (arr) => [...arr].sort().join('|');
@@ -3431,6 +3807,10 @@ const sortedIds = (arr) => [...arr].sort().join('|');
 // andere Person. Gruppengespräch: eine Lehrkraft sieht die Familienseite, die
 // Familie sieht das Lehrerteam.
 function threadTitle(t, viewer) {
+  if (isFamily(viewer)) {
+    const inbox = threadInbox(t);
+    if (inbox) return INBOXES[inbox].label;
+  }
   const others = t.participantIds.filter((id) => id !== viewer.id);
   if (others.length <= 1) return t.participantNames[others[0]] || 'Unbekannt';
   const isMgr = CLASS_MANAGERS.includes(viewer.role);
@@ -3465,9 +3845,20 @@ function msgPreview(m) {
 }
 
 /** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
-function messageView(m) {
+// Absendername aus Sicht des Betrachters: Schüler/Eltern sehen bei
+// Mitarbeitenden nur das Postfach (z. B. "Klassenleitung"), nie den Namen.
+function senderLabel(m, t, viewer) {
+  if (viewer && t && isFamily(viewer) && m.senderId !== viewer.id) {
+    const sender = findUserById(m.senderId);
+    if (!sender || isStaff(sender)) return INBOXES[threadInbox(t)]?.label || 'DBZ';
+  }
+  return m.senderName;
+}
+
+function messageView(m, t = null, viewer = null) {
+  const senderName = senderLabel(m, t, viewer);
   if (m.recalled) {
-    return { id: m.id, senderId: m.senderId, senderName: m.senderName, body: '', createdAt: m.createdAt, file: null, reactions: {}, recalled: true };
+    return { id: m.id, senderId: m.senderId, senderName, body: '', createdAt: m.createdAt, file: null, reactions: {}, recalled: true };
   }
   const file = m.file
     ? { kind: m.file.kind, originalName: m.file.originalName, mediaType: m.file.mediaType, size: m.file.size }
@@ -3475,7 +3866,7 @@ function messageView(m) {
   return {
     id: m.id,
     senderId: m.senderId,
-    senderName: m.senderName,
+    senderName,
     body: m.body || '',
     createdAt: m.createdAt,
     file,
@@ -3510,12 +3901,16 @@ async function buildMessage(req) {
 
 function threadListView(t, viewer) {
   const userId = viewer.id;
-  const last = t.messages[t.messages.length - 1] || null;
+  const msgs = visibleMessages(t, userId);
+  const last = msgs[msgs.length - 1] || null;
   const readAt = t.reads?.[userId] || '';
-  const unread = t.messages.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+  const unread = msgs.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+  const inbox = threadInbox(t);
   return {
     id: t.id,
     otherName: threadTitle(t, viewer),
+    // Für Mitarbeitende sichtbar, an welches Postfach die Familie geschrieben hat.
+    inboxLabel: inbox && !isFamily(viewer) ? INBOXES[inbox].label : null,
     group: t.participantIds.length > 2,
     lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
@@ -3523,14 +3918,32 @@ function threadListView(t, viewer) {
   };
 }
 
+function notifyThreadMessage(t, msg, sender) {
+  t.participantIds
+    .filter((id) => id !== sender.id)
+    .forEach((id) => {
+      const viewer = findUserById(id);
+      const from = viewer ? senderLabel(msg, t, viewer) : sender.name;
+      notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${from}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
+    });
+}
+
 router.get('/message-contacts', requireAuth, (req, res) => {
+  if (isFamily(req.user)) return res.json({ contacts: familyInboxes(req.user) });
   res.json({ contacts: messageContacts(req.user).map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] })) });
 });
+
+// "Für mich löschen" (wie bei WhatsApp): der Verlauf bis zu diesem Zeitpunkt
+// verschwindet nur für diese Person; alle anderen Beteiligten behalten ihn.
+// Kommt danach eine neue Nachricht, taucht der Chat mit nur den neuen
+// Nachrichten wieder auf.
+const clearedAt = (t, userId) => t.clearedAt?.[userId] || '';
+const visibleMessages = (t, userId) => t.messages.filter((m) => m.createdAt > clearedAt(t, userId));
 
 router.get('/threads', requireAuth, (req, res) => {
   const list = db
     .all('threads')
-    .filter((t) => t.participantIds.includes(req.user.id))
+    .filter((t) => t.participantIds.includes(req.user.id) && visibleMessages(t, req.user.id).length > 0)
     .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
     .map((t) => threadListView(t, req.user));
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
@@ -3538,21 +3951,26 @@ router.get('/threads', requireAuth, (req, res) => {
 
 router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
   const { recipientId } = req.body || {};
-  const recipient = findUserById(recipientId);
-  if (!recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
-  if (!canMessage(req.user, recipientId)) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+  const inboxKey = String(recipientId || '').startsWith('inbox:') ? String(recipientId).slice(6) : null;
+  const recipient = inboxKey ? null : findUserById(recipientId);
+  if (inboxKey ? !INBOXES[inboxKey] : !recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+  if (!canMessage(req.user, String(recipientId))) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+  // Schüler/Eltern schreiben ausschließlich Rollen-Postfächer an.
+  if (!inboxKey && isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
   if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
 
   const msg = await buildMessage(req);
   const now = msg.createdAt;
-  const { participantIds, participantNames } = resolveThreadParticipants(req.user, recipient);
-  // Bestehenden Thread mit exakt derselben Teilnehmergruppe wiederverwenden.
-  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds));
+  const { participantIds, participantNames, inbox } = resolveThreadParticipants(req.user, recipient, inboxKey);
+  // Bestehenden Thread mit exakt derselben Teilnehmergruppe (und demselben
+  // Postfach) wiederverwenden.
+  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds) && (threadInbox(x) || null) === (inbox || null));
   if (!t) {
     t = {
       id: newId('thread'),
       participantIds,
       participantNames,
+      inbox,
       messages: [msg],
       reads: { [req.user.id]: now },
       createdAt: now,
@@ -3563,16 +3981,35 @@ router.post('/threads', requireAuth, upload.single('file'), async (req, res) => 
     // Team/Namen aktuell halten (falls sich die Klassenzuordnung geändert hat).
     t.participantIds = participantIds;
     t.participantNames = { ...t.participantNames, ...participantNames };
+    if (inbox) t.inbox = inbox;
     t.messages.push(msg);
     t.lastMessageAt = now;
     t.reads = t.reads || {};
     t.reads[req.user.id] = now;
     db.commit();
   }
-  participantIds
-    .filter((id) => id !== req.user.id)
-    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
+  notifyThreadMessage(t, msg, req.user);
   res.json({ threadId: t.id });
+});
+
+// Mehrfachauswahl in der Chat-Liste: als gelesen markieren oder für mich löschen.
+router.post('/threads/bulk', requireAuth, (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const now = new Date().toISOString();
+  const wanted = new Set(ids.map(String));
+  let changed = 0;
+  for (const t of db.all('threads')) {
+    if (!wanted.has(t.id) || !t.participantIds.includes(req.user.id)) continue;
+    t.reads = t.reads || {};
+    t.reads[req.user.id] = now;
+    if (action === 'delete') { t.clearedAt = t.clearedAt || {}; t.clearedAt[req.user.id] = now; }
+    changed++;
+  }
+  markNotificationsRead(req.user.id, (n) => n.type === 'message' && wanted.has(n.groupId));
+  db.commit();
+  res.json({ ok: true, changed });
 });
 
 router.get('/threads/:id', requireAuth, (req, res) => {
@@ -3588,7 +4025,7 @@ router.get('/threads/:id', requireAuth, (req, res) => {
       id: t.id,
       otherName: threadTitle(t, req.user),
       group: t.participantIds.length > 2,
-      messages: t.messages.map(messageView),
+      messages: visibleMessages(t, req.user.id).map((m) => messageView(m, t, req.user)),
       meId: req.user.id,
     },
   });
@@ -3604,10 +4041,8 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   t.reads = t.reads || {};
   t.reads[req.user.id] = msg.createdAt;
   db.commit();
-  t.participantIds
-    .filter((id) => id !== req.user.id)
-    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
-  res.json({ message: messageView(msg) });
+  notifyThreadMessage(t, msg, req.user);
+  res.json({ message: messageView(msg, t, req.user) });
 });
 
 // Anhang einer Nachricht herunterladen (nur Thread-Teilnehmer).
@@ -3707,6 +4142,15 @@ function materialView(m) {
   };
 }
 
+// Neues Material -> Pflicht-Benachrichtigung (inkl. Push) an die Schüler der
+// Klasse bzw. bei schulweitem Material an alle Schüler.
+function announceMaterial(cid, title, count, actor) {
+  const students = db.all('users').filter((u) => u.status !== 'disabled' && STUDENT_ROLES.includes(u.role) && (!cid || (u.classIds || []).includes(cid)));
+  students.filter((u) => u.id !== actor.id).forEach((u) => notify(u.id, {
+    type: 'material_new', level: 'info', title: count > 1 ? `${count} neue Materialien` : 'Neues Material', body: title, deepLink: '/materialien',
+  }));
+}
+
 router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
   const { title, description, materialType, classId, subjectId, url, body } = req.body || {};
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
@@ -3745,6 +4189,7 @@ router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.singl
 
   db.insert('materials', m);
   audit(req.user.id, 'material.create', 'material', m.id);
+  announceMaterial(cid, m.title, 1, req.user);
   res.json({ material: materialView(m) });
 });
 
@@ -3777,6 +4222,7 @@ router.post('/materials/bulk', requireAuth, requireRole(CLASS_MANAGERS), upload.
     created.push(materialView(m));
   }
   audit(req.user.id, 'material.bulk_create', 'material', null, null, { count: created.length });
+  announceMaterial(cid, created.map((m) => m.title).slice(0, 3).join(', ') + (created.length > 3 ? ' …' : ''), created.length, req.user);
   res.json({ created, count: created.length });
 });
 
@@ -4335,7 +4781,7 @@ router.post('/me/switch/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Konto ist nicht mit deinem verknüpft' });
   const target = findUserById(req.params.id);
   if (!target || target.status === 'disabled') return res.status(404).json({ error: 'Konto nicht verfügbar' });
-  issueToken(res, target);
+  issueToken(res, target, { sb: inSandbox() });
   audit(req.user.id, 'account.switch', 'user', target.id);
   res.json({ user: publicUser(target) });
 });
@@ -4479,6 +4925,25 @@ router.post('/notifications/read', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Mehrfachauswahl: ausgewählte Benachrichtigungen als gelesen markieren oder löschen.
+router.post('/notifications/bulk', requireAuth, (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const wanted = new Set(ids.map(String));
+  const notes = db.all('notifications');
+  let changed = 0;
+  for (let i = notes.length - 1; i >= 0; i--) {
+    const n = notes[i];
+    if (n.userId !== req.user.id || !wanted.has(n.id)) continue;
+    if (action === 'delete') notes.splice(i, 1);
+    else n.read = true;
+    changed++;
+  }
+  db.commit();
+  res.json({ ok: true, changed });
+});
+
 // Einzelne Benachrichtigung als gelesen markieren (beim Anklicken).
 router.post('/notifications/:id/read', requireAuth, (req, res) => {
   const n = byId('notifications', req.params.id);
@@ -4545,7 +5010,7 @@ function upcomingFor(user, days = 14, limit = 5) {
 function unreadMessagesFor(userId) {
   return db.all('threads').filter((t) => t.participantIds.includes(userId)).reduce((s, t) => {
     const readAt = t.reads?.[userId] || '';
-    return s + t.messages.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+    return s + visibleMessages(t, userId).filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
   }, 0);
 }
 
@@ -4938,60 +5403,6 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
     return { id, ok: true };
   });
 
-  db.commit();
-  res.json({ results });
-});
-
-// Die 6 Demo-Konten von der Login-Seite (siehe DEMO_ACCOUNT_DEFS oben) in
-// einem Klick wiederherstellen: aktivieren + Passwort zwingend auf
-// "demo1234" zurücksetzen, UND -- falls eins komplett gelöscht wurde (z. B.
-// versehentlich über die Mehrfachauswahl-Löschung) -- mit denselben festen
-// IDs wie beim ursprünglichen Seeding neu anlegen. Die festen IDs sorgen
-// dafür, dass alte Demo-Daten (Anwesenheit, Aufgaben etc.), die noch auf
-// z. B. "user_yusuf" verweisen, nach dem Neuanlegen wieder passen.
-// In Produktion (Supabase) grundsätzlich gesperrt -- siehe IS_PRODUCTION
-// oben: Demo-Zugänge dürfen dort nie (wieder) erreichbar sein, auch nicht
-// über einen bereits angemeldeten Admin/Leitung-Zugang.
-router.post('/admin/reactivate-demo-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
-  if (IS_PRODUCTION) return res.status(403).json({ error: 'In der Produktivumgebung nicht verfügbar' });
-  const demoPasswordHash = await hashPassword('demo1234');
-  // Eigene Demo-Klasse anlegen, falls sie noch nicht existiert (z. B. weil
-  // die Konten früher in "class_3" liefen und diese Klasse inzwischen
-  // gelöscht/nie mit DEMO_CLASS_ID angelegt wurde) -- niemals class_3
-  // wiederverwenden, siehe Kommentar bei DEMO_CLASS_ID oben.
-  let demoClass = findClass(DEMO_CLASS_ID);
-  if (!demoClass) {
-    demoClass = {
-      id: DEMO_CLASS_ID, organizationId: org().id, name: 'Demo-Klasse (Vorführung)', type: 'presence', language: 'de',
-      weekday: 6, startTime: '14:00', endTime: '18:00', active: true, isDemo: true, createdAt: new Date().toISOString(),
-    };
-    db.insert('classes', demoClass);
-  } else if (!demoClass.isDemo) {
-    demoClass.isDemo = true; // Backfill, falls vor der Kennzeichnung angelegt.
-  }
-  const results = [];
-  for (const def of DEMO_ACCOUNT_DEFS) {
-    let u = findUserByEmail(def.email);
-    if (!u) {
-      u = {
-        id: def.id, name: def.name, email: def.email, passwordHash: demoPasswordHash, role: def.role,
-        classIds: def.classIds || [], childIds: def.childIds || [], status: 'active', isDemo: true, createdAt: new Date().toISOString(),
-      };
-      db.insert('users', u);
-      audit(req.user.id, 'user.create', 'user', u.id, null, { role: u.role, viaReactivateDemoAccounts: true });
-      results.push({ email: def.email, ok: true, recreated: true });
-      continue;
-    }
-    const before = { status: u.status };
-    const wasDisabled = u.status !== 'active';
-    u.status = 'active';
-    u.passwordHash = demoPasswordHash;
-    u.isDemo = true; // Backfill für Konten, die vor dieser Kennzeichnung angelegt wurden.
-    u.classIds = def.classIds || [];
-    u.childIds = def.childIds || [];
-    audit(req.user.id, 'user.update', 'user', u.id, before, { status: u.status, passwordReset: true });
-    results.push({ email: def.email, ok: true, changed: true, wasDisabled });
-  }
   db.commit();
   res.json({ results });
 });

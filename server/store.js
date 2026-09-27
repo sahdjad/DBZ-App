@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 // Gekapselter Datastore der DBZ-App.
 //
 // Die gesamte Persistenz läuft über dieses Modul. Die öffentliche API
@@ -72,6 +73,7 @@ const emptyDb = () => ({
   invites: [], // Einladungen (nur Token-Hash gespeichert)
   password_resets: [], // Passwort-Reset-Tokens (nur Hash)
   report_periods: [],
+  assignment_proposals: [], // Aufgabenvorschläge des Klassensprechers (erst nach Bestätigung echte Aufgabe)
   student_reports: [],
   notifications: [],
   audit_logs: [],
@@ -178,7 +180,28 @@ function fileSave() {
 
 // --- Interne Helfer ----------------------------------------------------------
 
+// --- Demo-Sandkasten -----------------------------------------------------------
+// Demo-Zugänge (für Vorführungen / Interessenten) arbeiten auf einem EIGENEN,
+// flüchtigen Datenbestand nur im Arbeitsspeicher: nichts davon wird
+// gespeichert, es gibt keinerlei Zugriff auf echte Daten, und echte Nutzer
+// sehen nie etwas davon. Umgeschaltet wird pro Anfrage über AsyncLocalStorage
+// (siehe runInSandbox in api.js) -- aller Code nutzt weiterhin einfach `db`.
+const sandboxAls = new AsyncLocalStorage();
+let sandboxCache = null;
+export const inSandbox = () => sandboxAls.getStore()?.sandbox === true;
+export function runInSandbox(fn) {
+  return sandboxAls.run({ sandbox: true }, fn);
+}
+/** Verwirft den kompletten Demo-Datenbestand (wird danach neu befüllt). */
+export function resetSandbox() {
+  sandboxCache = null;
+}
+
 function load() {
+  if (inSandbox()) {
+    if (!sandboxCache) sandboxCache = emptyDb();
+    return sandboxCache;
+  }
   if (cache) return cache;
   // Fallback für Codepfade, die vor initStore() zugreifen (z. B. Tests):
   // im Supabase-Modus starten wir leer, im Dateimodus lesen wir die Datei.
@@ -187,6 +210,7 @@ function load() {
 }
 
 function persist() {
+  if (inSandbox()) return; // Demo-Daten werden nie gespeichert
   if (useSupabase && !supabaseDegraded) {
     scheduleSbFlush();
     return;

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, SmilePlus, FileText, Undo2 } from 'lucide-react';
+import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, SmilePlus, FileText, Undo2, CheckCheck, Trash2, ListChecks } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 const REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
@@ -26,13 +26,30 @@ export default function Nachrichten() {
   useEffect(() => { if (threadId) { setActiveId(threadId); setView('thread'); } }, [threadId]);
 
   const openThread = (id) => { setActiveId(id); setView('thread'); };
+  const toast = useToast();
+  const selection = useSelection();
+  const bulk = async (action) => {
+    const ids = [...selection.ids];
+    if (action === 'delete' && !window.confirm(`${ids.length} Chat(s) für dich löschen? Die anderen Beteiligten behalten den Verlauf. Kommt eine neue Nachricht, erscheint der Chat wieder.`)) return;
+    try {
+      await api.post('/threads/bulk', { ids, action });
+      toast.push(action === 'read' ? 'Als gelesen markiert' : 'Chats gelöscht', 'success');
+      selection.clear();
+      loadThreads();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
   const backToList = () => { setView('list'); loadThreads(); if (threadId) navigate('/nachrichten'); };
 
   return (
     <AppLayout title="Nachrichten">
       {view === 'list' && (
         <>
-          <div className="flex justify-end mb-4"><Button onClick={() => setView('new')}><Plus size={18} /> Neue Nachricht</Button></div>
+          <div className="flex justify-end gap-2 mb-4">
+            {threads?.length > 0 && !selection.active && (
+              <Button variant="outline" onClick={() => selection.start()}><ListChecks size={18} /> Auswählen</Button>
+            )}
+            <Button onClick={() => setView('new')}><Plus size={18} /> Neue Nachricht</Button>
+          </div>
           {!threads ? <Spinner /> : threads.length === 0 ? (
             <Card className="p-8 text-center text-sage-muted">
               <MessagesSquare size={32} className="mx-auto mb-3 opacity-50" />
@@ -41,26 +58,53 @@ export default function Nachrichten() {
           ) : (
             <div className="space-y-2">
               {threads.map((t) => (
-                <Card key={t.id} className="p-4 hover:bg-hover transition flex items-center gap-3 cursor-pointer" onClick={() => openThread(t.id)}>
+                <ThreadRow key={t.id} t={t} selection={selection} onOpen={() => openThread(t.id)}>
                   <Avatar name={t.otherName} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-ivory truncate">{t.otherName}</span>
+                      <span className="text-ivory truncate">{t.otherName}{t.inboxLabel && <span className="ml-2 text-[11px] text-sage-muted">an {t.inboxLabel}</span>}</span>
                       <span className="text-[11px] text-sage-muted shrink-0">{t.lastAt ? fmt(t.lastAt) : ''}</span>
                     </div>
                     <div className="text-sm text-sage-muted truncate">{t.lastBody}</div>
                   </div>
                   {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono shrink-0">{t.unread}</span>}
-                </Card>
+                </ThreadRow>
               ))}
             </div>
           )}
+          <SelectionBar
+            selection={selection}
+            allIds={(threads || []).map((t) => t.id)}
+            actions={[
+              { label: 'Gelesen', icon: CheckCheck, onClick: () => bulk('read') },
+              { label: 'Löschen', icon: Trash2, variant: 'danger', onClick: () => bulk('delete') },
+            ]}
+          />
         </>
       )}
 
       {view === 'new' && <NewThread onCancel={() => setView('list')} onOpen={(id) => { loadThreads(); openThread(id); }} />}
       {view === 'thread' && <ThreadView id={activeId} onBack={backToList} />}
     </AppLayout>
+  );
+}
+
+function ThreadRow({ t, selection, onOpen, children }) {
+  const longPress = useLongPress(() => selection.start(t.id));
+  const selected = selection.has(t.id);
+  return (
+    <Card
+      {...longPress.handlers}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selection.active ? selected : undefined}
+      className={`p-4 hover:bg-hover transition flex items-center gap-3 cursor-pointer select-none ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
+      onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(t.id); else onOpen(); }}
+      onKeyDown={(e) => { if (e.key === 'Enter') (selection.active ? selection.toggle(t.id) : onOpen()); }}
+    >
+      {selection.active && <SelectCheck checked={selected} />}
+      {children}
+    </Card>
   );
 }
 
@@ -200,12 +244,31 @@ function NewThread({ onCancel, onOpen }) {
         {!contacts ? <Spinner /> : contacts.length === 0 ? (
           <p className="text-sage-muted text-sm">Keine erlaubten Gesprächspartner verfügbar.</p>
         ) : (
-          <label className="block">
-            <span className="text-sm text-sage">An</span>
-            <select className="input mt-1" value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
-              {contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.roleLabel})</option>)}
-            </select>
-          </label>
+          contacts.every((c) => c.description) ? (
+            // Schüler/Eltern: Rollen-Postfächer mit Zuständigkeit, damit klar
+            // ist, wen man für welches Anliegen anschreibt.
+            <fieldset>
+              <legend className="text-sm text-sage mb-2">An wen möchtest du schreiben?</legend>
+              <div className="grid gap-2">
+                {contacts.map((c) => (
+                  <label key={c.id} className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition ${recipientId === c.id ? 'border-mint bg-mint/5' : 'border-line hover:bg-hover'}`}>
+                    <input type="radio" name="inbox" className="mt-1" checked={recipientId === c.id} onChange={() => setRecipientId(c.id)} />
+                    <span>
+                      <span className="block text-ivory font-medium">{c.name}</span>
+                      <span className="block text-xs text-sage-muted mt-0.5">{c.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : (
+            <label className="block">
+              <span className="text-sm text-sage">An</span>
+              <select className="input mt-1" value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.roleLabel})</option>)}
+              </select>
+            </label>
+          )
         )}
       </div>
       {contacts && contacts.length > 0 && <Composer onSend={send} autoFocus />}
@@ -221,9 +284,7 @@ function Attachment({ threadId, m }) {
   if (m.file.kind === 'audio')
     return <audio src={url} controls preload="none" className="mt-1 w-56 max-w-full" />;
   return (
-    <a href={url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-2 underline">
-      <FileText size={16} /> {m.file.originalName}
-    </a>
+    <FileAttachment url={url} name={m.file.originalName} mediaType={m.file.mediaType} icon={FileText} className="mt-1 !text-inherit underline" />
   );
 }
 

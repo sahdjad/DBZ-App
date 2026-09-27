@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock } from 'lucide-react';
+import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { QrImage, printQrCode } from '../components/QrCode.jsx';
 
 const STATUSES = [
@@ -101,6 +101,28 @@ export default function Unterricht() {
     await api.post(`/sessions/${active}/attendance`, { studentId, status });
     loadAttendance(active);
   };
+  const selection = useSelection();
+  const hasEntry = (r) => Boolean(r.source) || STATUSES.some(([v]) => v === r.status);
+  const deleteEntries = async (ids) => {
+    if (!window.confirm(`${ids.length} Anwesenheitseintrag/-einträge löschen? Die Schüler haben für diese Sitzung dann keinen Eintrag mehr.`)) return;
+    let ok = 0;
+    for (const sid of ids) {
+      try { await api.del(`/sessions/${active}/attendance/${sid}`); ok++; } catch { /* kein Eintrag */ }
+    }
+    toast.push(`${ok} Eintrag/Einträge gelöscht`, 'success');
+    selection.clear();
+    loadAttendance(active);
+  };
+  const resetSession = async () => {
+    if (!window.confirm('Diese Sitzung komplett zurücksetzen? Alle Anwesenheitseinträge dieser Sitzung werden gelöscht und die Sitzung steht wieder auf „geplant". (z. B. nach einem Probedurchlauf)')) return;
+    try {
+      const d = await api.post(`/sessions/${active}/reset`);
+      setSession(d.session);
+      setQr(null);
+      toast.push(`Sitzung zurückgesetzt (${d.removed} Einträge gelöscht)`, 'success');
+      loadAttendance(active);
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
 
   if (!sessions) return <AppLayout title="Unterricht"><Spinner /></AppLayout>;
   if (!sessions.length) return <AppLayout title="Unterricht"><Card className="p-6 text-sage-muted">Heute ist keine Sitzung für deine Klassen geplant.</Card></AppLayout>;
@@ -134,6 +156,9 @@ export default function Unterricht() {
               <Button variant="danger" onClick={end}><Square size={18} /> Beenden</Button>
             </>
           )}
+          {(session?.status && session.status !== 'scheduled') || attendance?.some(hasEntry) ? (
+            <Button variant="ghost" onClick={resetSession}><RotateCcw size={18} /> Sitzung zurücksetzen</Button>
+          ) : null}
         </div>
 
         {qr && (
@@ -184,12 +209,22 @@ export default function Unterricht() {
         <CardHeader
           title="Anwesenheit"
           subtitle="Automatisch per Check-in, manuell korrigierbar"
-          action={<Button variant="ghost" size="sm" onClick={() => loadAttendance(active)}><RefreshCw size={16} /> Aktualisieren</Button>}
+          action={(
+            <div className="flex gap-1">
+              {attendance?.some(hasEntry) && !selection.active && (
+                <Button variant="ghost" size="sm" onClick={() => selection.start()}><ListChecks size={16} /> Auswählen</Button>
+              )}
+              <Button variant="ghost" size="sm" onClick={() => loadAttendance(active)}><RefreshCw size={16} /> Aktualisieren</Button>
+            </div>
+          )}
         />
         <div className="space-y-2 mt-2">
           {!attendance ? <Spinner /> : attendance.map((r) => (
-            <div key={r.studentId} className={`rounded-lg border-l-4 pl-3 pr-3 py-2.5 flex items-center justify-between gap-3 flex-wrap ${rowTint(r.status)}`}>
-              <div className="min-w-0">
+            <div key={r.studentId}
+              onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
+              className={`rounded-lg border-l-4 pl-3 pr-3 py-2.5 flex items-center justify-between gap-3 flex-wrap ${rowTint(r.status)} ${selection.active && hasEntry(r) ? 'cursor-pointer' : ''} ${selection.has(r.studentId) ? 'ring-2 ring-mint/60' : ''}`}>
+              {selection.active && (hasEntry(r) ? <SelectCheck checked={selection.has(r.studentId)} /> : <span className="w-5" />)}
+              <div className="min-w-0 flex-1">
                 <div className="text-ivory">{r.name}</div>
                 <div className="text-xs text-sage-muted">
                   {r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE')}` : 'Kein Check-in'}
@@ -199,15 +234,26 @@ export default function Unterricht() {
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusBadge status={r.status} />
-                <select className="input py-1.5 w-auto text-sm" value={['present','late','excused','unexcused','left_early'].includes(r.status) ? r.status : ''} onChange={(e) => setStatus(r.studentId, e.target.value)}>
-                  <option value="" disabled>korrigieren …</option>
-                  {STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                </select>
+                {!selection.active && (
+                  <select className="input py-1.5 w-auto text-sm" value={['present','late','excused','unexcused','left_early'].includes(r.status) ? r.status : ''} onChange={(e) => setStatus(r.studentId, e.target.value)}>
+                    <option value="" disabled>korrigieren …</option>
+                    {STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                )}
+                {!selection.active && hasEntry(r) && (
+                  <button onClick={() => deleteEntries([r.studentId])} title="Eintrag löschen" aria-label={`Eintrag von ${r.name} löschen`}
+                    className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10"><Trash2 size={16} /></button>
+                )}
               </div>
             </div>
           ))}
         </div>
       </Card>
+      <SelectionBar
+        selection={selection}
+        allIds={(attendance || []).filter(hasEntry).map((r) => r.studentId)}
+        actions={[{ label: 'Einträge löschen', icon: Trash2, variant: 'danger', onClick: () => deleteEntries([...selection.ids]) }]}
+      />
     </AppLayout>
   );
 }

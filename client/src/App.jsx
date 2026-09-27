@@ -92,6 +92,18 @@ function PageFallback() {
   );
 }
 
+// Häufig genutzte Seiten nach dem Start im Leerlauf vorladen: der erste
+// Wechsel dorthin braucht dann auf dem Handy keinen Ladebildschirm mehr.
+if (typeof window !== 'undefined') {
+  const preload = () => [
+    () => import('./pages/Nachrichten.jsx'), () => import('./pages/Aufgaben.jsx'), () => import('./pages/Kalender.jsx'),
+    () => import('./pages/Benachrichtigungen.jsx'), () => import('./pages/Ankuendigungen.jsx'), () => import('./pages/Materialien.jsx'),
+    () => import('./pages/Unterricht.jsx'), () => import('./pages/Klassenliste.jsx'), () => import('./pages/AufgabeDetail.jsx'),
+  ].forEach((load, i) => setTimeout(() => load().catch(() => {}), 200 * i));
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
+  window.addEventListener('load', () => idle(preload), { once: true });
+}
+
 export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>

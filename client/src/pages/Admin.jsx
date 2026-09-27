@@ -231,12 +231,6 @@ function UsersTab() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
-  const [demoBusy, setDemoBusy] = useState(false);
-  // Nur im Demo-Betrieb anzeigen -- in Produktion lehnt der Server die
-  // Anfrage ohnehin ab (IS_PRODUCTION in server/api.js), der Button würde
-  // also nur einen Fehler produzieren.
-  const [demoModeAvailable, setDemoModeAvailable] = useState(false);
-  useEffect(() => { api.get('/health').then((d) => setDemoModeAvailable(d.mode === 'demo')).catch(() => {}); }, []);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
@@ -282,37 +276,11 @@ function UsersTab() {
     }
   };
 
-  // Setzt die 6 Demo-Konten von der Login-Seite wieder auf aktiv UND ihr
-  // Passwort zwingend auf demo1234 zurück. Fehlt eins komplett (z. B. durch
-  // versehentliches Löschen), wird es mit denselben Werten wie beim
-  // ursprünglichen Seeding neu angelegt.
-  const reactivateDemo = async () => {
-    setDemoBusy(true);
-    try {
-      const { results } = await api.post('/admin/reactivate-demo-accounts', {});
-      const recreated = results.filter((r) => r.recreated).length;
-      const msg = recreated > 0
-        ? `Alle 6 Demo-Konten aktiv (${recreated} davon neu angelegt), Passwort auf demo1234 zurückgesetzt`
-        : 'Alle 6 Demo-Konten aktiv, Passwort auf demo1234 zurückgesetzt';
-      toast.push(msg, 'success');
-      load();
-    } catch (err) {
-      toast.push(err.message, 'error');
-    } finally {
-      setDemoBusy(false);
-    }
-  };
-
   if (!users) return <Spinner />;
   return (
     <div className="space-y-4">
       <LinkAccountsAdminCard />
       <div className="flex justify-end gap-2 flex-wrap">
-        {demoModeAvailable && (
-          <Button variant="outline" onClick={reactivateDemo} disabled={demoBusy}>
-            <RotateCcw size={18} /> Demo-Konten reaktivieren
-          </Button>
-        )}
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
             <XCircle size={18} /> {selected.length} löschen

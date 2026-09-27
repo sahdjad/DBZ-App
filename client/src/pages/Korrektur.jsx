@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
-import { CheckSquare, Paperclip, Play } from 'lucide-react';
+import { CheckSquare, EyeOff, ListChecks } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ImageAttachment } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
 export default function Korrektur() {
   const [list, setList] = useState(null);
+  const toast = useToast();
+  const selection = useSelection();
   const load = () => api.get('/review-queue').then((d) => setList(d.submissions));
+  const hide = async (ids) => {
+    try {
+      await api.post('/review-queue/hide', { ids });
+      toast.push(`${ids.length} Abgabe(n) ausgeblendet – Bewertungen und Statistiken bleiben erhalten`, 'success');
+      selection.clear();
+      load();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
   useEffect(() => { load(); }, []);
 
   if (!list) return <AppLayout title="Korrektur"><Spinner /></AppLayout>;
@@ -27,18 +37,44 @@ export default function Korrektur() {
 
       {done.length > 0 && (
         <>
-          <h3 className="text-sm text-sage-muted mt-8 mb-2">Bereits bewertet</h3>
-          <div className="space-y-2">
-            {done.map((s) => (
-              <Card key={s.id} className="p-3 flex items-center justify-between gap-3">
-                <div className="text-sm"><span className="text-ivory">{s.studentName}</span> <span className="text-sage-muted">· {s.assignmentTitle}</span></div>
-                <StatusBadge status={s.status} />
-              </Card>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2 mt-8 mb-2">
+            <h3 className="text-sm text-sage-muted">Bereits bewertet ({done.length})</h3>
+            {!selection.active && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={() => selection.start()}><ListChecks size={15} /> Auswählen</Button>
+                <Button size="sm" variant="ghost" onClick={() => { if (window.confirm(`Alle ${done.length} bewerteten Abgaben aus dieser Liste ausblenden? Bewertungen und Statistiken bleiben erhalten.`)) hide(done.map((s) => s.id)); }}>
+                  <EyeOff size={15} /> Alle ausblenden
+                </Button>
+              </div>
+            )}
           </div>
+          <div className="space-y-2">
+            {done.map((s) => <DoneRow key={s.id} s={s} selection={selection} />)}
+          </div>
+          <SelectionBar
+            selection={selection}
+            allIds={done.map((s) => s.id)}
+            actions={[{ label: 'Ausblenden', icon: EyeOff, onClick: () => hide([...selection.ids]) }]}
+          />
         </>
       )}
     </AppLayout>
+  );
+}
+
+function DoneRow({ s, selection }) {
+  const longPress = useLongPress(() => selection.start(s.id));
+  const selected = selection.has(s.id);
+  return (
+    <Card
+      {...longPress.handlers}
+      onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(s.id); }}
+      className={`p-3 flex items-center justify-between gap-3 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
+    >
+      {selection.active && <SelectCheck checked={selected} />}
+      <div className="text-sm min-w-0 flex-1 truncate"><span className="text-ivory">{s.studentName}</span> <span className="text-sage-muted">· {s.assignmentTitle}</span></div>
+      <StatusBadge status={s.status} />
+    </Card>
   );
 }
 
@@ -71,15 +107,7 @@ function ReviewCard({ sub, onDone }) {
       {sub.files?.length > 0 && (
         <div className="mt-3 space-y-2">
           {sub.files.map((f) => (
-            f.mediaType?.startsWith('audio') ? (
-              <audio key={f.id} controls src={`/api/submissions/${sub.id}/file/${f.id}`} className="w-full h-9" />
-            ) : f.mediaType?.startsWith('image') ? (
-              <ImageAttachment key={f.id} url={`/api/submissions/${sub.id}/file/${f.id}`} alt={f.originalName} />
-            ) : (
-              <a key={f.id} href={`/api/submissions/${sub.id}/file/${f.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-mint-light text-sm hover:underline">
-                <Paperclip size={16} /> {f.originalName}
-              </a>
-            )
+            <div key={f.id}><FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
           ))}
         </div>
       )}
