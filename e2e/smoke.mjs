@@ -13,10 +13,11 @@ const BASE = process.env.BASE || 'http://127.0.0.1:4000';
 const EXEC = process.env.PLAYWRIGHT_CHROMIUM || '/opt/pw-browsers/chromium';
 
 const ROLES = {
-  'lehrer@dbz.de': ['/dashboard', '/ankuendigungen', '/nachrichten', '/unterricht', '/aufgaben', '/kalender', '/quran', '/hifz', '/pruefungen', '/materialien', '/korrektur', '/entschuldigungen', '/anwesenheit', '/verhalten', '/berichte', '/protokolle', '/benachrichtigungen', '/dbz-online', '/konto'],
+  'lehrer@dbz.de': ['/dashboard', '/ankuendigungen', '/nachrichten', '/unterricht', '/klassenliste', '/aufgaben', '/kalender', '/quran', '/hifz', '/pruefungen', '/materialien', '/korrektur', '/entschuldigungen', '/anwesenheit', '/verhalten', '/berichte', '/protokolle', '/benachrichtigungen', '/dbz-online', '/konto'],
   'schueler@dbz.de': ['/dashboard', '/aufgaben', '/checkin', '/kalender', '/quran', '/hifz', '/pruefungen', '/materialien', '/anwesenheit', '/verhalten', '/berichte', '/abwesenheit', '/protokolle', '/nachrichten', '/ankuendigungen', '/konto'],
   'eltern@dbz.de': ['/dashboard', '/ankuendigungen', '/nachrichten', '/kalender', '/quran', '/hifz', '/materialien', '/abwesenheit', '/verhalten', '/berichte', '/konto'],
-  'leitung@dbz.de': ['/dashboard', '/ankuendigungen', '/nachrichten', '/admin', '/konto'],
+  'leitung@dbz.de': ['/dashboard', '/ankuendigungen', '/nachrichten', '/unterricht', '/klassenliste', '/kalender', '/abgaben', '/entschuldigungen', '/protokolle', '/strafen', '/regeln', '/admin', '/konto'],
+  'admin@dbz.de': ['/dashboard', '/nachrichten', '/unterricht', '/klassenliste', '/abgaben', '/entschuldigungen', '/protokolle', '/admin', '/konto'],
   'sprecher@dbz.de': ['/dashboard', '/protokolle', '/aufgaben', '/checkin', '/pruefungen'],
 };
 
