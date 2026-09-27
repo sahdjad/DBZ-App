@@ -6,10 +6,11 @@
 // Seite -> Wörter werden Schritt für Schritt wieder sichtbar, während man
 // frei rezitiert. Nächste Seite schließt nahtlos an.
 //
-// Spracherkennung: standardmäßig das NVIDIA-FastConformer-Modell (Qur'an-
+// Spracherkennung: ausschließlich das NVIDIA-FastConformer-Modell (Qur'an-
 // Feinabstimmung, dieselbe Modellfamilie wie bei Tarteel) direkt auf dem
-// Gerät (client/src/lib/asr/), alternativ die Browser-Spracherkennung
-// (client/src/lib/hifzSpeech.js). Vergleichslogik: client/src/lib/hifzEngine.js. KEIN simulierter Fortschritt: Wörter werden
+// Gerät (client/src/lib/asr/). Die frühere Browser-Erkennung ist entfernt
+// (zu ungenau). Einwilligung: einmal global (components/Consent.jsx).
+// Vergleichslogik: client/src/lib/hifzEngine.js. KEIN simulierter Fortschritt: Wörter werden
 // ausschließlich anhand tatsächlicher, endgültiger Erkennungsergebnisse
 // aufgedeckt. Übungswerkzeug für die rezitierende Person – keine
 // Lehrerbewertung, keine dauerhafte Speicherung.
@@ -19,8 +20,8 @@ import { Card, Button, Spinner } from '../components/ui.jsx';
 import PageScrubber from '../components/PageScrubber.jsx';
 import { api } from '../lib/api.js';
 import { HifzEngine } from '../lib/hifzEngine.js';
-import { BrowserSpeech } from '../lib/hifzSpeech.js';
 import { NvidiaSpeech } from '../lib/asr/nvidiaSpeech.js';
+import { useAuth } from '../lib/AuthContext.jsx';
 import { pageToHifzPassage } from '../lib/hifzPassage.js';
 import { ensurePageFont, isPageFontLoaded, useMushafAutoFit } from '../lib/mushafFont.js';
 
@@ -44,12 +45,23 @@ const ERROR_TEXT = {
   'language-not-supported': 'Arabische Erkennung ist in diesem Dienst nicht verfügbar.',
 };
 
-const CONSENT_KEY = 'dbz-hifz-voice-consent';
-const ENGINE_KEY = 'dbz-hifz-engine';
-const loadEngine = () => { try { return localStorage.getItem(ENGINE_KEY) === 'browser' ? 'browser' : 'nvidia'; } catch { return 'nvidia'; } };
 const fmtMb = (b) => `${(b / 1048576).toFixed(0)} MB`;
-const loadConsent = () => { try { return localStorage.getItem(CONSENT_KEY) === '1'; } catch { return false; } };
-const saveConsent = (v) => { try { v ? localStorage.setItem(CONSENT_KEY, '1') : localStorage.removeItem(CONSENT_KEY); } catch { /* egal */ } };
+// Liegt die Erkennung schon auf dem Gerät? (dann kein Download-Hinweis)
+function useModelCached() {
+  const [cached, setCached] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const c = await caches.open('dbz-asr-v1');
+        const hit = await c.match('/api/asr/model');
+        if (alive) setCached(Boolean(hit));
+      } catch { /* kein Cache-Zugriff */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+  return cached;
+}
 
 function StartPicker({ surahs, onOpenSurah, onOpenPage, busy, error }) {
   const [surah, setSurah] = useState(surahs?.[0]?.n || 1);
@@ -112,11 +124,13 @@ export default function HifzRecitationMode({ surahs }) {
   const [engineState, setEngineState] = useState(null);
   const [capture, setCapture] = useState('idle');
   const [captureError, setCaptureError] = useState(null);
-  const [consent, setConsent] = useState(loadConsent);
+  const { user } = useAuth();
+  // Einwilligung wurde einmal bei der Registrierung/ersten Anmeldung gegeben.
+  const consent = Boolean(user?.consentAt);
+  const modelCached = useModelCached();
   const [readMode, setReadMode] = useState(false);
   const [interim, setInterim] = useState('');
   const [noAudioHint, setNoAudioHint] = useState(false);
-  const [engineKind, setEngineKind] = useState(loadEngine);
   const [progress, setProgress] = useState(null); // Modell-Download {loaded,total,phase}
   const [slowDevice, setSlowDevice] = useState(false);
 
@@ -142,8 +156,6 @@ export default function HifzRecitationMode({ surahs }) {
     resetKey: pageData ? `${pageData.page}:${fontReady}` : null,
   });
 
-  // Beide Erkennungen haben dieselbe Schnittstelle; welche aktiv ist, wählt
-  // der Nutzer (gemerkt auf dem Gerät). Standard: NVIDIA auf dem Gerät.
   const handlersRef = useRef(null);
   handlersRef.current = {
     onSegment: (segment) => {
@@ -168,25 +180,15 @@ export default function HifzRecitationMode({ surahs }) {
     // Rechenzeit je Sekunde Audio: dauerhaft > 1 heißt, das Gerät kommt nicht hinterher.
     onPerf: (p) => { if (p.windowSec >= 2) setSlowDevice(p.rtf > 1.1); },
   };
-  const makeSpeech = (kind) => {
-    const h = {
+  if (!speechRef.current) {
+    speechRef.current = new NvidiaSpeech({
       onSegment: (x) => handlersRef.current.onSegment(x),
       onState: (a, b) => handlersRef.current.onState(a, b),
       onInterim: (x) => handlersRef.current.onInterim(x),
       onProgress: (x) => handlersRef.current.onProgress(x),
       onPerf: (x) => handlersRef.current.onPerf(x),
-    };
-    return kind === 'browser' ? new BrowserSpeech(h) : new NvidiaSpeech(h);
-  };
-  if (!speechRef.current) speechRef.current = makeSpeech(engineKind);
-  const switchEngine = (kind) => {
-    if (kind === engineKind) return;
-    speechRef.current.stop();
-    speechRef.current.dispose?.();
-    speechRef.current = makeSpeech(kind);
-    setEngineKind(kind); setCapture('idle'); setCaptureError(null); setProgress(null); setSlowDevice(false);
-    try { localStorage.setItem(ENGINE_KEY, kind); } catch { /* egal */ }
-  };
+    });
+  }
 
   // Mikrofon zuverlässig stoppen: Tab verlassen/verstecken, Komponente verlassen.
   useEffect(() => {
@@ -268,7 +270,6 @@ export default function HifzRecitationMode({ surahs }) {
     setEngineState(engineRef.current.reset());
     setCapture('idle'); setCaptureError(null); setReadMode(false);
   };
-  const toggleConsent = (checked) => { setConsent(checked); saveConsent(checked); };
   const toggleReadMode = () => {
     if (!engineRef.current) return;
     speechRef.current.stop();
@@ -318,9 +319,7 @@ export default function HifzRecitationMode({ surahs }) {
     : capture === 'requesting' ? 'Warte auf Mikrofonfreigabe …'
     : capture === 'paused' ? 'Pausiert. Der bisherige Stand bleibt erhalten.'
     : capture === 'ended' ? 'Sitzung beendet. Der Stand bleibt bis zum Neuladen erhalten.'
-    : capture === 'error' ? (ERROR_TEXT[captureError] || (engineKind === 'nvidia'
-      ? `Die Spracherkennung konnte nicht starten${captureError && captureError !== 'model' ? ` (${captureError})` : ''}. Bitte erneut versuchen oder unten auf „Browser-Erkennung" wechseln.`
-      : 'Die Spracherkennung wurde unterbrochen. Bitte erneut starten.'))
+    : capture === 'error' ? (ERROR_TEXT[captureError] || 'Die Spracherkennung konnte nicht starten. Bitte Internetverbindung prüfen und erneut auf „Weiter rezitieren" tippen.')
     : capture === 'unsupported' ? 'Dieser Browser bietet keine unterstützte Spracherkennung. Lesen und Hinweise funktionieren weiterhin.'
     : (capture === 'listening' ? 'Mikrofon aktiv · ' : '') + (STATUS_TEXT[engineState.status] || '');
 
@@ -375,10 +374,7 @@ export default function HifzRecitationMode({ surahs }) {
       {!supported && (
         <div className="rounded-lg border border-status-late/40 bg-status-late/10 p-3 text-sm text-status-late flex items-start gap-2">
           <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-          {engineKind === 'nvidia'
-            ? 'Die KI-Erkennung auf dem Gerät wird von diesem Browser nicht unterstützt. Bitte unten „Browser-Erkennung" wählen oder einen aktuellen Browser verwenden.'
-            : 'Dieser Browser bietet keine eigene Spracherkennung. Bitte unten die „KI-Erkennung auf dem Gerät" wählen.'}
-          {' '}Lesen und Hinweise funktionieren weiterhin.
+          Die Spracherkennung läuft auf diesem Browser nicht. Bitte Chrome oder Safari aktualisieren. Lesen und Hinweise funktionieren weiterhin.
         </div>
       )}
 
@@ -457,10 +453,10 @@ export default function HifzRecitationMode({ surahs }) {
           {capture === 'listening' && interim && (
             <p dir="rtl" className="text-xs text-sage-muted font-arabic" aria-live="off">Gehört: {interim}</p>
           )}
-          {slowDevice && engineKind === 'nvidia' && capture === 'listening' && (
+          {slowDevice && capture === 'listening' && (
             <p className="text-xs text-status-late flex items-start gap-1.5">
               <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              Dieses Gerät rechnet langsamer, als gesprochen wird – Wörter erscheinen mit Verzögerung. Andere Apps schließen hilft; notfalls unter „Seite wieder ansehen" auf die Browser-Erkennung wechseln.
+              Dieses Gerät kommt kurz nicht hinterher – Wörter erscheinen etwas verzögert. Andere Apps zu schließen hilft.
             </p>
           )}
           {noAudioHint && capture === 'listening' && (
@@ -473,36 +469,13 @@ export default function HifzRecitationMode({ surahs }) {
         </div>
       )}
 
-      {/* Vor "Los": Einwilligung + großer Start-Knopf (wie bei Tarteel: erst
-          ansehen, dann Seite verbergen & losrezitieren). */}
+      {/* Vor "Los": großer Start-Knopf (wie bei Tarteel: erst ansehen, dann
+          Seite verbergen & losrezitieren). Die Einwilligung gab es einmalig. */}
       {!started && (
         <div className="space-y-3">
-          <fieldset className="rounded-xl border border-line p-3">
-            <legend className="px-1 text-xs text-sage-muted">Spracherkennung</legend>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {[
-                ['nvidia', 'KI-Erkennung auf dem Gerät (empfohlen)', 'NVIDIA-FastConformer, speziell für den Qurʼan trainiert – dieselbe Modellfamilie wie bei Tarteel. Läuft komplett auf deinem Gerät, kostenlos, auch offline. Einmaliger Download ca. 85 MB (am besten im WLAN).'],
-                ['browser', 'Browser-Erkennung', 'Spracherkennung des Browsers (z. B. Google bei Chrome). Kein Download, aber deutlich ungenauer bei Qurʼan-Rezitation und nur online.'],
-              ].map(([k, title, desc]) => (
-                <label key={k} className={`flex items-start gap-2 rounded-lg border p-2.5 cursor-pointer ${engineKind === k ? 'border-mint bg-mint/5' : 'border-line'}`}>
-                  <input type="radio" name="hifz-engine" className="mt-1" checked={engineKind === k} onChange={() => switchEngine(k)} />
-                  <span>
-                    <span className="block text-sm text-ivory">{title}</span>
-                    <span className="block text-[11px] text-sage-muted mt-0.5">{desc}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <label className="flex items-start gap-2 text-xs text-sage-muted">
-            <input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => toggleConsent(e.target.checked)} />
-            <span>
-              {engineKind === 'nvidia'
-                ? 'Ich bin einverstanden, dass bei aktivem Mikrofon meine Stimme auf diesem Gerät ausgewertet wird. Die Aufnahme verlässt das Gerät nicht und wird nicht gespeichert – weder Audio noch Text noch Fortschritt.'
-                : 'Ich bin einverstanden, dass meine Stimme bei aktivem Mikrofon vom Spracherkennungsdienst meines Browsers verarbeitet wird (z. B. Google bei Chrome). Es wird nichts dauerhaft gespeichert – weder Audio noch Text noch Fortschritt.'}
-              {' '}Diese Einwilligung wird nur auf diesem Gerät gemerkt.
-            </span>
-          </label>
+          {!modelCached && (
+            <p className="text-xs text-sage-muted text-center">Beim ersten Mal lädt die Erkennung einmalig (ca. 85 MB) – am besten im WLAN.</p>
+          )}
           <Button size="lg" className="w-full" onClick={start} disabled={!consent || !supported}>
             <Mic size={18} /> Los – Seite verbergen &amp; rezitieren
           </Button>
@@ -532,12 +505,6 @@ export default function HifzRecitationMode({ surahs }) {
         </div>
       )}
 
-      {started && !readMode && (
-        <label className="flex items-start gap-2 text-xs text-sage-muted">
-          <input type="checkbox" className="mt-0.5" checked={consent} onChange={(e) => toggleConsent(e.target.checked)} disabled={busy} />
-          <span>Einwilligung zur Spracherkennung (siehe oben) – hier jederzeit widerrufbar.</span>
-        </label>
-      )}
 
       {(engineState?.status === 'complete' || capture === 'ended') && started && !readMode && (
         <Card className="p-4 text-sm text-sage space-y-3">

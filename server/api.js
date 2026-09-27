@@ -414,6 +414,17 @@ router.patch('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+// Eine Einwilligung für alles (Datenschutz, Mikrofon, Kamera, Benachrichtigungen)
+// -- gilt für alle Rollen der Person.
+router.post('/me/consent', requireAuth, (req, res) => {
+  const at = new Date().toISOString();
+  const version = Number(req.body?.version) || 1;
+  personAccounts(req.user).forEach((a) => { a.consentAt = at; a.consentVersion = version; });
+  db.commit();
+  audit(req.user.id, 'user.consent', 'user', req.user.id, null, { version });
+  res.json({ user: publicUser(req.user) });
+});
+
 router.patch('/me/password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   // Rollenkonten haben kein eigenes Passwort -> gilt für das Anmelde-Konto der Person.
@@ -545,6 +556,7 @@ router.post('/auth/register', async (req, res) => {
     childIds: inv.childId ? [inv.childId] : [],
     profile: pr.profile,
     status: 'active',
+    ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
@@ -578,6 +590,7 @@ router.post('/auth/register-open', async (req, res) => {
     childIds: [],
     profile: pr.profile,
     status: 'pending',
+    ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
@@ -5496,12 +5509,37 @@ function canSeeAnnouncement(user, a) {
   return announcementAudienceUsers(a).some((u) => u.id === user.id);
 }
 
-function announcementView(a) {
+// Erlaubte Reaktionen auf Ankündigungen (wie bei WhatsApp).
+const ANNOUNCEMENT_REACTIONS = ['❤️', '👍', '👎', '😂', '🤲', '😮'];
+
+function announcementFrom(a) {
+  if (a.fromLabel) return a.fromLabel;
+  const author = findUserById(a.authorId);
+  if (a.audience?.type === 'class' && TEACHING_ROLES.includes(a.authorRole)) return boxLabel(`klasse:${a.audience.classId}`);
+  return boxLabel(staffBoxes(author || { role: a.authorRole })[0] || (a.authorRole === ROLES.SUPER_ADMIN ? 'system' : 'leitung'));
+}
+function canSeeAnnouncementReads(user, a) {
+  return a.authorId === user.id || isAdmin(user) || (a.audience?.type === 'class' && TEACHING_ROLES.includes(user.role) && canManageClass(user, a.audience.classId));
+}
+function announcementView(a, viewer = null) {
   let audienceLabel = 'Ganze Schule';
   if (a.audience.type === 'class') audienceLabel = findClass(a.audience.classId)?.name || 'Klasse';
   else if (a.audience.type === 'role') audienceLabel = ROLE_LABELS[a.audience.role] || a.audience.role;
   else if (a.audience.type === 'classType') audienceLabel = CLASS_TYPE_LABELS[a.audience.classType] || 'Klassen';
-  return { ...a, audienceLabel };
+  const { readBy, reactions, authorName, ...rest } = a;
+  const fromLabel = announcementFrom(a);
+  const reactionSummary = {};
+  Object.entries(reactions || {}).forEach(([emoji, ids]) => { if (ids.length) reactionSummary[emoji] = { count: ids.length, mine: Boolean(viewer && ids.includes(viewer.id)) }; });
+  const view = { ...rest, audienceLabel, fromLabel, reactions: reactionSummary };
+  // Mitarbeitende sehen zusätzlich, wer geschrieben hat, und wie viele gelesen haben.
+  if (viewer && isStaff(viewer)) {
+    view.authorName = authorName;
+    if (canSeeAnnouncementReads(viewer, a)) {
+      const audience = announcementAudienceUsers(a).filter((u) => u.id !== a.authorId && u.status === 'active');
+      view.readStats = { read: audience.filter((u) => readBy?.[u.id]).length, total: audience.length };
+    }
+  }
+  return view;
 }
 
 router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
@@ -5527,6 +5565,10 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
     authorId: req.user.id,
     authorName: req.user.name,
     authorRole: req.user.role,
+    // Absender nach außen = Postfach (z. B. "Klassenleitung Klasse 3"), nicht die Person.
+    fromLabel: aud.type === 'class' && TEACHING_ROLES.includes(req.user.role) ? boxLabel(`klasse:${aud.classId}`) : boxLabel(staffBoxes(req.user)[0] || 'leitung'),
+    readBy: {},
+    reactions: {},
     title: title.trim(),
     body: body.trim(),
     priority: priority === 'high' ? 'high' : 'normal',
@@ -5542,25 +5584,60 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
       notify(u.id, {
         type: 'announcement',
         level: a.priority === 'high' ? 'warning' : 'info',
-        title: `Ankündigung: ${a.title}`,
+        title: `${a.fromLabel}: ${a.title}`,
         body: a.body.slice(0, 140),
         deepLink: '/ankuendigungen',
         refId: a.id,
         groupId: a.id,
       }),
     );
-  res.json({ announcement: announcementView(a) });
+  res.json({ announcement: announcementView(a, req.user) });
 });
 
 router.get('/announcements', requireAuth, (req, res) => {
-  const list = db
+  const now = new Date().toISOString();
+  let touched = false;
+  const visible = db
     .all('announcements')
     .filter((a) => canSeeAnnouncement(req.user, a))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map(announcementView);
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Lesebestätigung: beim Öffnen der Liste gilt jede sichtbare Ankündigung als gelesen.
+  visible.forEach((a) => {
+    if (a.authorId === req.user.id) return;
+    a.readBy = a.readBy || {};
+    if (!a.readBy[req.user.id]) { a.readBy[req.user.id] = now; touched = true; }
+  });
+  const list = visible.map((a) => announcementView(a, req.user));
   // Ankündigungen gelten als gelesen, sobald die Liste geöffnet wird.
-  if (markNotificationsRead(req.user.id, (n) => n.type === 'announcement')) db.commit();
+  if (markNotificationsRead(req.user.id, (n) => n.type === 'announcement') || touched) db.commit();
   res.json({ announcements: list });
+});
+
+// Reaktion auf eine Ankündigung setzen/entfernen (alle, die sie sehen dürfen).
+router.post('/announcements/:id/react', requireAuth, (req, res) => {
+  const a = byId('announcements', req.params.id);
+  if (!a || !canSeeAnnouncement(req.user, a)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const emoji = String(req.body?.emoji || '');
+  if (!ANNOUNCEMENT_REACTIONS.includes(emoji)) return res.status(400).json({ error: 'Ungültige Reaktion' });
+  a.reactions = a.reactions || {};
+  // Eine Reaktion pro Person (wie WhatsApp): andere Reaktion ersetzt die alte.
+  const had = (a.reactions[emoji] || []).includes(req.user.id);
+  Object.keys(a.reactions).forEach((k) => { a.reactions[k] = a.reactions[k].filter((id) => id !== req.user.id); if (!a.reactions[k].length) delete a.reactions[k]; });
+  if (!had) a.reactions[emoji] = [...(a.reactions[emoji] || []), req.user.id];
+  db.commit();
+  res.json({ announcement: announcementView(a, req.user) });
+});
+
+// Wer hat gelesen / reagiert? (Autor, Leitung/Admin, Lehrkraft der Zielklasse)
+router.get('/announcements/:id/readers', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const a = byId('announcements', req.params.id);
+  if (!a || !canSeeAnnouncementReads(req.user, a)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const reactionOf = (uid) => Object.entries(a.reactions || {}).find(([, ids]) => ids.includes(uid))?.[0] || null;
+  const rows = announcementAudienceUsers(a)
+    .filter((u) => u.id !== a.authorId && u.status === 'active')
+    .map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] || u.role, readAt: a.readBy?.[u.id] || null, reaction: reactionOf(u.id), lastSeenAt: u.lastSeenAt || null }))
+    .sort((x, y) => (x.readAt ? 1 : 0) - (y.readAt ? 1 : 0) || x.name.localeCompare(y.name, 'de'));
+  res.json({ readers: rows });
 });
 
 router.delete('/announcements/:id', requireAuth, (req, res) => {
@@ -5701,7 +5778,7 @@ router.get('/dashboard', requireAuth, (req, res) => {
     .filter((a) => canSeeAnnouncement(req.user, a))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 3)
-    .map(announcementView);
+    .map((a) => announcementView(a, req.user));
   const upcoming = upcomingFor(req.user);
   const unreadMessages = unreadMessagesFor(req.user.id);
 

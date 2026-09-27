@@ -36,6 +36,7 @@ import {
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Avatar, Button, Spinner, useToast } from './ui.jsx';
+import { ConsentGate } from './Consent.jsx';
 
 // Rollen-abhängige Navigation (docs/INFORMATION_ARCHITECTURE.md).
 const ITEMS = {
@@ -228,7 +229,7 @@ function setAppBadge(n) {
 }
 
 export default function AppLayout({ children, title }) {
-  const { user, logout } = useAuth();
+  const { user, logout, refresh } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
@@ -345,6 +346,7 @@ export default function AppLayout({ children, title }) {
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
             mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
         {user && !user.demo && <PushNudge user={user} />}
+        {user && <ConsentGate user={user} onDone={refresh} />}
         {user?.demo && (
           <div className="shrink-0 bg-status-late/15 text-status-late text-xs px-4 py-1.5 text-center border-b border-status-late/30" role="note">
             Demo-Modus – nur zum Ausprobieren. Nichts wird gespeichert, es gibt keinen Zugriff auf echte Daten.

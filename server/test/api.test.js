@@ -2202,3 +2202,30 @@ test('Nachrichten: Mitarbeitende schreiben als Postfach, Rundnachricht, Lesebest
   assert.ok(!teacherThreads.some((t) => t.lastBody.startsWith('Morgen bitte') && t.otherName === 'Amina'));
   assert.equal((await student('POST', '/broadcasts', { target: 'bc:class:class_3:students', body: 'x' })).status, 403);
 });
+
+test('Ankündigungen: Absender als Postfach, Reaktionen für alle, "gelesen von" nur für Mitarbeitende', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const created = await teacher('POST', '/announcements', { title: 'Reaktionstest', body: 'Bitte lesen', audience: { type: 'class', classId: 'class_3' } });
+  assert.equal(created.status, 200);
+  const id = created.data.announcement.id;
+  assert.equal(created.data.announcement.readStats.read, 0);
+  const sv = (await student('GET', '/announcements')).data.announcements.find((a) => a.id === id);
+  assert.equal(sv.fromLabel, 'Klassenleitung Klasse 3');
+  assert.ok(!sv.authorName, 'Schüler sehen keinen Lehrernamen');
+  assert.ok(!sv.readStats, 'Schüler sehen keine Lesestatistik');
+  const r = await student('POST', `/announcements/${id}/react`, { emoji: '❤️' });
+  assert.equal(r.data.announcement.reactions['❤️'].count, 1);
+  assert.equal(r.data.announcement.reactions['❤️'].mine, true);
+  // Andere Reaktion ersetzt die alte (eine pro Person).
+  const r2 = await student('POST', `/announcements/${id}/react`, { emoji: '👍' });
+  assert.ok(!r2.data.announcement.reactions['❤️']);
+  assert.equal((await student('POST', `/announcements/${id}/react`, { emoji: '💩' })).status, 400);
+  const tv = (await teacher('GET', '/announcements')).data.announcements.find((a) => a.id === id);
+  assert.equal(tv.readStats.read, 1);
+  const readers = (await teacher('GET', `/announcements/${id}/readers`)).data.readers;
+  const yusuf = readers.find((x) => x.id === 'user_yusuf');
+  assert.ok(yusuf.readAt);
+  assert.equal(yusuf.reaction, '👍');
+  assert.equal((await student('GET', `/announcements/${id}/readers`)).status, 403);
+});
