@@ -50,9 +50,28 @@ test('unambiguous suffix repetition is allowed',()=>{
   const e=new HifzEngine(passage()); send(e,'كتاب قلم');
   assert.equal(send(e,'كتاب قلم باب').index,3);
 });
-test('identical adjacent words remain conservative',()=>{
+test('identical adjacent words (e.g. دكا دكا, صفا صفا) advance -- the revealed word is exactly what was said',()=>{
   const e=new HifzEngine(passage(['كتاب','كتاب','باب'])); send(e,'كتاب');
-  const s=send(e,'كتاب'); assert.equal(s.index,1); assert.equal(s.status,'uncertain');
+  const s=send(e,'كتاب'); assert.equal(s.index,2);
+  assert.equal(send(e,'باب').status,'complete');
+});
+test('a real repetition of the previous words is still ignored (no double advance)',()=>{
+  const e=new HifzEngine(passage(['كتاب','قلم','باب','بيت'])); send(e,'كتاب قلم');
+  const s=send(e,'قلم'); assert.equal(s.index,2);
+  assert.equal(send(e,'باب').index,3);
+});
+test('after an unclear stretch the follower re-anchors: skipped words are marked missed, not revealed',()=>{
+  const e=new HifzEngine(passage(['الا','هو','الملك','القدوس','السلام','المومن','المهيمن']));
+  send(e,'الا'); send(e,'اللك غغغ'); send(e,'القدوس'); send(e,'السلام'); const s=send(e,'المومن');
+  assert.equal(s.index,6);
+  assert.deepEqual(s.missed,[1,2],'هو + الملك: nicht verstanden -> rot, nicht als rezitiert');
+});
+test('stretched vowels written twice by the recognizer still match (لاا = لا)',()=>{
+  const e=new HifzEngine(passage(['لا','شرقيه'])); assert.equal(send(e,'لاا شرقيه').status,'complete');
+});
+test('confusable sounds match (ص/س, ق/ك), two different letters do not',()=>{
+  const e=new HifzEngine(passage(['الصراط','المستقيم']));
+  assert.equal(send(e,'السراط المستكيم').status,'complete');
 });
 test('one mismatch is uncertain, second is suspected, never certified',()=>{
   const e=new HifzEngine(passage()); assert.equal(send(e,'خطأ').status,'uncertain');

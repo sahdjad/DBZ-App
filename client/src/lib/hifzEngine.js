@@ -56,11 +56,35 @@ function levenshtein(a, b) {
 // werten. Nur ab 4 Zeichen und h\u00F6chstens 1 Bearbeitungsschritt Unterschied:
 // kurze W\u00F6rter (2-3 Buchstaben) sind im Arabischen oft eigene, unterschiedliche
 // W\u00F6rter (z. B. \u0645\u0646 / \u0639\u0646), da w\u00E4re jede Toleranz riskant.
+// Laute, die die Erkennung (und Schüler beim Rezitieren) häufig verwechseln:
+// emphatische/nicht-emphatische Paare und ähnliche Laute. NUR für den
+// Vergleich -- angezeigt wird immer der Originaltext. Verdoppelte Buchstaben
+// (Schadda wird von der Erkennung oft als Doppelbuchstabe geschrieben) werden
+// zusammengefasst.
+const PHONETIC = { '\u0635': '\u0633', '\u062B': '\u0633', '\u0637': '\u062A', '\u0636': '\u062F', '\u0638': '\u0630', '\u0632': '\u0630', '\u0642': '\u0643', '\u062D': '\u0647' };
+export function phonetic(token) {
+  let out = '';
+  for (const ch of token) {
+    const c = PHONETIC[ch] || ch;
+    if (out[out.length - 1] !== c) out += c;
+  }
+  return out;
+}
+
+// Gedehnte Laute (Madd) schreibt die Erkennung oft doppelt: "لاا" = "لا".
+const collapse = (t) => t.replace(/(.)\1+/gu, '$1');
+
 function closeEnough(a, b) {
   if (a === b) return true;
-  if (a.length < 4 || b.length < 4) return false;
-  if (Math.abs(a.length - b.length) > 1) return false;
-  return levenshtein(a, b) <= 1;
+  if (collapse(a) === collapse(b)) return true;
+  const pa = phonetic(a), pb = phonetic(b);
+  // Gleich klingend (nach Lautangleichung): ab 3 Buchstaben sicher genug.
+  if (pa === pb) return Math.min(a.length, b.length) >= 3;
+  if (pa.length < 4 || pb.length < 4) return false;
+  // Höchstens EIN abweichender Laut (nach Lautangleichung) -- zwei wären schon
+  // ein anderes Wort (z. B. العالمين / العاصفين).
+  if (Math.abs(pa.length - pb.length) > 1) return false;
+  return levenshtein(pa, pb) <= 1;
 }
 
 // Wortanfang, den die Erkennung an einer Satz-/Fenstergrenze abgeschnitten
@@ -73,6 +97,11 @@ function truncatedOf(token, word) {
 }
 const tokenMatches = (token, word) => token === word || closeEnough(token, word) || truncatedOf(token, word);
 const wordMatches = (token, w) => tokenMatches(token, w.token) || (w.alt !== w.token && tokenMatches(token, w.alt));
+// Strenger Vergleich (ohne Tippfehler-/Abschneide-Toleranz) -- für das
+// Erkennen von Wiederholungen, damit z. B. "إلا" nicht als abgeschnittenes
+// "إله" gilt.
+const sameWord = (token, w) => [w.token, w.alt].some((x) => token === x || collapse(token) === collapse(x)
+  || (Math.min(token.length, x.length) >= 3 && phonetic(token) === phonetic(x)));
 
 export function validatePassage(input) {
   if (!input || typeof input !== 'object') throw new Error('Abschnitt fehlt.');
@@ -178,13 +207,15 @@ export class HifzEngine {
     let offset = 0;
     const candidates = [];
     for (let length = 1; !backlog.length && length <= Math.min(this.index, tokens.length, 12); length++) {
-      const suffix = words.slice(this.index - length, this.index).map(w => w.token);
-      if (suffix.every((t, i) => t === tokens[i])) candidates.push(length);
+      // Wiederholung der letzten Wörter (Schüler setzen oft neu an) -- auch mit
+      // kleinen Erkennungsabweichungen, nicht nur buchstabengenau.
+      const suffix = words.slice(this.index - length, this.index);
+      if (suffix.every((w, i) => sameWord(tokens[i], w))) candidates.push(length);
     }
-    if (candidates.length) {
-      if (words[this.index]?.token === tokens[0] || candidates.length > 1) {
-        this.status = 'uncertain'; return this.snapshot();
-      }
+    // Passt das erste Wort genauso auf das ERWARTETE Wort, ist es keine
+    // Wiederholung, sondern das nächste Wort (es wurde ja tatsächlich gesagt).
+    if (candidates.length && !(words[this.index] && sameWord(tokens[0], words[this.index]))) {
+      if (candidates.length > 1) { this.status = 'uncertain'; return this.snapshot(); }
       offset = candidates[0];
     }
     // Field evidence (real device tests): real ASR transcripts sometimes
@@ -208,17 +239,34 @@ export class HifzEngine {
       this.status = this.index === words.length ? 'complete' : 'following';
       i += consumed;
     };
-    const at = (k, w) => k < tokens.length && w < words.length && wordMatches(tokens[k], words[w]);
+    // Beim Wiederfinden (Sprung) ist ein Ein-Buchstaben-Token nie ein Treffer.
+    const at = (k, w) => k < tokens.length && w < words.length && tokens[k].length >= 2 && wordMatches(tokens[k], words[w]);
     while (i < tokens.length && this.index < words.length) {
       const expected = words[this.index];
       if (wordMatches(tokens[i], expected)) { advance(1); continue; }
       // Von der Erkennung in zwei Teile zerlegtes Wort ("ال" + "فلق").
-      if (i + 1 < tokens.length && [expected.token, expected.alt].includes(tokens[i] + tokens[i + 1])) { advance(2); continue; }
+      if (i + 1 < tokens.length && [expected.token, expected.alt].some((t) => closeEnough(tokens[i] + tokens[i + 1], t))) { advance(2); continue; }
+      // Von der Erkennung zusammengezogene Wörter ("قلاعوذ" = قل + أعوذ): der
+      // Token entspricht den nächsten 2-3 erwarteten Wörtern hintereinander.
+      let merged = 0;
+      for (let n = 2; n <= 3 && this.index + n <= words.length; n++) {
+        const joined = words.slice(this.index, this.index + n);
+        if (closeEnough(tokens[i], joined.map((w) => w.token).join('')) || closeEnough(tokens[i], joined.map((w) => w.alt).join(''))) { merged = n; break; }
+      }
+      if (merged) {
+        for (let n = 0; n < merged; n++) advance(n === 0 ? 1 : 0);
+        continue;
+      }
+      // Störlaut direkt vor dem Wort mitgeschrieben ("اكتبه" für كتبه): das
+      // erwartete Wort steht vollständig am Ende des Tokens (mind. 4 Buchstaben).
+      if (expected.token.length >= 4 && tokens[i].length - expected.token.length <= 3 && phonetic(tokens[i]).endsWith(phonetic(expected.token))) { advance(1); continue; }
       let resync = -1;
       // Wörter aus dem Gedächtnis zählen nicht gegen das Toleranzfenster.
       const lookahead = INSERTION_LOOKAHEAD + Math.max(0, backlog.length - i);
       for (let k = 1; k <= lookahead && i + k < tokens.length; k++) {
-        if (tokens[i + k] === expected.token || tokens[i + k] === expected.alt) { resync = k; break; }
+        // Kurze Wörter nur bei (nahezu) gleicher Schreibung -- ein einzelner
+        // gehörter Buchstabe darf hier nie ein Wort aufdecken.
+        if (expected.token.length >= 4 ? wordMatches(tokens[i + k], expected) : sameWord(tokens[i + k], expected)) { resync = k; break; }
       }
       if (resync > 0) {
         this.history.push({ kind: 'insertion-ignored', index: this.index });
@@ -232,12 +280,38 @@ export class HifzEngine {
       // gezählt, sondern sichtbar als Fehler ("ausgelassen") markiert, und
       // die Übung läuft weiter, statt an einer Stelle hängen zu bleiben,
       // obwohl die Person korrekt weiterrezitiert.
-      let skipAt = -1;
-      for (const k of [i, i + 1, i + 2]) if (at(k, this.index + 1) && at(k + 1, this.index + 2)) { skipAt = k; break; }
+      // Wieder Anschluss finden: rezitiert die Person nach einer Stelle, die die
+      // Erkennung nicht verstanden hat (oder die ausgelassen wurde), korrekt
+      // weiter, darf die Übung nicht für immer hängen bleiben. Passen die
+      // nächsten erwarteten Wörter eindeutig hintereinander (höchstens ein
+      // Störwort dazwischen), werden die Wörter DAVOR als "ausgelassen" rot
+      // markiert -- NICHT als rezitiert gezählt -- und es geht dort weiter.
+      // Ein ausgelassenes Wort braucht 2 passende Folgewörter, 2-6 ausgelassene
+      // Wörter brauchen 3 (je mehr übersprungen wird, desto strenger).
+      const runFrom = (k, w, need) => {
+        let t = k, n = 0, strays = 0;
+        while (n < need) {
+          if (at(t, w + n)) { n++; t++; continue; }
+          if (!strays && n > 0 && at(t + 1, w + n)) { strays++; t += 2; n++; continue; }
+          return false;
+        }
+        return true;
+      };
+      let skipAt = -1, skipBy = 0;
+      for (let m = 1; m <= 6 && skipAt < 0; m++) {
+        const need = m === 1 ? 2 : 3;
+        if (this.index + m + need > words.length) break;
+        // Nahe Stelle: direkt hier (höchstens 2 Störwörter davor); größerer
+        // Sprung (2-6 Wörter): irgendwo im gehörten Rest, aber 3 Treffer am Stück.
+        const ks = m === 1 ? [i, i + 1, i + 2] : Array.from({ length: Math.max(0, tokens.length - i) }, (_, x) => i + x);
+        for (const k of ks) if (runFrom(k, this.index + m, need)) { skipAt = k; skipBy = m; break; }
+      }
       if (skipAt >= 0) {
-        this.missed.add(this.index);
-        this.history.push({ kind: 'skipped', index: this.index });
-        this.index++;
+        for (let m = 0; m < skipBy; m++) {
+          this.missed.add(this.index);
+          this.history.push({ kind: 'skipped', index: this.index });
+          this.index++;
+        }
         this.mismatch = null;
         i = skipAt;
         continue;
@@ -246,7 +320,7 @@ export class HifzEngine {
       this.mismatch = { index: this.index, count, suspected: count >= this.confirmations && !this.dismissed.has(this.index) };
       this.status = this.mismatch.suspected ? 'suspected' : 'uncertain';
       this.history.push({ kind: 'transcript-deviation', index: this.index });
-      this.backlog = tokens.slice(i).slice(-4);
+      this.backlog = tokens.slice(i).slice(-8);
       break; // never scan past a missing/wrong expected word
     }
     return this.snapshot();
