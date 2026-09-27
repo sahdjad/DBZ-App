@@ -45,6 +45,8 @@ import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js
 import { getMushafFont } from './providers/mushafFontProvider.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
 import { createLoginThrottle } from './security.js';
+import { backupNow } from './maintenance.js';
+import { ASR_FILES, ensureAsrFile } from './asr.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
 const loginThrottle = createLoginThrottle({ max: 8, windowMs: 10 * 60 * 1000 });
@@ -977,6 +979,79 @@ function attendanceStats(studentId, win, opts = {}) {
   return out;
 }
 
+// Einzelnen Anwesenheitseintrag löschen (z. B. Probe-/Testlauf): der Schüler
+// hat danach für diese Sitzung wieder "keinen Eintrag" und zählt nicht mehr.
+router.delete('/sessions/:id/attendance/:studentId', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const s = byId('sessions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+  if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const list = db.all('attendance');
+  const idx = list.findIndex((a) => a.sessionId === s.id && a.studentId === req.params.studentId);
+  if (idx < 0) return res.status(404).json({ error: 'Kein Eintrag vorhanden' });
+  const [removed] = list.splice(idx, 1);
+  db.commit();
+  audit(req.user.id, 'attendance.delete', 'attendance', removed.id, { status: removed.status, studentId: removed.studentId }, null);
+  res.json({ ok: true });
+});
+
+// Ganze Sitzung zurücksetzen: alle Anwesenheitseinträge dieser Sitzung
+// löschen und die Sitzung wieder auf "geplant" stellen.
+router.post('/sessions/:id/reset', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const s = byId('sessions', req.params.id);
+  if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
+  if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const list = db.all('attendance');
+  let removed = 0;
+  for (let i = list.length - 1; i >= 0; i--) if (list[i].sessionId === s.id) { list.splice(i, 1); removed++; }
+  Object.assign(s, { status: 'scheduled', qr: null, startedAt: null, endedAt: null, checkinOpenUntil: null });
+  db.commit();
+  audit(req.user.id, 'session.reset', 'session', s.id, { removed }, null);
+  res.json({ ok: true, removed, session: s });
+});
+
+// "Klasse neu starten": Test-/Probedaten einer Klasse gezielt löschen, damit
+// der echte Betrieb bei null beginnt. Schüler, Klassenzuordnung, Materialien,
+// Regeln und Einstellungen bleiben unangetastet. Vorher wird automatisch eine
+// Sicherung angelegt. Nur Lehrkräfte der Klasse sowie Leitung/Admin.
+const CLASS_RESET_SCOPES = ['attendance', 'absences', 'assignments', 'behavior', 'penalties', 'protocols'];
+router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const scopes = (Array.isArray(req.body?.scopes) ? req.body.scopes : []).filter((x) => CLASS_RESET_SCOPES.includes(x));
+  if (!scopes.length) return res.status(400).json({ error: 'Bitte auswählen, was gelöscht werden soll' });
+  if (String(req.body?.confirmName || '').trim() !== klass.name) return res.status(400).json({ error: 'Zur Bestätigung bitte den Klassennamen genau eingeben' });
+  backupNow();
+  const inClass = (x) => x.classId === klass.id;
+  const drop = (collection, pred) => {
+    const list = db.all(collection);
+    let n = 0;
+    for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) { list.splice(i, 1); n++; }
+    return n;
+  };
+  const counts = {};
+  if (scopes.includes('attendance')) {
+    const sessionIds = new Set(db.all('sessions').filter(inClass).map((x) => x.id));
+    counts.attendance = drop('attendance', (a) => sessionIds.has(a.sessionId) || inClass(a));
+    counts.sessions = drop('sessions', inClass);
+  }
+  if (scopes.includes('absences')) counts.absences = drop('absence_requests', inClass);
+  if (scopes.includes('assignments')) {
+    const list = db.all('assignments').filter(inClass);
+    list.forEach(deleteAssignmentCascade);
+    counts.assignments = list.length;
+  }
+  if (scopes.includes('behavior')) {
+    counts.behavior = drop('behavior_records', inClass);
+    counts.activities = drop('activities', inClass);
+  }
+  if (scopes.includes('penalties')) counts.penalties = drop('penalties', inClass);
+  if (scopes.includes('protocols')) counts.protocols = drop('protocols', inClass);
+  db.commit();
+  audit(req.user.id, 'class.reset_data', 'class', klass.id, null, { scopes, counts });
+  res.json({ ok: true, counts });
+});
+
 router.get('/me/attendance', requireAuth, (req, res) => {
   res.json({ stats: attendanceStats(req.user.id, null, { withRecords: true }) });
 });
@@ -1708,15 +1783,15 @@ router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
 // erstellende Lehrkraft oder Admin/Leitung dürfen löschen (gleiches Muster
 // wie DELETE /materials/:id). Zugehörige Abgaben werden mitgelöscht, damit
 // nichts verwaist zurückbleibt.
-router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+// Endgültig löschen: die Aufgabe verschwindet komplett -- samt Abgaben,
+// Bewertungen und Fristverlängerungen, sie zählt nirgends mehr (als hätte es
+// sie nie gegeben). Jede Lehrkraft der Klasse darf das (nicht nur die
+// erstellende -- sonst blieben z. B. Aufgaben ehemaliger/Test-Konten für
+// immer stehen).
+function deleteAssignmentCascade(a) {
   const list = db.all('assignments');
-  const idx = list.findIndex((a) => a.id === req.params.id);
-  if (idx < 0) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
-  const a = list[idx];
-  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  if (a.createdBy !== req.user.id && !isAdmin(req.user))
-    return res.status(403).json({ error: 'Nur die erstellende Lehrkraft oder Admin/Leitung dürfen diese Aufgabe löschen' });
-  list.splice(idx, 1);
+  const idx = list.findIndex((x) => x.id === a.id);
+  if (idx >= 0) list.splice(idx, 1);
   const subs = db.all('submissions');
   const removedSubIds = new Set();
   for (let i = subs.length - 1; i >= 0; i--) {
@@ -1728,9 +1803,44 @@ router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req
   for (let i = reviews.length - 1; i >= 0; i--) if (removedSubIds.has(reviews[i].submissionId)) reviews.splice(i, 1);
   const exts = db.all('extensions');
   for (let i = exts.length - 1; i >= 0; i--) if (exts[i].assignmentId === a.id) exts.splice(i, 1);
+  const notes = db.all('notifications');
+  for (let i = notes.length - 1; i >= 0; i--) if (notes[i].refId === a.id) notes.splice(i, 1);
+}
+
+router.delete('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const a = byId('assignments', req.params.id);
+  if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  deleteAssignmentCascade(a);
   db.commit();
   audit(req.user.id, 'assignment.delete', 'assignment', a.id, { title: a.title }, null);
   res.json({ ok: true });
+});
+
+// Mehrfachauswahl: archivieren (nur aus der eigenen Übersicht ausblenden --
+// alle Daten, Abgaben und Statistiken bleiben erhalten, jederzeit
+// wiederherstellbar), wiederherstellen oder endgültig löschen.
+router.post('/assignments/bulk', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 1000) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['archive', 'unarchive', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const results = [];
+  for (const id of ids) {
+    const a = byId('assignments', String(id));
+    if (!a) { results.push({ id, ok: false, error: 'nicht gefunden' }); continue; }
+    if (!canManageClass(req.user, a.classId)) { results.push({ id, ok: false, error: 'Kein Zugriff' }); continue; }
+    if (action === 'delete') {
+      deleteAssignmentCascade(a);
+      audit(req.user.id, 'assignment.delete', 'assignment', a.id, { title: a.title }, null);
+    } else {
+      a.archived = action === 'archive';
+      a.archivedAt = a.archived ? new Date().toISOString() : null;
+      audit(req.user.id, `assignment.${action}`, 'assignment', a.id);
+    }
+    results.push({ id, ok: true });
+  }
+  db.commit();
+  res.json({ results });
 });
 
 /** IDs der Schüler, für die eine Aufgabe gilt. */
@@ -1760,9 +1870,10 @@ router.get('/assignments', requireAuth, (req, res) => {
     return res.json({ assignments: list.sort(byDueThenNew) });
   }
   if (isClassManager(req.user)) {
+    const showArchived = req.query.archived === '1';
     const list = db
       .all('assignments')
-      .filter((a) => canManageClass(req.user, a.classId))
+      .filter((a) => canManageClass(req.user, a.classId) && Boolean(a.archived) === showArchived)
       .map((a) => {
         const targets = targetsFor(a);
         const subs = db.all('submissions').filter((s) => s.assignmentId === a.id);
@@ -1984,9 +2095,11 @@ router.get('/submissions/:id/file/:fileId', requireAuth, async (req, res) => {
 
 // Korrekturqueue einer Klasse (Verwalter).
 router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  // Ausgeblendete Abgaben und Abgaben archivierter Aufgaben erscheinen nicht
+  // mehr in der Korrektur-Liste (Daten bleiben erhalten).
   const subs = db
     .all('submissions')
-    .filter((s) => canManageClass(req.user, s.classId))
+    .filter((s) => canManageClass(req.user, s.classId) && !s.hiddenInQueue && !byId('assignments', s.assignmentId)?.archived)
     .map((s) => {
       const a = byId('assignments', s.assignmentId);
       const review = db.all('reviews').find((r) => r.submissionId === s.id);
@@ -2008,6 +2121,22 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
       return (b.submittedAt || '').localeCompare(a.submittedAt || '');
     });
   res.json({ submissions: subs });
+});
+
+// Korrektur-Liste aufräumen: Abgaben nur aus der Liste ausblenden. Die Abgabe,
+// ihre Bewertung und alle Statistiken bleiben unverändert erhalten.
+router.post('/review-queue/hide', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const { ids } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
+  let hidden = 0;
+  for (const id of ids) {
+    const sub = byId('submissions', String(id));
+    if (!sub || !canManageClass(req.user, sub.classId)) continue;
+    sub.hiddenInQueue = true;
+    hidden++;
+  }
+  db.commit();
+  res.json({ ok: true, hidden });
 });
 
 // Abgabe bewerten / Feedback (Verwalter, auditiert, bewusste Freigabe).
@@ -2272,6 +2401,23 @@ const RECITERS = [
   ...AYAH_RECITERS.map((r) => ({ id: r.id, name: r.name, mode: 'ayah', follow: false })),
 ];
 router.get('/quran/reciters', requireAuth, (_req, res) => res.json({ reciters: RECITERS }));
+
+// On-Device-Spracherkennung (Auswendig-Modus): Modell + Wortschatz. Nur für
+// angemeldete Nutzer (Bandbreite), mit sehr langer Cache-Dauer -- der Inhalt
+// ist über die feste Prüfsumme unveränderlich.
+router.get('/asr/:file(model|vocab)', requireAuth, async (req, res) => {
+  const def = ASR_FILES[req.params.file];
+  try {
+    const file = await ensureAsrFile(req.params.file);
+    res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+    res.setHeader('ETag', `"${def.sha256}"`);
+    res.type(def.type);
+    res.sendFile(file);
+  } catch (err) {
+    console.error('[asr]', err.message);
+    res.status(503).json({ error: 'Das Spracherkennungs-Modell ist gerade nicht verfügbar. Bitte später erneut versuchen.' });
+  }
+});
 
 // Ayah-für-Ayah-Audio (Rezitatoren ohne Sure-Zeitmarken). Der Client spielt die
 // Ayah-Dateien nacheinander ab und hebt die laufende Ayah hervor.
@@ -3345,13 +3491,59 @@ router.get('/reports/:id', requireAuth, (req, res) => {
 // Direktnachrichten (sichere 1:1-Kommunikation)
 // =============================================================================
 
-// Erlaubte Gesprächspartner: Schüler/Eltern <-> Lehrkräfte der jeweiligen Klasse
-// UND die DBZ-Leitung/Sekretariat (schulweit, unabhängig von der Klasse).
+// Rollen-Postfächer für Schüler/Eltern: sie schreiben nie eine einzelne
+// Person an, sondern ein Team. Mehrere Personen teilen sich diese Konten/
+// Postfächer, deshalb sehen Schüler/Eltern nie einen Personennamen -- nur die
+// Rolle und wofür sie zuständig ist (Rückmeldung aus dem Testlauf: Schüler
+// haben sonst oft die falsche Stelle angeschrieben).
+const INBOXES = {
+  klasse: { label: 'Klassenleitung', description: 'Alles rund um deinen Unterricht: Aufgaben, Anwesenheit, Entschuldigungen und Fragen zum Stoff.' },
+  leitung: { label: 'DBZ-Leitung', description: 'Persönliche Anliegen, Sorgen und Probleme sowie organisatorische Fragen der Schule – vertraulich.' },
+  system: { label: 'Systembetreuung', description: 'Technische Probleme mit der App: Anmeldung, Fehler, Benachrichtigungen.' },
+};
+const isFamily = (u) => STUDENT_ROLES.includes(u.role) || u.role === ROLES.ELTERN;
+const isStaff = (u) => CLASS_MANAGERS.includes(u.role);
+
+function familyClassIds(family) {
+  if (STUDENT_ROLES.includes(family.role)) return family.classIds || [];
+  const set = new Set();
+  (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => set.add(c)));
+  return [...set];
+}
+
+// Wer steht hinter einem Postfach? (aktive Konten)
+function inboxMemberIds(inbox, family) {
+  const active = db.all('users').filter((u) => u.status !== 'disabled');
+  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
+  if (inbox === 'system') {
+    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
+    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
+  }
+  if (inbox === 'leitung') {
+    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
+    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
+  }
+  return [];
+}
+
+// Postfach eines bestehenden Threads (gespeichert oder -- bei älteren Threads
+// -- aus den Rollen der Mitarbeiterseite abgeleitet).
+function threadInbox(t) {
+  if (t.inbox) return t.inbox;
+  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
+  if (!staff.length) return null;
+  if (staff.some((u) => u.role === ROLES.KLASSENLEHRER || u.role === ROLES.VERTRETUNG)) return 'klasse';
+  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
+  return 'system';
+}
+
+// Erlaubte Gesprächspartner: Schüler/Eltern -> nur die drei Rollen-Postfächer
+// (Klassenleitung ihrer Klasse(n), DBZ-Leitung, Systembetreuung). Lehrkräfte
+// -> Schüler/Eltern ihrer Klassen. Leitung/Admin -> Mitarbeitende.
 // Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
 function messageContacts(user) {
   const users = db.all('users');
   const active = (u) => u.status !== 'disabled' && u.id !== user.id;
-  const isLeitung = (u) => u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN;
   if (isAdmin(user)) return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role));
   if (isClassManager(user)) {
     const myClasses = user.classIds || [];
@@ -3360,16 +3552,15 @@ function messageContacts(user) {
     const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((ch) => studentIds.has(ch)));
     return [...students, ...parents].filter(active);
   }
-  if (STUDENT_ROLES.includes(user.role))
-    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => (user.classIds || []).includes(c)))));
-  if (user.role === ROLES.ELTERN) {
-    const childClasses = new Set();
-    (user.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => childClasses.add(c)));
-    return users.filter((u) => active(u) && (isLeitung(u) || (CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => childClasses.has(c)))));
-  }
   return [];
 }
-const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId);
+function familyInboxes(user) {
+  if (!isFamily(user)) return [];
+  return Object.entries(INBOXES)
+    .filter(([key]) => inboxMemberIds(key, user).length > 0)
+    .map(([key, v]) => ({ id: `inbox:${key}`, name: v.label, roleLabel: v.label, description: v.description }));
+}
+const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId) || familyInboxes(user).some((c) => c.id === otherId);
 
 // Alle Lehrkräfte (Klassenlehrer + Vertretung) der angegebenen Klassen.
 function classManagersOfClasses(classIds) {
@@ -3379,12 +3570,6 @@ function classManagersOfClasses(classIds) {
     .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
 }
 
-// Alle aktiven Leitungs-/Admin-Konten – das "Sekretariat" teilt sich EIN
-// Postfach: schreibt jemand die Leitung an, sehen/beantworten alle denselben
-// Thread (statt dass 5 Leitungen 5 getrennte Nachrichten bekommen).
-function leitungAndAdminIds() {
-  return db.all('users').filter((u) => u.status !== 'disabled' && (u.role === ROLES.LEITUNG || u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
-}
 
 // Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
 // eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
@@ -3392,37 +3577,28 @@ function leitungAndAdminIds() {
 // Admin-Konten beteiligt (geteiltes Postfach, eine Antwort reicht für alle).
 // So entsteht keine Isolation (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/
 // Leitung bleibt ein direktes Zweiergespräch.
-function resolveThreadParticipants(initiator, recipient) {
-  const isMgr = (u) => CLASS_MANAGERS.includes(u.role);
+function resolveThreadParticipants(initiator, recipient, inboxKey = null) {
   let family = null;
-  if (!isMgr(initiator) && isMgr(recipient)) family = initiator;
-  else if (isMgr(initiator) && !isMgr(recipient)) family = recipient;
+  let inbox = inboxKey;
+  if (inboxKey) family = initiator;
+  else if (!isStaff(initiator) && isStaff(recipient)) family = initiator;
+  else if (isStaff(initiator) && !isStaff(recipient)) family = recipient;
 
   let ids;
   if (family) {
-    const target = family === initiator ? recipient : initiator;
-    let teamIds;
-    if (target.role === ROLES.LEITUNG || target.role === ROLES.SUPER_ADMIN) {
-      teamIds = leitungAndAdminIds();
-    } else {
-      let classIds = [];
-      if (STUDENT_ROLES.includes(family.role)) classIds = family.classIds || [];
-      else if (family.role === ROLES.ELTERN) {
-        const s = new Set();
-        (family.childIds || []).forEach((ch) => (findUserById(ch)?.classIds || []).forEach((c) => s.add(c)));
-        classIds = [...s];
-      }
-      teamIds = classManagersOfClasses(classIds).map((m) => m.id);
+    if (!inbox) {
+      const staffSide = family === initiator ? recipient : initiator;
+      inbox = staffSide.role === ROLES.LEITUNG ? 'leitung' : staffSide.role === ROLES.SUPER_ADMIN ? 'system' : 'klasse';
     }
-    // Sicherstellen, dass der ursprüngliche Empfänger/Absender dabei ist.
-    ids = [family.id, ...teamIds, initiator.id, recipient.id];
+    ids = [family.id, ...inboxMemberIds(inbox, family), initiator.id];
+    if (recipient) ids.push(recipient.id);
   } else {
     ids = [initiator.id, recipient.id];
   }
   const uniq = [...new Set(ids)];
   const names = {};
   uniq.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
-  return { participantIds: uniq, participantNames: names, group: uniq.length > 2 };
+  return { participantIds: uniq, participantNames: names, group: uniq.length > 2, inbox: family ? inbox : null };
 }
 
 const sortedIds = (arr) => [...arr].sort().join('|');
@@ -3431,6 +3607,10 @@ const sortedIds = (arr) => [...arr].sort().join('|');
 // andere Person. Gruppengespräch: eine Lehrkraft sieht die Familienseite, die
 // Familie sieht das Lehrerteam.
 function threadTitle(t, viewer) {
+  if (isFamily(viewer)) {
+    const inbox = threadInbox(t);
+    if (inbox) return INBOXES[inbox].label;
+  }
   const others = t.participantIds.filter((id) => id !== viewer.id);
   if (others.length <= 1) return t.participantNames[others[0]] || 'Unbekannt';
   const isMgr = CLASS_MANAGERS.includes(viewer.role);
@@ -3465,9 +3645,20 @@ function msgPreview(m) {
 }
 
 /** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
-function messageView(m) {
+// Absendername aus Sicht des Betrachters: Schüler/Eltern sehen bei
+// Mitarbeitenden nur das Postfach (z. B. "Klassenleitung"), nie den Namen.
+function senderLabel(m, t, viewer) {
+  if (viewer && t && isFamily(viewer) && m.senderId !== viewer.id) {
+    const sender = findUserById(m.senderId);
+    if (!sender || isStaff(sender)) return INBOXES[threadInbox(t)]?.label || 'DBZ';
+  }
+  return m.senderName;
+}
+
+function messageView(m, t = null, viewer = null) {
+  const senderName = senderLabel(m, t, viewer);
   if (m.recalled) {
-    return { id: m.id, senderId: m.senderId, senderName: m.senderName, body: '', createdAt: m.createdAt, file: null, reactions: {}, recalled: true };
+    return { id: m.id, senderId: m.senderId, senderName, body: '', createdAt: m.createdAt, file: null, reactions: {}, recalled: true };
   }
   const file = m.file
     ? { kind: m.file.kind, originalName: m.file.originalName, mediaType: m.file.mediaType, size: m.file.size }
@@ -3475,7 +3666,7 @@ function messageView(m) {
   return {
     id: m.id,
     senderId: m.senderId,
-    senderName: m.senderName,
+    senderName,
     body: m.body || '',
     createdAt: m.createdAt,
     file,
@@ -3510,12 +3701,16 @@ async function buildMessage(req) {
 
 function threadListView(t, viewer) {
   const userId = viewer.id;
-  const last = t.messages[t.messages.length - 1] || null;
+  const msgs = visibleMessages(t, userId);
+  const last = msgs[msgs.length - 1] || null;
   const readAt = t.reads?.[userId] || '';
-  const unread = t.messages.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+  const unread = msgs.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+  const inbox = threadInbox(t);
   return {
     id: t.id,
     otherName: threadTitle(t, viewer),
+    // Für Mitarbeitende sichtbar, an welches Postfach die Familie geschrieben hat.
+    inboxLabel: inbox && !isFamily(viewer) ? INBOXES[inbox].label : null,
     group: t.participantIds.length > 2,
     lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
@@ -3523,14 +3718,32 @@ function threadListView(t, viewer) {
   };
 }
 
+function notifyThreadMessage(t, msg, sender) {
+  t.participantIds
+    .filter((id) => id !== sender.id)
+    .forEach((id) => {
+      const viewer = findUserById(id);
+      const from = viewer ? senderLabel(msg, t, viewer) : sender.name;
+      notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${from}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
+    });
+}
+
 router.get('/message-contacts', requireAuth, (req, res) => {
+  if (isFamily(req.user)) return res.json({ contacts: familyInboxes(req.user) });
   res.json({ contacts: messageContacts(req.user).map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] })) });
 });
+
+// "Für mich löschen" (wie bei WhatsApp): der Verlauf bis zu diesem Zeitpunkt
+// verschwindet nur für diese Person; alle anderen Beteiligten behalten ihn.
+// Kommt danach eine neue Nachricht, taucht der Chat mit nur den neuen
+// Nachrichten wieder auf.
+const clearedAt = (t, userId) => t.clearedAt?.[userId] || '';
+const visibleMessages = (t, userId) => t.messages.filter((m) => m.createdAt > clearedAt(t, userId));
 
 router.get('/threads', requireAuth, (req, res) => {
   const list = db
     .all('threads')
-    .filter((t) => t.participantIds.includes(req.user.id))
+    .filter((t) => t.participantIds.includes(req.user.id) && visibleMessages(t, req.user.id).length > 0)
     .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
     .map((t) => threadListView(t, req.user));
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
@@ -3538,21 +3751,26 @@ router.get('/threads', requireAuth, (req, res) => {
 
 router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
   const { recipientId } = req.body || {};
-  const recipient = findUserById(recipientId);
-  if (!recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
-  if (!canMessage(req.user, recipientId)) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+  const inboxKey = String(recipientId || '').startsWith('inbox:') ? String(recipientId).slice(6) : null;
+  const recipient = inboxKey ? null : findUserById(recipientId);
+  if (inboxKey ? !INBOXES[inboxKey] : !recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+  if (!canMessage(req.user, String(recipientId))) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+  // Schüler/Eltern schreiben ausschließlich Rollen-Postfächer an.
+  if (!inboxKey && isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
   if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
 
   const msg = await buildMessage(req);
   const now = msg.createdAt;
-  const { participantIds, participantNames } = resolveThreadParticipants(req.user, recipient);
-  // Bestehenden Thread mit exakt derselben Teilnehmergruppe wiederverwenden.
-  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds));
+  const { participantIds, participantNames, inbox } = resolveThreadParticipants(req.user, recipient, inboxKey);
+  // Bestehenden Thread mit exakt derselben Teilnehmergruppe (und demselben
+  // Postfach) wiederverwenden.
+  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds) && (threadInbox(x) || null) === (inbox || null));
   if (!t) {
     t = {
       id: newId('thread'),
       participantIds,
       participantNames,
+      inbox,
       messages: [msg],
       reads: { [req.user.id]: now },
       createdAt: now,
@@ -3563,16 +3781,35 @@ router.post('/threads', requireAuth, upload.single('file'), async (req, res) => 
     // Team/Namen aktuell halten (falls sich die Klassenzuordnung geändert hat).
     t.participantIds = participantIds;
     t.participantNames = { ...t.participantNames, ...participantNames };
+    if (inbox) t.inbox = inbox;
     t.messages.push(msg);
     t.lastMessageAt = now;
     t.reads = t.reads || {};
     t.reads[req.user.id] = now;
     db.commit();
   }
-  participantIds
-    .filter((id) => id !== req.user.id)
-    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
+  notifyThreadMessage(t, msg, req.user);
   res.json({ threadId: t.id });
+});
+
+// Mehrfachauswahl in der Chat-Liste: als gelesen markieren oder für mich löschen.
+router.post('/threads/bulk', requireAuth, (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const now = new Date().toISOString();
+  const wanted = new Set(ids.map(String));
+  let changed = 0;
+  for (const t of db.all('threads')) {
+    if (!wanted.has(t.id) || !t.participantIds.includes(req.user.id)) continue;
+    t.reads = t.reads || {};
+    t.reads[req.user.id] = now;
+    if (action === 'delete') { t.clearedAt = t.clearedAt || {}; t.clearedAt[req.user.id] = now; }
+    changed++;
+  }
+  markNotificationsRead(req.user.id, (n) => n.type === 'message' && wanted.has(n.groupId));
+  db.commit();
+  res.json({ ok: true, changed });
 });
 
 router.get('/threads/:id', requireAuth, (req, res) => {
@@ -3588,7 +3825,7 @@ router.get('/threads/:id', requireAuth, (req, res) => {
       id: t.id,
       otherName: threadTitle(t, req.user),
       group: t.participantIds.length > 2,
-      messages: t.messages.map(messageView),
+      messages: visibleMessages(t, req.user.id).map((m) => messageView(m, t, req.user)),
       meId: req.user.id,
     },
   });
@@ -3604,10 +3841,8 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   t.reads = t.reads || {};
   t.reads[req.user.id] = msg.createdAt;
   db.commit();
-  t.participantIds
-    .filter((id) => id !== req.user.id)
-    .forEach((id) => notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${req.user.name}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id }));
-  res.json({ message: messageView(msg) });
+  notifyThreadMessage(t, msg, req.user);
+  res.json({ message: messageView(msg, t, req.user) });
 });
 
 // Anhang einer Nachricht herunterladen (nur Thread-Teilnehmer).
@@ -4479,6 +4714,25 @@ router.post('/notifications/read', requireAuth, (req, res) => {
   res.json({ ok: true });
 });
 
+// Mehrfachauswahl: ausgewählte Benachrichtigungen als gelesen markieren oder löschen.
+router.post('/notifications/bulk', requireAuth, (req, res) => {
+  const { ids, action } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  const wanted = new Set(ids.map(String));
+  const notes = db.all('notifications');
+  let changed = 0;
+  for (let i = notes.length - 1; i >= 0; i--) {
+    const n = notes[i];
+    if (n.userId !== req.user.id || !wanted.has(n.id)) continue;
+    if (action === 'delete') notes.splice(i, 1);
+    else n.read = true;
+    changed++;
+  }
+  db.commit();
+  res.json({ ok: true, changed });
+});
+
 // Einzelne Benachrichtigung als gelesen markieren (beim Anklicken).
 router.post('/notifications/:id/read', requireAuth, (req, res) => {
   const n = byId('notifications', req.params.id);
@@ -4545,7 +4799,7 @@ function upcomingFor(user, days = 14, limit = 5) {
 function unreadMessagesFor(userId) {
   return db.all('threads').filter((t) => t.participantIds.includes(userId)).reduce((s, t) => {
     const readAt = t.reads?.[userId] || '';
-    return s + t.messages.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
+    return s + visibleMessages(t, userId).filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
   }, 0);
 }
 

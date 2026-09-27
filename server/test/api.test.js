@@ -246,8 +246,16 @@ test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Grup
   const teacher = await loginAs('lehrer@dbz.de');
   const teacherId = (await teacher('GET', '/auth/me')).data.user.id;
 
-  // Schüler schreibt EINER Lehrkraft -> Thread umfasst beide Lehrkräfte.
-  const send = await student('POST', '/threads', { recipientId: teacherId, body: 'Assalamu alaikum, eine Frage zur Hausaufgabe.' });
+  // Schüler sieht nur Rollen-Postfächer mit Zuständigkeit, keine Personen.
+  const contacts = (await student('GET', '/message-contacts')).data.contacts;
+  assert.deepEqual(contacts.map((c) => c.id).sort(), ['inbox:klasse', 'inbox:leitung', 'inbox:system']);
+  assert.ok(contacts.every((c) => c.description), 'jedes Postfach erklärt seine Zuständigkeit');
+  assert.ok(!contacts.some((c) => c.name === 'Ustadh Yunus'), 'kein Personenname');
+  // Direkt an eine Person schreiben geht für Schüler nicht mehr.
+  assert.equal((await student('POST', '/threads', { recipientId: teacherId, body: 'x' })).status, 403);
+
+  // Schüler schreibt an die Klassenleitung -> Thread umfasst beide Lehrkräfte.
+  const send = await student('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Assalamu alaikum, eine Frage zur Hausaufgabe.' });
   assert.equal(send.status, 200);
   const threadId = send.data.threadId;
   const thr = (await student('GET', `/threads/${threadId}`)).data.thread;
@@ -263,6 +271,15 @@ test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Grup
   assert.equal(reply.status, 200);
   const studentView = (await student('GET', `/threads/${threadId}`)).data.thread;
   assert.ok(studentView.messages.some((m) => m.body === 'Wa alaikum salam, gerne!'), 'Schüler sieht die Antwort der Co-Lehrkraft');
+  // ... aber nur als "Klassenleitung", ohne Namen der Lehrkraft.
+  assert.equal(studentView.otherName, 'Klassenleitung');
+  const replyMsg = studentView.messages.find((m) => m.body === 'Wa alaikum salam, gerne!');
+  assert.equal(replyMsg.senderName, 'Klassenleitung');
+  const note = (await student('GET', '/notifications')).data.items.find((n) => n.type === 'message' && n.groupId === threadId);
+  assert.ok(note && !note.title.includes('Maryam'), 'Benachrichtigung verrät keinen Namen');
+  // Lehrkraft sieht weiterhin den Namen des Schülers und das Postfach.
+  const tList = (await coTeacher('GET', '/threads')).data.threads.find((t) => t.id === threadId);
+  assert.equal(tList.inboxLabel, 'Klassenleitung');
   const firstTeacherBadges = (await teacher('GET', '/badges')).data;
   assert.ok(firstTeacherBadges.messages >= 1, 'Erste Lehrkraft wird über die Antwort benachrichtigt');
 });
@@ -1291,15 +1308,25 @@ test('Qur\'an: Surenliste liefert 114 Suren mit Ayah-Anzahl', async () => {
 test('Nachrichten: Eltern↔Lehrer erlaubt, Schüler↔Schüler verboten', async () => {
   // Eltern startet Thread mit Lehrer
   const parent = await loginAs('eltern@dbz.de');
-  const start = await parent('POST', '/threads', { recipientId: 'user_lehrer', body: 'Wie geht es Yusuf?' });
+  const start = await parent('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Wie geht es Yusuf?' });
   assert.equal(start.status, 200);
   const threadId = start.data.threadId;
 
   // Schüler darf NICHT einem anderen Schüler schreiben
   const student = await loginAs('schueler@dbz.de');
   assert.equal((await student('POST', '/threads', { recipientId: 'user_amina', body: 'hi' })).status, 403);
-  // Schüler darf seinem Lehrer schreiben
-  assert.equal((await student('POST', '/threads', { recipientId: 'user_lehrer', body: 'Frage zur Aufgabe' })).status, 200);
+  // Schüler darf der Klassenleitung, der DBZ-Leitung und der Systembetreuung schreiben
+  assert.equal((await student('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Frage zur Aufgabe' })).status, 200);
+  const toLeitung = await student('POST', '/threads', { recipientId: 'inbox:leitung', body: 'Ich habe ein Problem' });
+  assert.equal(toLeitung.status, 200);
+  const toSystem = await student('POST', '/threads', { recipientId: 'inbox:system', body: 'App stürzt ab' });
+  assert.equal(toSystem.status, 200);
+  assert.notEqual(toLeitung.data.threadId, toSystem.data.threadId, 'Leitung und Systembetreuung sind getrennte Postfächer');
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.ok((await leitung('GET', '/threads')).data.threads.some((t) => t.id === toLeitung.data.threadId));
+  const sysAdmin = await loginAs('admin@dbz.de');
+  assert.ok((await sysAdmin('GET', '/threads')).data.threads.some((t) => t.id === toSystem.data.threadId));
+  assert.equal((await student('GET', `/threads/${toSystem.data.threadId}`)).data.thread.otherName, 'Systembetreuung');
 
   // Lehrer sieht den Thread und antwortet; Eltern sehen die Antwort
   const teacher = await loginAs('lehrer@dbz.de');

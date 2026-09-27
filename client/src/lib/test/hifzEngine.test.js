@@ -24,8 +24,23 @@ test('old session cannot mutate reset session',()=>{
   const e=new HifzEngine(passage()); const session=e.session; e.reset();
   assert.equal(send(e,'كتاب','x',{session}).index,0);
 });
-test('does not jump past omitted word',()=>{
-  const e=new HifzEngine(passage()); assert.equal(send(e,'كتاب باب بيت').index,1);
+test('does not jump past an omitted word on thin evidence (only one following word)',()=>{
+  const e=new HifzEngine(passage()); assert.equal(send(e,'كتاب باب').index,1);
+});
+test('an omitted word followed by two matching words is marked MISSED (never counted as recited) and practice continues',()=>{
+  const e=new HifzEngine(passage()); // كتاب قلم باب بيت
+  const s=send(e,'كتاب باب بيت');
+  assert.equal(s.index,4); assert.deepEqual(s.missed,[1]);
+  assert.ok(s.history.some(x=>x.kind==='skipped'&&x.index===1));
+  assert.ok(!s.history.some(x=>x.kind==='transcript-match'&&x.index===1));
+});
+test('truncated word at a recognition boundary still matches (one missing final letter)',()=>{
+  const e=new HifzEngine(passage(['ومن','شر','الفلق']));
+  assert.equal(send(e,'وم شر الفل').index,3);
+});
+test('a word split in two by the recognizer is joined',()=>{
+  const e=new HifzEngine(passage(['الفلق','بيت']));
+  assert.equal(send(e,'ال فلق بيت').index,2);
 });
 test('self correction resumes without skipping',()=>{
   const e=new HifzEngine(passage()); send(e,'كتاب خطأ');
@@ -107,12 +122,11 @@ test('a stray word too far ahead is not skipped (bounded lookahead)',()=>{
   assert.equal(s.index,3); // كتاب, قلم, باب erkannt; Rest bleibt ein echter Fehler
   assert.notEqual(s.status,'complete');
 });
-test('a genuinely missing word is still never skipped (no false insertion-resync)',()=>{
+test('a genuinely missing word is never silently counted (no false insertion-resync)',()=>{
   const e=new HifzEngine(passage()); // كتاب قلم باب بيت
   const s=send(e,'كتاب باب بيت'); // "قلم" ausgelassen
-  assert.equal(s.index,1);
   assert.ok(!s.history.some(x=>x.kind==='insertion-ignored'));
-  assert.equal(s.status,'uncertain');
+  assert.deepEqual(s.missed,[1]);
 });
 test('duplicate IDs, malformed and unordered data rejected',()=>{
   const p=passage();p.words[1].id=p.words[0].id;assert.throws(()=>validatePassage(p));
@@ -121,4 +135,19 @@ test('duplicate IDs, malformed and unordered data rejected',()=>{
 });
 test('completion cannot be advanced further',()=>{
   const e=new HifzEngine(passage(['كتاب']));send(e,'كتاب');assert.equal(send(e,'قلم').index,1);
+});
+test('Uthmani spelling (dagger alif / silent waw) matches the modern spelling a recognizer writes',()=>{
+  const e=new HifzEngine(passage(['سَمَٰوَٰتٍ','ٱلْحَيَوٰةَ','ذَٰلِكَ','ٱلرَّحْمَٰنِ','ٱلصَّلَوٰةَ']));
+  assert.equal(send(e,'سماوات الحياة ذلك الرحمن الصلاة').index,5);
+});
+test('the alif leniency does not turn a genuinely different short word into a match (قل is not قال)',()=>{
+  const e=new HifzEngine(passage(['قَالَ','كتاب']));
+  const s=send(e,'قل'); assert.equal(s.index,0); assert.equal(s.status,'uncertain');
+});
+test('streaming: an omitted word is detected across one-word segments (backlog), marked missed',()=>{
+  const e=new HifzEngine(passage(['كتاب','قلم','باب','بيت','شجرة'])); // قلم ausgelassen
+  send(e,'كتاب'); send(e,'باب');
+  const s=send(e,'بيت');
+  assert.equal(s.index,4); assert.deepEqual(s.missed,[1]);
+  assert.equal(send(e,'شجرة').status,'complete');
 });
