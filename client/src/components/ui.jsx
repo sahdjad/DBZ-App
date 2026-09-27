@@ -519,3 +519,41 @@ export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
     document.body,
   );
 }
+
+// --- Klassen-Ordner (Leitung/Admin) ------------------------------------------
+// Ordnung für viele Klassen: erst die Klassen als Kacheln, ein Tipp öffnet die
+// Einträge der Klasse. `groups`: [{ id, name, count, hint, tone }].
+export function ClassFolders({ groups, selected, onSelect, emptyText = 'Noch keine Klassen angelegt.', extra = null }) {
+  const current = groups.find((g) => g.id === selected);
+  if (current) {
+    return (
+      <div className="flex items-center gap-2 mb-4">
+        <Button variant="outline" size="sm" onClick={() => onSelect(null)}><ArrowLeft size={16} /> Alle Klassen</Button>
+        <h2 className="text-lg text-ivory truncate">{current.name}</h2>
+        {current.hint && <span className="text-xs text-sage-muted">{current.hint}</span>}
+      </div>
+    );
+  }
+  if (!groups.length && !extra) return <Card className="p-8 text-center text-sage-muted">{emptyText}</Card>;
+  return (
+    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-4">
+      {extra}
+      {groups.map((g) => (
+        <button
+          key={g.id}
+          type="button"
+          onClick={() => onSelect(g.id)}
+          className="group text-left rounded-2xl border border-line bg-card p-4 hover:border-mint/40 hover:bg-hover transition-all duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-ivory font-medium truncate">{g.name}</span>
+            {g.count != null && (
+              <span className={cx('text-xs font-mono px-2 py-0.5 rounded-full', g.tone === 'warn' ? 'bg-status-late/15 text-status-late' : 'bg-mint/10 text-mint')}>{g.count}</span>
+            )}
+          </div>
+          {g.hint && <div className="text-xs text-sage-muted mt-1 truncate">{g.hint}</div>}
+        </button>
+      ))}
+    </div>
+  );
+}

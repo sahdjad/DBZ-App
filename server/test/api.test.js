@@ -1932,7 +1932,7 @@ test('Aufgaben: Lehrkraft der Klasse darf auch fremd erstellte löschen; archivi
   assert.equal((await teacher('GET', `/assignments/${a1.id}`)).status, 404);
 });
 
-test('Mehrfachauswahl: Benachrichtigungen gelesen/löschen, Chats für mich löschen (andere behalten Verlauf)', async () => {
+test('Mehrfachauswahl: Schüler markieren nur als gelesen (kein Löschen), Lehrkraft löscht Chat nur für sich', async () => {
   const student = await loginAs('schueler@dbz.de');
   const teacher = await loginAs('lehrer@dbz.de');
   const t = (await student('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Bulk-Test' })).data.threadId;
@@ -1942,14 +1942,18 @@ test('Mehrfachauswahl: Benachrichtigungen gelesen/löschen, Chats für mich lös
   const ids = notes.slice(0, 2).map((n) => n.id);
   assert.equal((await student('POST', '/notifications/bulk', { ids, action: 'read' })).status, 200);
   assert.ok((await student('GET', '/notifications')).data.items.filter((n) => ids.includes(n.id)).every((n) => n.read));
-  assert.equal((await student('POST', '/notifications/bulk', { ids, action: 'delete' })).status, 200);
-  assert.ok(!(await student('GET', '/notifications')).data.items.some((n) => ids.includes(n.id)));
+  // Schüler dürfen nichts löschen -- weder Benachrichtigungen noch Chats.
+  assert.equal((await student('POST', '/notifications/bulk', { ids, action: 'delete' })).status, 403);
+  assert.ok((await student('GET', '/notifications')).data.items.some((n) => ids.includes(n.id)), 'bleibt erhalten');
+  assert.equal((await student('POST', '/threads/bulk', { ids: [t], action: 'delete' })).status, 403);
+  assert.ok((await student('GET', '/threads')).data.threads.some((x) => x.id === t), 'Chat bleibt beim Schüler');
 
-  assert.equal((await student('POST', '/threads/bulk', { ids: [t], action: 'delete' })).status, 200);
-  assert.ok(!(await student('GET', '/threads')).data.threads.some((x) => x.id === t), 'Chat für Schüler weg');
-  assert.ok((await teacher('GET', '/threads')).data.threads.some((x) => x.id === t), 'Lehrkraft behält den Verlauf');
-  await teacher('POST', `/threads/${t}/messages`, { body: 'Neue Nachricht' });
-  const back = (await student('GET', `/threads/${t}`)).data.thread;
+  // Lehrkraft darf für sich löschen; der Schüler behält den Verlauf.
+  assert.equal((await teacher('POST', '/threads/bulk', { ids: [t], action: 'delete' })).status, 200);
+  assert.ok(!(await teacher('GET', '/threads')).data.threads.some((x) => x.id === t), 'Chat für Lehrkraft weg');
+  assert.ok((await student('GET', '/threads')).data.threads.some((x) => x.id === t), 'Schüler behält den Verlauf');
+  await student('POST', `/threads/${t}/messages`, { body: 'Neue Nachricht' });
+  const back = (await teacher('GET', `/threads/${t}`)).data.thread;
   assert.deepEqual(back.messages.map((m) => m.body), ['Neue Nachricht'], 'Chat taucht mit nur der neuen Nachricht wieder auf');
 });
 
@@ -2001,4 +2005,115 @@ test('Klassensprecher: Aufgabenvorschlag zählt erst nach Freigabe durch die Leh
   const list = (await student('GET', '/assignments')).data.assignments;
   assert.ok(list.some((a) => a.title === 'Sure Al-Mulk lernen'), 'nach Freigabe sichtbar');
   assert.ok((await student('GET', '/notifications')).data.items.some((n) => n.type === 'assignment_new'), 'Schüler benachrichtigt');
+});
+
+test('Mehrere Rollen pro Person: Leitung vergibt bis Leitung, Person wechselt ohne zweites Passwort', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const email = `partner-${Date.now()}@dbz.de`;
+  const created = (await admin('POST', '/admin/users', { name: 'Partner', email, password: 'demo1234', role: 'klassenlehrer', classIds: ['class_3'] })).data.user;
+  // Leitung darf keinen System-Admin vergeben, aber Leitung + Schüler (ohne Klasse).
+  assert.equal((await leitung('POST', `/admin/users/${created.id}/roles`, { role: 'super_admin' })).status, 403);
+  const l = await leitung('POST', `/admin/users/${created.id}/roles`, { role: 'leitung' });
+  assert.equal(l.status, 200);
+  const st = await leitung('POST', `/admin/users/${created.id}/roles`, { role: 'schueler', classIds: [] });
+  assert.equal(st.status, 200);
+  assert.equal((await leitung('POST', `/admin/users/${created.id}/roles`, { role: 'leitung' })).status, 409, 'doppelt');
+  const roles = (await leitung('GET', `/admin/users/${created.id}/roles`)).data;
+  assert.deepEqual(roles.accounts.map((a) => a.role).sort(), ['klassenlehrer', 'leitung', 'schueler']);
+  assert.equal(roles.accounts.filter((a) => a.login).length, 1, 'nur ein Anmelde-Konto');
+
+  // Person meldet sich einmal an und wechselt in die Leitungs-Rolle.
+  const p = await loginAs(email);
+  const linked = (await p('GET', '/me/linked-accounts')).data.accounts;
+  assert.equal(linked.length, 2);
+  const toLeitung = linked.find((a) => a.role === 'leitung');
+  const sw = await p('POST', `/me/switch/${toLeitung.id}`);
+  assert.equal(sw.data.user.role, 'leitung');
+  assert.equal(sw.data.user.name, 'Partner', 'eigener Name auch in der Leitungs-Rolle');
+  // Nächster Login startet in der zuletzt genutzten Rolle.
+  const again = client();
+  const lg = await again('POST', '/auth/login', { email, password: 'demo1234' });
+  assert.equal(lg.data.user.role, 'leitung');
+  // Passwort ändern aus der Rolle heraus gilt für das Anmelde-Konto.
+  assert.equal((await again('PATCH', '/me/password', { currentPassword: 'demo1234', newPassword: 'neu12345' })).status, 200);
+  assert.equal((await client()('POST', '/auth/login', { email, password: 'neu12345' })).status, 200);
+
+  // Rolle entziehen -> Rollenkonto deaktiviert, Wechsel nicht mehr möglich.
+  const stAcc = roles.accounts.find((a) => a.role === 'schueler');
+  assert.equal((await leitung('DELETE', `/admin/users/${created.id}/roles/${stAcc.id}`)).status, 200);
+  assert.equal((await again('POST', `/me/switch/${stAcc.id}`)).status, 404);
+  // Anmelde-Konto kann dort nicht entzogen werden.
+  const main = roles.accounts.find((a) => a.login);
+  assert.equal((await admin('DELETE', `/admin/users/${created.id}/roles/${main.id}`)).status, 400);
+});
+
+test('Entschuldigungen: Leitung/Admin sehen nur (ohne Freitext), entscheiden darf nur die Klassenlehrkraft', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const r = await student('POST', '/absence-requests', { requestType: 'absent', reasonCategory: 'krank', comment: 'Ich habe Fieber und muss heute leider zuhause bleiben' });
+  assert.equal(r.status, 200);
+  const admin = await loginAs('admin@dbz.de');
+  const list = (await admin('GET', '/absence-requests')).data.requests;
+  const mine = list.find((x) => x.id === r.data.request.id);
+  assert.equal(mine.readOnly, true);
+  assert.equal(mine.comment, '', 'Freitext bleibt zwischen Familie und Lehrkraft');
+  assert.equal((await admin('POST', `/absence-requests/${mine.id}/decide`, { decision: 'approve' })).status, 403);
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.equal((await leitung('POST', `/absence-requests/${mine.id}/decide`, { decision: 'approve' })).status, 403);
+  const teacher = await loginAs('lehrer@dbz.de');
+  assert.equal((await teacher('POST', `/absence-requests/${mine.id}/decide`, { decision: 'approve' })).status, 200);
+});
+
+test('Unterricht je Klasse: eigene Zeiten/Regeln, QR nur für die eigene Klasse, Schultag mit gemeinsamem Code, Tage löschen', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const mk = async (name) => (await admin('POST', '/admin/classes', { name })).data.class;
+  const c5 = await mk(`K5-${Date.now()}`);
+  const c6 = await mk(`K6-${Date.now()}`);
+  const tEmail = `t6-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Lehrer 6', email: tEmail, password: 'demo1234', role: 'klassenlehrer', classIds: [c6.id] });
+  const sEmail = `s5-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Schüler 5', email: sEmail, password: 'demo1234', role: 'schueler', classIds: [c5.id] });
+  const t6 = await loginAs(tEmail);
+  const s5 = await loginAs(sEmail);
+
+  // Lehrkraft stellt eigene Zeiten ein; fremde Klasse -> 403; unsinnige Regeln -> 400.
+  const wd = new Date().getDay();
+  assert.equal((await t6('PATCH', `/classes/${c6.id}/settings`, { weekday: wd, startTime: '00:00', endTime: '23:59', lateAfterMinutes: 10, unexcusedLateAfterMinutes: 30 })).status, 200);
+  assert.equal((await t6('PATCH', `/classes/${c5.id}/settings`, { startTime: '10:00' })).status, 403);
+  assert.equal((await t6('PATCH', `/classes/${c6.id}/settings`, { lateAfterMinutes: 40, unexcusedLateAfterMinutes: 30 })).status, 400);
+  const cls = (await t6('GET', '/classes')).data.classes.find((c) => c.id === c6.id);
+  assert.equal(cls.rules.lateAfterMinutes, 10);
+  assert.equal(cls.rules.unexcusedLateAfterMinutes, 30);
+
+  // Tür-Code von Klasse 6 gilt nicht für Schüler aus Klasse 5.
+  const door = (await t6('GET', `/classes/${c6.id}/checkin-qr`)).data;
+  const wrong = await s5('POST', '/checkin', { token: door.code });
+  assert.equal(wrong.status, 400);
+  assert.match(wrong.data.error, /nicht zu deiner Klasse/);
+
+  // Schultag: nur Leitung/Admin, gemeinsamer Code gilt für alle Klassen, landet in der eigenen Klasse.
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  assert.equal((await t6('POST', '/school-days', { date: today, startTime: '00:00', endTime: '23:59' })).status, 403);
+  const existing = (await leitung('GET', '/school-days')).data.days.find((x) => x.date === today);
+  if (existing) await leitung('DELETE', `/school-days/${existing.id}`);
+  const sd = await leitung('POST', '/school-days', { date: today, startTime: '00:00', endTime: '23:59', title: 'Test-Schultag', lateAfterMinutes: 1440 });
+  assert.equal(sd.status, 200);
+  assert.ok(sd.data.day.code.startsWith('SCH-'));
+  const ok = await s5('POST', '/checkin', { token: sd.data.day.code });
+  assert.equal(ok.status, 200, JSON.stringify(ok.data));
+  assert.equal(ok.data.className, c5.name);
+  const hist = (await admin('GET', `/classes/${c5.id}/sessions`)).data.sessions;
+  assert.equal(hist[0].schoolDay, true);
+  assert.equal(hist[0].entries, 1);
+  const overview = (await leitung('GET', '/school/today')).data;
+  assert.ok(overview.classes.find((c) => c.id === c5.id).present + overview.classes.find((c) => c.id === c5.id).late >= 1);
+  assert.equal((await t6('GET', '/school/today')).status, 403);
+
+  // Unterrichtstag samt Einträgen löschen.
+  const del = await admin('POST', '/sessions/bulk-delete', { ids: [hist[0].id] });
+  assert.equal(del.data.sessions, 1);
+  assert.equal(del.data.entries, 1);
+  assert.equal((await leitung('DELETE', `/school-days/${sd.data.day.id}`)).status, 200);
 });

@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useAuth } from '../lib/AuthContext.jsx';
 import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
-import { QrImage, printQrCode } from '../components/QrCode.jsx';
+import { QrStage, printQrCode } from '../components/QrCode.jsx';
+import { ClassSettingsCard, SessionHistoryCard, SchoolDaysCard, SchoolTodayCard, SchoolDayBanner } from './UnterrichtParts.jsx';
 
 const STATUSES = [
   ['present', 'Anwesend'],
@@ -24,6 +26,20 @@ const ROW_TINT = {
 const rowTint = (status) => ROW_TINT[status] || 'border-status-absent bg-status-absent/[0.05]';
 
 export default function Unterricht() {
+  const { user } = useAuth();
+  // Leitung/Admin führen keinen Klassenunterricht: Tagesüberblick + gemeinsamer Schultag.
+  if (user?.role === 'leitung' || user?.role === 'super_admin') {
+    return (
+      <AppLayout title="Unterricht">
+        {user.role === 'leitung' && <SchoolTodayCard />}
+        <SchoolDaysCard />
+      </AppLayout>
+    );
+  }
+  return <TeacherUnterricht />;
+}
+
+function TeacherUnterricht() {
   const toast = useToast();
   const [sessions, setSessions] = useState(null);
   const [active, setActive] = useState(null); // session id
@@ -129,6 +145,7 @@ export default function Unterricht() {
 
   return (
     <AppLayout title="Unterricht">
+      <SchoolDayBanner />
       {sessions.length > 1 && (
         <div className="flex gap-2 mb-4 flex-wrap">
           {sessions.map((s) => (
@@ -162,13 +179,11 @@ export default function Unterricht() {
         </div>
 
         {qr && (
-          <div className="mx-4 mb-4 rounded-xl border border-mint/30 bg-mint/5 p-6 text-center">
-            <div className="text-sm text-sage-muted mb-4">Schüler scannen diesen QR-Code oder geben den Code ein:</div>
-            <div className="flex justify-center mb-4">
-              <QrImage value={qr.token} size={220} />
-            </div>
-            <div className="font-mono text-2xl sm:text-3xl tracking-[0.15em] sm:tracking-[0.3em] text-mint-light uppercase break-all leading-snug">{qr.token}</div>
-            <div className="text-xs text-sage-muted mt-3">Gültig bis {new Date(qr.expiresAt).toLocaleTimeString('de-DE')}</div>
+          <div className="mx-4 mb-4">
+            <QrStage value={qr.token} title={session?.className} subtitle="Jetzt einchecken" size={230}>
+              <div className="font-mono text-2xl sm:text-3xl tracking-[0.15em] sm:tracking-[0.3em] uppercase break-all leading-snug">{qr.token}</div>
+              <div className="text-xs opacity-80">Gültig bis {new Date(qr.expiresAt).toLocaleTimeString('de-DE')}</div>
+            </QrStage>
           </div>
         )}
       </Card>
@@ -177,30 +192,24 @@ export default function Unterricht() {
         <Card className="p-5 mb-4">
           <CardHeader
             title="Tür-QR-Code (zum Aufhängen)"
-            subtitle="Einmal ausdrucken & an die Tür hängen – wird automatisch zur Unterrichtszeit gültig"
+            subtitle="Nur für diese Klasse gültig – Schüler anderer Klassen können damit nicht einchecken"
             icon={DoorOpen}
           />
-          <div className="p-4 flex flex-col sm:flex-row items-center gap-5">
-            <div className="bg-white p-3 rounded-xl shrink-0 text-center">
-              <QrImage value={door.code} size={180} />
-              <div className="mt-2 text-lg font-extrabold uppercase tracking-wide text-status-absent">Beim Ankommen scannen</div>
-            </div>
-            <div className="flex-1 space-y-3 text-center sm:text-left">
-              <span className={`inline-flex items-center gap-1.5 text-sm px-2.5 py-1 rounded-full ${door.window?.open ? 'bg-status-present/15 text-status-present' : 'bg-status-absent/15 text-status-absent'}`}>
+          <div className="p-4 max-w-md mx-auto w-full">
+            <QrStage value={door.code} title={session?.className} subtitle="Deen Bildungszentrum" caption="Beim Ankommen scannen" size={200}>
+              <span className={`inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full ${door.window?.open ? 'bg-status-present/25 text-white' : 'bg-black/25 text-white/90'}`}>
                 <Clock size={14} /> {door.window?.open ? `Check-in offen${door.checkinOpenUntil ? ` bis ${new Date(door.checkinOpenUntil).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Check-in gerade geschlossen'}
               </span>
-              <p className="text-sm text-sage">
-                Der Code bleibt <b>immer gleich</b> – einmal aufhängen genügt. Du kannst den Check-in schon vor dem Unterricht öffnen;
-                die Schüler bekommen eine Benachrichtigung. Wer nach der Toleranz scannt, wird automatisch als <b>verspätet</b> geführt.
-                Der Check-in schließt automatisch um {door.autoClose || '16:00'} Uhr – oder wenn du „Beenden" drückst.
-              </p>
-              <div className="flex gap-2 justify-center sm:justify-start flex-wrap">
-                <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', 'Beim Ankommen scannen')}><Printer size={16} /> QR drucken</Button>
-                {!door.window?.open && <Button size="sm" onClick={openCheckin}><DoorOpen size={16} /> Check-in öffnen</Button>}
-                <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={16} /> Neuen Code erzeugen</Button>
-              </div>
-              <p className="text-[11px] text-sage-muted">Tipp: Code alle paar Wochen neu erzeugen &amp; neu ausdrucken – alte Fotos werden dadurch ungültig.</p>
+            </QrStage>
+            <div className="flex gap-2 justify-center flex-wrap mt-4">
+              <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', 'Beim Ankommen scannen')}><Printer size={16} /> QR drucken</Button>
+              {!door.window?.open && <Button size="sm" onClick={openCheckin}><DoorOpen size={16} /> Check-in öffnen</Button>}
+              <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={16} /> Neuen Code erzeugen</Button>
             </div>
+            <p className="text-sm text-sage mt-4 text-center">
+              Der Code bleibt <b>immer gleich</b> – einmal aufhängen genügt. Er öffnet automatisch kurz vor eurem Unterrichtsbeginn;
+              wer nach eurer Toleranz scannt, wird als <b>verspätet</b> geführt. Schluss ist um {door.autoClose} Uhr – oder wenn du „Beenden" drückst.
+            </p>
           </div>
         </Card>
       )}
@@ -228,7 +237,7 @@ export default function Unterricht() {
                 <div className="text-ivory">{r.name}</div>
                 <div className="text-xs text-sage-muted">
                   {r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE')}` : 'Kein Check-in'}
-                  {r.minutesLate ? ` · ${r.minutesLate} Min verspätet` : ''}
+                  {r.minutesLate ? ` · ${r.minutesLate} Min verspätet${r.lateUnexcused ? ' (unentschuldigt)' : ''}` : ''}
                   {r.source ? ` · ${r.source === 'qr' ? 'QR' : 'manuell'}` : ''}
                 </div>
               </div>
@@ -249,6 +258,12 @@ export default function Unterricht() {
           ))}
         </div>
       </Card>
+      {session?.classId && (
+        <div className="grid gap-4 lg:grid-cols-2 items-start mt-4">
+          <ClassSettingsCard classId={session.classId} onSaved={() => loadAttendance(active)} />
+          <SessionHistoryCard classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
+        </div>
+      )}
       <SelectionBar
         selection={selection}
         allIds={(attendance || []).filter(hasEntry).map((r) => r.studentId)}

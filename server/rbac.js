@@ -80,3 +80,17 @@ export function requireRole(...roles) {
     next();
   };
 }
+
+/**
+ * Darf `user` in der Klasse fachlich ENTSCHEIDEN (Entschuldigungen,
+ * Rückfragen)? Nur die Lehrkräfte der Klasse selbst -- Leitung/Admin sehen
+ * alles, entscheiden aber bewusst nicht (Zuständigkeit liegt beim Lehrer).
+ */
+export function canDecideForClass(user, classId) {
+  return TEACHING_ROLES.includes(user.role) && (user.classIds || []).includes(classId);
+}
+
+/** Darf `user` Verläufe (Nachrichten, Benachrichtigungen …) löschen? Schüler/Eltern nie. */
+export function canDeleteHistory(user) {
+  return CLASS_MANAGERS.includes(user.role);
+}

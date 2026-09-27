@@ -24,6 +24,8 @@ import {
   CLASS_MANAGERS,
   TEACHING_ROLES,
   STUDENT_ROLES,
+  canDecideForClass,
+  canDeleteHistory,
 } from './rbac.js';
 import {
   attendanceStatusFor,
@@ -104,7 +106,7 @@ router.get('/health', (_req, res) => {
 const byId = (coll, id) => db.all(coll).find((x) => x.id === id) || null;
 const findUserById = (id) => byId('users', id);
 const findUserByEmail = (email) =>
-  db.all('users').find((u) => u.email.toLowerCase() === (email || '').toLowerCase()) || null;
+  (email ? db.all('users').find((u) => u.email && u.email.toLowerCase() === String(email).trim().toLowerCase()) : null) || null;
 const findClass = (id) => byId('classes', id);
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
 // Gewichte für den Notenvorschlag: nur bekannte, positive Werte übernehmen,
@@ -123,7 +125,9 @@ function publicUser(u) {
   // "probation" bewusst nie über den allgemeinen Nutzer-Mapper ausgeben – das
   // ist nur für die Klassenlehrkraft in der Klassenliste sichtbar (eigene,
   // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
-  const { passwordHash, familyCode, probation, ...rest } = u;
+  // lastSeenAt ("zuletzt online") ebenfalls nie pauschal -- nur Mitarbeitende
+  // bekommen es gezielt (Klassenliste, Verwaltung, Nachrichten).
+  const { passwordHash, familyCode, probation, lastSeenAt, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role, ...(inSandbox() ? { demo: true } : {}) };
 }
 
@@ -154,25 +158,60 @@ function visibleClasses(user) {
   return classes.filter((c) => (user.classIds || []).includes(c.id));
 }
 
-const todayKey = () => new Date().toISOString().slice(0, 10);
+// Heutiges Datum in Ortszeit der Schule (TZ, siehe tz.js) -- nicht UTC.
+const localDateKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayKey = () => localDateKey();
 
 /** Kombiniert ein Datum (YYYY-MM-DD) mit einer Uhrzeit (HH:MM) zu ISO. */
 function combineDateTime(dateKey, time) {
   return new Date(`${dateKey}T${time || '00:00'}:00`).toISOString();
 }
 
+// Gemeinsamer Unterricht der ganzen Schule an einem Tag (von Leitung/Admin
+// angelegt): an diesem Tag gelten für ALLE Klassen dieselben Zeiten und ein
+// gemeinsamer QR-Code. Die Anwesenheit landet trotzdem in der Sitzung der
+// jeweiligen Klasse (Statistik/Klassenliste bleiben stimmig).
+const schoolDayOn = (date) => db.all('school_days').find((d) => d.date === date) || null;
+
+// Verspätungsregeln einer Klasse (von der Lehrkraft einstellbar), sonst Schulstandard.
+function classRules(klass) {
+  const o = org();
+  return {
+    lateAfterMinutes: Number.isFinite(klass?.lateAfterMinutes) ? klass.lateAfterMinutes : (o.lateAfterMinutes ?? 5),
+    unexcusedLateAfterMinutes: Number.isFinite(klass?.unexcusedLateAfterMinutes) ? klass.unexcusedLateAfterMinutes : null,
+    checkinOpensBefore: Number.isFinite(klass?.checkinOpensBefore) ? klass.checkinOpensBefore : 15,
+  };
+}
+// Regeln, die für eine konkrete Sitzung gelten (Schultag hat Vorrang).
+function sessionRules(session) {
+  const klass = findClass(session.classId);
+  const base = classRules(klass);
+  const sd = session.schoolDayId ? byId('school_days', session.schoolDayId) : null;
+  if (sd && Number.isFinite(sd.lateAfterMinutes)) base.lateAfterMinutes = sd.lateAfterMinutes;
+  return base;
+}
+
 /** Findet oder erstellt die heutige Sitzung einer Klasse. */
 function ensureTodaySession(klass) {
   const date = todayKey();
+  const sd = schoolDayOn(date);
   let s = db.all('sessions').find((x) => x.classId === klass.id && x.date === date);
+  if (s && sd && s.schoolDayId !== sd.id && s.status === 'scheduled') {
+    // Schultag wurde nachträglich angelegt -> Zeiten der noch nicht begonnenen Sitzung übernehmen.
+    s.schoolDayId = sd.id;
+    s.scheduledStart = combineDateTime(date, sd.startTime);
+    s.scheduledEnd = combineDateTime(date, sd.endTime);
+    db.commit();
+  }
   if (!s) {
     s = {
       id: newId('sess'),
       classId: klass.id,
       subjectId: null,
       date,
-      scheduledStart: combineDateTime(date, klass.startTime),
-      scheduledEnd: combineDateTime(date, klass.endTime),
+      schoolDayId: sd?.id || null,
+      scheduledStart: combineDateTime(date, sd ? sd.startTime : klass.startTime),
+      scheduledEnd: combineDateTime(date, sd ? sd.endTime : klass.endTime),
       status: 'scheduled', // scheduled | active | ended
       qr: null,
       startedAt: null,
@@ -209,15 +248,17 @@ function doorCheckinOpen(session) {
   if (session.checkinOpenUntil && now < new Date(session.checkinOpenUntil).getTime()) return { open: true };
   if (session.status === 'ended') return { open: false, reason: 'Der Unterricht ist bereits beendet.', code: 'ended' };
   if (session.status === 'active') return { open: true };
-  // Automatisch nur am Unterrichtstag der Klasse (sonst nur manuell/aktiv geöffnet).
+  // Automatisch nur am Unterrichtstag der Klasse bzw. am gemeinsamen Schultag
+  // (sonst nur manuell/aktiv geöffnet).
   const klass = findClass(session.classId);
-  if (klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
+  if (!session.schoolDayId && klass && typeof klass.weekday === 'number' && klass.weekday !== new Date().getDay())
     return { open: false, reason: 'Heute ist kein Unterrichtstag dieser Klasse.', code: 'wrong_day' };
   const start = new Date(session.scheduledStart).getTime();
-  const EARLY_MS = 15 * 60000;
+  const end = new Date(session.scheduledEnd || session.scheduledStart).getTime();
+  const EARLY_MS = sessionRules(session).checkinOpensBefore * 60000;
   const windowMin = org().checkinWindowMinutes || 90;
   if (now < start - EARLY_MS) return { open: false, reason: 'Check-in öffnet automatisch kurz vor Unterrichtsbeginn.', code: 'too_early' };
-  if (now <= start + windowMin * 60000) return { open: true };
+  if (now <= Math.max(start + windowMin * 60000, end)) return { open: true };
   return { open: false, reason: 'Das Check-in-Fenster ist vorbei – du wirst als verspätet eingetragen.', code: 'window_over' };
 }
 
@@ -232,10 +273,21 @@ function requireAuth(req, res, next) {
   if (Boolean(payload.sb) !== inSandbox()) return res.status(401).json({ error: 'Sitzung ungültig' });
   const user = findUserById(payload.id);
   if (!user) return res.status(401).json({ error: 'Sitzung ungültig' });
-  if (user.status === 'disabled')
+  if (user.status === 'disabled' || (user.roleOf && findUserById(user.roleOf)?.status === 'disabled'))
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   req.user = user;
+  touchLastSeen(user);
   next();
+}
+
+// "Zuletzt online": höchstens alle 2 Minuten fortschreiben (Speicher-Schreiblast
+// gering halten). Sichtbar nur für Mitarbeitende, nie für Schüler/Eltern.
+const LAST_SEEN_EVERY_MS = 2 * 60000;
+function touchLastSeen(user) {
+  const now = Date.now();
+  if (user.lastSeenAt && now - new Date(user.lastSeenAt).getTime() < LAST_SEEN_EVERY_MS) return;
+  user.lastSeenAt = new Date(now).toISOString();
+  db.commit();
 }
 
 // Demo-Konten (isDemo=true, gesetzt über /admin/reactivate-demo-accounts) sind
@@ -332,8 +384,12 @@ router.post('/auth/login', async (req, res) => {
   if (user.status === 'disabled')
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   loginThrottle.succeed(key);
-  issueToken(res, user, { sb: inSandbox() });
-  res.json({ user: publicUser(user) });
+  // Mehrere Rollen: dort weitermachen, wo die Person zuletzt war.
+  const last = user.lastActiveAccountId && (user.linkedAccountIds || []).includes(user.lastActiveAccountId)
+    ? findUserById(user.lastActiveAccountId) : null;
+  const active = last && last.status === 'active' ? last : user;
+  issueToken(res, active, { sb: inSandbox() });
+  res.json({ user: publicUser(active) });
 });
 
 router.post('/auth/logout', (_req, res) => {
@@ -351,6 +407,8 @@ router.patch('/me', requireAuth, (req, res) => {
   const { name } = req.body || {};
   if (name && name.trim()) {
     req.user.name = name.trim();
+    // Rollenkonten derselben Person tragen denselben Namen.
+    personAccounts(req.user).forEach((a) => { if (a.id === req.user.id || !a.email || !req.user.email) a.name = name.trim(); });
     db.commit();
   }
   res.json({ user: publicUser(req.user) });
@@ -358,13 +416,15 @@ router.patch('/me', requireAuth, (req, res) => {
 
 router.patch('/me/password', requireAuth, async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
-  if (!(await verifyPassword(currentPassword || '', req.user.passwordHash)))
+  // Rollenkonten haben kein eigenes Passwort -> gilt für das Anmelde-Konto der Person.
+  const target = req.user.email ? req.user : (personAccounts(req.user).find((a) => a.email) || req.user);
+  if (!target.passwordHash || !(await verifyPassword(currentPassword || '', target.passwordHash)))
     return res.status(400).json({ error: 'Aktuelles Passwort ist falsch' });
   if (!newPassword || newPassword.length < 6)
     return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
-  req.user.passwordHash = await hashPassword(newPassword);
+  target.passwordHash = await hashPassword(newPassword);
   db.commit();
-  audit(req.user.id, 'user.password_change', 'user', req.user.id);
+  audit(req.user.id, 'user.password_change', 'user', target.id);
   res.json({ ok: true });
 });
 
@@ -635,8 +695,8 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
 // Klassen
 // =============================================================================
 
-router.get('/classes', requireAuth, (req, res) => {
-  const classes = visibleClasses(req.user).map((c) => ({
+function classView(c, user) {
+  return {
     id: c.id,
     name: c.name,
     type: c.type,
@@ -644,8 +704,14 @@ router.get('/classes', requireAuth, (req, res) => {
     weekday: c.weekday,
     startTime: c.startTime,
     endTime: c.endTime,
-    studentCount: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(c.id)).length,
-  }));
+    studentCount: db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (u.classIds || []).includes(c.id)).length,
+    ...(canManageClass(user, c.id) ? { rules: classRules(c), canEdit: true } : {}),
+  };
+}
+router.get('/classes', requireAuth, (req, res) => {
+  const classes = visibleClasses(req.user)
+    .map((c) => classView(c, req.user))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
   res.json({ classes });
 });
 
@@ -782,7 +848,7 @@ router.get('/classes/:id/checkin-qr', requireAuth, (req, res) => {
     sessionId: session.id,
     window: doorCheckinOpen(session),
     checkinOpenUntil: session.checkinOpenUntil || null,
-    autoClose: org().checkinAutoClose || '16:00',
+    autoClose: new Date(session.scheduledEnd).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
   });
 });
 
@@ -802,7 +868,8 @@ router.post('/sessions/:id/checkin-open', requireAuth, (req, res) => {
   const s = byId('sessions', req.params.id);
   if (!s) return res.status(404).json({ error: 'Sitzung nicht gefunden' });
   if (!canManageClass(req.user, s.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const close = todayAt(org().checkinAutoClose || '16:00');
+  // Schließt automatisch zum Unterrichtsende DIESER Klasse (jede Klasse hat eigene Zeiten).
+  const close = s.scheduledEnd ? new Date(s.scheduledEnd) : todayAt(org().checkinAutoClose || '16:00');
   const until = close.getTime() > Date.now() + 10 * 60000 ? close : new Date(Date.now() + 2 * 3600000);
   s.checkinOpenUntil = until.toISOString();
   if (s.status === 'ended') s.status = 'scheduled';
@@ -835,7 +902,19 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const myClassIds = req.user.classIds || [];
   let session = null;
   let forceLate = false; // nach Fensterende: automatisch als verspätet werten
-  if (String(token).startsWith('TUR-')) {
+  if (String(token).startsWith('SCH-')) {
+    // Gemeinsamer QR-Code der ganzen Schule (nur am angelegten Schultag gültig).
+    const sd = db.all('school_days').find((d) => d.code === token);
+    if (!sd || sd.date !== todayKey()) return res.status(400).json({ error: 'Dieser Schul-QR-Code gilt heute nicht.' });
+    const klass = findClass(myClassIds[0]);
+    if (!klass) return res.status(400).json({ error: 'Du bist noch keiner Klasse zugeordnet.' });
+    session = ensureTodaySession(klass);
+    const win = doorCheckinOpen(session);
+    if (!win.open) {
+      if (win.code === 'window_over' || win.code === 'ended') forceLate = true;
+      else return res.status(400).json({ error: win.reason });
+    }
+  } else if (String(token).startsWith('TUR-')) {
     // Fester Tür-QR der Klasse: gültig nur im automatischen/geöffneten Zeitfenster.
     const klass = db.all('classes').find((c) => c.checkinCode === token && myClassIds.includes(c.id));
     if (!klass) return res.status(400).json({ error: 'Dieser QR-Code gehört nicht zu deiner Klasse.' });
@@ -864,16 +943,19 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
     return res.json({ status: existing.status, minutesLate: existing.minutesLate, already: true });
 
   const now = new Date().toISOString();
+  const rules = sessionRules(session);
   let { status, minutesLate } = attendanceStatusFor({
     checkInAt: now,
     scheduledStart: session.scheduledStart,
-    lateAfterMinutes: org().lateAfterMinutes,
+    lateAfterMinutes: rules.lateAfterMinutes,
   });
   if (forceLate) {
     status = 'late';
     // Verspätung mindestens ab der Toleranzgrenze, damit nie 0 Minuten stehen.
-    if (!minutesLate || minutesLate < 1) minutesLate = (org().lateAfterMinutes || 5) + 1;
+    if (!minutesLate || minutesLate < 1) minutesLate = (rules.lateAfterMinutes || 5) + 1;
   }
+  // Ab der von der Lehrkraft festgelegten Grenze gilt die Verspätung als unentschuldigt.
+  const lateUnexcused = status === 'late' && rules.unexcusedLateAfterMinutes != null && minutesLate > rules.unexcusedLateAfterMinutes;
   const rec = {
     id: newId('att'),
     sessionId: session.id,
@@ -882,6 +964,7 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
     status,
     checkInAt: now,
     minutesLate,
+    lateUnexcused,
     source: 'qr',
     confirmedBy: null,
     note: null,
@@ -889,7 +972,7 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   };
   db.insert('attendance', rec);
   audit(req.user.id, 'attendance.checkin', 'attendance', rec.id, null, { status, minutesLate });
-  res.json({ status, minutesLate });
+  res.json({ status, minutesLate, lateUnexcused, className: findClass(session.classId)?.name });
 });
 
 // Live-Anwesenheit einer Sitzung (Verwalter).
@@ -908,6 +991,7 @@ router.get('/sessions/:id/attendance', requireAuth, (req, res) => {
       name: st.name,
       status: rec ? rec.status : 'open',
       minutesLate: rec ? rec.minutesLate : null,
+      lateUnexcused: Boolean(rec?.lateUnexcused),
       checkInAt: rec ? rec.checkInAt : null,
       source: rec ? rec.source : null,
     };
@@ -923,6 +1007,9 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
   const { studentId, status, note } = req.body || {};
   const valid = ['present', 'late', 'excused', 'unexcused', 'left_early', 'remote', 'other'];
   if (!valid.includes(status)) return res.status(400).json({ error: 'Ungültiger Status' });
+  // Entschuldigt/unentschuldigt ist eine Entscheidung der Klassenlehrkraft.
+  if (['excused', 'unexcused'].includes(status) && !canDecideForClass(req.user, s.classId))
+    return res.status(403).json({ error: 'Ob jemand entschuldigt ist, entscheidet die Klassenlehrkraft' });
   const student = findUserById(studentId);
   if (!student || !(student.classIds || []).includes(s.classId))
     return res.status(400).json({ error: 'Schüler gehört nicht zur Klasse' });
@@ -1030,6 +1117,163 @@ router.post('/sessions/:id/reset', requireAuth, requireRole(CLASS_MANAGERS), (re
   db.commit();
   audit(req.user.id, 'session.reset', 'session', s.id, { removed }, null);
   res.json({ ok: true, removed, session: s });
+});
+
+// --- Unterrichtszeiten & Regeln je Klasse ------------------------------------
+// Jede Klasse hat eigene Zeiten (z. B. Klasse 3 samstags 14:00, Klasse 6
+// freitags 18:45) und eigene Pünktlichkeitsregeln. Die Lehrkraft der Klasse
+// stellt das selbst ein -- unabhängig von Leitung und anderen Klassen.
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+router.patch('/classes/:id/settings', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const b = req.body || {};
+  const before = { weekday: klass.weekday, startTime: klass.startTime, endTime: klass.endTime, lateAfterMinutes: klass.lateAfterMinutes, unexcusedLateAfterMinutes: klass.unexcusedLateAfterMinutes };
+  const startTime = b.startTime ?? klass.startTime;
+  const endTime = b.endTime ?? klass.endTime;
+  if (!HHMM.test(startTime) || !HHMM.test(endTime)) return res.status(400).json({ error: 'Uhrzeit bitte als HH:MM angeben' });
+  if (endTime <= startTime) return res.status(400).json({ error: 'Das Unterrichtsende muss nach dem Beginn liegen' });
+  const num = (v, min, max) => (v === null || v === '' ? null : Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Math.round(Number(v)))) : undefined);
+  const next = {};
+  if (b.weekday !== undefined) {
+    const wd = Number(b.weekday);
+    if (!Number.isInteger(wd) || wd < 0 || wd > 6) return res.status(400).json({ error: 'Ungültiger Wochentag' });
+    next.weekday = wd;
+  }
+  if (b.lateAfterMinutes !== undefined) { const v = num(b.lateAfterMinutes, 0, 120); if (v !== undefined) next.lateAfterMinutes = v; }
+  if (b.unexcusedLateAfterMinutes !== undefined) { const v = num(b.unexcusedLateAfterMinutes, 1, 300); if (v !== undefined) next.unexcusedLateAfterMinutes = v; }
+  if (b.checkinOpensBefore !== undefined) { const v = num(b.checkinOpensBefore, 0, 120); if (v !== undefined) next.checkinOpensBefore = v; }
+  // Erst prüfen, dann übernehmen (nichts Halbes speichern).
+  const rules = classRules({ ...klass, ...next });
+  if (rules.unexcusedLateAfterMinutes != null && rules.unexcusedLateAfterMinutes <= rules.lateAfterMinutes)
+    return res.status(400).json({ error: '„Unentschuldigt zu spät" muss später liegen als die Pünktlichkeits-Toleranz' });
+  Object.assign(klass, next, { startTime, endTime });
+  // Heutige, noch nicht begonnene Sitzung sofort an die neuen Zeiten anpassen.
+  const today = db.all('sessions').find((x) => x.classId === klass.id && x.date === todayKey());
+  if (today && today.status === 'scheduled' && !today.schoolDayId) {
+    today.scheduledStart = combineDateTime(today.date, klass.startTime);
+    today.scheduledEnd = combineDateTime(today.date, klass.endTime);
+  }
+  db.commit();
+  audit(req.user.id, 'class.settings', 'class', klass.id, before, { weekday: klass.weekday, startTime, endTime, ...rules });
+  res.json({ class: classView(klass, req.user) });
+});
+
+// Vergangene Unterrichtstage einer Klasse (zum Prüfen und Löschen von Testläufen).
+router.get('/classes/:id/sessions', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const att = db.all('attendance');
+  const list = db.all('sessions').filter((x) => x.classId === klass.id)
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map((x) => {
+      const recs = att.filter((a) => a.sessionId === x.id);
+      const c = (st) => recs.filter((a) => a.status === st).length;
+      return { id: x.id, date: x.date, status: x.status, schoolDay: Boolean(x.schoolDayId), entries: recs.length, present: c('present'), late: c('late'), excused: c('excused'), unexcused: c('unexcused') };
+    })
+    // Leere, nie begonnene Tage (nur beim Öffnen der Seite angelegt) sind kein Unterricht.
+    .filter((x) => x.entries > 0 || x.status !== 'scheduled' || x.date === todayKey());
+  res.json({ sessions: list });
+});
+
+function deleteSessionCascade(sess) {
+  const att = db.all('attendance');
+  let removed = 0;
+  for (let i = att.length - 1; i >= 0; i--) if (att[i].sessionId === sess.id) { att.splice(i, 1); removed++; }
+  const list = db.all('sessions');
+  const idx = list.findIndex((x) => x.id === sess.id);
+  if (idx >= 0) list.splice(idx, 1);
+  return removed;
+}
+router.post('/sessions/bulk-delete', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
+  if (!ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
+  let sessions = 0; let entries = 0;
+  for (const id of ids) {
+    const sess = byId('sessions', id);
+    if (!sess || !canManageClass(req.user, sess.classId)) continue;
+    entries += deleteSessionCascade(sess);
+    sessions++;
+    audit(req.user.id, 'session.delete', 'session', id, { date: sess.date, classId: sess.classId }, null);
+  }
+  db.commit();
+  res.json({ ok: true, sessions, entries });
+});
+
+// --- Gemeinsamer Schultag (ganze Koran-Schule) -------------------------------
+function schoolDayView(d, withCode = false) {
+  return {
+    id: d.id, date: d.date, title: d.title, startTime: d.startTime, endTime: d.endTime,
+    lateAfterMinutes: d.lateAfterMinutes ?? null, createdByName: d.createdByName,
+    isToday: d.date === todayKey(),
+    ...(withCode ? { code: d.code } : {}),
+  };
+}
+router.get('/school-days', requireAuth, (req, res) => {
+  const from = localDateKey(new Date(Date.now() - 14 * 86400000));
+  const list = db.all('school_days').filter((d) => d.date >= from).sort((a, b) => a.date.localeCompare(b.date));
+  res.json({ days: list.map((d) => schoolDayView(d, isAdmin(req.user))) });
+});
+router.post('/school-days', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const { date, startTime, endTime, title, lateAfterMinutes } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return res.status(400).json({ error: 'Bitte ein Datum wählen' });
+  if (date < todayKey()) return res.status(400).json({ error: 'Das Datum liegt in der Vergangenheit' });
+  if (!HHMM.test(startTime || '') || !HHMM.test(endTime || '') || endTime <= startTime) return res.status(400).json({ error: 'Bitte gültige Zeiten angeben (Ende nach Beginn)' });
+  if (schoolDayOn(date)) return res.status(409).json({ error: 'Für diesen Tag gibt es schon einen gemeinsamen Unterricht' });
+  const d = {
+    id: newId('sday'), date, startTime, endTime,
+    title: String(title || '').trim() || 'Gemeinsamer Unterricht',
+    lateAfterMinutes: Number.isFinite(Number(lateAfterMinutes)) && lateAfterMinutes !== '' && lateAfterMinutes !== null ? Math.max(0, Math.min(120, Number(lateAfterMinutes))) : null,
+    code: 'SCH-' + crypto.randomBytes(6).toString('base64url'),
+    createdBy: req.user.id, createdByName: req.user.name, createdAt: new Date().toISOString(),
+  };
+  db.insert('school_days', d);
+  audit(req.user.id, 'school_day.create', 'school_day', d.id, null, { date });
+  // Heute schon bestehende, noch nicht begonnene Klassen-Sitzungen übernehmen die Zeiten.
+  if (date === todayKey()) db.all('classes').filter((c) => c.active !== false).forEach((c) => ensureTodaySession(c));
+  const when = new Date(`${date}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' });
+  db.all('users').filter((u) => u.status === 'active' && (STUDENT_ROLES.includes(u.role) || TEACHING_ROLES.includes(u.role) || u.role === ROLES.ELTERN))
+    .forEach((u) => notify(u.id, { type: 'event', level: 'info', title: `${d.title}: ${when}`, body: `Die ganze Schule hat gemeinsam Unterricht, ${startTime}–${endTime} Uhr. Eingecheckt wird mit dem gemeinsamen QR-Code.`, deepLink: '/kalender' }));
+  res.json({ day: schoolDayView(d, true) });
+});
+router.delete('/school-days/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const list = db.all('school_days');
+  const idx = list.findIndex((d) => d.id === req.params.id);
+  if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
+  const [d] = list.splice(idx, 1);
+  // Noch nicht begonnene Sitzungen dieses Tages fallen auf die Klassenzeiten zurück.
+  db.all('sessions').filter((x) => x.schoolDayId === d.id && x.status === 'scheduled').forEach((x) => {
+    const c = findClass(x.classId);
+    x.schoolDayId = null;
+    if (c) { x.scheduledStart = combineDateTime(x.date, c.startTime); x.scheduledEnd = combineDateTime(x.date, c.endTime); }
+  });
+  db.commit();
+  audit(req.user.id, 'school_day.delete', 'school_day', d.id, { date: d.date }, null);
+  res.json({ ok: true });
+});
+
+// Tagesüberblick für die Leitung: je Klasse nur ZAHLEN (keine Namen) --
+// wie viele sind da, wie viele zu spät, wie viele fehlen noch.
+router.get('/school/today', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const date = todayKey();
+  const users = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status === 'active');
+  const rows = db.all('classes').filter((c) => c.active !== false).map((c) => {
+    const sess = db.all('sessions').find((x) => x.classId === c.id && x.date === date);
+    const recs = sess ? db.all('attendance').filter((a) => a.sessionId === sess.id) : [];
+    const n = (st) => recs.filter((a) => a.status === st).length;
+    const students = users.filter((u) => (u.classIds || []).includes(c.id)).length;
+    return {
+      id: c.id, name: c.name, weekday: c.weekday, startTime: c.startTime, endTime: c.endTime,
+      lessonToday: Boolean(sess) || c.weekday === new Date().getDay() || Boolean(schoolDayOn(date)),
+      status: sess?.status || null, students,
+      present: n('present'), late: n('late'), excused: n('excused'), unexcused: n('unexcused'),
+      lateUnexcused: recs.filter((a) => a.lateUnexcused).length,
+      open: Math.max(0, students - recs.length),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  res.json({ date, schoolDay: schoolDayOn(date) ? schoolDayView(schoolDayOn(date), true) : null, classes: rows });
 });
 
 // "Klasse neu starten": Test-/Probedaten einer Klasse gezielt löschen, damit
@@ -1406,7 +1650,7 @@ router.get('/calendar', requireAuth, (req, res) => {
   // Unterrichtstermine aus dem wöchentlichen Stundenplan
   for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dateKey = d.toISOString().slice(0, 10);
+    const dateKey = localDateKey(d);
     for (const c of classes) {
       if (c.weekday !== dow) continue;
       const sess = db.all('sessions').find((s) => s.classId === c.id && s.date === dateKey);
@@ -1493,7 +1737,7 @@ function expandEvent(ev, fromD, toD) {
   const end = until < toD ? until : toD;
   let cap = 0;
   for (const d = new Date(base); d <= end && cap < 400; cap++) {
-    if (d >= fromD) out.push(d.toISOString().slice(0, 10));
+    if (d >= fromD) out.push(localDateKey(d));
     if (rec.freq === 'daily') d.setDate(d.getDate() + 1);
     else if (rec.freq === 'weekly') d.setDate(d.getDate() + 7);
     else if (rec.freq === 'monthly') d.setMonth(d.getMonth() + 1);
@@ -1653,7 +1897,7 @@ function buildCalendarIcs(user) {
   const classes = visibleClasses(user);
   for (let d = new Date(fromD); d <= toD; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dateKey = d.toISOString().slice(0, 10);
+    const dateKey = localDateKey(d);
     for (const c of classes) {
       if (c.weekday !== dow) continue;
       push({ uid: `lesson-${c.id}-${dateKey}`, start: icsLocal(dateKey, c.startTime), end: icsLocal(dateKey, c.endTime), summary: `Unterricht: ${c.name}` });
@@ -1797,8 +2041,19 @@ router.get('/absence-requests', requireAuth, (req, res) => {
       const recs = db.all('attendance').filter((a) => a.studentId === r.studentId);
       const absences = recs.filter((a) => a.status === 'excused' || a.status === 'unexcused').length;
       const requestCount = db.all('absence_requests').filter((x) => x.studentId === r.studentId).length;
-      return { ...r, studentAbsences: absences, studentAbsenceRequests: requestCount };
-    });
+      return {
+        ...r,
+        className: findClass(r.classId)?.name || 'Ohne Klasse',
+        studentAbsences: absences,
+        studentAbsenceRequests: requestCount,
+        // Leitung/Admin: nur ansehen, nicht entscheiden.
+        readOnly: !canDecideForClass(req.user, r.classId),
+      };
+    }).map((r) => (r.readOnly
+      // Leitung/Admin sehen nur DASS und WIE jemand entschuldigt ist -- der
+      // Freitext und die Rückfragen bleiben zwischen Familie und Lehrkraft.
+      ? { ...r, comment: '', comments: [] }
+      : r));
   } else {
     list = [];
   }
@@ -1813,7 +2068,9 @@ router.get('/absence-requests', requireAuth, (req, res) => {
 router.post('/absence-requests/:id/decide', requireAuth, (req, res) => {
   const item = byId('absence_requests', req.params.id);
   if (!item) return res.status(404).json({ error: 'Antrag nicht gefunden' });
-  if (!canManageClass(req.user, item.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  // Entscheiden darf NUR die Lehrkraft der Klasse -- Leitung/Admin sehen die
+  // Anträge, haben aber bewusst keinen Einfluss auf die Entscheidung.
+  if (!canDecideForClass(req.user, item.classId)) return res.status(403).json({ error: 'Über Entschuldigungen entscheidet die Klassenlehrkraft' });
   const { decision } = req.body || {};
   const map = { approve: 'approved', reject: 'rejected', needs_info: 'needs_info' };
   if (!map[decision]) return res.status(400).json({ error: 'Ungültige Entscheidung' });
@@ -1846,7 +2103,7 @@ router.post('/absence-requests/:id/comments', requireAuth, (req, res) => {
   if (!item) return res.status(404).json({ error: 'Antrag nicht gefunden' });
   const isOwner = item.studentId === req.user.id;
   const isParent = req.user.role === ROLES.ELTERN && (req.user.childIds || []).includes(item.studentId);
-  const isManager = canManageClass(req.user, item.classId);
+  const isManager = canDecideForClass(req.user, item.classId);
   if (!isOwner && !isParent && !isManager) return res.status(403).json({ error: 'Kein Zugriff' });
 
   const body = (req.body?.body || '').trim();
@@ -3997,6 +4254,8 @@ router.post('/threads/bulk', requireAuth, (req, res) => {
   const { ids, action } = req.body || {};
   if (!Array.isArray(ids) || !ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
   if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  // Schüler/Eltern dürfen Verläufe nicht löschen (alles bleibt nachvollziehbar).
+  if (action === 'delete' && !canDeleteHistory(req.user)) return res.status(403).json({ error: 'Nachrichten können nur von Lehrkräften und der Leitung gelöscht werden' });
   const now = new Date().toISOString();
   const wanted = new Set(ids.map(String));
   let changed = 0;
@@ -4273,7 +4532,7 @@ function penaltyText(p) {
 // (pending -> approved -> settled), siehe /penalties/:id/settle.
 function penaltyView(p) {
   const o = org();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayKey();
   const due = p.dueDate || null;
   const overdue = p.status === 'approved' && !!due && today > due;
   if (p.type === 'other') {
@@ -4341,7 +4600,7 @@ router.post('/penalties', requireAuth, requireRole([...CLASS_MANAGERS, ROLES.KLA
   const now = new Date().toISOString();
   // Frist: explizit übergeben oder Org-Standard; 0 = keine Frist.
   const dueDays = Number.isFinite(Number(req.body?.dueInDays)) ? Math.max(0, Number(req.body.dueInDays)) : (org().penaltyDueDays || 0);
-  const dueDate = dueDays > 0 ? new Date(Date.now() + dueDays * 86400000).toISOString().slice(0, 10) : null;
+  const dueDate = dueDays > 0 ? localDateKey(new Date(Date.now() + dueDays * 86400000)) : null;
   const p = {
     id: newId('pen'),
     classId,
@@ -4585,7 +4844,8 @@ router.delete('/penalties/:id', requireAuth, (req, res) => {
   if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
   const p = list[idx];
   const own = p.createdBy === req.user.id && p.status === 'pending';
-  if (!own && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!own && !isAdmin(req.user) && !(TEACHING_ROLES.includes(req.user.role) && canManageClass(req.user, p.classId)))
+    return res.status(403).json({ error: 'Kein Zugriff' });
   list.splice(idx, 1);
   db.commit();
   audit(req.user.id, 'penalty.delete', 'penalty', p.id);
@@ -4708,7 +4968,7 @@ function unreadCountFor(userId) {
 }
 
 function linkedAccountView(u) {
-  return { id: u.id, name: u.name, role: u.role, roleLabel: ROLE_LABELS[u.role] || u.role, unread: unreadCountFor(u.id) };
+  return { id: u.id, name: u.name, role: u.role, roleLabel: ROLE_LABELS[u.role] || u.role, classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean), unread: unreadCountFor(u.id) };
 }
 
 // Alle mit dem aktuellen Konto verknüpften (aktiven) Konten.
@@ -4782,8 +5042,160 @@ router.post('/me/switch/:id', requireAuth, (req, res) => {
   const target = findUserById(req.params.id);
   if (!target || target.status === 'disabled') return res.status(404).json({ error: 'Konto nicht verfügbar' });
   issueToken(res, target, { sb: inSandbox() });
+  // Zuletzt genutzte Rolle merken: beim nächsten Anmelden startet die Person
+  // direkt dort (z. B. Lehrkraft statt Schüler-Ansicht).
+  personAccounts(target).forEach((a) => { if (a.email) a.lastActiveAccountId = target.id; });
+  db.commit();
   audit(req.user.id, 'account.switch', 'user', target.id);
   res.json({ user: publicUser(target) });
+});
+
+// =============================================================================
+// Mehrere Rollen pro Person
+//
+// Eine Person meldet sich EINMAL an (E-Mail + Passwort ihres Hauptkontos). Die
+// Verwaltung kann ihr danach weitere Rollen geben (z. B. Schüler in Klasse 6 +
+// Klassenlehrer in Klasse 3 + DBZ-Leitung). Jede Rolle ist technisch ein
+// eigenes, verknüpftes Rollenkonto OHNE eigene E-Mail/Passwort -- so bleiben
+// die Daten sauber getrennt (Schüler-Anwesenheit ≠ Lehrer-Klassenzuordnung),
+// und die Person wechselt oben im Menü einfach die Rolle.
+// Rechte: System-Administrator vergibt jede Rolle, die DBZ-Leitung höchstens
+// "DBZ-Leitung" (nie System-Administrator).
+// =============================================================================
+
+function personAccounts(u) {
+  const ids = new Set([u.id]);
+  const queue = [u.id];
+  while (queue.length) {
+    const x = findUserById(queue.shift());
+    (x?.linkedAccountIds || []).forEach((l) => { if (!ids.has(l)) { ids.add(l); queue.push(l); } });
+  }
+  return [...ids].map(findUserById).filter(Boolean);
+}
+function linkAllAccounts(accounts) {
+  accounts.forEach((a) => {
+    a.linkedAccountIds = a.linkedAccountIds || [];
+    accounts.forEach((b) => { if (a.id !== b.id && !a.linkedAccountIds.includes(b.id)) a.linkedAccountIds.push(b.id); });
+  });
+}
+const canGrantRole = (actor, role) => actor.role === ROLES.SUPER_ADMIN || (actor.role === ROLES.LEITUNG && role !== ROLES.SUPER_ADMIN);
+function roleAccountView(u) {
+  return {
+    id: u.id,
+    role: u.role,
+    roleLabel: ROLE_LABELS[u.role] || u.role,
+    classIds: u.classIds || [],
+    classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
+    childNames: (u.childIds || []).map((c) => findUserById(c)?.name).filter(Boolean),
+    status: u.status,
+    // Hauptkonto = das mit E-Mail/Passwort (dort meldet sich die Person an).
+    login: Boolean(u.email),
+    email: u.email || null,
+  };
+}
+function cleanRoleClassIds(role, classIds) {
+  const ids = (Array.isArray(classIds) ? classIds : []).filter((c) => findClass(c));
+  if (TEACHING_ROLES.includes(role)) return [...new Set(ids)];
+  if (STUDENT_ROLES.includes(role)) return ids.slice(0, 1); // Schüler ohne Klasse ist erlaubt
+  return [];
+}
+
+router.get('/admin/users/:id/roles', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  const accounts = personAccounts(u);
+  const main = accounts.find((a) => a.email) || u;
+  res.json({
+    person: { id: main.id, name: main.name, email: main.email || null },
+    accounts: accounts.map(roleAccountView),
+    grantable: ALL_ROLES.filter((r) => canGrantRole(req.user, r)),
+  });
+});
+
+router.post('/admin/users/:id/roles', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
+  const { role } = req.body || {};
+  if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
+  if (!canGrantRole(req.user, role)) return res.status(403).json({ error: 'Die DBZ-Leitung kann höchstens die Rolle „DBZ-Leitung" vergeben' });
+  const accounts = personAccounts(u);
+  const main = accounts.find((a) => a.email) || u;
+  const classIds = cleanRoleClassIds(role, req.body?.classIds);
+  const existing = accounts.find((a) => a.role === role || (STUDENT_ROLES.includes(role) && STUDENT_ROLES.includes(a.role)));
+  let account;
+  if (existing) {
+    if (existing.status !== 'disabled') return res.status(409).json({ error: `${main.name} hat diese Rolle bereits` });
+    // Früher entzogene Rolle wieder aktivieren (alte Daten bleiben erhalten).
+    existing.status = 'active';
+    existing.role = role;
+    existing.classIds = classIds;
+    existing.name = main.name;
+    account = existing;
+  } else {
+    account = {
+      id: newId('user'),
+      name: main.name,
+      email: null,
+      passwordHash: null,
+      role,
+      classIds,
+      childIds: [],
+      status: 'active',
+      roleOf: main.id,
+      isDemo: Boolean(u.isDemo),
+      consentAt: main.consentAt || null,
+      createdAt: new Date().toISOString(),
+    };
+    db.insert('users', account);
+    accounts.push(account);
+  }
+  linkAllAccounts(accounts);
+  db.commit();
+  audit(req.user.id, 'user.role_add', 'user', account.id, null, { person: main.id, role, classIds });
+  notify(account.id, {
+    type: 'account_linked', level: 'info', title: `Neue Rolle: ${ROLE_LABELS[role]}`,
+    body: 'Du kannst jetzt unten im Menü (bei deinem Namen) zwischen deinen Rollen wechseln.', deepLink: '/dashboard',
+  });
+  // Das letzte Wort hat der System-Administrator: über jede neue Rolle informieren.
+  if (req.user.role !== ROLES.SUPER_ADMIN) superAdminIds().forEach((id) => notify(id, {
+    type: 'approval', level: 'info', title: 'Rolle vergeben',
+    body: `${req.user.name} hat ${main.name} die Rolle „${ROLE_LABELS[role]}" gegeben.`, deepLink: '/admin',
+  }));
+  res.json({ account: roleAccountView(account) });
+});
+
+// Klassen einer Rolle ändern (z. B. Lehrkraft übernimmt zusätzlich Klasse 4).
+router.patch('/admin/users/:id/roles/:accountId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  const acc = findUserById(req.params.accountId);
+  if (!u || !acc || !personAccounts(u).some((a) => a.id === acc.id)) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, acc)) return;
+  if (!canGrantRole(req.user, acc.role)) return res.status(403).json({ error: 'Keine Berechtigung für diese Rolle' });
+  const before = { classIds: acc.classIds };
+  acc.classIds = cleanRoleClassIds(acc.role, req.body?.classIds);
+  db.commit();
+  audit(req.user.id, 'user.role_classes', 'user', acc.id, before, { classIds: acc.classIds });
+  res.json({ account: roleAccountView(acc) });
+});
+
+// Rolle entziehen: das Rollenkonto wird deaktiviert (Verlauf bleibt erhalten,
+// die Rolle lässt sich später wieder vergeben). Das Anmelde-Konto selbst wird
+// hier nicht angetastet (dafür "Deaktivieren" in der Nutzerliste).
+router.delete('/admin/users/:id/roles/:accountId', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  const acc = findUserById(req.params.accountId);
+  if (!u || !acc || !personAccounts(u).some((a) => a.id === acc.id)) return res.status(404).json({ error: 'Rolle nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, acc)) return;
+  if (acc.email) return res.status(400).json({ error: 'Das ist das Anmelde-Konto der Person. Rolle hier über „Rolle ändern" anpassen oder das Konto deaktivieren.' });
+  if (!canGrantRole(req.user, acc.role)) return res.status(403).json({ error: 'Keine Berechtigung für diese Rolle' });
+  if (acc.id === req.user.id) return res.status(400).json({ error: 'Die eigene aktive Rolle kann nicht entzogen werden – wechsle vorher die Rolle' });
+  if (acc.role === ROLES.SUPER_ADMIN && db.all('users').filter((x) => x.role === ROLES.SUPER_ADMIN && x.status !== 'disabled').length <= 1)
+    return res.status(400).json({ error: 'Der letzte System-Administrator kann nicht entfernt werden' });
+  acc.status = 'disabled';
+  db.commit();
+  audit(req.user.id, 'user.role_remove', 'user', acc.id, { role: acc.role }, null);
+  res.json({ ok: true });
 });
 
 // =============================================================================
@@ -4930,6 +5342,7 @@ router.post('/notifications/bulk', requireAuth, (req, res) => {
   const { ids, action } = req.body || {};
   if (!Array.isArray(ids) || !ids.length || ids.length > 2000) return res.status(400).json({ error: 'Keine Auswahl' });
   if (!['read', 'delete'].includes(action)) return res.status(400).json({ error: 'Unbekannte Aktion' });
+  if (action === 'delete' && !canDeleteHistory(req.user)) return res.status(403).json({ error: 'Benachrichtigungen können nur als gelesen markiert werden' });
   const wanted = new Set(ids.map(String));
   const notes = db.all('notifications');
   let changed = 0;
@@ -4992,7 +5405,7 @@ function upcomingFor(user, days = 14, limit = 5) {
   const classes = visibleClasses(user);
   for (let d = new Date(today); d <= end; d.setDate(d.getDate() + 1)) {
     const dow = d.getDay();
-    const dk = d.toISOString().slice(0, 10);
+    const dk = localDateKey(d);
     for (const c of classes) if (c.weekday === dow) events.push({ date: dk, type: 'lesson', title: c.name, time: `${c.startTime}–${c.endTime}` });
   }
   const addDue = (a, due, who) => {
@@ -5272,7 +5685,19 @@ router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.
 
 router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const list = req.user.isDemo ? db.all('users').filter((u) => u.isDemo) : db.all('users');
-  res.json({ users: list.map(publicUser) });
+  res.json({
+    users: list.map((u) => {
+      const others = (u.linkedAccountIds || []).map(findUserById).filter((x) => x && x.status !== 'disabled');
+      const main = u.email ? u : others.find((x) => x.email);
+      return {
+        ...publicUser(u),
+        lastSeenAt: u.lastSeenAt || null,
+        classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
+        otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
+        loginEmail: main?.email || null,
+      };
+    }),
+  });
 });
 
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
@@ -5313,7 +5738,10 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   const { name, role, classIds, childIds, status } = req.body || {};
   const before = { role: u.role, status: u.status, classIds: u.classIds, childIds: u.childIds };
 
-  if (name && name.trim()) u.name = name.trim();
+  if (name && name.trim()) {
+    u.name = name.trim();
+    personAccounts(u).forEach((a) => { if (!a.email) a.name = u.name; });
+  }
 
   if (role && role !== u.role) {
     if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
@@ -5351,6 +5779,8 @@ function hardDeleteUser(u) {
   const arr = db.all('users');
   const idx = arr.findIndex((x) => x.id === u.id);
   arr.splice(idx, 1);
+  // Rollenkonten (ohne eigene Anmeldung) gehören zur Person und gehen mit.
+  for (let i = arr.length - 1; i >= 0; i--) if (arr[i].roleOf === u.id && !arr[i].email) arr.splice(i, 1);
   arr.forEach((x) => {
     if (x.childIds?.includes(u.id)) x.childIds = x.childIds.filter((id) => id !== u.id);
     if (x.linkedAccountIds?.includes(u.id)) x.linkedAccountIds = x.linkedAccountIds.filter((id) => id !== u.id);

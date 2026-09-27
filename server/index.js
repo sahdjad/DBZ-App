@@ -1,6 +1,7 @@
 // Express-Einstiegspunkt der DBZ-App. In Produktion liefert der Server
 // zusätzlich das gebaute Frontend (client/dist) und die API auf einem Port aus.
 
+import './tz.js';
 import { createApp } from './app.js';
 import { seed, removeLegacyDemoAccounts } from './seed.js';
 import { scheduleMaintenance } from './maintenance.js';
