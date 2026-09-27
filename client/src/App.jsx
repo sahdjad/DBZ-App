@@ -22,6 +22,7 @@ const Anwesenheit = lazy(() => import('./pages/Anwesenheit.jsx'));
 const Abwesenheit = lazy(() => import('./pages/Abwesenheit.jsx'));
 const Entschuldigungen = lazy(() => import('./pages/Entschuldigungen.jsx'));
 const Korrektur = lazy(() => import('./pages/Korrektur.jsx'));
+const Abgaben = lazy(() => import('./pages/Abgaben.jsx'));
 const Verhalten = lazy(() => import('./pages/Verhalten.jsx'));
 const Strafen = lazy(() => import('./pages/Strafen.jsx'));
 const Regeln = lazy(() => import('./pages/Regeln.jsx'));
@@ -123,6 +124,7 @@ export default function App() {
         <Route path="/abwesenheit" element={<Protected roles={['schueler', 'klassensprecher', 'eltern']}><Abwesenheit /></Protected>} />
         <Route path="/entschuldigungen" element={<Protected roles={MANAGERS}><Entschuldigungen /></Protected>} />
         <Route path="/korrektur" element={<Protected roles={MANAGERS}><Korrektur /></Protected>} />
+        <Route path="/abgaben" element={<Protected roles={ADMINS}><Abgaben /></Protected>} />
         <Route path="/verhalten" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Verhalten /></Protected>} />
         <Route path="/strafen" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Strafen /></Protected>} />
         <Route path="/regeln" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Regeln /></Protected>} />

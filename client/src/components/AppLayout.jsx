@@ -52,6 +52,7 @@ const ITEMS = {
   abwesenheit: { to: '/abwesenheit', label: 'Abwesenheit melden', icon: CalendarX },
   entschuldigungen: { to: '/entschuldigungen', label: 'Entschuldigungen', icon: ClipboardCheck },
   korrektur: { to: '/korrektur', label: 'Korrektur', icon: CheckSquare },
+  abgaben: { to: '/abgaben', label: 'Abgaben', icon: CheckSquare },
   verhalten: { to: '/verhalten', label: 'Verhalten', icon: Sparkles },
   strafen: { to: '/strafen', label: 'Strafen', icon: Scale },
   regeln: { to: '/regeln', label: 'Regeln & Katalog', icon: BookOpen },
@@ -75,7 +76,7 @@ const NAV_GROUPS = {
   '/ankuendigungen': 'Kommunikation', '/nachrichten': 'Kommunikation', '/benachrichtigungen': 'Kommunikation',
   '/unterricht': 'Unterricht & Anwesenheit', '/klassenliste': 'Unterricht & Anwesenheit', '/checkin': 'Unterricht & Anwesenheit',
   '/anwesenheit': 'Unterricht & Anwesenheit', '/abwesenheit': 'Unterricht & Anwesenheit', '/kalender': 'Unterricht & Anwesenheit',
-  '/korrektur': 'Unterricht & Anwesenheit', '/entschuldigungen': 'Unterricht & Anwesenheit', '/protokolle': 'Unterricht & Anwesenheit',
+  '/korrektur': 'Unterricht & Anwesenheit', '/abgaben': 'Unterricht & Anwesenheit', '/entschuldigungen': 'Unterricht & Anwesenheit', '/protokolle': 'Unterricht & Anwesenheit',
   '/aufgaben': 'Unterricht & Anwesenheit',
   '/quran': 'Lernen & Leistung', '/hifz': 'Lernen & Leistung', '/pruefungen': 'Lernen & Leistung',
   '/materialien': 'Lernen & Leistung', '/berichte': 'Lernen & Leistung', '/aktivitaeten': 'Lernen & Leistung',
@@ -125,13 +126,13 @@ function navForRole(role) {
       );
     case 'super_admin':
     case 'leitung':
-      // Unterricht/Kalender/Korrekturen/Entschuldigungen/Protokolle sind serverseitig
-      // für Leitung/Admin bereits über die Klassenlisten-Sicht erreichbar (isAdmin()-
-      // Zweige in den jeweiligen Endpunkten) – bislang fehlten sie nur im Menü.
+      // Leitung/Admin unterrichten nicht selbst: statt "Korrektur" nur
+      // "Abgaben" (ansehen), Entschuldigungen nur einsehen, alles nach Klassen
+      // geordnet. "Unterricht" = Tagesüberblick + gemeinsamer Schultag.
       return k(
         'dashboard', 'leitung',
         'ankuendigungen', 'nachrichten', 'benachrichtigungen',
-        'unterricht', 'klassenliste', 'kalender', 'korrektur', 'entschuldigungen', 'protokolle', 'aktivitaeten',
+        'unterricht', 'klassenliste', 'kalender', 'abgaben', 'entschuldigungen', 'protokolle', 'aktivitaeten',
         'strafen', 'regeln',
         'admin', 'dbzonline',
         'konto',

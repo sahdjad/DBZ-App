@@ -1484,6 +1484,7 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
       penaltyMoney,
       penaltyPages,
       negativeBehavior,
+      lastSeenAt: s.lastSeenAt || null,
       // Nur für die Klassenlehrkraft sichtbar (nicht für Leitung/Admin/Klassensprecher):
       // "wer ist auf Probezeit" bleibt Sache des Lehrers, nicht Teil der allgemeinen Klassenliste.
       ...(TEACHING_ROLES.includes(req.user.role) ? { probation: Boolean(s.probation) } : {}),
@@ -1491,6 +1492,30 @@ router.get('/classes/:id/roster', requireAuth, requireRole(CLASS_MANAGERS), (req
   });
   rows.sort((a, b) => a.name.localeCompare(b.name, 'de'));
   res.json({ class: { id: klass.id, name: klass.name }, rows });
+});
+
+// Gesamte Koran-Schule alphabetisch (Leitung/Admin): wer ist in welcher
+// Klasse, Online oder Präsenz, und wann zuletzt in der App.
+router.get('/school/roster', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const classes = db.all('classes');
+  const rows = db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (!req.user.isDemo || u.isDemo))
+    .map((u) => {
+      const cls = (u.classIds || []).map((c) => classes.find((x) => x.id === c)).filter(Boolean);
+      const att = attendanceStats(u.id);
+      return {
+        id: u.id,
+        name: u.name,
+        role: u.role,
+        classNames: cls.map((c) => c.name),
+        classType: cls[0]?.type || null,
+        status: u.status,
+        attendanceRate: att.sessions ? Math.round(((att.present + att.late) / att.sessions) * 100) : null,
+        lastSeenAt: u.lastSeenAt || null,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  res.json({ rows });
 });
 
 // Schüler(in) aus der eigenen Klasse entfernen (nicht das ganze Konto
@@ -2564,6 +2589,8 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
         id: s.id,
         assignmentId: s.assignmentId,
         assignmentTitle: a?.title,
+        assignmentDueAt: a?.dueAt || null,
+        classId: s.classId,
         className: findClass(s.classId)?.name,
         studentName: s.studentName,
         text: s.text,
@@ -2654,7 +2681,7 @@ router.get('/protocols', requireAuth, (req, res) => {
   } else if (!isAdmin(req.user)) {
     list = [];
   }
-  res.json({ protocols: [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')) });
+  res.json({ protocols: [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map((p) => ({ ...p, className: findClass(p.classId)?.name || 'Klasse' })) });
 });
 
 // Entwurf anlegen/aktualisieren (Klassensprecher der Klasse oder Verwalter).
@@ -3948,11 +3975,23 @@ router.get('/reports/:id', requireAuth, (req, res) => {
 // Direktnachrichten (sichere 1:1-Kommunikation)
 // =============================================================================
 
-// Rollen-Postfächer für Schüler/Eltern: sie schreiben nie eine einzelne
-// Person an, sondern ein Team. Mehrere Personen teilen sich diese Konten/
-// Postfächer, deshalb sehen Schüler/Eltern nie einen Personennamen -- nur die
-// Rolle und wofür sie zuständig ist (Rückmeldung aus dem Testlauf: Schüler
-// haben sonst oft die falsche Stelle angeschrieben).
+// Postfächer statt Personen
+//
+// Mitarbeitende treten nach außen NIE mit ihrem Namen auf, sondern als
+// Postfach: "DBZ-Leitung", "Systembetreuung" oder "Klassenleitung Klasse 3".
+// Mehrere Personen teilen sich ein Postfach (eine Antwort reicht für alle).
+// Nur Kolleg(inn)en im selben Postfach sehen, wer genau geschrieben hat.
+// Einzelne Personen anschreiben kann man nur als Schüler/Eltern.
+//
+// Wer darf wen anschreiben?
+//   Schüler MIT Klasse      -> nur die Klassenleitung der eigenen Klasse
+//   Schüler OHNE Klasse     -> DBZ-Leitung, Systembetreuung
+//   Eltern                  -> Klassenleitung der Kinder + DBZ-Leitung
+//                              (Kinder ohne Klasse: DBZ-Leitung + Systembetreuung)
+//   Lehrkräfte              -> DBZ-Leitung, Systembetreuung, andere Klassenleitungen,
+//                              Schüler/Eltern der eigenen Klasse(n), Rundnachricht an die Klasse
+//   Leitung/Admin           -> alle Postfächer, alle Schüler/Eltern, Rundnachrichten an alle
+// Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
 const INBOXES = {
   klasse: { label: 'Klassenleitung', description: 'Alles rund um deinen Unterricht: Aufgaben, Anwesenheit, Entschuldigungen und Fragen zum Stoff.' },
   leitung: { label: 'DBZ-Leitung', description: 'Persönliche Anliegen, Sorgen und Probleme sowie organisatorische Fragen der Schule – vertraulich.' },
@@ -3968,120 +4007,167 @@ function familyClassIds(family) {
   return [...set];
 }
 
-// Wer steht hinter einem Postfach? (aktive Konten)
-function inboxMemberIds(inbox, family) {
-  const active = db.all('users').filter((u) => u.status !== 'disabled');
-  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
-  if (inbox === 'system') {
-    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
-    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
-  }
-  if (inbox === 'leitung') {
-    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
-    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
-  }
-  return [];
-}
-
-// Postfach eines bestehenden Threads (gespeichert oder -- bei älteren Threads
-// -- aus den Rollen der Mitarbeiterseite abgeleitet).
-function threadInbox(t) {
-  if (t.inbox) return t.inbox;
-  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
-  if (!staff.length) return null;
-  if (staff.some((u) => u.role === ROLES.KLASSENLEHRER || u.role === ROLES.VERTRETUNG)) return 'klasse';
-  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
-  return 'system';
-}
-
-// Erlaubte Gesprächspartner: Schüler/Eltern -> nur die drei Rollen-Postfächer
-// (Klassenleitung ihrer Klasse(n), DBZ-Leitung, Systembetreuung). Lehrkräfte
-// -> Schüler/Eltern ihrer Klassen. Leitung/Admin -> Mitarbeitende.
-// Kein Schüler-zu-Schüler (docs/SECURITY_PRIVACY.md §8).
-function messageContacts(user) {
-  const users = db.all('users');
-  const active = (u) => u.status !== 'disabled' && u.id !== user.id;
-  if (isAdmin(user)) return users.filter((u) => active(u) && CLASS_MANAGERS.includes(u.role));
-  if (isClassManager(user)) {
-    const myClasses = user.classIds || [];
-    const students = users.filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).some((c) => myClasses.includes(c)));
-    const studentIds = new Set(students.map((s) => s.id));
-    const parents = users.filter((u) => u.role === ROLES.ELTERN && (u.childIds || []).some((ch) => studentIds.has(ch)));
-    return [...students, ...parents].filter(active);
-  }
-  return [];
-}
-function familyInboxes(user) {
-  if (!isFamily(user)) return [];
-  return Object.entries(INBOXES)
-    .filter(([key]) => inboxMemberIds(key, user).length > 0)
-    .map(([key, v]) => ({ id: `inbox:${key}`, name: v.label, roleLabel: v.label, description: v.description }));
-}
-const canMessage = (user, otherId) => messageContacts(user).some((u) => u.id === otherId) || familyInboxes(user).some((c) => c.id === otherId);
-
 // Alle Lehrkräfte (Klassenlehrer + Vertretung) der angegebenen Klassen.
 function classManagersOfClasses(classIds) {
   const set = new Set(classIds);
   return db
     .all('users')
-    .filter((u) => u.status !== 'disabled' && CLASS_MANAGERS.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
+    .filter((u) => u.status !== 'disabled' && TEACHING_ROLES.includes(u.role) && (u.classIds || []).some((c) => set.has(c)));
 }
 
-
-// Beteiligte eines Threads bestimmen. Schreibt eine Familie (Schüler/Eltern) an
-// eine Lehrkraft – oder umgekehrt – wird das GESAMTE Klassenteam (beide
-// Lehrkräfte) beteiligt. Schreibt sie an die Leitung, werden ALLE Leitungs-/
-// Admin-Konten beteiligt (geteiltes Postfach, eine Antwort reicht für alle).
-// So entsteht keine Isolation (Vermeidung von Fitna). Lehrkraft ↔ Lehrkraft/
-// Leitung bleibt ein direktes Zweiergespräch.
-function resolveThreadParticipants(initiator, recipient, inboxKey = null) {
-  let family = null;
-  let inbox = inboxKey;
-  if (inboxKey) family = initiator;
-  else if (!isStaff(initiator) && isStaff(recipient)) family = initiator;
-  else if (isStaff(initiator) && !isStaff(recipient)) family = recipient;
-
-  let ids;
-  if (family) {
-    if (!inbox) {
-      const staffSide = family === initiator ? recipient : initiator;
-      inbox = staffSide.role === ROLES.LEITUNG ? 'leitung' : staffSide.role === ROLES.SUPER_ADMIN ? 'system' : 'klasse';
-    }
-    ids = [family.id, ...inboxMemberIds(inbox, family), initiator.id];
-    if (recipient) ids.push(recipient.id);
-  } else {
-    ids = [initiator.id, recipient.id];
+// Postfach-Schlüssel: 'leitung' | 'system' | 'klasse:<classId>'
+// (bei Familien-Chats außerdem 'klasse' = Lehrkräfte aller Klassen der Familie).
+function boxLabel(key) {
+  if (key === 'leitung' || key === 'system' || key === 'klasse') return INBOXES[key].label;
+  if (String(key).startsWith('klasse:')) return `Klassenleitung ${findClass(key.slice(7))?.name || ''}`.trim();
+  return 'DBZ';
+}
+function boxMembers(key) {
+  const active = db.all('users').filter((u) => u.status !== 'disabled');
+  if (key === 'system') {
+    const admins = active.filter((u) => u.role === ROLES.SUPER_ADMIN);
+    return (admins.length ? admins : active.filter((u) => u.role === ROLES.LEITUNG)).map((u) => u.id);
   }
-  const uniq = [...new Set(ids)];
+  if (key === 'leitung') {
+    const leitung = active.filter((u) => u.role === ROLES.LEITUNG);
+    return (leitung.length ? leitung : active.filter((u) => u.role === ROLES.SUPER_ADMIN)).map((u) => u.id);
+  }
+  if (String(key).startsWith('klasse:')) return classManagersOfClasses([key.slice(7)]).map((u) => u.id);
+  return [];
+}
+// Postfächer, für die eine mitarbeitende Person schreibt.
+function staffBoxes(u) {
+  if (u.role === ROLES.SUPER_ADMIN) return ['system'];
+  if (u.role === ROLES.LEITUNG) return ['leitung'];
+  if (TEACHING_ROLES.includes(u.role)) return (u.classIds || []).filter((c) => findClass(c)).map((c) => `klasse:${c}`);
+  return [];
+}
+// Familien-Postfach ('klasse' | 'leitung' | 'system') zu einem Mitarbeiter-Postfach.
+const familyInboxOfBox = (box) => (String(box).startsWith('klasse') ? 'klasse' : box);
+
+// Wer steht hinter einem Postfach eines Familien-Chats? (aktive Konten)
+function inboxMemberIds(inbox, family) {
+  if (inbox === 'klasse') return classManagersOfClasses(familyClassIds(family)).map((u) => u.id);
+  return boxMembers(inbox);
+}
+
+// Postfach eines Familien-Threads (gespeichert oder -- bei älteren Threads --
+// aus den Rollen der Mitarbeiterseite abgeleitet).
+function threadInbox(t) {
+  if (t.kind === 'staff') return null;
+  if (t.inbox) return t.inbox;
+  const staff = t.participantIds.map(findUserById).filter((u) => u && isStaff(u));
+  if (!staff.length) return null;
+  if (staff.some((u) => TEACHING_ROLES.includes(u.role))) return 'klasse';
+  if (staff.some((u) => u.role === ROLES.LEITUNG)) return 'leitung';
+  return 'system';
+}
+function threadFamily(t) {
+  if (t.kind === 'staff') return null;
+  if (t.familyId) return findUserById(t.familyId);
+  return t.participantIds.map(findUserById).find((u) => u && isFamily(u)) || null;
+}
+// Postfach-Beschriftung eines Familien-Chats (mit Klassenname, wenn eindeutig).
+function familyInboxLabel(t) {
+  const inbox = threadInbox(t);
+  if (inbox !== 'klasse') return INBOXES[inbox]?.label || 'DBZ';
+  const fam = threadFamily(t);
+  const cls = fam ? familyClassIds(fam) : [];
+  return cls.length === 1 ? boxLabel(`klasse:${cls[0]}`) : INBOXES.klasse.label;
+}
+
+// Postfächer, die eine Familie anschreiben darf.
+function familyInboxes(user) {
+  if (!isFamily(user)) return [];
+  const hasClass = familyClassIds(user).length > 0;
+  let keys;
+  if (STUDENT_ROLES.includes(user.role)) keys = hasClass ? ['klasse'] : ['leitung', 'system'];
+  else keys = hasClass ? ['klasse', 'leitung'] : ['leitung', 'system'];
+  return keys
+    .filter((key) => inboxMemberIds(key, user).length > 0)
+    .map((key) => {
+      const cls = familyClassIds(user);
+      const name = key === 'klasse' && cls.length === 1 ? boxLabel(`klasse:${cls[0]}`) : INBOXES[key].label;
+      return { id: `inbox:${key}`, name, roleLabel: name, description: INBOXES[key].description };
+    });
+}
+
+// Schüler/Eltern, die eine mitarbeitende Person einzeln anschreiben darf.
+function reachablePeople(user) {
+  const users = db.all('users').filter((u) => u.status === 'active' && isFamily(u) && (!user.isDemo || u.isDemo));
+  if (isAdmin(user)) return users;
+  if (!TEACHING_ROLES.includes(user.role)) return [];
+  const mine = new Set(user.classIds || []);
+  return users.filter((u) => familyClassIds(u).some((c) => mine.has(c)));
+}
+// Mitarbeiter-Postfächer, die eine mitarbeitende Person anschreiben darf.
+function reachableBoxes(user) {
+  if (!isStaff(user)) return [];
+  const own = new Set(staffBoxes(user));
+  const keys = ['leitung', 'system', ...db.all('classes').filter((c) => c.active !== false).map((c) => `klasse:${c.id}`)];
+  return keys.filter((k) => !own.has(k) && boxMembers(k).length > 0);
+}
+// Rundnachricht-Ziele.
+function broadcastTargets(user) {
+  const out = [];
+  const people = db.all('users').filter((u) => u.status === 'active' && (!user.isDemo || u.isDemo));
+  const students = (cid) => people.filter((u) => STUDENT_ROLES.includes(u.role) && (cid ? (u.classIds || []).includes(cid) : true));
+  const parents = (cid) => people.filter((u) => u.role === ROLES.ELTERN && (cid ? familyClassIds(u).includes(cid) : true));
+  if (isAdmin(user)) {
+    out.push({ id: 'all:students', name: 'Alle Schüler', ids: students().map((u) => u.id) });
+    out.push({ id: 'all:parents', name: 'Alle Eltern', ids: parents().map((u) => u.id) });
+    out.push({ id: 'all:families', name: 'Alle Schüler und Eltern', ids: [...students(), ...parents()].map((u) => u.id) });
+  }
+  const classes = isAdmin(user) ? db.all('classes') : db.all('classes').filter((c) => (user.classIds || []).includes(c.id));
+  if (isAdmin(user) || TEACHING_ROLES.includes(user.role)) {
+    classes.forEach((c) => {
+      out.push({ id: `class:${c.id}:students`, name: `${c.name}: alle Schüler`, ids: students(c.id).map((u) => u.id) });
+      out.push({ id: `class:${c.id}:parents`, name: `${c.name}: alle Eltern`, ids: parents(c.id).map((u) => u.id) });
+    });
+  }
+  return out.filter((t) => t.ids.length > 0);
+}
+
+// Beteiligte eines Familien-Threads: die Familie + ALLE Mitglieder des
+// Postfachs (Klassenteam / Leitung / Systembetreuung) -- keine Isolation
+// einzelner Lehrkräfte mit einem Kind (Vermeidung von Fitna).
+function familyThreadParticipants(family, inbox, sender) {
+  const ids = [...new Set([family.id, ...inboxMemberIds(inbox, family), sender.id])];
   const names = {};
-  uniq.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
-  return { participantIds: uniq, participantNames: names, group: uniq.length > 2, inbox: family ? inbox : null };
+  ids.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
+  return { participantIds: ids, participantNames: names };
+}
+function staffThreadParticipants(boxes, sender) {
+  const ids = [...new Set([...boxes.flatMap(boxMembers), sender.id])];
+  const names = {};
+  ids.forEach((id) => { names[id] = findUserById(id)?.name || 'Unbekannt'; });
+  return { participantIds: ids, participantNames: names };
+}
+function findFamilyThread(familyId, inbox) {
+  return db.all('threads').find((x) => x.kind !== 'staff' && (x.familyId || threadFamily(x)?.id) === familyId && threadInbox(x) === inbox) || null;
+}
+const sameBoxes = (a, b) => [...a].sort().join('|') === [...b].sort().join('|');
+
+// Postfach, für das `user` in diesem Thread spricht.
+function viewerBox(t, user) {
+  if (t.kind === 'staff') return (t.boxes || []).find((b) => boxMembers(b).includes(user.id) || staffBoxes(user).includes(b)) || null;
+  if (isStaff(user)) return threadInbox(t);
+  return null;
 }
 
-const sortedIds = (arr) => [...arr].sort().join('|');
-
-// Anzeigename eines Threads aus Sicht des Betrachters. Zweiergespräch: die
-// andere Person. Gruppengespräch: eine Lehrkraft sieht die Familienseite, die
-// Familie sieht das Lehrerteam.
+// Anzeigename eines Threads aus Sicht des Betrachters.
 function threadTitle(t, viewer) {
-  if (isFamily(viewer)) {
-    const inbox = threadInbox(t);
-    if (inbox) return INBOXES[inbox].label;
+  if (t.kind === 'staff') {
+    const mine = viewerBox(t, viewer);
+    const other = (t.boxes || []).find((b) => b !== mine) || t.boxes?.[0];
+    return boxLabel(other);
   }
-  const others = t.participantIds.filter((id) => id !== viewer.id);
-  if (others.length <= 1) return t.participantNames[others[0]] || 'Unbekannt';
-  const isMgr = CLASS_MANAGERS.includes(viewer.role);
-  const wanted = others.filter((id) => {
-    const u = findUserById(id);
-    if (!u) return false;
-    return isMgr ? !CLASS_MANAGERS.includes(u.role) : CLASS_MANAGERS.includes(u.role);
-  });
-  const ids = wanted.length ? wanted : others;
-  // Geteiltes Leitungs-Postfach: statt einzelner Namen einheitlich "DBZ-Leitung"
-  // anzeigen (kann mehrere Personen sein, ist aber EIN Team/Posteingang).
-  if (ids.length > 1 && ids.every((id) => [ROLES.LEITUNG, ROLES.SUPER_ADMIN].includes(findUserById(id)?.role)))
-    return 'DBZ-Leitung';
-  return ids.map((id) => t.participantNames[id]).filter(Boolean).join(', ') || 'Unbekannt';
+  if (isFamily(viewer)) return familyInboxLabel(t);
+  const fam = threadFamily(t);
+  if (fam) return fam.name + (fam.role === ROLES.ELTERN ? ' (Eltern)' : '');
+  // Ältere Direktgespräche zwischen Mitarbeitenden: Postfach statt Name.
+  const other = t.participantIds.map(findUserById).find((u) => u && u.id !== viewer.id);
+  return other ? (staffBoxes(other)[0] ? boxLabel(staffBoxes(other)[0]) : other.name) : 'Unbekannt';
 }
 
 // Erlaubte Reaktionen (bewusst kleine, passende Auswahl).
@@ -4101,17 +4187,37 @@ function msgPreview(m) {
   return '';
 }
 
-/** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
-// Absendername aus Sicht des Betrachters: Schüler/Eltern sehen bei
-// Mitarbeitenden nur das Postfach (z. B. "Klassenleitung"), nie den Namen.
+// Absendername aus Sicht des Betrachters: Mitarbeitende erscheinen als
+// Postfach; nur Kolleg(inn)en desselben Postfachs sehen zusätzlich den Namen.
 function senderLabel(m, t, viewer) {
-  if (viewer && t && isFamily(viewer) && m.senderId !== viewer.id) {
-    const sender = findUserById(m.senderId);
-    if (!sender || isStaff(sender)) return INBOXES[threadInbox(t)]?.label || 'DBZ';
-  }
-  return m.senderName;
+  const sender = findUserById(m.senderId);
+  const staffSender = sender ? isStaff(sender) : Boolean(m.box);
+  if (!staffSender) return m.senderName;
+  const box = m.box || (t?.kind === 'staff' ? staffBoxes(sender || {})[0] : threadInbox(t || {}));
+  const label = t && t.kind !== 'staff' && familyInboxOfBox(box) === threadInbox(t) ? familyInboxLabel(t) : boxLabel(box);
+  if (!viewer || isFamily(viewer)) return label;
+  const colleague = viewer.id !== m.senderId && (box === viewerBox(t, viewer) || (sender && staffBoxes(sender).some((b) => staffBoxes(viewer).includes(b))));
+  return colleague ? `${label} · ${m.senderName}` : label;
 }
 
+// Hat die "andere Seite" die Nachricht gelesen? (nur für Mitarbeitende sichtbar)
+function readInfo(m, t, viewer) {
+  if (!viewer || !isStaff(viewer) || !t) return null;
+  const reads = t.reads || {};
+  if (t.kind === 'staff') {
+    const mine = viewerBox(t, viewer);
+    if (m.box && m.box !== mine) return null;
+    const others = (t.boxes || []).filter((b) => b !== mine).flatMap(boxMembers);
+    const at = others.map((id) => reads[id]).filter((r) => r && r >= m.createdAt).sort()[0];
+    return { seen: Boolean(at), at: at || null };
+  }
+  const fam = threadFamily(t);
+  if (!fam || m.senderId === fam.id) return null;
+  const at = reads[fam.id];
+  return { seen: Boolean(at && at >= m.createdAt), at: at && at >= m.createdAt ? at : null };
+}
+
+/** Nachricht für die Ausgabe (interner Dateiname wird nicht mitgesendet). */
 function messageView(m, t = null, viewer = null) {
   const senderName = senderLabel(m, t, viewer);
   if (m.recalled) {
@@ -4129,11 +4235,13 @@ function messageView(m, t = null, viewer = null) {
     file,
     reactions: m.reactions || {},
     recalled: false,
+    broadcast: Boolean(m.broadcastId),
+    ...(viewer && isStaff(viewer) ? { read: readInfo(m, t, viewer) } : {}),
   };
 }
 
 /** Baut eine neue Nachricht (inkl. optionaler Datei) aus dem Request. */
-async function buildMessage(req) {
+async function buildMessage(req, box = null) {
   const now = new Date().toISOString();
   const msg = {
     id: newId('msg'),
@@ -4142,6 +4250,7 @@ async function buildMessage(req) {
     body: (req.body?.body || '').trim(),
     createdAt: now,
     reactions: {},
+    ...(box ? { box } : {}),
   };
   if (req.file) {
     await persistUpload(req.file);
@@ -4162,12 +4271,14 @@ function threadListView(t, viewer) {
   const last = msgs[msgs.length - 1] || null;
   const readAt = t.reads?.[userId] || '';
   const unread = msgs.filter((m) => m.senderId !== userId && m.createdAt > readAt).length;
-  const inbox = threadInbox(t);
+  const staffView = isStaff(viewer);
+  let inboxLabel = null;
+  if (staffView) inboxLabel = t.kind === 'staff' ? `als ${boxLabel(viewerBox(t, viewer))}` : `an ${familyInboxLabel(t)}`;
   return {
     id: t.id,
     otherName: threadTitle(t, viewer),
-    // Für Mitarbeitende sichtbar, an welches Postfach die Familie geschrieben hat.
-    inboxLabel: inbox && !isFamily(viewer) ? INBOXES[inbox].label : null,
+    kind: t.kind === 'staff' ? 'staff' : 'family',
+    inboxLabel,
     group: t.participantIds.length > 2,
     lastBody: msgPreview(last),
     lastAt: t.lastMessageAt,
@@ -4175,19 +4286,29 @@ function threadListView(t, viewer) {
   };
 }
 
-function notifyThreadMessage(t, msg, sender) {
+function notifyThreadMessage(t, msg, sender, only = null) {
   t.participantIds
-    .filter((id) => id !== sender.id)
+    .filter((id) => id !== sender.id && (!only || only.includes(id)))
     .forEach((id) => {
       const viewer = findUserById(id);
-      const from = viewer ? senderLabel(msg, t, viewer) : sender.name;
+      const from = viewer ? senderLabel(msg, t, viewer) : boxLabel(msg.box);
       notify(id, { type: 'message', level: 'info', title: `Neue Nachricht von ${from}`, body: msgPreview(msg).slice(0, 100), deepLink: `/nachrichten/${t.id}`, refId: msg.id, groupId: t.id });
     });
 }
 
 router.get('/message-contacts', requireAuth, (req, res) => {
   if (isFamily(req.user)) return res.json({ contacts: familyInboxes(req.user) });
-  res.json({ contacts: messageContacts(req.user).map((u) => ({ id: u.id, name: u.name, roleLabel: ROLE_LABELS[u.role] })) });
+  if (!isStaff(req.user)) return res.json({ contacts: [] });
+  const boxes = reachableBoxes(req.user).map((k) => ({
+    id: `box:${k}`, name: boxLabel(k),
+    description: k === 'leitung' ? 'Organisation, Schüler-Anliegen, Entscheidungen' : k === 'system' ? 'Technik, Konten, App-Probleme' : 'Lehrkräfte dieser Klasse',
+  }));
+  const people = reachablePeople(req.user)
+    .map((u) => ({ id: u.id, name: u.name, roleLabel: u.role === ROLES.ELTERN ? 'Eltern' : ROLE_LABELS[u.role], classNames: familyClassIds(u).map((c) => findClass(c)?.name).filter(Boolean) }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  const broadcasts = broadcastTargets(req.user).map(({ id, name, ids }) => ({ id: `bc:${id}`, name, count: ids.length }));
+  const sendAs = staffBoxes(req.user).map((k) => ({ key: k, label: boxLabel(k) }));
+  res.json({ contacts: [], boxes, people, broadcasts, sendAs });
 });
 
 // "Für mich löschen" (wie bei WhatsApp): der Verlauf bis zu diesem Zeitpunkt
@@ -4198,55 +4319,178 @@ const clearedAt = (t, userId) => t.clearedAt?.[userId] || '';
 const visibleMessages = (t, userId) => t.messages.filter((m) => m.createdAt > clearedAt(t, userId));
 
 router.get('/threads', requireAuth, (req, res) => {
+  const staffView = isStaff(req.user);
   const list = db
     .all('threads')
-    .filter((t) => t.participantIds.includes(req.user.id) && visibleMessages(t, req.user.id).length > 0)
+    .filter((t) => t.participantIds.includes(req.user.id))
+    .filter((t) => {
+      const msgs = visibleMessages(t, req.user.id);
+      if (!msgs.length) return false;
+      // Rundnachrichten erscheinen bei den Mitarbeitenden als EIN Eintrag
+      // (siehe /broadcasts); einzelne Chats tauchen erst auf, wenn jemand antwortet.
+      if (staffView && msgs.every((m) => m.broadcastId)) return false;
+      return true;
+    })
     .sort((a, b) => (b.lastMessageAt || '').localeCompare(a.lastMessageAt || ''))
     .map((t) => threadListView(t, req.user));
   res.json({ threads: list, unread: list.reduce((s, t) => s + t.unread, 0) });
 });
 
-router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
-  const { recipientId } = req.body || {};
-  const inboxKey = String(recipientId || '').startsWith('inbox:') ? String(recipientId).slice(6) : null;
-  const recipient = inboxKey ? null : findUserById(recipientId);
-  if (inboxKey ? !INBOXES[inboxKey] : !recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
-  if (!canMessage(req.user, String(recipientId))) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
-  // Schüler/Eltern schreiben ausschließlich Rollen-Postfächer an.
-  if (!inboxKey && isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
-  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+// Absender-Postfach für Mitarbeitende bestimmen (Lehrkraft mit mehreren
+// Klassen wählt; sonst das einzige Postfach).
+function pickSenderBox(user, wanted) {
+  const own = staffBoxes(user);
+  if (wanted && own.includes(wanted)) return wanted;
+  return own[0] || null;
+}
 
-  const msg = await buildMessage(req);
-  const now = msg.createdAt;
-  const { participantIds, participantNames, inbox } = resolveThreadParticipants(req.user, recipient, inboxKey);
-  // Bestehenden Thread mit exakt derselben Teilnehmergruppe (und demselben
-  // Postfach) wiederverwenden.
-  let t = db.all('threads').find((x) => sortedIds(x.participantIds) === sortedIds(participantIds) && (threadInbox(x) || null) === (inbox || null));
-  if (!t) {
-    t = {
-      id: newId('thread'),
-      participantIds,
-      participantNames,
-      inbox,
-      messages: [msg],
-      reads: { [req.user.id]: now },
-      createdAt: now,
-      lastMessageAt: now,
-    };
-    db.insert('threads', t);
+router.post('/threads', requireAuth, upload.single('file'), async (req, res) => {
+  const recipientId = String(req.body?.recipientId || '');
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  const now = new Date().toISOString();
+  let t;
+  let msg;
+
+  if (recipientId.startsWith('inbox:')) {
+    // Familie -> Postfach
+    const inbox = recipientId.slice(6);
+    if (!INBOXES[inbox]) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+    if (!familyInboxes(req.user).some((c) => c.id === recipientId)) return res.status(403).json({ error: 'An dieses Postfach kannst du nicht schreiben' });
+    msg = await buildMessage(req);
+    const { participantIds, participantNames } = familyThreadParticipants(req.user, inbox, req.user);
+    t = findFamilyThread(req.user.id, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: req.user.id, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+      t.familyId = req.user.id;
+    }
+  } else if (recipientId.startsWith('box:')) {
+    // Postfach -> Postfach (Mitarbeitende untereinander)
+    const target = recipientId.slice(4);
+    if (!reachableBoxes(req.user).includes(target)) return res.status(403).json({ error: 'An dieses Postfach kannst du nicht schreiben' });
+    const from = pickSenderBox(req.user, req.body?.asBox);
+    if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+    msg = await buildMessage(req, from);
+    const boxes = [from, target];
+    const { participantIds, participantNames } = staffThreadParticipants(boxes, req.user);
+    t = db.all('threads').find((x) => x.kind === 'staff' && sameBoxes(x.boxes || [], boxes));
+    if (!t) {
+      t = { id: newId('thread'), kind: 'staff', boxes, participantIds, participantNames, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+    }
   } else {
-    // Team/Namen aktuell halten (falls sich die Klassenzuordnung geändert hat).
-    t.participantIds = participantIds;
-    t.participantNames = { ...t.participantNames, ...participantNames };
-    if (inbox) t.inbox = inbox;
-    t.messages.push(msg);
-    t.lastMessageAt = now;
-    t.reads = t.reads || {};
-    t.reads[req.user.id] = now;
-    db.commit();
+    // Mitarbeitende -> einzelne(r) Schüler/Eltern
+    const recipient = findUserById(recipientId);
+    if (!recipient) return res.status(404).json({ error: 'Empfänger nicht gefunden' });
+    if (isFamily(req.user)) return res.status(403).json({ error: 'Bitte ein Postfach auswählen' });
+    if (!reachablePeople(req.user).some((u) => u.id === recipient.id)) return res.status(403).json({ error: 'Nachricht an diese Person ist nicht erlaubt' });
+    const from = pickSenderBox(req.user, req.body?.asBox);
+    if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+    const inbox = familyInboxOfBox(from);
+    msg = await buildMessage(req, from);
+    const { participantIds, participantNames } = familyThreadParticipants(recipient, inbox, req.user);
+    t = findFamilyThread(recipient.id, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: recipient.id, messages: [], reads: {}, createdAt: now };
+      db.all('threads').push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+      t.familyId = recipient.id;
+    }
   }
+  t.messages.push(msg);
+  t.lastMessageAt = now;
+  t.reads = t.reads || {};
+  t.reads[req.user.id] = now;
+  db.commit();
   notifyThreadMessage(t, msg, req.user);
   res.json({ threadId: t.id });
+});
+
+// --- Rundnachrichten ---------------------------------------------------------
+// Eine Nachricht an viele (alle Schüler, alle Eltern, eine Klasse …). Jede(r)
+// Empfänger(in) bekommt sie in den eigenen Chat mit dem Absender-Postfach --
+// Antworten landen dort, niemand sieht die Antworten der anderen.
+router.post('/broadcasts', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
+  const targetId = String(req.body?.target || '').replace(/^bc:/, '');
+  const target = broadcastTargets(req.user).find((x) => x.id === targetId);
+  if (!target) return res.status(403).json({ error: 'Diese Empfängergruppe ist nicht erlaubt' });
+  if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
+  const from = pickSenderBox(req.user, req.body?.asBox);
+  if (!from) return res.status(403).json({ error: 'Kein Absender-Postfach' });
+  const inbox = familyInboxOfBox(from);
+  const base = await buildMessage(req, from);
+  const bc = {
+    id: newId('bcast'), box: from, senderId: req.user.id, senderName: req.user.name,
+    target: target.id, targetLabel: target.name, body: base.body, file: base.file || null,
+    recipientIds: target.ids, threadIds: {}, createdAt: base.createdAt,
+  };
+  const threads = db.all('threads');
+  for (const rid of target.ids) {
+    const recipient = findUserById(rid);
+    if (!recipient) continue;
+    const { participantIds, participantNames } = familyThreadParticipants(recipient, inbox, req.user);
+    let t = findFamilyThread(rid, inbox);
+    if (!t) {
+      t = { id: newId('thread'), participantIds, participantNames, inbox, familyId: rid, messages: [], reads: {}, createdAt: base.createdAt };
+      threads.push(t);
+    } else {
+      t.participantIds = participantIds;
+      t.participantNames = { ...t.participantNames, ...participantNames };
+    }
+    const m = { ...base, id: newId('msg'), reactions: {}, broadcastId: bc.id };
+    t.messages.push(m);
+    t.lastMessageAt = base.createdAt;
+    t.reads = t.reads || {};
+    t.reads[req.user.id] = base.createdAt;
+    bc.threadIds[rid] = t.id;
+    // Nur die Empfänger(innen) benachrichtigen, nicht jedes Mal das ganze Postfach.
+    notifyThreadMessage(t, m, req.user, [rid]);
+  }
+  db.insert('broadcasts', bc);
+  audit(req.user.id, 'message.broadcast', 'broadcast', bc.id, null, { target: target.id, count: target.ids.length });
+  res.json({ broadcast: broadcastView(bc) });
+});
+
+function broadcastView(bc) {
+  const read = bc.recipientIds.filter((rid) => {
+    const t = byId('threads', bc.threadIds?.[rid]);
+    return t && (t.reads?.[rid] || '') >= bc.createdAt;
+  }).length;
+  const replies = bc.recipientIds.filter((rid) => {
+    const t = byId('threads', bc.threadIds?.[rid]);
+    return t && t.messages.some((m) => m.senderId === rid && m.createdAt > bc.createdAt);
+  }).length;
+  return {
+    id: bc.id, fromLabel: boxLabel(bc.box), senderName: bc.senderName, targetLabel: bc.targetLabel,
+    body: bc.body, hasFile: Boolean(bc.file), createdAt: bc.createdAt,
+    total: bc.recipientIds.length, read, replies,
+  };
+}
+router.get('/broadcasts', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const mine = new Set(staffBoxes(req.user));
+  const list = db.all('broadcasts').filter((b) => mine.has(b.box) || b.senderId === req.user.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(broadcastView);
+  res.json({ broadcasts: list });
+});
+// Wer hat eine Rundnachricht gelesen? (Namen nur für das Absender-Postfach)
+router.get('/broadcasts/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const bc = byId('broadcasts', req.params.id);
+  if (!bc || !(staffBoxes(req.user).includes(bc.box) || bc.senderId === req.user.id)) return res.status(404).json({ error: 'Nicht gefunden' });
+  const rows = bc.recipientIds.map((rid) => {
+    const u = findUserById(rid);
+    const t = byId('threads', bc.threadIds?.[rid]);
+    const at = t?.reads?.[rid];
+    return { id: rid, name: u?.name || 'Gelöschtes Konto', roleLabel: u?.role === ROLES.ELTERN ? 'Eltern' : 'Schüler', readAt: at && at >= bc.createdAt ? at : null, threadId: t?.id || null, lastSeenAt: u?.lastSeenAt || null };
+  }).sort((a, b) => (a.readAt ? 1 : 0) - (b.readAt ? 1 : 0) || a.name.localeCompare(b.name, 'de'));
+  res.json({ broadcast: broadcastView(bc), recipients: rows });
 });
 
 // Mehrfachauswahl in der Chat-Liste: als gelesen markieren oder für mich löschen.
@@ -4279,13 +4523,22 @@ router.get('/threads/:id', requireAuth, (req, res) => {
   // Zugehörige Nachrichten-Benachrichtigungen als gelesen markieren (Badges/Zähler).
   markNotificationsRead(req.user.id, (n) => n.type === 'message' && n.groupId === t.id);
   db.commit();
+  const staffView = isStaff(req.user);
+  const fam = threadFamily(t);
+  let subtitle = null;
+  if (t.kind === 'staff') subtitle = `Du schreibst als ${boxLabel(viewerBox(t, req.user))}`;
+  else if (staffView) subtitle = `Postfach ${familyInboxLabel(t)} · alle im Postfach lesen mit`;
+  else subtitle = 'Wird vom ganzen Team gelesen';
   res.json({
     thread: {
       id: t.id,
       otherName: threadTitle(t, req.user),
+      subtitle,
       group: t.participantIds.length > 2,
       messages: visibleMessages(t, req.user.id).map((m) => messageView(m, t, req.user)),
       meId: req.user.id,
+      // "Zuletzt online" der Familie -- nur für Mitarbeitende, nie umgekehrt.
+      ...(staffView && fam ? { lastSeenAt: fam.lastSeenAt || null } : {}),
     },
   });
 });
@@ -4294,7 +4547,15 @@ router.post('/threads/:id/messages', requireAuth, upload.single('file'), async (
   const t = byId('threads', req.params.id);
   if (!t || !t.participantIds.includes(req.user.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!(req.body?.body || '').trim() && !req.file) return res.status(400).json({ error: 'Nachricht darf nicht leer sein' });
-  const msg = await buildMessage(req);
+  const msg = await buildMessage(req, isStaff(req.user) ? (viewerBox(t, req.user) || staffBoxes(req.user)[0] || null) : null);
+  // Teilnehmer aktuell halten (z. B. neue Lehrkraft in der Klasse, neue Leitung).
+  const fam = threadFamily(t);
+  if (t.kind === 'staff') Object.assign(t, staffThreadParticipants(t.boxes || [], req.user), { participantNames: { ...t.participantNames, ...staffThreadParticipants(t.boxes || [], req.user).participantNames } });
+  else if (fam && threadInbox(t)) {
+    const p = familyThreadParticipants(fam, threadInbox(t), req.user);
+    t.participantIds = [...new Set([...p.participantIds])];
+    t.participantNames = { ...t.participantNames, ...p.participantNames };
+  }
   t.messages.push(msg);
   t.lastMessageAt = msg.createdAt;
   t.reads = t.reads || {};

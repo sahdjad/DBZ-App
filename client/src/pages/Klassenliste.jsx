@@ -3,7 +3,8 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, Button, Spinner, useToast } from '../components/ui.jsx';
+import { Card, Button, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
+import { lastSeenLabel } from '../lib/format.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 
 const TEACHER_ROLES = ['klassenlehrer', 'vertretung'];
@@ -163,6 +164,69 @@ function ClassResetCard({ classId, className, onDone }) {
   );
 }
 
+const ALL = '__all';
+const WEEKDAY_SHORT = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+// Ganze Koran-Schule alphabetisch (Leitung/Admin).
+function SchoolRoster({ onBack }) {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState(null);
+  const [q, setQ] = useState('');
+  const [type, setType] = useState('');
+  useEffect(() => { api.get('/school/roster').then((d) => setRows(d.rows)).catch(() => setRows([])); }, []);
+  const list = (rows || []).filter((r) => (!type || (type === 'none' ? !r.classNames.length : r.classType === type))
+    && (!q.trim() || [r.name, ...r.classNames].some((x) => x.toLowerCase().includes(q.trim().toLowerCase()))));
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" onClick={onBack}>← Alle Klassen</Button>
+        <h2 className="text-lg text-ivory">Gesamte Koran-Schule</h2>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-muted" />
+          <input className="input pl-9" placeholder="Name oder Klasse …" value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
+        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter">
+          <option value="">Alle</option>
+          <option value="presence">Nur Präsenz</option>
+          <option value="online">Nur Online</option>
+          <option value="none">Ohne Klasse</option>
+        </select>
+        {rows && <span className="text-sm text-sage-muted">{list.length} Schüler</span>}
+      </div>
+      {!rows ? <Spinner /> : (
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-sage-muted border-b border-line">
+                  <th className="py-3 px-4 font-medium">Name</th>
+                  <th className="py-3 px-3 font-medium">Klasse</th>
+                  <th className="py-3 px-3 font-medium">Form</th>
+                  <th className="py-3 px-3 font-medium text-center">Anw.</th>
+                  <th className="py-3 px-3 font-medium whitespace-nowrap">Zuletzt online</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((r) => (
+                  <tr key={r.id} onClick={() => navigate(`/profil/${r.id}`)} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
+                    <td className="py-2.5 px-4 text-ivory whitespace-nowrap">{r.name}{r.role === 'klassensprecher' && <Star size={13} className="inline ml-1.5 -mt-0.5 text-gold" aria-label="Klassensprecher(in)" />}</td>
+                    <td className="py-2.5 px-3 whitespace-nowrap">{r.classNames.join(', ') || <span className="text-status-late">ohne Klasse</span>}</td>
+                    <td className="py-2.5 px-3">{r.classType === 'online' ? 'Online' : r.classType === 'presence' ? 'Präsenz' : '–'}</td>
+                    <td className={`py-2.5 px-3 text-center font-mono ${rateColor(r.attendanceRate)}`}>{r.attendanceRate === null ? '–' : `${r.attendanceRate}%`}</td>
+                    <td className="py-2.5 px-3 text-xs text-sage-muted whitespace-nowrap">{lastSeenLabel(r.lastSeenAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function rateColor(r) {
   if (r === null) return 'text-sage-muted';
   if (r >= 90) return 'text-status-present';
@@ -175,6 +239,7 @@ export default function Klassenliste() {
   const toast = useToast();
   const { user } = useAuth();
   const isTeacher = TEACHER_ROLES.includes(user.role);
+  const isLeadership = ['leitung', 'super_admin'].includes(user.role);
   const [classes, setClasses] = useState(null);
   const [classId, setClassId] = useState('');
   const [data, setData] = useState(null);
@@ -184,13 +249,14 @@ export default function Klassenliste() {
   useEffect(() => {
     api.get('/classes').then((d) => {
       setClasses(d.classes);
-      setClassId(d.classes[0]?.id || '');
+      // Leitung/Admin wählen erst die Klasse (Ordner-Ansicht), Lehrkräfte starten direkt in ihrer Klasse.
+      if (!isLeadership) setClassId(d.classes[0]?.id || '');
     });
   }, []);
 
   const load = () => api.get(`/classes/${classId}/roster`).then(setData).catch(() => setData({ rows: [] }));
   useEffect(() => {
-    if (!classId) return;
+    if (!classId || classId === ALL) return;
     setData(null);
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,15 +317,40 @@ export default function Klassenliste() {
 
   const currentClass = classes?.find((c) => c.id === classId);
 
+  if (isLeadership && (!classId || classId === ALL)) {
+    const groups = (classes || []).map((c) => ({ id: c.id, name: c.name, count: c.studentCount, hint: `${c.type === 'online' ? 'Online' : 'Präsenz'} · ${WEEKDAY_SHORT[c.weekday] || ''} ${c.startTime || ''}–${c.endTime || ''}` }));
+    return (
+      <AppLayout title="Klassenliste">
+        {!classes ? <Spinner /> : classId === ALL ? (
+          <SchoolRoster onBack={() => setClassId('')} />
+        ) : (
+          <ClassFolders
+            groups={groups}
+            selected={null}
+            onSelect={setClassId}
+            extra={(
+              <button type="button" onClick={() => setClassId(ALL)}
+                className="text-left rounded-2xl border border-gold/40 bg-gold/10 p-4 hover:bg-gold/15 transition-all duration-200">
+                <div className="text-ivory font-medium">Gesamte Koran-Schule</div>
+                <div className="text-xs text-sage-muted mt-1">Alle Schüler alphabetisch, mit Klasse und Online/Präsenz</div>
+              </button>
+            )}
+          />
+        )}
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout title="Klassenliste">
       <div className="space-y-4">
+        {isLeadership && <ClassFolders groups={(classes || []).map((c) => ({ id: c.id, name: c.name }))} selected={classId} onSelect={(id) => { setClassId(id || ''); setData(null); }} />}
         {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}
         {currentClass && ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'].includes(user.role) && (
           <ClassResetCard classId={classId} className={currentClass.name} onDone={load} />
         )}
         <div className="flex flex-wrap items-center gap-3">
-          {classes && classes.length > 1 && (
+          {!isLeadership && classes && classes.length > 1 && (
             <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -290,6 +381,7 @@ export default function Klassenliste() {
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Aufgaben, in Klammern die davon überfälligen">Offen</abbr></th>
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Strafen (Geld/Seiten)">Strafen</abbr></th>
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Negative Verhaltensvermerke">Vermerke</abbr></th>
+                    <th className="py-3 px-3 font-medium text-center whitespace-nowrap">Zuletzt online</th>
                     <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
                     {isTeacher && <th className="py-3 px-3 font-medium text-center">Probezeit</th>}
                     {isTeacher && <th className="py-3 px-3 font-medium text-center">Klassenmitgliedschaft</th>}
@@ -344,6 +436,7 @@ export default function Klassenliste() {
                       <td className={`py-3 px-3 text-center font-mono ${r.negativeBehavior > 0 ? 'text-status-late' : 'text-sage-muted'}`}>
                         {r.negativeBehavior}
                       </td>
+                      <td className="py-3 px-3 text-center text-xs text-sage-muted whitespace-nowrap">{lastSeenLabel(r.lastSeenAt)}</td>
                       <td className="py-3 px-3 text-center">
                         <button
                           onClick={(e) => toggleKlassensprecher(e, r)}

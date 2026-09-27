@@ -246,9 +246,10 @@ test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Grup
   const teacher = await loginAs('lehrer@dbz.de');
   const teacherId = (await teacher('GET', '/auth/me')).data.user.id;
 
-  // Schüler sieht nur Rollen-Postfächer mit Zuständigkeit, keine Personen.
+  // Schüler MIT Klasse sieht nur das Postfach seiner Klassenleitung, keine Personen.
   const contacts = (await student('GET', '/message-contacts')).data.contacts;
-  assert.deepEqual(contacts.map((c) => c.id).sort(), ['inbox:klasse', 'inbox:leitung', 'inbox:system']);
+  assert.deepEqual(contacts.map((c) => c.id).sort(), ['inbox:klasse']);
+  assert.equal(contacts[0].name, 'Klassenleitung Klasse 3');
   assert.ok(contacts.every((c) => c.description), 'jedes Postfach erklärt seine Zuständigkeit');
   assert.ok(!contacts.some((c) => c.name === 'Ustadh Yunus'), 'kein Personenname');
   // Direkt an eine Person schreiben geht für Schüler nicht mehr.
@@ -271,17 +272,21 @@ test('Nachrichten: Schüler↔Lehrer erreicht BEIDE Lehrkräfte der Klasse (Grup
   assert.equal(reply.status, 200);
   const studentView = (await student('GET', `/threads/${threadId}`)).data.thread;
   assert.ok(studentView.messages.some((m) => m.body === 'Wa alaikum salam, gerne!'), 'Schüler sieht die Antwort der Co-Lehrkraft');
-  // ... aber nur als "Klassenleitung", ohne Namen der Lehrkraft.
-  assert.equal(studentView.otherName, 'Klassenleitung');
+  // ... aber nur als "Klassenleitung Klasse 3", ohne Namen der Lehrkraft.
+  assert.equal(studentView.otherName, 'Klassenleitung Klasse 3');
+  assert.ok(studentView.messages.every((m) => !m.senderName.includes('Maryam') && !m.senderName.includes('Yunus')), 'nirgends ein Lehrername');
   const replyMsg = studentView.messages.find((m) => m.body === 'Wa alaikum salam, gerne!');
-  assert.equal(replyMsg.senderName, 'Klassenleitung');
+  assert.equal(replyMsg.senderName, 'Klassenleitung Klasse 3');
   const note = (await student('GET', '/notifications')).data.items.find((n) => n.type === 'message' && n.groupId === threadId);
   assert.ok(note && !note.title.includes('Maryam'), 'Benachrichtigung verrät keinen Namen');
   // Lehrkraft sieht weiterhin den Namen des Schülers und das Postfach.
   const tList = (await coTeacher('GET', '/threads')).data.threads.find((t) => t.id === threadId);
-  assert.equal(tList.inboxLabel, 'Klassenleitung');
+  assert.equal(tList.inboxLabel, 'an Klassenleitung Klasse 3');
   const firstTeacherBadges = (await teacher('GET', '/badges')).data;
   assert.ok(firstTeacherBadges.messages >= 1, 'Erste Lehrkraft wird über die Antwort benachrichtigt');
+  // Kollegin im selben Postfach sieht, wer geantwortet hat; Schüler nicht.
+  const teacherView = (await teacher('GET', `/threads/${threadId}`)).data.thread;
+  assert.equal(teacherView.messages.find((m) => m.body === 'Wa alaikum salam, gerne!').senderName, 'Klassenleitung Klasse 3 · Ustadha Maryam');
 });
 
 test('Klassensprecher: Lehrer ernennt/entfernt direkt (eigene Klasse), fremde Klasse geht nicht; Klassensprecher bleibt voll funktionsfähiger Schüler', async () => {
@@ -452,10 +457,16 @@ test('Nachrichten: Schüler kann Leitung schreiben, ALLE Leitungs-/Admin-Konten 
   assert.equal(created.status, 200);
   const secondLeitungEmail = created.data.user.email;
 
-  const student = await loginAs('schueler@dbz.de');
+  // Schüler OHNE Klasse schreibt an DBZ-Leitung/Systembetreuung (mit Klasse: nur Klassenleitung).
+  const sEmail = `ohneklasse-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Neu ohne Klasse', email: sEmail, password: 'demo1234', role: 'schueler' });
+  const student = await loginAs(sEmail);
   const contacts = (await student('GET', '/message-contacts')).data.contacts;
+  assert.deepEqual(contacts.map((c) => c.id).sort(), ['inbox:leitung', 'inbox:system']);
   const firstLeitung = contacts.find((c) => c.roleLabel === 'DBZ-Leitung');
   assert.ok(firstLeitung, 'Leitung steht in der Kontaktliste des Schülers');
+  const withClass = await loginAs('schueler@dbz.de');
+  assert.equal((await withClass('POST', '/threads', { recipientId: 'inbox:leitung', body: 'x' })).status, 403, 'mit Klasse nur Klassenleitung');
 
   const send = await student('POST', '/threads', { recipientId: firstLeitung.id, body: 'Assalamu alaikum, ich habe eine Frage.' });
   assert.equal(send.status, 200);
@@ -1315,18 +1326,25 @@ test('Nachrichten: Eltern↔Lehrer erlaubt, Schüler↔Schüler verboten', async
   // Schüler darf NICHT einem anderen Schüler schreiben
   const student = await loginAs('schueler@dbz.de');
   assert.equal((await student('POST', '/threads', { recipientId: 'user_amina', body: 'hi' })).status, 403);
-  // Schüler darf der Klassenleitung, der DBZ-Leitung und der Systembetreuung schreiben
+  // Schüler mit Klasse: nur Klassenleitung. Eltern dürfen zusätzlich die Leitung erreichen.
   assert.equal((await student('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Frage zur Aufgabe' })).status, 200);
-  const toLeitung = await student('POST', '/threads', { recipientId: 'inbox:leitung', body: 'Ich habe ein Problem' });
+  assert.equal((await student('POST', '/threads', { recipientId: 'inbox:leitung', body: 'x' })).status, 403);
+  assert.equal((await parent('POST', '/threads', { recipientId: 'inbox:leitung', body: 'Elternfrage' })).status, 200);
+  // Schüler ohne Klasse: DBZ-Leitung und Systembetreuung (getrennte Postfächer).
+  const adm = await loginAs('admin@dbz.de');
+  const nEmail = `ohne2-${Date.now()}@dbz.de`;
+  await adm('POST', '/admin/users', { name: 'Ohne Klasse 2', email: nEmail, password: 'demo1234', role: 'schueler' });
+  const fresh = await loginAs(nEmail);
+  const toLeitung = await fresh('POST', '/threads', { recipientId: 'inbox:leitung', body: 'Ich habe ein Problem' });
   assert.equal(toLeitung.status, 200);
-  const toSystem = await student('POST', '/threads', { recipientId: 'inbox:system', body: 'App stürzt ab' });
+  const toSystem = await fresh('POST', '/threads', { recipientId: 'inbox:system', body: 'App stürzt ab' });
   assert.equal(toSystem.status, 200);
   assert.notEqual(toLeitung.data.threadId, toSystem.data.threadId, 'Leitung und Systembetreuung sind getrennte Postfächer');
   const leitung = await loginAs('leitung@dbz.de');
   assert.ok((await leitung('GET', '/threads')).data.threads.some((t) => t.id === toLeitung.data.threadId));
   const sysAdmin = await loginAs('admin@dbz.de');
   assert.ok((await sysAdmin('GET', '/threads')).data.threads.some((t) => t.id === toSystem.data.threadId));
-  assert.equal((await student('GET', `/threads/${toSystem.data.threadId}`)).data.thread.otherName, 'Systembetreuung');
+  assert.equal((await fresh('GET', `/threads/${toSystem.data.threadId}`)).data.thread.otherName, 'Systembetreuung');
 
   // Lehrer sieht den Thread und antwortet; Eltern sehen die Antwort
   const teacher = await loginAs('lehrer@dbz.de');
@@ -2116,4 +2134,71 @@ test('Unterricht je Klasse: eigene Zeiten/Regeln, QR nur für die eigene Klasse,
   assert.equal(del.data.sessions, 1);
   assert.equal(del.data.entries, 1);
   assert.equal((await leitung('DELETE', `/school-days/${sd.data.day.id}`)).status, 200);
+});
+
+test('Nachrichten: Mitarbeitende schreiben als Postfach, Rundnachricht, Lesebestätigung und "zuletzt online" nur für Mitarbeitende', async () => {
+  const leitung = await loginAs('leitung@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+
+  // Kontaktliste der Leitung: Postfächer (keine Personennamen von Mitarbeitenden), Schüler/Eltern, Rundnachrichten.
+  const c = (await leitung('GET', '/message-contacts')).data;
+  assert.ok(c.boxes.some((b) => b.id === 'box:klasse:class_3' && b.name === 'Klassenleitung Klasse 3'));
+  assert.ok(c.boxes.some((b) => b.id === 'box:system'));
+  assert.ok(!c.boxes.some((b) => b.id === 'box:leitung'), 'nicht an sich selbst');
+  assert.ok(!c.people.some((p) => p.name === 'Ustadh Yunus'), 'Lehrkräfte nicht als Person anschreibbar');
+  assert.ok(c.people.some((p) => p.id === 'user_yusuf'));
+  assert.ok(c.broadcasts.some((b) => b.id === 'bc:all:students'));
+  assert.deepEqual(c.sendAs.map((x) => x.label), ['DBZ-Leitung']);
+
+  // Leitung -> Klassenleitung Klasse 3 (Postfach an Postfach).
+  const s1 = await leitung('POST', '/threads', { recipientId: 'box:klasse:class_3', body: 'Bitte Protokolle nachreichen.' });
+  assert.equal(s1.status, 200);
+  const tList = (await teacher('GET', '/threads')).data.threads.find((t) => t.id === s1.data.threadId);
+  assert.equal(tList.otherName, 'DBZ-Leitung');
+  const tView = (await teacher('GET', `/threads/${s1.data.threadId}`)).data.thread;
+  assert.equal(tView.messages[0].senderName, 'DBZ-Leitung', 'Lehrkraft sieht nur das Postfach, nicht den Namen');
+  // Lesebestätigung für die Leitung: die Lehrkraft hat geöffnet.
+  const lView = (await leitung('GET', `/threads/${s1.data.threadId}`)).data.thread;
+  assert.equal(lView.otherName, 'Klassenleitung Klasse 3');
+  assert.equal(lView.messages[0].read.seen, true);
+  assert.equal(lView.messages[0].senderName, 'DBZ-Leitung');
+
+  // Schüler kann keine Mitarbeiter-Postfächer (box:) anschreiben.
+  assert.equal((await student('POST', '/threads', { recipientId: 'box:leitung', body: 'x' })).status, 403);
+
+  // Leitung -> einzelner Schüler: Schüler sieht "DBZ-Leitung", keine Lesebestätigung; Leitung sieht zuletzt online.
+  const s2 = await leitung('POST', '/threads', { recipientId: 'user_yusuf', body: 'Assalamu alaikum Yusuf' });
+  assert.equal(s2.status, 200);
+  const before = (await leitung('GET', `/threads/${s2.data.threadId}`)).data.thread;
+  assert.equal(before.messages.at(-1).read.seen, false);
+  assert.ok('lastSeenAt' in before);
+  const sv = (await student('GET', `/threads/${s2.data.threadId}`)).data.thread;
+  assert.equal(sv.otherName, 'DBZ-Leitung');
+  assert.equal(sv.messages.at(-1).senderName, 'DBZ-Leitung');
+  assert.ok(!('read' in sv.messages.at(-1)), 'Schüler sehen keine Lesebestätigungen');
+  assert.ok(!('lastSeenAt' in sv), 'Schüler sehen nicht, wann Mitarbeitende online waren');
+  const after = (await leitung('GET', `/threads/${s2.data.threadId}`)).data.thread;
+  assert.equal(after.messages.at(-1).read.seen, true);
+  // Schüler kann antworten (auch wenn er die Leitung nicht selbst anschreiben dürfte).
+  assert.equal((await student('POST', `/threads/${s2.data.threadId}/messages`, { body: 'Wa alaikum salam' })).status, 200);
+
+  // Rundnachricht an Klasse 3 (Lehrkraft) -> jede(r) bekommt eigenen Chat, Zähler "gelesen".
+  const tc = (await teacher('GET', '/message-contacts')).data;
+  assert.ok(!tc.broadcasts.some((b) => b.id === 'bc:all:students'), 'Lehrkraft: keine schulweite Rundnachricht');
+  const bc = await teacher('POST', '/broadcasts', { target: 'bc:class:class_3:students', body: 'Morgen bitte Mushaf mitbringen.' });
+  assert.equal(bc.status, 200);
+  assert.ok(bc.data.broadcast.total >= 2);
+  assert.equal(bc.data.broadcast.read, 0);
+  const st = (await student('GET', '/threads')).data.threads.find((t) => t.lastBody.startsWith('Morgen bitte'));
+  assert.ok(st, 'Schüler hat die Rundnachricht');
+  assert.equal(st.otherName, 'Klassenleitung Klasse 3');
+  await student('GET', `/threads/${st.id}`);
+  const detail = (await teacher('GET', `/broadcasts/${bc.data.broadcast.id}`)).data;
+  assert.equal(detail.broadcast.read, 1);
+  assert.ok(detail.recipients.some((r) => r.id === 'user_yusuf' && r.readAt));
+  // Rundnachricht füllt die Chatliste der Lehrkraft nicht mit Einzelchats ohne Antwort.
+  const teacherThreads = (await teacher('GET', '/threads')).data.threads;
+  assert.ok(!teacherThreads.some((t) => t.lastBody.startsWith('Morgen bitte') && t.otherName === 'Amina'));
+  assert.equal((await student('POST', '/broadcasts', { target: 'bc:class:class_3:students', body: 'x' })).status, 403);
 });

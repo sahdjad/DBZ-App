@@ -5,6 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
+import { lastSeenLabel } from '../lib/format.js';
 
 const TABS = [
   ['users', 'Nutzer', Users2],
@@ -231,19 +232,6 @@ const ROLE_SECTIONS = [
   ['schueler', 'Schüler'],
   ['eltern', 'Eltern'],
 ];
-
-// "zuletzt online" kurz und menschlich.
-export function lastSeenLabel(iso) {
-  if (!iso) return 'noch nie online';
-  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 3) return 'gerade online';
-  if (min < 60) return `vor ${min} Min.`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `vor ${h} Std.`;
-  const d = Math.round(h / 24);
-  if (d < 14) return `vor ${d} Tag${d === 1 ? '' : 'en'}`;
-  return new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' });
-}
 
 function UsersTab() {
   const toast = useToast();
