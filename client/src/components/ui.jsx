@@ -1,5 +1,6 @@
 // Wiederverwendbare, token-basierte UI-Komponenten.
 import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, CheckCircle2, AlertTriangle, Info, ArrowLeft, Download, Paperclip } from 'lucide-react';
 
 const cx = (...c) => c.filter(Boolean).join(' ');
@@ -289,24 +290,50 @@ export function Spinner({ label = 'Lädt …' }) {
 // beim Öffnen einen eigenen Verlaufseintrag anlegen; "Zurück" entfernt genau
 // diesen Eintrag und schließt die Vorschau. Schließen per Knopf räumt den
 // Eintrag wieder auf (history.back), damit kein toter Eintrag zurückbleibt.
+// Globale Verwaltung: EIN Verlaufseintrag für offene Overlays (auch wenn
+// mehrere gestapelt sind). Schließen per Knopf geht nur dann einen Schritt
+// zurück, wenn der Overlay-Eintrag wirklich oben liegt -- und das verzögert,
+// damit ein sofortiges Wieder-Öffnen (z. B. React-StrictMode, Wechsel
+// zwischen zwei Dialogen) den Eintrag weiterverwendet statt ihn zu verlieren.
+// Sonst ging die App im Test eine Seite zu weit zurück.
+const overlayStack = [];
+let pendingBacks = 0;
+let backTimer = null;
+let popListening = false;
+const onOverlayEntry = () => window.history.state?.dbzOverlay === true;
+function onGlobalPop() {
+  if (pendingBacks > 0) { pendingBacks--; return; }
+  if (onOverlayEntry()) return; // z. B. Vorwärts-Navigation zurück auf den Eintrag
+  const top = overlayStack.pop();
+  if (top) { top.closedByBack = true; top.close(); }
+}
 export function useBackToClose(open, onClose) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return undefined;
-    let closedByBack = false;
-    const marker = `overlay-${Date.now()}`;
-    try { window.history.pushState({ ...(window.history.state || {}), dbzOverlay: marker }, ''); } catch { /* egal */ }
-    const onPop = () => { closedByBack = true; onClose(); };
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('popstate', onPop);
+    if (!popListening) { window.addEventListener('popstate', onGlobalPop); popListening = true; }
+    if (backTimer) { clearTimeout(backTimer); backTimer = null; }
+    if (!onOverlayEntry()) {
+      try { window.history.pushState({ ...(window.history.state || {}), dbzOverlay: true }, ''); } catch { /* egal */ }
+    }
+    const entry = { closedByBack: false, close: () => closeRef.current() };
+    overlayStack.push(entry);
+    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
     window.addEventListener('keydown', onKey);
     return () => {
-      window.removeEventListener('popstate', onPop);
       window.removeEventListener('keydown', onKey);
-      if (!closedByBack && window.history.state?.dbzOverlay === marker) window.history.back();
+      const i = overlayStack.indexOf(entry);
+      if (i >= 0) overlayStack.splice(i, 1);
+      if (entry.closedByBack || overlayStack.length) return;
+      backTimer = setTimeout(() => {
+        backTimer = null;
+        if (!overlayStack.length && onOverlayEntry()) {
+          pendingBacks++;
+          try { window.history.back(); } catch { pendingBacks--; }
+        }
+      }, 30);
     };
-    // onClose absichtlich nicht als Abhängigkeit: sonst würde bei jedem Rendern
-    // ein neuer Verlaufseintrag entstehen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 }
 
@@ -316,15 +343,17 @@ export function useBackToClose(open, onClose) {
 // links, Schließen per Tippen daneben, Zurück-Taste oder Escape.
 export function PreviewOverlay({ title, onClose, children, downloadUrl, downloadName }) {
   useBackToClose(true, onClose);
-  return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" role="dialog" aria-modal="true" aria-label={title || 'Vorschau'}>
-      <div className="flex items-center justify-between gap-2 px-3 text-ivory" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)', paddingBottom: '0.5rem' }}>
-        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm hover:bg-white/20">
+  // Per Portal direkt in <body>: sonst begrenzt ein Vorfahr (Transform/
+  // Scroll-Container) "position: fixed", und Kopf-/Fußleiste lägen darüber.
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex flex-col bg-black" role="dialog" aria-modal="true" aria-label={title || 'Vorschau'}>
+      <div className="flex items-center justify-between gap-2 px-3 text-white" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)', paddingBottom: '0.5rem' }}>
+        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25">
           <ArrowLeft size={18} /> Zurück
         </button>
         <span className="min-w-0 flex-1 truncate text-center text-sm text-white/80">{title}</span>
         {downloadUrl ? (
-          <a href={downloadUrl} download={downloadName || true} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-2 text-sm hover:bg-white/20">
+          <a href={downloadUrl} download={downloadName || true} className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-2 text-sm text-white hover:bg-white/25">
             <Download size={16} /> Speichern
           </a>
         ) : <span className="w-10" />}
@@ -332,7 +361,8 @@ export function PreviewOverlay({ title, onClose, children, downloadUrl, download
       <div className="relative flex-1 min-h-0" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -375,7 +405,7 @@ export function FileAttachment({ url, name, mediaType = '', className = '', icon
             <div className="absolute inset-0 grid place-items-center p-6 text-center text-white/80 text-sm">
               <div>
                 <p className="mb-4">Für diese Datei gibt es keine Vorschau.</p>
-                <a href={url} download={name || true} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-ivory"><Download size={16} /> Datei speichern</a>
+                <a href={url} download={name || true} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-white"><Download size={16} /> Datei speichern</a>
               </div>
             </div>
           )}
@@ -409,10 +439,12 @@ export function useLongPress(onLong, ms = 500) {
   const fired = useRef(false);
   const cancel = () => { clearTimeout(timer.current); timer.current = null; };
   return {
-    onTouchStart: () => { fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onLong(); }, ms); },
-    onTouchEnd: cancel,
-    onTouchMove: cancel,
-    onContextMenu: (e) => { e.preventDefault(); fired.current = true; onLong(); },
+    handlers: {
+      onTouchStart: () => { fired.current = false; cancel(); timer.current = setTimeout(() => { fired.current = true; onLong(); }, ms); },
+      onTouchEnd: cancel,
+      onTouchMove: cancel,
+      onContextMenu: (e) => { e.preventDefault(); fired.current = true; onLong(); },
+    },
     // Verhindert, dass nach dem langen Drücken zusätzlich ein "Tippen" ausgelöst wird.
     wasLongPress: () => { const f = fired.current; fired.current = false; return f; },
   };
@@ -434,6 +466,9 @@ export function SelectionBar({ selection, allIds, actions }) {
   if (!selection.active) return null;
   const allSelected = allIds.length > 0 && selection.count === allIds.length;
   return (
+    <>
+    {/* Platzhalter: so lassen sich auch die letzten Einträge über die feste Leiste scrollen. */}
+    <div className="h-28" aria-hidden="true" />
     <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 lg:left-64">
       <div className="mx-auto max-w-3xl rounded-2xl border border-line bg-card shadow-lg p-2 flex flex-wrap items-center gap-2">
         <span className="px-2 text-sm text-ivory">{selection.count} ausgewählt</span>
@@ -450,6 +485,7 @@ export function SelectionBar({ selection, allIds, actions }) {
         </div>
       </div>
     </div>
+    </>
   );
 }
 
@@ -458,8 +494,8 @@ export function SelectionBar({ selection, allIds, actions }) {
 // description, variant }]. onChoose(key) | onClose().
 export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
   useBackToClose(true, onClose);
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <h3 className="text-lg text-ivory">{title}</h3>
@@ -479,6 +515,7 @@ export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
           <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

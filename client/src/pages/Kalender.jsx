@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X, Rss, Copy, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X, Rss, Copy, RefreshCw, Users, School, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
+import { useAuth } from '../lib/AuthContext.jsx';
 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const key = (d) => {
@@ -21,12 +22,17 @@ const CATS = {
   sport: { label: 'Sport', color: '#0D9488' },
   other: { label: 'Sonstiges', color: '#64748B' },
 };
+const SCHOOL_COLOR = '#15653F';
 function eventColor(e) {
+  if (e.scope === 'class') return e.color || '#2563EB';
+  if (e.scope === 'school') return SCHOOL_COLOR;
   if (e.type === 'lesson') return '#15653F';
   if (e.type === 'deadline') return '#B45309';
   return CATS[e.category]?.color || '#64748B';
 }
 function eventLabel(e) {
+  if (e.scope === 'class') return `${e.className || 'Klasse'}${e.status === 'pending' ? ' · Vorschlag, wartet auf Bestätigung' : ''}`;
+  if (e.scope === 'school') return 'DBZ – ganze Schule';
   if (e.type === 'lesson') return 'Unterricht';
   if (e.type === 'deadline') return 'Abgabefrist';
   return CATS[e.category]?.label || 'Termin';
@@ -34,6 +40,9 @@ function eventLabel(e) {
 
 export default function Kalender() {
   const toast = useToast();
+  const { user } = useAuth();
+  const [classes, setClasses] = useState([]);
+  useEffect(() => { api.get('/classes').then((d) => setClasses(d.classes || [])).catch(() => {}); }, []);
   const today = useMemo(() => new Date(), []);
   const [view, setView] = useState('month'); // month | week | day | year
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
@@ -89,8 +98,15 @@ export default function Kalender() {
     return cursor.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' });
   }, [view, cursor]);
 
-  const openNew = (date) => setEditing({ date: key(date || selected), category: 'personal', allDay: true });
-  const openEdit = (e) => { if (e.type === 'personal') setEditing({ ...e }); };
+  const openNew = (date) => setEditing({ date: key(date || selected), category: 'personal', allDay: true, scope: 'personal' });
+  const openEdit = (e) => { if (e.editable) setEditing({ ...e }); };
+  const decide = async (e, approve) => {
+    try {
+      await api.post(`/events/${e.id}/decide`, { approve });
+      toast.push(approve ? 'Termin bestätigt – die Klasse wurde benachrichtigt' : 'Vorschlag abgelehnt', 'success');
+      reload();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
 
   const save = async (form) => {
     try {
@@ -137,7 +153,7 @@ export default function Kalender() {
           </>
         )}
 
-        <Legend />
+        <Legend events={events} />
       </Card>
 
       {view === 'month' && events && (
@@ -146,21 +162,25 @@ export default function Kalender() {
             <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
             <Button size="sm" variant="outline" onClick={() => openNew(selected)}><Plus size={16} /></Button>
           </div>
-          <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} />
+          <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} onDecide={decide} />
         </Card>
       )}
 
-      {editing && <EventModal init={editing} onClose={() => setEditing(null)} onSave={save} onDelete={remove} />}
+      {editing && <EventModal init={editing} user={user} classes={classes} onClose={() => setEditing(null)} onSave={save} onDelete={remove} />}
     </AppLayout>
   );
 }
 
-function Legend() {
+function Legend({ events }) {
+  // Klassenfarben aus den geladenen Terminen (Leitung/Admin sehen so auf
+  // einen Blick, bei welcher Klasse was stattfindet).
+  const classColors = [...new Map((events || []).filter((e) => e.scope === 'class').map((e) => [e.className, e.color])).entries()];
   return (
     <div className="flex flex-wrap gap-3 mt-4 text-xs text-sage-muted">
-      <span className="flex items-center gap-1.5"><Dot c="#15653F" /> Unterricht</span>
+      <span className="flex items-center gap-1.5"><Dot c="#15653F" /> Unterricht / DBZ (ganze Schule)</span>
       <span className="flex items-center gap-1.5"><Dot c="#B45309" /> Abgabefrist</span>
       <span className="flex items-center gap-1.5"><Dot c="#7C3AED" /> eigene Termine</span>
+      {classColors.map(([name, c]) => <span key={name} className="flex items-center gap-1.5"><Dot c={c} /> {name}</span>)}
     </div>
   );
 }
@@ -265,23 +285,24 @@ function EventChip({ e, onClick }) {
   return (
     <button onClick={onClick} className="w-full text-left text-[11px] rounded px-1.5 py-1 flex items-center gap-1 truncate" style={{ background: `${c}1a`, color: c }}>
       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: c }} />
-      <span className="truncate">{e.time && !e.allDay ? `${e.time} ` : ''}{e.title}</span>
+      <span className="truncate">{e.time && !e.allDay ? `${e.time} ` : ''}{e.scope === 'class' && e.className ? `${e.className}: ` : ''}{e.title}</span>
     </button>
   );
 }
 
-function DayAgenda({ events, onEvent }) {
+function DayAgenda({ events, onEvent, onDecide }) {
   if (events.length === 0) return <p className="p-4 text-sage-muted text-sm">Keine Termine an diesem Tag.</p>;
   return (
     <div className="divide-y divide-line">
       {events.map((e, i) => {
         const c = eventColor(e);
-        const editable = e.type === 'personal';
+        const editable = !!e.editable;
         return (
-          <button key={i} onClick={() => onEvent(e)} disabled={!editable}
-            className={`w-full text-left py-3 flex items-center gap-3 ${editable ? 'hover:bg-hover rounded-lg px-1' : ''}`}>
+          <div key={i} className="py-3 flex items-center gap-3">
+          <button onClick={() => onEvent(e)} disabled={!editable}
+            className={`min-w-0 flex-1 text-left flex items-center gap-3 ${editable ? 'hover:bg-hover rounded-lg px-1' : ''} ${e.status === 'pending' ? 'opacity-70' : ''}`}>
             <span className="grid place-items-center h-9 w-9 rounded-lg shrink-0" style={{ background: `${c}22`, color: c }}>
-              {e.type === 'lesson' ? <GraduationCap size={18} /> : e.type === 'deadline' ? <Clock size={18} /> : <CalendarDays size={18} />}
+              {e.type === 'lesson' ? <GraduationCap size={18} /> : e.type === 'deadline' ? <Clock size={18} /> : e.scope === 'class' ? <Users size={18} /> : e.scope === 'school' ? <School size={18} /> : <CalendarDays size={18} />}
             </span>
             <div className="min-w-0">
               <div className="text-ivory truncate">{e.title}</div>
@@ -291,13 +312,31 @@ function DayAgenda({ events, onEvent }) {
               </div>
             </div>
           </button>
+          {e.canApprove && (
+            <div className="flex gap-1 shrink-0">
+              <Button size="sm" onClick={() => onDecide(e, true)}><Check size={15} /> Bestätigen</Button>
+              <Button size="sm" variant="ghost" onClick={() => onDecide(e, false)}><X size={15} /></Button>
+            </div>
+          )}
+          </div>
         );
       })}
     </div>
   );
 }
 
-function EventModal({ init, onClose, onSave, onDelete }) {
+const TEACHERS = ['klassenlehrer', 'vertretung'];
+function scopeOptions(user, classes) {
+  const opts = [['personal', 'Nur für mich (privat)']];
+  if (TEACHERS.includes(user.role)) classes.forEach((c) => opts.push([`class:${c.id}`, `Für die Klasse ${c.name}`]));
+  if (user.role === 'klassensprecher') classes.forEach((c) => opts.push([`class:${c.id}`, `Vorschlag für die Klasse ${c.name} (Lehrkraft bestätigt)`]));
+  if (['leitung', 'super_admin'].includes(user.role)) opts.push(['school', 'Für die ganze Schule (alle Klassen, Lehrkräfte, Eltern)']);
+  return opts;
+}
+
+function EventModal({ init, user, classes, onClose, onSave, onDelete }) {
+  const scopeOpts = scopeOptions(user, classes);
+  const [target, setTarget] = useState(init.scope === 'class' ? `class:${init.classId}` : init.scope === 'school' ? 'school' : 'personal');
   const [f, setF] = useState({
     id: init.id || null,
     title: init.title || '',
@@ -325,6 +364,7 @@ function EventModal({ init, onClose, onSave, onDelete }) {
       endTime: f.allDay ? null : f.endTime || null,
       category: f.category, note: f.note,
       recurrence: f.repeat === 'none' ? null : { freq: f.repeat, until: f.until || null },
+      ...(f.id ? {} : target.startsWith('class:') ? { scope: 'class', classId: target.slice(6) } : { scope: target }),
     };
     onSave(payload);
   };
@@ -343,12 +383,28 @@ function EventModal({ init, onClose, onSave, onDelete }) {
           <button onClick={onClose} className="text-sage hover:text-ivory" aria-label="Schließen"><X size={20} /></button>
         </div>
         <div className="space-y-3">
+          {!f.id && scopeOpts.length > 1 && (
+            <label className="block"><span className="text-sm text-sage">Für wen?</span>
+              <select className="input mt-1" value={target} onChange={(e) => setTarget(e.target.value)}>
+                {scopeOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+              {target !== 'personal' && (
+                <span className="block text-[11px] text-sage-muted mt-1">
+                  {target === 'school'
+                    ? 'Alle werden per Push benachrichtigt. Klassentermine der Lehrkräfte bleiben davon unberührt.'
+                    : user.role === 'klassensprecher'
+                      ? 'Die Lehrkraft bekommt den Vorschlag und muss ihn bestätigen, erst dann sieht ihn die Klasse.'
+                      : 'Nur diese Klasse (Schüler, Eltern, Lehrkräfte) sieht den Termin und wird benachrichtigt.'}
+                </span>
+              )}
+            </label>
+          )}
           <label className="block"><span className="text-sm text-sage">Titel</span>
             <input className="input mt-1" value={f.title} onChange={(e) => set({ title: e.target.value })} autoFocus placeholder="z. B. Fußballtraining" /></label>
           <div className="grid grid-cols-2 gap-3">
             <label className="block"><span className="text-sm text-sage">Datum</span>
               <input type="date" className="input mt-1" value={f.date} onChange={(e) => set({ date: e.target.value })} /></label>
-            <label className="block"><span className="text-sm text-sage">Kategorie</span>
+            <label className={`block ${target !== 'personal' || (init.scope && init.scope !== 'personal') ? 'invisible' : ''}`}><span className="text-sm text-sage">Kategorie</span>
               <select className="input mt-1" value={f.category} onChange={(e) => set({ category: e.target.value })}>
                 {Object.entries(CATS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
               </select></label>

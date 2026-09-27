@@ -73,7 +73,7 @@ function NotificationRow({ n, selection, onOpen }) {
   const selected = selection.has(n.id);
   return (
     <Card
-      {...longPress}
+      {...longPress.handlers}
       role="button"
       tabIndex={0}
       aria-pressed={selection.active ? selected : undefined}

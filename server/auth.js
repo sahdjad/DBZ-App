@@ -21,8 +21,9 @@ export async function verifyPassword(plain, hash) {
   return bcrypt.compare(plain, hash);
 }
 
-export function issueToken(res, user) {
-  const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+export function issueToken(res, user, extra = {}) {
+  // extra.sb: Demo-Sandkasten-Sitzung (siehe api.js) -- nur Demo-Daten.
+  const token = jwt.sign({ id: user.id, role: user.role, ...(extra.sb ? { sb: true } : {}) }, JWT_SECRET, { expiresIn: TOKEN_TTL });
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',

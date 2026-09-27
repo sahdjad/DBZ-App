@@ -1863,118 +1863,142 @@ test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, s
   assert.equal(guard.data.results[0].ok, false, 'eigenes Konto wird nicht gelöscht');
 });
 
-test('Demo-Konten: sehen/bearbeiten keine echten Konten/Klassen, eigene Neuanlagen bleiben in der Demo-Blase', async () => {
-  const admin = await loginAs('admin@dbz.de'); // noch nicht isDemo an dieser Stelle
-
-  // Eine "echte" Leitung + Klasse anlegen, BEVOR admin zum Demo-Konto wird.
-  const stamp = Date.now();
-  const realLeitung = (await admin('POST', '/admin/users', {
-    name: 'Echte Leitung', email: `echte-leitung-${stamp}@dbz.de`, password: 'passwort1', role: 'leitung',
-  })).data.user;
-  const realClass = (await admin('POST', '/admin/classes', { name: `Echte Klasse ${stamp}`, weekday: 6 })).data.class;
-  assert.ok(!realLeitung.isDemo, 'echtes Konto ist nicht als Demo markiert');
-  assert.ok(!realClass.isDemo, 'echte Klasse ist nicht als Demo markiert');
-
-  // admin (und die anderen 5 Demo-Konten) auf isDemo=true bringen.
-  const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
-  assert.equal(reactivate.status, 200);
-
-  // Demo-Admin sieht die echte Leitung/Klasse nicht mehr in den Listen.
-  const userList = (await admin('GET', '/admin/users')).data.users;
-  assert.ok(!userList.some((u) => u.id === realLeitung.id), 'echtes Konto ist für Demo-Admin unsichtbar');
-  assert.ok(userList.some((u) => u.email === 'leitung@dbz.de'), 'Demo-Konto bleibt sichtbar');
-  const classList = (await admin('GET', '/classes')).data.classes;
-  assert.ok(!classList.some((c) => c.id === realClass.id), 'echte Klasse ist für Demo-Admin unsichtbar');
-  assert.ok(classList.some((c) => c.id === 'class_demo'), 'Demo-Klasse bleibt sichtbar');
-
-  // Demo-Admin darf das echte Konto/die echte Klasse nicht bearbeiten/löschen.
-  const editReal = await admin('PATCH', `/admin/users/${realLeitung.id}`, { name: 'Umbenannt' });
-  assert.equal(editReal.status, 403);
-  const deleteReal = await admin('DELETE', `/admin/users/${realLeitung.id}`);
-  assert.equal(deleteReal.status, 403);
-  const bulkReal = await admin('POST', '/admin/users/bulk-delete', { ids: [realLeitung.id] });
-  assert.equal(bulkReal.data.results[0].ok, false, 'Sammel-Löschung blockiert echtes Konto');
-  const addTeacherReal = await admin('POST', `/admin/classes/${realClass.id}/teachers`, { userId: realLeitung.id });
-  assert.equal(addTeacherReal.status, 403);
-
-  // Was der Demo-Admin selbst neu anlegt, bleibt automatisch in der Demo-Blase.
-  const newDemoUser = (await admin('POST', '/admin/users', {
-    name: 'Von Demo angelegt', email: `demo-erstellt-${stamp}@dbz.de`, password: 'passwort1', role: 'schueler', classIds: ['class_3'],
-  })).data.user;
-  assert.equal(newDemoUser.isDemo, true, 'vom Demo-Konto neu angelegtes Konto ist selbst als Demo markiert');
-  const editOwnCreation = await admin('PATCH', `/admin/users/${newDemoUser.id}`, { name: 'Wieder umbenannt' });
-  assert.equal(editOwnCreation.status, 200, 'Demo-Admin darf eigene Demo-Neuanlagen normal bearbeiten');
-});
-
-test('Demo-Konten: Reaktivierungs-Endpoint setzt Status auf aktiv UND Passwort zwingend auf demo1234', async () => {
-  const admin = await loginAs('admin@dbz.de');
-  const list = (await admin('GET', '/admin/users')).data.users;
-  const leitung = list.find((u) => u.email === 'leitung@dbz.de');
-  assert.ok(leitung, 'Demo-Konto leitung@dbz.de existiert');
-
-  // Konto deaktivieren UND Passwort "verstellen" (simuliert z. B. ein
-  // versehentliches "Passwort zurücksetzen" während der Einrichtung).
-  const disable = await admin('PATCH', `/admin/users/${leitung.id}`, { status: 'disabled' });
-  assert.equal(disable.status, 200);
-  const drift = await admin('POST', `/admin/users/${leitung.id}/reset-password`, { newPassword: 'irgendwas1' });
-  assert.equal(drift.status, 200);
-
-  // Mit dem "verstellten" Passwort geht der Demo-Login nicht mehr.
-  const before = client();
-  const stillFails = await before('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'demo1234' });
-  assert.equal(stillFails.status, 401, 'demo1234 funktioniert nicht mehr nach Passwort-Drift');
-
-  const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
-  assert.equal(reactivate.status, 200);
-  const leitungResult = reactivate.data.results.find((r) => r.email === 'leitung@dbz.de');
-  assert.equal(leitungResult.ok, true);
-  assert.equal(leitungResult.wasDisabled, true);
-
-  const after = (await admin('GET', '/admin/users')).data.users.find((u) => u.id === leitung.id);
-  assert.equal(after.status, 'active');
-
-  // demo1234 funktioniert jetzt wieder garantiert.
-  const login = client();
-  const success = await login('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'demo1234' });
-  assert.equal(success.status, 200, 'demo1234 ist nach Reaktivierung garantiert wieder korrekt');
-
-  // Nur Leitung/Admin dürfen das.
+test('Kalender: Klassentermin nur für die Klasse, Leitung sieht ihn nur lesend; Schultermin für alle; Klassensprecher-Vorschlag erst nach Bestätigung', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
-  const forbidden = await teacher('POST', '/admin/reactivate-demo-accounts', {});
-  assert.equal(forbidden.status, 403);
+  const student = await loginAs('schueler@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const admin = await loginAs('admin@dbz.de');
+  const date = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+  const q = `/calendar?from=${date}&to=${date}`;
+
+  // Andere Klasse + Schüler darin
+  const other = (await admin('POST', '/admin/classes', { name: `Klasse Kal ${Date.now()}` })).data.class;
+  const otherEmail = `kal-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Kal Schüler', email: otherEmail, password: 'demo1234', role: 'schueler', classIds: [other.id] });
+  const otherStudent = await loginAs(otherEmail);
+
+  const created = await teacher('POST', '/events', { scope: 'class', classId: 'class_3', title: 'Ausflug Klasse 3', date, allDay: true });
+  assert.equal(created.status, 200);
+  const evId = created.data.event.id;
+  assert.ok((await student('GET', q)).data.events.some((e) => e.id === evId && e.scope === 'class'), 'Schüler der Klasse sieht ihn');
+  assert.ok(!(await otherStudent('GET', q)).data.events.some((e) => e.id === evId), 'andere Klasse sieht ihn nicht');
+  const lView = (await leitung('GET', q)).data.events.find((e) => e.id === evId);
+  assert.ok(lView && lView.className && lView.color, 'Leitung sieht ihn mit Klassenname und Farbe');
+  assert.equal(lView.editable, false);
+  assert.equal((await leitung('DELETE', `/events/${evId}`)).status, 403, 'Leitung mischt sich nicht ein');
+  assert.equal((await leitung('POST', '/events', { scope: 'class', classId: 'class_3', title: 'x', date })).status, 403);
+  assert.equal((await student('POST', '/events', { scope: 'school', title: 'x', date })).status, 403);
+
+  const school = await leitung('POST', '/events', { scope: 'school', title: 'Elternabend DBZ', date, allDay: true });
+  assert.equal(school.status, 200);
+  assert.ok((await otherStudent('GET', q)).data.events.some((e) => e.id === school.data.event.id), 'Schultermin für alle');
+  assert.ok((await otherStudent('GET', '/notifications')).data.items.some((n) => n.type === 'event' && n.refId === school.data.event.id), 'Benachrichtigung verschickt');
+
+  // Klassensprecher schlägt vor -> erst nach Bestätigung sichtbar
+  const sprecher = await loginAs('sprecher@dbz.de');
+  const prop = await sprecher('POST', '/events', { scope: 'class', classId: 'class_3', title: 'Vorschlag Lernabend', date, allDay: true });
+  assert.equal(prop.status, 200);
+  assert.equal(prop.data.event.status, 'pending');
+  assert.ok(!(await student('GET', q)).data.events.some((e) => e.id === prop.data.event.id), 'vor Bestätigung unsichtbar');
+  const tView = (await teacher('GET', q)).data.events.find((e) => e.id === prop.data.event.id);
+  assert.equal(tView.canApprove, true);
+  assert.equal((await teacher('POST', `/events/${prop.data.event.id}/decide`, { approve: true })).status, 200);
+  assert.ok((await student('GET', q)).data.events.some((e) => e.id === prop.data.event.id), 'nach Bestätigung sichtbar');
+
+  assert.equal((await teacher('DELETE', `/events/${evId}`)).status, 200, 'Lehrkraft der Klasse darf löschen');
 });
 
-test('Demo-Konten: komplett gelöschtes Demo-Konto wird mit fester ID neu angelegt', async () => {
+test('Aufgaben: Lehrkraft der Klasse darf auch fremd erstellte löschen; archivieren behält Daten, blendet in Liste & Korrektur aus', async () => {
   const admin = await loginAs('admin@dbz.de');
-  const list = (await admin('GET', '/admin/users')).data.users;
-  const sprecher = list.find((u) => u.email === 'sprecher@dbz.de');
-  assert.ok(sprecher, 'Demo-Konto sprecher@dbz.de existiert vor dem Test');
+  const teacher = await loginAs('lehrer@dbz.de');
+  // Von einer ANDEREN Lehrkraft derselben Klasse erstellt
+  const coEmail = `co-asg-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Co Lehrer', email: coEmail, password: 'demo1234', role: 'vertretung', classIds: ['class_3'] });
+  const co = await loginAs(coEmail);
+  const a1 = (await co('POST', '/assignments', { classId: 'class_3', title: 'Fremde Aufgabe', type: 'text' })).data.assignment;
+  const a2 = (await co('POST', '/assignments', { classId: 'class_3', title: 'Archiv-Aufgabe', type: 'text' })).data.assignment;
+  const form = new FormData(); form.set('text', 'Antwort');
+  await fetch(`${base}/api/assignments/${a2.id}/submit`, { method: 'POST', headers: { cookie: await cookieFor('schueler@dbz.de') }, body: form });
 
-  // Komplett löschen (nicht nur deaktivieren) -- genau der Fall, der beim
-  // Aufräumen mit der Mehrfachauswahl-Löschung passieren kann.
-  const del = await admin('POST', '/admin/users/bulk-delete', { ids: [sprecher.id] });
-  assert.equal(del.status, 200);
-  assert.equal(del.data.results[0].ok, true);
-  const gone = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'sprecher@dbz.de');
-  assert.equal(gone, undefined, 'Konto ist wirklich weg');
+  const arch = await teacher('POST', '/assignments/bulk', { ids: [a2.id], action: 'archive' });
+  assert.equal(arch.status, 200);
+  assert.ok(!(await teacher('GET', '/assignments')).data.assignments.some((a) => a.id === a2.id), 'aus aktueller Liste ausgeblendet');
+  assert.ok((await teacher('GET', '/assignments?archived=1')).data.assignments.some((a) => a.id === a2.id), 'im Archiv sichtbar');
+  assert.ok(!(await teacher('GET', '/review-queue')).data.submissions.some((s) => s.assignmentId === a2.id), 'nicht mehr in der Korrektur');
+  assert.equal((await teacher('GET', `/assignments/${a2.id}`)).status, 200, 'Daten bleiben erhalten');
 
-  const login1 = client();
-  const failedBefore = await login1('POST', '/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' });
-  assert.equal(failedBefore.status, 401, 'Login schlägt fehl, solange das Konto fehlt');
+  const del = await teacher('POST', '/assignments/bulk', { ids: [a1.id, a2.id], action: 'delete' });
+  assert.ok(del.data.results.every((r) => r.ok), 'beide gelöscht, auch die fremd erstellte');
+  assert.equal((await teacher('GET', `/assignments/${a1.id}`)).status, 404);
+});
 
-  const reactivate = await admin('POST', '/admin/reactivate-demo-accounts', {});
-  assert.equal(reactivate.status, 200);
-  const sprecherResult = reactivate.data.results.find((r) => r.email === 'sprecher@dbz.de');
-  assert.equal(sprecherResult.ok, true);
-  assert.equal(sprecherResult.recreated, true);
+test('Mehrfachauswahl: Benachrichtigungen gelesen/löschen, Chats für mich löschen (andere behalten Verlauf)', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const t = (await student('POST', '/threads', { recipientId: 'inbox:klasse', body: 'Bulk-Test' })).data.threadId;
+  await teacher('POST', `/threads/${t}/messages`, { body: 'Antwort Bulk' });
+  const notes = (await student('GET', '/notifications')).data.items.filter((n) => !n.read);
+  assert.ok(notes.length > 0);
+  const ids = notes.slice(0, 2).map((n) => n.id);
+  assert.equal((await student('POST', '/notifications/bulk', { ids, action: 'read' })).status, 200);
+  assert.ok((await student('GET', '/notifications')).data.items.filter((n) => ids.includes(n.id)).every((n) => n.read));
+  assert.equal((await student('POST', '/notifications/bulk', { ids, action: 'delete' })).status, 200);
+  assert.ok(!(await student('GET', '/notifications')).data.items.some((n) => ids.includes(n.id)));
 
-  const restored = (await admin('GET', '/admin/users')).data.users.find((u) => u.email === 'sprecher@dbz.de');
-  assert.ok(restored, 'Konto existiert wieder');
-  assert.equal(restored.id, 'user_sprecher', 'gleiche feste ID wie beim ursprünglichen Seeding');
-  assert.equal(restored.role, 'klassensprecher');
-  assert.deepEqual(restored.classIds, ['class_demo']);
+  assert.equal((await student('POST', '/threads/bulk', { ids: [t], action: 'delete' })).status, 200);
+  assert.ok(!(await student('GET', '/threads')).data.threads.some((x) => x.id === t), 'Chat für Schüler weg');
+  assert.ok((await teacher('GET', '/threads')).data.threads.some((x) => x.id === t), 'Lehrkraft behält den Verlauf');
+  await teacher('POST', `/threads/${t}/messages`, { body: 'Neue Nachricht' });
+  const back = (await student('GET', `/threads/${t}`)).data.thread;
+  assert.deepEqual(back.messages.map((m) => m.body), ['Neue Nachricht'], 'Chat taucht mit nur der neuen Nachricht wieder auf');
+});
 
-  const login2 = client();
-  const success = await login2('POST', '/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' });
-  assert.equal(success.status, 200, 'demo1234 funktioniert für das neu angelegte Konto');
+test('Unterricht: einzelnen Anwesenheitseintrag löschen, Sitzung zurücksetzen, Klasse neu starten (mit Namensbestätigung)', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const today = (await teacher('GET', '/sessions/today')).data.sessions.find((s) => s.classId === 'class_3');
+  if (today) {
+    await teacher('POST', `/sessions/${today.id}/attendance`, { studentId: 'user_yusuf', status: 'late' });
+    assert.equal((await teacher('DELETE', `/sessions/${today.id}/attendance/user_yusuf`)).status, 200);
+    const att = (await teacher('GET', `/sessions/${today.id}/attendance`)).data.attendance.find((r) => r.studentId === 'user_yusuf');
+    assert.ok(!att.source, 'Eintrag ist weg');
+    await teacher('POST', `/sessions/${today.id}/start`);
+    const reset = await teacher('POST', `/sessions/${today.id}/reset`);
+    assert.equal(reset.data.session.status, 'scheduled');
+  }
+  const admin = await loginAs('admin@dbz.de');
+  const cls = (await admin('POST', '/admin/classes', { name: `Reset ${Date.now()}` })).data.class;
+  const tEmail = `reset-t-${Date.now()}@dbz.de`;
+  await admin('POST', '/admin/users', { name: 'Reset Lehrer', email: tEmail, password: 'demo1234', role: 'klassenlehrer', classIds: [cls.id] });
+  const rt = await loginAs(tEmail);
+  await rt('POST', '/assignments', { classId: cls.id, title: 'Probe', type: 'text' });
+  assert.equal((await rt('POST', `/classes/${cls.id}/reset-data`, { scopes: ['assignments'], confirmName: 'falsch' })).status, 400);
+  assert.equal((await teacher('POST', `/classes/${cls.id}/reset-data`, { scopes: ['assignments'], confirmName: cls.name })).status, 403, 'fremde Klasse');
+  const ok = await rt('POST', `/classes/${cls.id}/reset-data`, { scopes: ['assignments', 'attendance'], confirmName: cls.name });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.counts.assignments, 1);
+  assert.equal((await rt('GET', '/assignments')).data.assignments.length, 0);
+});
+
+test('Klassensprecher: Aufgabenvorschlag zählt erst nach Freigabe durch die Lehrkraft', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const cls = (await admin('POST', '/admin/classes', { name: `Vorschlag ${Date.now()}` })).data.class;
+  const st = Date.now();
+  await admin('POST', '/admin/users', { name: 'V Lehrer', email: `vl-${st}@dbz.de`, password: 'demo1234', role: 'klassenlehrer', classIds: [cls.id] });
+  await admin('POST', '/admin/users', { name: 'V Sprecher', email: `vs-${st}@dbz.de`, password: 'demo1234', role: 'klassensprecher', classIds: [cls.id] });
+  await admin('POST', '/admin/users', { name: 'V Schüler', email: `vsch-${st}@dbz.de`, password: 'demo1234', role: 'schueler', classIds: [cls.id] });
+  const teacher = await loginAs(`vl-${st}@dbz.de`);
+  const sprecher = await loginAs(`vs-${st}@dbz.de`);
+  const student = await loginAs(`vsch-${st}@dbz.de`);
+
+  const prop = await sprecher('POST', '/assignment-proposals', { classId: cls.id, title: 'Sure Al-Mulk lernen', type: 'quran' });
+  assert.equal(prop.status, 200);
+  assert.equal((await student('GET', '/assignments')).data.assignments.length, 0, 'unbestätigt: zählt nicht');
+  assert.equal((await student('POST', '/assignment-proposals', { classId: cls.id, title: 'x' })).status, 403, 'normale Schüler dürfen nicht vorschlagen');
+  const inbox = (await teacher('GET', '/assignment-proposals')).data.proposals;
+  assert.equal(inbox.length, 1);
+  const ok = await teacher('POST', `/assignment-proposals/${inbox[0].id}/decide`, { approve: true });
+  assert.equal(ok.status, 200);
+  const list = (await student('GET', '/assignments')).data.assignments;
+  assert.ok(list.some((a) => a.title === 'Sure Al-Mulk lernen'), 'nach Freigabe sichtbar');
+  assert.ok((await student('GET', '/notifications')).data.items.some((n) => n.type === 'assignment_new'), 'Schüler benachrichtigt');
 });

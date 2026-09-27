@@ -67,7 +67,7 @@ function DoneRow({ s, selection }) {
   const selected = selection.has(s.id);
   return (
     <Card
-      {...longPress}
+      {...longPress.handlers}
       onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(s.id); }}
       className={`p-3 flex items-center justify-between gap-3 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
     >

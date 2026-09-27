@@ -1,7 +1,6 @@
-// Prüft die Demo/Produktions-Trennung: sobald Supabase konfiguriert ist
-// (useSupabase=true -> IS_PRODUCTION=true in server/api.js), dürfen
-// Demo-Login, Demo-Seeding und "Demo-Konten reaktivieren" nicht mehr
-// öffentlich erreichbar sein. Läuft bewusst in einer eigenen Datei (eigener
+// Prüft die Demo/Produktions-Trennung, wenn Supabase konfiguriert ist
+// (IS_PRODUCTION=true): kein Demo-Seeding in der echten Datenbank; Demo-
+// Zugänge landen ausschließlich im abgeschotteten Sandkasten. Läuft bewusst in einer eigenen Datei (eigener
 // Prozess unter `node --test`), damit die Supabase-Umgebungsvariablen nicht
 // die restliche (Datei-Backend-)Testsuite verfälschen.
 //
@@ -71,41 +70,39 @@ test('Health meldet Produktionsmodus, wenn Supabase konfiguriert ist', async () 
   assert.equal(health.data.mode, 'production', 'IS_PRODUCTION folgt der Supabase-Konfiguration, nicht dem Verbindungserfolg');
 });
 
-test('Seeding legt in Produktion KEINE Demo-Konten an', async () => {
-  const c = client();
-  const login = await c('POST', '/auth/login', { email: 'admin@dbz.de', password: 'demo1234' });
-  assert.equal(login.status, 401, 'admin@dbz.de existiert nicht -- Demo-Seeding wurde in Produktion übersprungen');
+test('Seeding legt in Produktion KEINE Demo-Konten in der echten Datenbank an', async () => {
+  const { db } = await import('../store.js');
+  assert.ok(!db.all('users').some((u) => u.email === 'admin@dbz.de'), 'kein Demo-Konto in der echten Datenbank');
 });
 
-test('Demo-Login bleibt in Produktion gesperrt, selbst wenn zufällig ein Konto mit Demo-E-Mail existiert', async () => {
+test('Demo-Login landet im abgeschotteten Sandkasten -- echte Konten bleiben unsichtbar', async () => {
   const { db, newId } = await import('../store.js');
   const { hashPassword } = await import('../auth.js');
-  const pw = await hashPassword('echtesPasswort1');
   db.insert('users', {
-    id: newId('user'), name: 'Test', email: 'admin@dbz.de', passwordHash: pw, role: 'super_admin',
+    id: newId('user'), name: 'Echter Admin', email: 'echter-admin@dbz-intern.de', passwordHash: await hashPassword('echtesPasswort2'), role: 'super_admin',
     classIds: [], childIds: [], status: 'active', createdAt: new Date().toISOString(),
   });
   db.commit();
-
-  const c = client();
-  const login = await c('POST', '/auth/login', { email: 'admin@dbz.de', password: 'echtesPasswort1' });
-  assert.equal(login.status, 401, 'Sperre greift nach E-Mail, nicht nur weil das Konto fehlt');
+  const demo = client();
+  const login = await demo('POST', '/auth/login', { email: 'admin@dbz.de', password: 'demo1234' });
+  assert.equal(login.status, 200);
+  assert.equal(login.data.user.demo, true);
+  const users = (await demo('GET', '/admin/users')).data.users;
+  assert.ok(!users.some((u) => u.email === 'echter-admin@dbz-intern.de'), 'Sandkasten sieht keine echten Konten');
+  assert.equal((await demo('POST', '/admin/reactivate-demo-accounts', {})).status, 404, 'alte Reaktivierung gibt es nicht mehr');
 });
 
-test('Demo-Konten reaktivieren ist in Produktion gesperrt, auch für einen echten, eingeloggten Admin', async () => {
+test('Existiert ein ECHTES Konto mit einer Demo-E-Mail, gilt das echte Konto (kein Sandkasten, kein Demo-Passwort)', async () => {
   const { db, newId } = await import('../store.js');
   const { hashPassword } = await import('../auth.js');
-  const pw = await hashPassword('echtesPasswort2');
   db.insert('users', {
-    id: newId('user'), name: 'Echter Admin', email: 'echter-admin@dbz-intern.de', passwordHash: pw, role: 'super_admin',
+    id: newId('user'), name: 'Echte Leitung', email: 'leitung@dbz.de', passwordHash: await hashPassword('echtesPasswort1'), role: 'leitung',
     classIds: [], childIds: [], status: 'active', createdAt: new Date().toISOString(),
   });
   db.commit();
-
   const c = client();
-  const login = await c('POST', '/auth/login', { email: 'echter-admin@dbz-intern.de', password: 'echtesPasswort2' });
-  assert.equal(login.status, 200, 'echter Administrator wird NICHT ausgesperrt');
-
-  const reactivate = await c('POST', '/admin/reactivate-demo-accounts', {});
-  assert.equal(reactivate.status, 403, 'Reaktivierung ist in Produktion für niemanden verfügbar, auch nicht für berechtigte echte Admins');
+  assert.equal((await c('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'demo1234' })).status, 401);
+  const ok = await c('POST', '/auth/login', { email: 'leitung@dbz.de', password: 'echtesPasswort1' });
+  assert.equal(ok.status, 200);
+  assert.ok(!ok.data.user.demo);
 });

@@ -94,7 +94,7 @@ function ThreadRow({ t, selection, onOpen, children }) {
   const selected = selection.has(t.id);
   return (
     <Card
-      {...longPress}
+      {...longPress.handlers}
       role="button"
       tabIndex={0}
       aria-pressed={selection.active ? selected : undefined}

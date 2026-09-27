@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore } from 'lucide-react';
+import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog } from '../components/ui.jsx';
@@ -13,7 +13,14 @@ export default function Aufgaben() {
   const { user } = useAuth();
   const isManager = MANAGER.includes(user.role);
   return (
-    <AppLayout title="Aufgaben">{isManager ? <ManagerView /> : <StudentView />}</AppLayout>
+    <AppLayout title="Aufgaben">
+      {isManager ? <ManagerView /> : (
+        <div className="space-y-4">
+          {user.role === 'klassensprecher' && <ProposalForm user={user} />}
+          <StudentView />
+        </div>
+      )}
+    </AppLayout>
   );
 }
 
@@ -38,6 +45,92 @@ function StudentView() {
         </Link>
       ))}
     </div>
+  );
+}
+
+// Klassensprecher: Aufgabe vorschlagen -> die Lehrkraft bestätigt (erst dann
+// sehen die Mitschüler sie und sie zählt).
+function ProposalForm({ user }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [mine, setMine] = useState([]);
+  const [form, setForm] = useState({ title: '', description: '', type: 'text', dueAt: '' });
+  const classId = (user.classIds || [])[0];
+  const load = () => api.get('/assignment-proposals').then((d) => setMine(d.proposals)).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post('/assignment-proposals', { ...form, classId, dueAt: form.dueAt ? new Date(form.dueAt).toISOString() : null });
+      toast.push('Vorschlag an die Lehrkraft gesendet', 'success');
+      setForm({ title: '', description: '', type: 'text', dueAt: '' });
+      setOpen(false);
+      load();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  return (
+    <Card className="p-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm text-sage">Als Klassensprecher kannst du Aufgaben vorschlagen – die Lehrkraft bestätigt sie.</div>
+        <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}><Lightbulb size={16} /> Vorschlagen</Button>
+      </div>
+      {open && (
+        <form onSubmit={submit} className="mt-3 space-y-3">
+          <Field label="Titel"><input className="input" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
+          <Field label="Beschreibung"><textarea className="input" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Art">
+              <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+                <option value="audio">Audio</option><option value="text">Text</option><option value="file">Datei</option><option value="quran">Qur'an</option><option value="mixed">Gemischt</option>
+              </select>
+            </Field>
+            <Field label="Frist"><input type="datetime-local" className="input" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} /></Field>
+          </div>
+          <Button type="submit">Vorschlag senden</Button>
+        </form>
+      )}
+      {mine.length > 0 && (
+        <div className="mt-3 text-xs text-sage-muted space-y-1">
+          {mine.map((p) => <div key={p.id}>⏳ „{p.title}" wartet auf Bestätigung</div>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Lehrkraft: offene Vorschläge des Klassensprechers bestätigen/ablehnen.
+function ProposalInbox({ onChanged }) {
+  const toast = useToast();
+  const [list, setList] = useState([]);
+  const load = () => api.get('/assignment-proposals').then((d) => setList(d.proposals)).catch(() => {});
+  useEffect(() => { load(); }, []);
+  const decide = async (p, approve) => {
+    try {
+      await api.post(`/assignment-proposals/${p.id}/decide`, { approve });
+      toast.push(approve ? 'Aufgabe freigegeben – die Klasse wurde benachrichtigt' : 'Vorschlag abgelehnt', 'success');
+      load();
+      if (approve) onChanged();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (!list.length) return null;
+  return (
+    <Card className="p-4 border-status-late/40">
+      <div className="text-ivory font-medium mb-2 flex items-center gap-2"><Lightbulb size={17} /> Vorschläge vom Klassensprecher</div>
+      <div className="space-y-2">
+        {list.map((p) => (
+          <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3">
+            <div className="min-w-0">
+              <div className="text-ivory">{p.title}</div>
+              <div className="text-xs text-sage-muted">{p.className} · von {p.proposedByName} · Frist {fmt(p.dueAt)}{p.description ? ` · ${p.description}` : ''}</div>
+            </div>
+            <div className="flex gap-1">
+              <Button size="sm" onClick={() => decide(p, true)}><Check size={15} /> Freigeben</Button>
+              <Button size="sm" variant="ghost" onClick={() => decide(p, false)}><X size={15} /> Ablehnen</Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -107,6 +200,7 @@ function ManagerView() {
           {!archived && <Button onClick={() => setShowForm((f) => !f)}><Plus size={18} /> Neue Aufgabe</Button>}
         </div>
       </div>
+      {!archived && <ProposalInbox onChanged={load} />}
       {archived && (
         <p className="text-xs text-sage-muted">
           Archivierte Aufgaben sind nur aus deiner Übersicht und der Korrektur-Liste ausgeblendet. Abgaben, Bewertungen und
@@ -214,13 +308,13 @@ function AssignmentRow({ a, selection, archived, onDelete, onRestore }) {
   const selected = selection.has(a.id);
   return (
     <Card
-      {...longPress}
+      {...longPress.handlers}
       onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(a.id); }}
-      className={`p-4 flex items-center justify-between gap-3 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
+      className={`p-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
     >
       {selection.active && <SelectCheck checked={selected} />}
-      <div className="min-w-0 flex-1">
-        <div className="text-ivory truncate">{a.title}</div>
+      <div className="min-w-0 flex-1 basis-48">
+        <div className="text-ivory break-words">{a.title}</div>
         <div className="text-xs text-sage-muted">{a.className} · {a.subjectName || a.type} · Frist {fmt(a.dueAt)}</div>
       </div>
       <div className="flex items-center gap-2 shrink-0">

@@ -30,6 +30,11 @@ import { attendanceStatusFor } from './domain.js';
 // Produktionsdatenbank.
 const shouldSeedDemoData = !isLiveDeployment || process.env.SEED_DEMO_ACCOUNTS === '1';
 
+// Passwort der Demo-Zugänge. Die Demo läuft in einem abgeschotteten
+// Sandkasten (siehe runInSandbox), ein bekanntes Passwort gibt also nie
+// Zugriff auf echte Daten. Über DEMO_PASSWORD frei wählbar.
+export const DEMO_PASSWORD = process.env.DEMO_PASSWORD || 'demo1234';
+
 export async function seed() {
   if (db.meta.seeded) return;
 
@@ -43,8 +48,14 @@ export async function seed() {
     db.commit();
     return;
   }
+  await seedDemoData();
+}
 
-  const pw = await hashPassword('demo1234');
+/** Befüllt den AKTUELLEN Datenbestand (echt oder Demo-Sandkasten) mit den
+ *  Demo-Konten und Beispieldaten. */
+export async function seedDemoData() {
+  if (!db.all('organizations').length) db.insert('organizations', { ...DEFAULT_ORG });
+  const pw = await hashPassword(DEMO_PASSWORD);
   const now = new Date().toISOString();
 
   const klasse3 = {
@@ -250,4 +261,25 @@ export async function seed() {
 
   db.meta.seeded = true;
   db.commit();
+}
+
+// Alte Demo-Konten (über die frühere "Demo-Konten reaktivieren"-Funktion in
+// der ECHTEN Datenbank angelegt und als isDemo markiert) entfernen: Demo-
+// Zugänge laufen jetzt ausschließlich im Sandkasten. Es werden nur Konten mit
+// einer der festen Demo-E-Mails UND gesetztem isDemo-Flag gelöscht -- nie
+// echte Konten.
+const LEGACY_DEMO_EMAILS = new Set(['admin@dbz.de', 'leitung@dbz.de', 'lehrer@dbz.de', 'sprecher@dbz.de', 'schueler@dbz.de', 'amina@dbz.de', 'eltern@dbz.de']);
+export function removeLegacyDemoAccounts() {
+  const users = db.all('users');
+  let removed = 0;
+  for (let i = users.length - 1; i >= 0; i--) {
+    if (users[i].isDemo === true && LEGACY_DEMO_EMAILS.has(String(users[i].email).toLowerCase())) { users.splice(i, 1); removed++; }
+  }
+  const classes = db.all('classes');
+  for (let i = classes.length - 1; i >= 0; i--) {
+    const c = classes[i];
+    if (c.id === 'class_demo' && c.isDemo === true && !users.some((u) => (u.classIds || []).includes(c.id))) { classes.splice(i, 1); removed++; }
+  }
+  if (removed) { db.commit(); console.log(`[seed] ${removed} alte Demo-Einträge aus der echten Datenbank entfernt`); }
+  return removed;
 }
