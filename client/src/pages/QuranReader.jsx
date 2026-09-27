@@ -5,7 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
-import { ensurePageFont, isPageFontLoaded, useMushafAutoFit } from '../lib/mushafFont.js';
+import { ensurePageFont, isPageFontLoaded, useMushafAutoFit, loadMushafLayout, MUSHAF_LAYOUT_KEY } from '../lib/mushafFont.js';
 import PageScrubber from '../components/PageScrubber.jsx';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
@@ -1003,10 +1003,14 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
   // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
   const canFit = !!(data && (tajweed || (data.font === 'v1' && isPageFontLoaded(data.fontPage))));
-  const { fs: glyphFs, width: glyphW } = useMushafAutoFit(pageElRef, {
+  // Eng (wie gedruckter Mushaf, Standard) oder Weit (Anfänger, luftiger).
+  const [layout, setLayout] = useState(loadMushafLayout);
+  const toggleLayout = () => setLayout((l) => { const n = l === 'wide' ? 'tight' : 'wide'; try { localStorage.setItem(MUSHAF_LAYOUT_KEY, n); } catch { /* egal */ } return n; });
+  const { fs: glyphFs, width: glyphW, shortLines } = useMushafAutoFit(pageElRef, {
     active: canFit,
     numLines: data?.lines.length || 0,
     resetKey: data ? `${data.page}:${tajweed}:${fontReady}` : null,
+    layout,
   });
 
   const dragRef = useRef({ active: false, x0: 0, y0: 0, dx: 0, horiz: false });
@@ -1132,13 +1136,16 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
               inputMode="numeric" placeholder="Seite" className="input py-1 w-20 text-center text-sm" />
             <Button size="sm" variant="ghost" onClick={doJump}>Los</Button>
           </div>
-          {data?.font === 'v1' && (
+          {data?.font === 'v1' && (<>
+            <button onClick={toggleLayout} className="text-[11px] px-2 py-1 rounded-lg border border-line text-sage hover:bg-hover" title="Ganze Seite auf einen Blick oder große Schrift für Anfänger" aria-pressed={layout === 'wide'}>
+              {layout === 'wide' ? 'Große Schrift' : 'Ganze Seite'}
+            </button>
             <div className="inline-flex items-center gap-1" title="Zoom">
               <button onClick={() => changeZoom(-0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom <= 0.7} aria-label="Kleiner"><ZoomOut size={15} /></button>
               <button onClick={() => setZoom(1)} className="text-[11px] text-sage-muted tabular-nums w-11 text-center hover:text-ivory" title="Auf Bildschirmgröße zurücksetzen">{Math.round(zoom * 100)}%</button>
               <button onClick={() => changeZoom(0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom >= 3} aria-label="Größer"><ZoomIn size={15} /></button>
             </div>
-          )}
+          </>)}
           <button onClick={() => setTajweed((t) => !t)}
             className={['inline-flex items-center gap-1 px-2.5 py-1 rounded-md border', tajweed ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage'].join(' ')}
             title="Tadschwid-Farben ein/aus">
@@ -1198,7 +1205,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
                     {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
                   </div>
                 ))}
-                <p className={`mushaf-line ${line.words.length <= 6 ? 'is-short' : ''}`}>
+                <p data-line={line.n} className={`mushaf-line ${(canFit ? shortLines.has(String(line.n)) : line.words.length <= 6) ? 'is-short' : ''}`}>
                   {line.words.map((w, i) => {
                     const cls = `mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`;
                     if (tajweed) {

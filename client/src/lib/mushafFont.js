@@ -35,66 +35,81 @@ export const isPageFontLoaded = (page) => loadedFontPages.has(Number(page));
 // nie aktualisierte Darstellung mit fester vw-Schriftgröße -- dadurch blieb
 // dort z. B. die halbe Seite leer, weil der Text nie auf die volle
 // Container-Breite gestreckt wurde).
-export function useMushafAutoFit(pageElRef, { active, numLines, resetKey }) {
+// Seiten-Layout des Mushaf:
+//  'tight' (Standard, "Ganze Seite"): wie im gedruckten Mushaf -- die ganze
+//     Seite passt auf den Bildschirm, die Seite ist genau so breit wie ihre
+//     längste Zeile (enger Fließtext, keine Lücken).
+//  'wide' ("Große Schrift", Anfänger): Schrift füllt die volle Breite, man
+//     scrollt -- ebenfalls enger Fließtext, nur größer.
+export const MUSHAF_LAYOUT_KEY = 'dbz-mushaf-layout';
+export function loadMushafLayout() {
+  try { return localStorage.getItem(MUSHAF_LAYOUT_KEY) === 'wide' ? 'wide' : 'tight'; } catch { return 'tight'; }
+}
+
+export function useMushafAutoFit(pageElRef, { active, numLines, resetKey, layout = 'tight' }) {
   const [fs, setFs] = useState(null);
   const [width, setWidth] = useState(null);
+  const [shortLines, setShortLines] = useState(() => new Set());
   useLayoutEffect(() => {
-    if (!active || !numLines) { setFs(null); setWidth(null); return undefined; }
+    if (!active || !numLines) { setFs(null); setWidth(null); setShortLines(new Set()); return undefined; }
     const measure = () => {
       const el = pageElRef.current; if (!el) return;
       const inner = el.querySelector('.mushaf-lines'); if (!inner) return;
-      // Normalerweise nur an "vollen" Zeilen messen (kurze Zeilen sind kein
-      // verlässliches Maß für die Seitenbreite). Sind ALLE Zeilen einer Seite
-      // kurz (z. B. Al-Fatiha), gäbe es sonst gar keine Messgrundlage mehr --
-      // dann eben an allen Zeilen messen, statt die Seite unvermessen (zu
-      // klein) zu lassen.
-      let lines = [...inner.querySelectorAll('.mushaf-line:not(.is-short)')];
-      if (!lines.length) lines = [...inner.querySelectorAll('.mushaf-line')];
+      const lines = [...inner.querySelectorAll('.mushaf-line')];
       if (!lines.length) return;
       const REF = 100; // an fester Referenzgröße messen -> stabil, kein Pendeln
       const cs = getComputedStyle(el);
       const hpad = parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0);
-      const rectTop = el.getBoundingClientRect().top;
       const prevW = el.style.width, prevMax = el.style.maxWidth, prevFs = el.style.fontSize;
-      el.style.maxWidth = 'none'; el.style.width = ''; el.style.fontSize = `${REF}px`;
+      el.style.maxWidth = 'none'; el.style.width = 'max-content'; el.style.fontSize = `${REF}px`;
       const prevJc = lines.map((l) => l.style.justifyContent);
       lines.forEach((l) => { l.style.justifyContent = 'flex-start'; }); // natürliche Breite messen
-      let maxNat = 0;
-      lines.forEach((l) => { if (l.scrollWidth > maxNat) maxNat = l.scrollWidth; });
-      // Sure-Kopf/Basmala-Zeilen (z. B. auf Seite 2, Beginn einer Sure) sind
-      // DEUTLICH höher als eine normale Textzeile. Ihre echte Höhe bei
-      // REF=100px lässt sich nicht zuverlässig messen (der Sure-Name kann bei
-      // so großer Referenzschrift selbst umbrechen und die Messung
-      // verfälschen) -- stattdessen ein fester, konservativer Schätzwert: ein
-      // Sure-Kopf (Name + Basmala) zählt wie ~3 zusätzliche Textzeilen.
+      // Natürliche Breite jeder Zeile = Summe der Wortbreiten + Abstände.
+      const natural = lines.map((l) => {
+        const kids = [...l.children];
+        if (!kids.length) return l.scrollWidth;
+        const gap = parseFloat(getComputedStyle(l).columnGap) || 0;
+        return kids.reduce((sum, k) => sum + k.getBoundingClientRect().width, 0) + gap * (kids.length - 1);
+      });
+      const maxNat = Math.max(...natural);
+      // Sure-Kopf/Basmala-Zeilen sind DEUTLICH höher als eine normale
+      // Textzeile: ein Sure-Kopf (Name + Basmala) zählt wie ~3 Textzeilen.
       const headCount = inner.querySelectorAll('.mushaf-surah-head').length;
       lines.forEach((l, i) => { l.style.justifyContent = prevJc[i] || ''; });
       el.style.width = prevW; el.style.maxWidth = prevMax; el.style.fontSize = prevFs;
-      if (maxNat <= 0) return;
-      // Verfügbarer Platz: volle Breite (bis 800px lesbar) und volle Höhe bis
-      // zum unteren Rand -> Schriftgröße füllt BEIDE Achsen; die Seite wird zum
-      // Hochformat wie im gedruckten Mushaf.
+      if (!(maxNat > 0)) return;
+      // Wirklich kurze Zeilen (Sure-Ende, kurze Suren) mittig statt gestreckt --
+      // gemessen an der echten Breite, nicht an der Wortzahl (lange Wörter!).
+      const short = new Set();
+      lines.forEach((l, i) => { if (natural[i] < maxNat * 0.72) short.add(l.dataset.line); });
+      setShortLines((prev) => (prev.size === short.size && [...short].every((x) => prev.has(x)) ? prev : short));
       const docW = document.documentElement.clientWidth;
       const availOuter = Math.min(docW - 16, 800);
       const targetInnerW = Math.max(120, availOuter - hpad);
       const gaps = (numLines - 1) * 1.8;
-      const availH = Math.max(260, window.innerHeight - rectTop - 16 - 20);
+      // Höhe: ganzer Bildschirm abzüglich fester Leisten (oben App-Leiste,
+      // unten Seiten-Leiste/Tab-Leiste) -- NICHT abzüglich der Werkzeuge über
+      // der Seite; sonst wird die Schrift auf dem Desktop winzig.
+      const chrome = docW < 1024 ? 190 : 150;
+      const availH = Math.max(320, window.innerHeight - chrome);
+      const vpad = parseFloat(cs.paddingTop || 0) + parseFloat(cs.paddingBottom || 0);
       const fontByWidth = (REF * targetInnerW) / maxNat;
-      const fontByHeight = (availH - gaps - 6) / ((numLines + headCount * 3) * 1.9);
-      setFs(Math.max(12, Math.min(44, Math.min(fontByWidth, fontByHeight))));
-      // Die Seite bekommt IMMER die volle verfügbare Breite (nie die anhand
-      // der Schriftgröße gemessene, ungestreckte Wortbreite) -- sonst bliebe
-      // bei vielen Zeilen (Schriftgröße von der Höhe begrenzt) eine ganze
-      // Seitenhälfte leer, weil die einzelnen Zeilen dann schmaler wären als
-      // der Container. justify-content: space-between (siehe index.css
-      // .mushaf-page.is-glyph .mushaf-line) verteilt die Wörter danach über
-      // die volle Breite -- wie im gedruckten Mushaf.
-      setWidth(availOuter);
+      const fontByHeight = (availH - vpad - gaps) / ((numLines + headCount * 3) * 1.9);
+      // 'tight' (Ganze Seite): die ganze Seite passt auf den Bildschirm, die Seite
+      //   ist so breit wie ihre längste Zeile -> enger Fließtext wie im Mushaf.
+      // 'wide' (Große Schrift, Anfänger): Schrift füllt die volle Breite, dafür
+      //   wird gescrollt -- ebenfalls ohne Lücken, nur größer.
+      const f = layout === 'wide'
+        ? Math.max(14, Math.min(46, fontByWidth))
+        : Math.max(14, Math.min(44, fontByWidth, fontByHeight));
+      setFs(f);
+      const tightW = Math.ceil((maxNat * f) / REF + hpad + 2);
+      setWidth(Math.min(availOuter, tightW));
     };
     const raf = requestAnimationFrame(measure);
     window.addEventListener('resize', measure);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, numLines, resetKey]);
-  return { fs, width };
+  }, [active, numLines, resetKey, layout]);
+  return { fs, width, shortLines };
 }

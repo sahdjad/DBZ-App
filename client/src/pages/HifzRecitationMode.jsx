@@ -23,7 +23,7 @@ import { HifzEngine } from '../lib/hifzEngine.js';
 import { NvidiaSpeech } from '../lib/asr/nvidiaSpeech.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { pageToHifzPassage } from '../lib/hifzPassage.js';
-import { ensurePageFont, isPageFontLoaded, useMushafAutoFit } from '../lib/mushafFont.js';
+import { ensurePageFont, isPageFontLoaded, useMushafAutoFit, loadMushafLayout } from '../lib/mushafFont.js';
 
 // Bewusst zurückhaltend formuliert: ein einzelner unsicherer Treffer (Status
 // "uncertain") ist normal (ASR-Rauschen, kurze Pause) und soll nicht wie ein
@@ -150,10 +150,11 @@ export default function HifzRecitationMode({ surahs }) {
   // Schriftgröße, die den tatsächlichen Kartenrahmen ignoriert (führte dazu,
   // dass Zeilen nur die rechte Kartenhälfte füllten, links blieb es leer).
   const pageElRef = useRef(null);
-  const { fs: glyphFs, width: glyphW } = useMushafAutoFit(pageElRef, {
+  const { fs: glyphFs, width: glyphW, shortLines } = useMushafAutoFit(pageElRef, {
     active: glyph,
     numLines: pageData?.lines.length || 0,
     resetKey: pageData ? `${pageData.page}:${fontReady}` : null,
+    layout: loadMushafLayout(),
   });
 
   const handlersRef = useRef(null);
@@ -400,7 +401,7 @@ export default function HifzRecitationMode({ surahs }) {
                     {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.9em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
                   </div>
                 ))}
-                <p className={`mushaf-line ${line.words.length <= 6 ? 'is-short' : ''}`}>
+                <p data-line={line.n} className={`mushaf-line ${(glyph ? shortLines.has(String(line.n)) : line.words.length <= 6) ? 'is-short' : ''}`}>
                   {line.words.map((w, wi) => {
                     const idx = trackableIndex[li][wi];
                     if (idx == null) {
