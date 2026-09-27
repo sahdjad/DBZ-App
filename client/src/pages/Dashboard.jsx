@@ -20,6 +20,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Ring, useToast } from '../components/ui.jsx';
 import { openNotification } from '../lib/notify.js';
+import DayCard from '../components/DayCard.jsx';
 import { UserRoundCog } from 'lucide-react';
 
 const fmtTime = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
@@ -64,6 +65,8 @@ export default function Dashboard() {
         <h2 className="font-display text-2xl text-ivory">{greeting}</h2>
         <p className="text-sm text-sage-muted">{data.user.roleLabel} · {data.org?.name}</p>
       </div>
+
+      <DayCard announcements={data.announcements || []} />
 
       {data.unreadMessages > 0 && (
         <Link to="/nachrichten">

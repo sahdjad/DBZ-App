@@ -99,15 +99,25 @@ function ProposalForm({ user }) {
 }
 
 // Lehrkraft: offene Vorschläge des Klassensprechers bestätigen/ablehnen.
+// "YYYY-MM-DDTHH:MM" für <input type="datetime-local"> in Ortszeit.
+const toLocalInput = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
 function ProposalInbox({ onChanged }) {
   const toast = useToast();
   const [list, setList] = useState([]);
+  const [editing, setEditing] = useState(null); // { id, title, description, dueAt }
   const load = () => api.get('/assignment-proposals').then((d) => setList(d.proposals)).catch(() => {});
   useEffect(() => { load(); }, []);
-  const decide = async (p, approve) => {
+  const decide = async (p, approve, edits) => {
     try {
-      await api.post(`/assignment-proposals/${p.id}/decide`, { approve });
+      await api.post(`/assignment-proposals/${p.id}/decide`, { approve, ...(edits ? { edits } : {}) });
       toast.push(approve ? 'Aufgabe freigegeben – die Klasse wurde benachrichtigt' : 'Vorschlag abgelehnt', 'success');
+      setEditing(null);
       load();
       if (approve) onChanged();
     } catch (err) { toast.push(err.message, 'error'); }
@@ -118,15 +128,37 @@ function ProposalInbox({ onChanged }) {
       <div className="text-ivory font-medium mb-2 flex items-center gap-2"><Lightbulb size={17} /> Vorschläge vom Klassensprecher</div>
       <div className="space-y-2">
         {list.map((p) => (
-          <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line p-3">
-            <div className="min-w-0">
-              <div className="text-ivory">{p.title}</div>
-              <div className="text-xs text-sage-muted">{p.className} · von {p.proposedByName} · Frist {fmt(p.dueAt)}{p.description ? ` · ${p.description}` : ''}</div>
-            </div>
-            <div className="flex gap-1">
-              <Button size="sm" onClick={() => decide(p, true)}><Check size={15} /> Freigeben</Button>
-              <Button size="sm" variant="ghost" onClick={() => decide(p, false)}><X size={15} /> Ablehnen</Button>
-            </div>
+          <div key={p.id} className="rounded-lg border border-line p-3">
+            {editing?.id === p.id ? (
+              // Vor dem Freigeben anpassen (Titel, Beschreibung, Frist).
+              <div className="space-y-2">
+                <input className="input" aria-label="Titel" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
+                <textarea className="input" rows={3} aria-label="Beschreibung" value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
+                <label className="block text-xs text-sage-muted">Frist
+                  <input type="datetime-local" className="input mt-1" value={editing.dueAt} onChange={(e) => setEditing({ ...editing, dueAt: e.target.value })} />
+                </label>
+                <div className="flex gap-2 flex-wrap">
+                  <Button size="sm" disabled={!editing.title.trim()} onClick={() => decide(p, true, {
+                    title: editing.title.trim(),
+                    description: editing.description,
+                    dueAt: editing.dueAt ? new Date(editing.dueAt).toISOString() : null,
+                  })}><Check size={15} /> Geändert freigeben</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Abbrechen</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-ivory">{p.title}</div>
+                  <div className="text-xs text-sage-muted">{p.className} · von {p.proposedByName} · Frist {fmt(p.dueAt)}{p.description ? ` · ${p.description}` : ''}</div>
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  <Button size="sm" onClick={() => decide(p, true)}><Check size={15} /> Freigeben</Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditing({ id: p.id, title: p.title, description: p.description || '', dueAt: toLocalInput(p.dueAt) })}>Bearbeiten</Button>
+                  <Button size="sm" variant="ghost" onClick={() => decide(p, false)}><X size={15} /> Ablehnen</Button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

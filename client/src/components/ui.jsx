@@ -276,11 +276,21 @@ export function Reveal({ children, className = '', delay = 0 }) {
   );
 }
 
-export function Spinner({ label = 'Lädt …' }) {
+// Lade-Anzeige im DBZ-Stil: kleines Logo mit kreisendem Ring und
+// wechselnden, freundlichen Hinweisen statt eines nüchternen "Lädt …".
+const LOAD_LINES = ['Einen Moment …', 'Bismillah …', 'Gleich geht\u2019s los …', 'Daten werden geholt …'];
+export function Spinner({ label }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (label !== undefined) return undefined;
+    const t = setInterval(() => setI((x) => (x + 1) % LOAD_LINES.length), 1600);
+    return () => clearInterval(t);
+  }, [label]);
+  const text = label !== undefined ? label : LOAD_LINES[i];
   return (
-    <div className="flex items-center justify-center gap-3 py-16 text-sage-muted" role="status">
-      <span className="h-5 w-5 rounded-full border-2 border-line border-t-mint animate-spin" />
-      <span className="text-sm">{label}</span>
+    <div className="flex flex-col items-center justify-center gap-3 py-14 text-sage-muted" role="status" aria-live="polite">
+      <span className="dbz-loader" aria-hidden="true"><img src="/logo.png" alt="" /></span>
+      {text && <span key={text} className="text-sm dbz-fade-in">{text}</span>}
     </div>
   );
 }

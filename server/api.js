@@ -1279,7 +1279,8 @@ router.get('/school/today', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
     const students = users.filter((u) => (u.classIds || []).includes(c.id)).length;
     return {
       id: c.id, name: c.name, weekday: c.weekday, startTime: c.startTime, endTime: c.endTime,
-      lessonToday: Boolean(sess) || c.weekday === new Date().getDay() || Boolean(schoolDayOn(date)),
+      // Eine nur beim Öffnen der Seite angelegte, leere Sitzung ist kein Unterricht.
+      lessonToday: c.weekday === new Date().getDay() || Boolean(schoolDayOn(date)) || Boolean(sess && (sess.status !== 'scheduled' || recs.length)),
       status: sess?.status || null, students,
       present: n('present'), late: n('late'), excused: n('excused'), unexcused: n('unexcused'),
       lateUnexcused: recs.filter((a) => a.lateUnexcused).length,

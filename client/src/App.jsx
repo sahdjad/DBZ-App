@@ -51,24 +51,26 @@ const Admin = lazy(() => import('./pages/Admin.jsx'));
 const MANAGERS = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMINS = ['super_admin', 'leitung'];
 
-// Markenstart-Bildschirm: DBZ-Logo mit sanfter Einblende-Animation statt eines
-// nüchternen „Sitzung wird geprüft"-Spinners – wirkt hochwertig beim Öffnen.
+// Markenstart-Bildschirm: DBZ-Logo mit kreisendem Goldring und sanfter
+// Einblendung -- nahtlos im Anschluss an den HTML-Start-Bildschirm
+// (index.html), damit es sich wie eine echte App anfühlt.
 function Splash() {
   const [logoOk, setLogoOk] = useState(true);
   return (
-    <div className="app-splash min-h-screen grid place-items-center bg-bg">
+    <div className="app-splash min-h-screen grid place-items-center bg-sidebar">
       <div className="flex flex-col items-center">
-        <div className="splash-mark relative grid place-items-center h-24 w-24 rounded-3xl bg-mint/10 border border-mint/20">
+        <div className="splash-mark relative grid place-items-center h-28 w-28">
+          <svg className="splash-ring absolute inset-0" viewBox="0 0 112 112" aria-hidden="true"><circle cx="56" cy="56" r="52" /></svg>
           <span className="splash-glow" aria-hidden="true" />
           {logoOk ? (
-            <img src="/logo.png" alt="DBZ" className="h-14 w-14 object-contain" onError={() => setLogoOk(false)} />
+            <img src="/logo.png" alt="DBZ" className="h-16 w-16 rounded-2xl object-cover" onError={() => setLogoOk(false)} />
           ) : (
             <span className="font-display text-2xl text-mint-light">DBZ</span>
           )}
         </div>
         <div className="splash-text mt-5 text-center">
           <div className="font-display text-xl text-ivory">Deen Bildungszentrum</div>
-          <div className="text-xs text-sage-muted mt-1">wird geladen …</div>
+          <div className="splash-dots mt-2 flex justify-center gap-1.5" aria-label="wird geladen"><i /><i /><i /></div>
         </div>
       </div>
     </div>
@@ -84,11 +86,13 @@ function Protected({ children, roles }) {
   return children;
 }
 
-// Kurzer Ladehinweis, während eine Seite nachgeladen wird.
+// Beim Nachladen einer Seite: dünner, laufender Balken oben (wie in nativen
+// Apps) statt eines leeren Bildschirms mit "Lädt …".
 function PageFallback() {
   return (
-    <div className="min-h-screen grid place-items-center bg-bg">
-      <Spinner label="Lädt …" />
+    <div className="min-h-screen bg-bg">
+      <div className="page-progress" role="progressbar" aria-label="Seite wird geladen" />
+      <div className="grid place-items-center pt-40"><Spinner label="" /></div>
     </div>
   );
 }

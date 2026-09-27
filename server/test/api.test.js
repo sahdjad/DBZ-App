@@ -2018,10 +2018,12 @@ test('Klassensprecher: Aufgabenvorschlag zählt erst nach Freigabe durch die Leh
   assert.equal((await student('POST', '/assignment-proposals', { classId: cls.id, title: 'x' })).status, 403, 'normale Schüler dürfen nicht vorschlagen');
   const inbox = (await teacher('GET', '/assignment-proposals')).data.proposals;
   assert.equal(inbox.length, 1);
-  const ok = await teacher('POST', `/assignment-proposals/${inbox[0].id}/decide`, { approve: true });
+  // Lehrkraft passt den Vorschlag beim Freigeben an.
+  const ok = await teacher('POST', `/assignment-proposals/${inbox[0].id}/decide`, { approve: true, edits: { title: 'Sure Al-Mulk 1–5 lernen', description: 'Mit Tajwid' } });
   assert.equal(ok.status, 200);
+  assert.equal(ok.data.assignment.title, 'Sure Al-Mulk 1–5 lernen');
   const list = (await student('GET', '/assignments')).data.assignments;
-  assert.ok(list.some((a) => a.title === 'Sure Al-Mulk lernen'), 'nach Freigabe sichtbar');
+  assert.ok(list.some((a) => a.title === 'Sure Al-Mulk 1–5 lernen' && a.description === 'Mit Tajwid'), 'nach Freigabe sichtbar, mit Änderungen');
   assert.ok((await student('GET', '/notifications')).data.items.some((n) => n.type === 'assignment_new'), 'Schüler benachrichtigt');
 });
 
