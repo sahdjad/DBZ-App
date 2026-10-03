@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Megaphone, Plus, Trash2, AlertTriangle, CheckCheck, SmilePlus, X } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -120,8 +121,10 @@ function ReadersSheet({ a, onClose }) {
   useEffect(() => { api.get(`/announcements/${a.id}/readers`).then((d) => setRows(d.readers)).catch(() => setRows([])); }, [a.id]);
   const read = (rows || []).filter((r) => r.readAt);
   const unread = (rows || []).filter((r) => !r.readAt);
-  return (
-    <div className="fixed inset-0 z-50">
+  // Portal an <body>: sonst liegt die Ansicht im scrollenden Seitenbereich
+  // fest und wird abgeschnitten statt den Bildschirm zu überdecken.
+  return createPortal(
+    <div className="fixed inset-0 z-[80]">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="absolute inset-x-0 bottom-0 lg:inset-0 lg:m-auto lg:h-fit lg:max-w-md lg:rounded-2xl rounded-t-2xl bg-card border-t lg:border border-line p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-3">
@@ -141,7 +144,8 @@ function ReadersSheet({ a, onClose }) {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
