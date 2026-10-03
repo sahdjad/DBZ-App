@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Die WebAssembly-Laufzeit für die On-Device-Spracherkennung (onnxruntime-web)
@@ -16,9 +17,28 @@ function copyOrtWasm() {
   return { name: 'dbz-copy-ort-wasm', config: copy };
 }
 
+// Jede Ausgabe bekommt eine eindeutige Versionskennung. Die App vergleicht sie
+// mit /api/version und aktualisiert sich selbst (auch als installierte App,
+// die sonst nie neu lädt). sw.js erhält dieselbe Kennung -> der Browser
+// erkennt den Service Worker als neu und räumt alte Caches auf.
+const BUILD_ID = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+function versionFile() {
+  return {
+    name: 'dbz-version',
+    apply: 'build',
+    writeBundle(opts) {
+      const out = opts.dir || 'dist';
+      writeFileSync(join(out, 'version.json'), JSON.stringify({ build: BUILD_ID }));
+      const sw = join(out, 'sw.js');
+      if (existsSync(sw)) writeFileSync(sw, readFileSync(sw, 'utf8').replaceAll('__BUILD_ID__', BUILD_ID));
+    },
+  };
+}
+
 // Dev: /api wird auf den Express-Server (Port 4000) geproxyt.
 export default defineConfig({
-  plugins: [copyOrtWasm(), react()],
+  plugins: [copyOrtWasm(), react(), versionFile()],
+  define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   worker: { format: 'es' },
   server: {
     port: 5173,

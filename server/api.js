@@ -46,7 +46,7 @@ import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvi
 import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
 import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
 import { getMushafFont } from './providers/mushafFontProvider.js';
-import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription } from './webpush.js';
+import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription, pushToUser } from './webpush.js';
 import { createLoginThrottle } from './security.js';
 import { backupNow } from './maintenance.js';
 import { ASR_FILES, ensureAsrFile } from './asr.js';
@@ -5724,6 +5724,16 @@ router.post('/push/subscribe', requireAuth, (req, res) => {
   const rec = saveSubscription(req.user.id, req.body?.subscription);
   if (!rec) return res.status(400).json({ error: 'Ungültige Push-Anmeldung' });
   res.json({ ok: true });
+});
+
+// Probe-Benachrichtigung an alle Geräte der Person (Diagnose: kommt Push an?).
+router.post('/push/test', requireAuth, async (req, res) => {
+  const r = await pushToUser(req.user.id, {
+    title: 'DBZ – Test ✅',
+    body: 'Benachrichtigungen funktionieren. So siehst du neue Nachrichten auch auf dem Sperrbildschirm.',
+    url: '/benachrichtigungen', tag: 'test',
+  });
+  res.json(r);
 });
 
 // Gerät abmelden.

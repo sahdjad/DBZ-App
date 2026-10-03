@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { startUpdateWatcher, applyUpdate } from '../lib/update.js';
 import { attachScrollFeel } from '../lib/scroll.js';
 import { getPushState, enablePush, iosNeedsInstall } from '../lib/push.js';
 import {
@@ -346,6 +347,8 @@ export default function AppLayout({ children, title }) {
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation,
             mit reichlich Abstand unten (klärt die mobile Tab-Leiste + iPhone-Safe-Area). */}
         {user && !user.demo && <PushNudge user={user} />}
+        <UpdateBanner />
+        <RoleFromLink user={user} />
         {user && <ConsentGate user={user} onDone={refresh} />}
         {user?.demo && (
           <div className="shrink-0 bg-status-late/15 text-status-late text-xs px-4 py-1.5 text-center border-b border-status-late/30" role="note">
@@ -505,12 +508,16 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
 // Push auf diesem Gerät nicht aktiv ist, erscheint dieser Hinweis (er lässt
 // sich nicht dauerhaft wegklicken). Lehrkräfte/Leitung sehen ihn nicht.
 const PUSH_REQUIRED = ['schueler', 'klassensprecher', 'eltern'];
+// Mitarbeitende brauchen Push genauso (Entschuldigungen, Nachrichten) -- für sie
+// ist der Hinweis aber abschaltbar (Konto -> Benachrichtigungen -> Aus).
+const pushOptedOut = () => { try { return localStorage.getItem('dbz-push-optout') === '1'; } catch { return false; } };
 function PushNudge({ user }) {
+  const required = PUSH_REQUIRED.includes(user.role);
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(false);
   const [hidden, setHidden] = useState(false);
   useEffect(() => {
-    if (!PUSH_REQUIRED.includes(user.role)) return undefined;
+    if (!required && pushOptedOut()) return undefined;
     let alive = true;
     (async () => {
       let s = await getPushState().catch(() => ({ supported: false }));
@@ -522,7 +529,7 @@ function PushNudge({ user }) {
     })();
     return () => { alive = false; };
   }, [user.role]);
-  if (!PUSH_REQUIRED.includes(user.role) || !state || hidden || state.subscribed) return null;
+  if ((!required && pushOptedOut()) || !state || hidden || state.subscribed) return null;
   const ios = iosNeedsInstall();
   if (!state.supported && !ios) return null;
   const enable = async () => {
@@ -534,10 +541,12 @@ function PushNudge({ user }) {
     <div className="shrink-0 bg-mint/10 border-b border-mint/30 px-4 py-2 text-sm flex flex-wrap items-center gap-2" role="note">
       <span className="text-ivory flex-1 min-w-[12rem]">
         {ios
-          ? 'Benachrichtigungen sind Pflicht: Auf dem iPhone bitte „Teilen" → „Zum Home-Bildschirm" wählen und die App von dort öffnen.'
+          ? 'Für Benachrichtigungen auf dem iPhone bitte „Teilen" → „Zum Home-Bildschirm" wählen und die App von dort öffnen.'
           : state.permission === 'denied'
-            ? 'Benachrichtigungen sind im Browser blockiert. Bitte in den Website-Einstellungen erlauben – sie sind für dein Konto Pflicht.'
-            : 'Bitte Benachrichtigungen einschalten, damit du neue Aufgaben, Termine und Nachrichten sofort bekommst.'}
+            ? 'Benachrichtigungen sind blockiert. Bitte in den Einstellungen des Handys für die DBZ-App erlauben.'
+            : required
+              ? 'Bitte Benachrichtigungen einschalten, damit du neue Aufgaben, Termine und Nachrichten sofort bekommst.'
+              : 'Bitte Benachrichtigungen einschalten, damit du Entschuldigungen und Nachrichten sofort auf dem Sperrbildschirm siehst.'}
       </span>
       {!ios && state.permission !== 'denied' && (
         <button onClick={enable} disabled={busy} className="rounded-lg bg-mint text-onaccent px-3 py-1.5 text-sm font-medium disabled:opacity-60">
@@ -547,4 +556,49 @@ function PushNudge({ user }) {
       <button onClick={() => setHidden(true)} className="text-xs text-sage-muted underline">Später</button>
     </div>
   );
+}
+
+// Neue App-Version während der Nutzung: Hinweis mit Knopf. Beim Start und beim
+// Zurückholen aus dem Hintergrund aktualisiert sich die App automatisch hinter
+// dem DBZ-Logo (lib/update.js).
+let watcherStarted = false;
+let latestSeen = null;
+const updateListeners = new Set();
+function UpdateBanner() {
+  const [latest, setLatest] = useState(latestSeen);
+  useEffect(() => {
+    updateListeners.add(setLatest);
+    if (!watcherStarted) {
+      watcherStarted = true;
+      startUpdateWatcher((l) => { latestSeen = l; updateListeners.forEach((fn) => fn(l)); });
+    }
+    return () => { updateListeners.delete(setLatest); };
+  }, []);
+  if (!latest) return null;
+  return (
+    <div className="shrink-0 bg-gold/15 border-b border-gold/40 px-4 py-2 text-sm flex flex-wrap items-center gap-2" role="status">
+      <span className="text-ivory flex-1 min-w-[12rem]">Eine neue Version der DBZ-App ist da.</span>
+      <button onClick={() => applyUpdate(latest)} className="rounded-lg bg-mint text-onaccent px-3 py-1.5 text-sm font-medium">Jetzt aktualisieren</button>
+    </div>
+  );
+}
+
+// Push-Meldung für eine andere Rolle derselben Person (z. B. an die Lehrer-
+// Rolle, während man gerade als Schüler drin ist): Link enthält ?as=<Konto>,
+// die App wechselt dann automatisch in diese Rolle.
+function RoleFromLink({ user }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { switchAccount } = useAuth();
+  useEffect(() => {
+    const as = new URLSearchParams(location.search).get('as');
+    if (!as || !user) return;
+    const clean = location.pathname;
+    if (as === user.id) { navigate(clean, { replace: true }); return; }
+    switchAccount(as)
+      .then(() => { window.location.hash = `#${clean}`; window.location.reload(); })
+      .catch(() => navigate(clean, { replace: true }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, user?.id]);
+  return null;
 }

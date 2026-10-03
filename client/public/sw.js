@@ -15,7 +15,9 @@
  * Laden = keine echte Navigation) auf unbestimmte Zeit auf dem alten Stand
  * hängen, selbst nach vielen Deploys mit neuen JS-Bundles.
  */
-const CACHE = 'dbz-cache-v8'; // App-Shell + statische Assets (wird bei Updates ersetzt)
+// Versionskennung wird beim Build eingesetzt (vite.config.js) -> jede neue
+// Version ist ein neuer Service Worker mit frischem Cache.
+const CACHE = 'dbz-cache-__BUILD_ID__'; // App-Shell + statische Assets (wird bei Updates ersetzt)
 const DATA = 'dbz-quran-v1'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 
@@ -23,6 +25,11 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE).then((c) => c.addAll(APP_SHELL).catch(() => {})).then(() => self.skipWaiting()),
   );
+});
+
+// Die App kann einen wartenden neuen Service Worker sofort aktivieren.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
@@ -63,7 +70,7 @@ self.addEventListener('push', (event) => {
     badge: '/icon-192.png',
     tag: data.tag || undefined,
     renotify: !!data.tag,
-    data: { url: data.url || null },
+    data: { url: data.url || null, as: data.as || null },
   };
   event.waitUntil((async () => {
     await self.registration.showNotification(title, options);
@@ -80,13 +87,16 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const rel = event.notification.data && event.notification.data.url;
-  const target = rel ? `/#${rel}` : '/';
+  const as = event.notification.data && event.notification.data.as;
+  // as = Rolle, an die die Meldung ging (z. B. Klassenlehrer) -> App wechselt dorthin.
+  const path = rel || '/dashboard';
+  const target = as ? `/#${path}${path.includes('?') ? '&' : '?'}as=${encodeURIComponent(as)}` : (rel ? `/#${rel}` : '/');
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const c of all) {
       if ('focus' in c) {
         await c.focus();
-        if (rel && 'navigate' in c) { try { await c.navigate(target); } catch { /* egal */ } }
+        if ((rel || as) && 'navigate' in c) { try { await c.navigate(target); } catch { /* egal */ } }
         return;
       }
     }

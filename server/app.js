@@ -21,6 +21,15 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
 
+  // Aktuelle App-Version (Build-Kennung des ausgelieferten Frontends) -- die
+  // App fragt das regelmäßig ab und aktualisiert sich selbst.
+  const versionFile = path.join(__dirname, '..', 'client', 'dist', 'version.json');
+  app.get('/api/version', (_req, res) => {
+    let build = 'dev';
+    try { build = JSON.parse(fs.readFileSync(versionFile, 'utf8')).build || 'dev'; } catch { /* Dev ohne Build */ }
+    res.set('Cache-Control', 'no-store').json({ build });
+  });
+
   app.use('/api', api);
   app.use('/api', (err, _req, res, _next) => {
     console.error('[api error]', err.message);
