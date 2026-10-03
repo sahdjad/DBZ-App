@@ -10,6 +10,7 @@
 
 import crypto from 'node:crypto';
 import { db, newId } from './store.js';
+import { ROLE_LABELS } from './rbac.js';
 
 const b64url = (buf) =>
   Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -103,7 +104,9 @@ async function sendPush(sub, payloadObj) {
     method: 'POST',
     headers: {
       TTL: '86400',
-      Urgency: 'normal',
+      // "high": sofort zustellen, auch auf den Sperrbildschirm (Apple/Google
+      // halten "normal" sonst gern zurück, wenn das Handy im Stromsparmodus ist).
+      Urgency: 'high',
       'Content-Encoding': 'aes128gcm',
       'Content-Type': 'application/octet-stream',
       Authorization: authorization,
@@ -138,22 +141,56 @@ export function hasSubscription(userId) {
   return db.all('push_subscriptions').some((s) => s.userId === userId);
 }
 
-// Best-effort-Versand an alle Geräte eines Nutzers. Nie werfen; abgelaufene
-// Abos (404/410) werden entfernt.
+// Alle Konten derselben Person (verknüpfte Rollen: Schüler + Lehrkraft + …).
+function personIds(userId) {
+  const users = db.all('users');
+  const ids = new Set([userId]);
+  const queue = [userId];
+  while (queue.length) {
+    const id = queue.shift();
+    const u = users.find((x) => x.id === id);
+    (u?.linkedAccountIds || []).forEach((l) => { if (!ids.has(l)) { ids.add(l); queue.push(l); } });
+  }
+  return ids;
+}
+
+// Best-effort-Versand an ALLE Geräte der Person -- egal, in welcher Rolle das
+// Gerät gerade angemeldet ist (sonst kamen Meldungen an die Lehrer-Rolle nie
+// an, wenn das Handy zuletzt als Schüler Push eingeschaltet hatte). Nie werfen;
+// abgelaufene Abos (404/410) werden entfernt. Rückgabe: { sent, ok, failed }.
 export async function pushToUser(userId, payload) {
-  if (!pushConfigured()) return;
-  const subs = db.all('push_subscriptions').filter((s) => s.userId === userId);
-  if (!subs.length) return;
+  if (!pushConfigured()) return { sent: 0, ok: 0, failed: [] };
+  const ids = personIds(userId);
+  const subs = db.all('push_subscriptions').filter((s) => ids.has(s.userId));
+  if (!subs.length) return { sent: 0, ok: 0, failed: [] };
+  const target = db.all('users').find((u) => u.id === userId);
   const gone = [];
+  const failed = [];
+  let ok = 0;
   await Promise.all(subs.map(async (s) => {
+    // Meldung für eine andere Rolle als die, mit der das Gerät angemeldet ist:
+    // Rolle voranstellen und beim Antippen dorthin wechseln.
+    const other = s.userId !== userId;
+    const body = other
+      ? { ...payload, title: `${ROLE_LABELS[target?.role] || 'DBZ'}: ${payload.title}`, as: userId }
+      : payload;
     try {
-      const res = await sendPush(s, payload);
+      const res = await sendPush(s, body);
       if (res.status === 404 || res.status === 410) gone.push(s.id);
-    } catch { /* Netz-/Servicefehler ignorieren */ }
+      if (res.ok) ok++;
+      else {
+        failed.push(res.status);
+        console.warn('[push] Zustellung abgelehnt', res.status, new URL(s.endpoint).host, await res.text().catch(() => ''));
+      }
+    } catch (err) {
+      failed.push('netz');
+      console.warn('[push] Zustellung fehlgeschlagen', err.message);
+    }
   }));
   if (gone.length) {
     const arr = db.all('push_subscriptions');
     for (const id of gone) { const i = arr.findIndex((x) => x.id === id); if (i >= 0) arr.splice(i, 1); }
     db.commit();
   }
+  return { sent: subs.length, ok, failed };
 }

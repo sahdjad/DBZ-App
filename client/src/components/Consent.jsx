@@ -57,7 +57,6 @@ export function requestDevicePermissions({ wantsPush }) {
   return Promise.all(jobs);
 }
 
-const PUSH_ROLES = ['schueler', 'klassensprecher', 'eltern'];
 
 // Einmaliger Hinweis nach dem Anmelden: ohne gespeicherte Einwilligung
 // (ältere Konten) als Pflicht-Kasten; mit Einwilligung, aber auf diesem Gerät
@@ -70,7 +69,8 @@ export function ConsentGate({ user, onDone }) {
 
   const agree = () => {
     setBusy(true);
-    const perms = requestDevicePermissions({ wantsPush: PUSH_ROLES.includes(user.role) });
+    // Push für ALLE Rollen (Lehrkräfte brauchen Entschuldigungen/Nachrichten genauso).
+    const perms = requestDevicePermissions({ wantsPush: true });
     const save = needsConsent ? api.post('/me/consent', { version: CONSENT_VERSION }) : Promise.resolve();
     Promise.allSettled([perms, save]).then(() => { setHidden(true); onDone?.(); });
   };

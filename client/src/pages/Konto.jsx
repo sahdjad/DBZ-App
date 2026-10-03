@@ -6,6 +6,7 @@ import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../componen
 import { useAuth } from '../lib/AuthContext.jsx';
 import { getThemePref, setThemePref } from '../lib/theme.js';
 import { getPushState, enablePush, disablePush, iosNeedsInstall } from '../lib/push.js';
+import { BUILD, buildLabel, fetchLatestBuild, applyUpdate } from '../lib/update.js';
 
 const LINKABLE = ['schueler', 'klassensprecher'];
 
@@ -54,9 +55,9 @@ export default function Konto() {
         </Card>
 
         <ThemeCard />
-        {/* Für Schüler/Eltern sind Benachrichtigungen Pflicht -- die Einstellung
-            entfällt dort (Aktivieren übernimmt der Hinweis oben in der App). */}
-        {CAN_DISABLE_PUSH.includes(user?.role) && <NotificationsCard />}
+        {/* Für Schüler/Eltern ohne "Aus"-Knopf (Pflicht), aber mit Test. */}
+        <NotificationsCard />
+        <AppVersionCard />
 
         {user.role === 'eltern' && <ParentChildrenCard />}
         {LINKABLE.includes(user.role) && <FamilyCodeCard />}
@@ -259,13 +260,22 @@ function NotificationsCard() {
 
   const enable = async () => {
     setBusy(true);
-    try { await enablePush(); toast.push('Benachrichtigungen aktiviert'); setState(await getPushState()); }
+    try { await enablePush(); try { localStorage.removeItem('dbz-push-optout'); } catch { /* egal */ } toast.push('Benachrichtigungen aktiviert'); setState(await getPushState()); }
     catch (err) { toast.push(err.message, 'error'); }
     finally { setBusy(false); }
   };
+  // Probe-Benachrichtigung an alle Geräte der Person -- zeigt sofort, ob Push
+  // bis auf den Sperrbildschirm durchkommt.
+  const sendTest = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post('/push/test', {});
+      toast.push(r.ok > 0 ? `Test gesendet an ${r.ok} Gerät(e) – gleich sollte sie auf dem Sperrbildschirm erscheinen.` : 'Kein Gerät erreichbar. Bitte Benachrichtigungen aus- und wieder einschalten.', r.ok > 0 ? 'success' : 'error');
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
   const disable = async () => {
     setBusy(true);
-    try { await disablePush(); toast.push('Benachrichtigungen ausgeschaltet'); setState(await getPushState()); }
+    try { await disablePush(); try { localStorage.setItem('dbz-push-optout', '1'); } catch { /* egal */ } toast.push('Benachrichtigungen ausgeschaltet'); setState(await getPushState()); }
     catch (err) { toast.push(err.message, 'error'); }
     finally { setBusy(false); }
   };
@@ -292,9 +302,12 @@ function NotificationsCard() {
               <div className="text-ivory text-sm">Aktiviert auf diesem Gerät</div>
               <div className="text-xs text-sage-muted">{canDisable ? 'Auch wenn die App geschlossen ist.' : 'Für dein Konto verpflichtend – auch bei geschlossener App.'}</div>
             </div>
-            {canDisable && (
-              <Button size="sm" variant="outline" onClick={disable} disabled={busy}><BellOff size={16} /> Aus</Button>
-            )}
+            <div className="flex gap-2 flex-wrap justify-end">
+              <Button size="sm" variant="outline" onClick={sendTest} disabled={busy}><Bell size={16} /> Test</Button>
+              {canDisable && (
+                <Button size="sm" variant="outline" onClick={disable} disabled={busy}><BellOff size={16} /> Aus</Button>
+              )}
+            </div>
           </div>
         ) : (
           <div className="flex items-center justify-between gap-3">
@@ -442,6 +455,29 @@ function PasswordCard() {
         </label>
         <Button type="submit" disabled={busy}><KeyRound size={18} /> Passwort ändern</Button>
       </form>
+    </Card>
+  );
+}
+
+// App-Version + manuell nach Updates suchen (die App aktualisiert sich sonst
+// beim Öffnen automatisch).
+function AppVersionCard() {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const check = async () => {
+    setBusy(true);
+    const latest = await fetchLatestBuild();
+    setBusy(false);
+    if (latest && latest !== BUILD && BUILD !== 'dev') { applyUpdate(latest); return; }
+    toast.push(latest ? 'Du hast bereits die neueste Version.' : 'Gerade keine Verbindung zum Server.', latest ? 'success' : 'error');
+  };
+  return (
+    <Card className="p-5">
+      <CardHeader title="App-Version" subtitle="Die App aktualisiert sich beim Öffnen automatisch" icon={RefreshCw} />
+      <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div className="text-sm text-sage">Stand: <span className="text-ivory">{buildLabel()}</span></div>
+        <Button size="sm" variant="outline" onClick={check} loading={busy}><RefreshCw size={16} /> Nach Updates suchen</Button>
+      </div>
     </Card>
   );
 }

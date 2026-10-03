@@ -2231,3 +2231,32 @@ test('Ankündigungen: Absender als Postfach, Reaktionen für alle, "gelesen von"
   assert.equal(yusuf.reaction, '👍');
   assert.equal((await student('GET', `/announcements/${id}/readers`)).status, 403);
 });
+
+test('Push: Meldung an die Lehrer-Rolle erreicht auch das Gerät, das als Schüler-Rolle angemeldet ist', async () => {
+  const { pushToUser } = await import('../webpush.js');
+  const admin = await loginAs('admin@dbz.de');
+  const email = `push-${Date.now()}@dbz.de`;
+  const t = (await admin('POST', '/admin/users', { name: 'Push Lehrer', email, password: 'demo1234', role: 'klassenlehrer', classIds: ['class_3'] })).data.user;
+  const st = (await admin('POST', `/admin/users/${t.id}/roles`, { role: 'schueler' })).data.account;
+  // Gerät meldet sich als Schüler-Rolle an.
+  const p = await loginAs(email);
+  await p('POST', `/me/switch/${st.id}`);
+  const crypto = await import('node:crypto');
+  const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+  const b64 = (b) => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const sub = { endpoint: `https://push.example.invalid/${Date.now()}`, keys: { p256dh: b64(ecdh.getPublicKey()), auth: b64(crypto.randomBytes(16)) } };
+  assert.equal((await p('POST', '/push/subscribe', { subscription: sub })).status, 200);
+  // Meldung an die LEHRER-Rolle -> wird an dieses Gerät adressiert (Zustellung scheitert hier nur am Testserver).
+  const r = await pushToUser(t.id, { title: 'Neue Entschuldigung', body: 'x' });
+  assert.equal(r.sent, 1, 'Gerät der anderen Rolle wird mit angeschrieben');
+  const test = await p('POST', '/push/test', {});
+  assert.equal(test.status, 200);
+  assert.equal(test.data.sent, 1);
+});
+
+test('App-Version: /api/version liefert eine Build-Kennung (ohne Cache)', async () => {
+  const res = await fetch(base + '/api/version');
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('cache-control'), 'no-store');
+  assert.ok((await res.json()).build);
+});
