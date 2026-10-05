@@ -68,6 +68,7 @@ const emptyDb = () => ({
   exam_attempts: [],
   announcements: [],
   materials: [],
+  material_annotations: [], // Lehrer-Notizen auf PDFs (Original bleibt unverändert)
   threads: [], // Direktnachrichten (mit eingebetteten messages)
   quran_marks: [], // pro Nutzer: zuletzt gelesen + Lesezeichen
   invites: [], // Einladungen (nur Token-Hash gespeichert)

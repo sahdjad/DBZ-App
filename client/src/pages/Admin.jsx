@@ -150,13 +150,17 @@ function PendingTab() {
   const load = () => api.get('/admin/pending-registrations').then((d) => setList(d.users));
   useEffect(() => { load(); api.get('/classes').then((d) => setClasses(d.classes)); }, []);
 
+  // picked[id] = { role, classIds }
+  const pick = (id) => picked[id] || { role: 'schueler', classIds: [] };
+  const setPick = (id, patch) => setPicked((p) => ({ ...p, [id]: { ...pick(id), ...patch } }));
   const assign = async (id) => {
-    const classId = picked[id];
-    if (!classId) { toast.push('Bitte zuerst eine Klasse auswählen', 'error'); return; }
+    const { role, classIds } = pick(id);
+    const studentRole = role === 'schueler' || role === 'klassensprecher';
+    if (studentRole && classIds.length !== 1) { toast.push('Bitte zuerst eine Klasse auswählen', 'error'); return; }
     setBusy(id);
     try {
-      const res = await api.post(`/admin/pending-registrations/${id}/assign`, { classId });
-      toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Klasse zugewiesen', 'success');
+      const res = await api.post(`/admin/pending-registrations/${id}/assign`, { role, classIds });
+      toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Freigeschaltet', 'success');
       load();
     } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(null); }
   };
@@ -174,7 +178,7 @@ function PendingTab() {
   if (!list) return <Spinner />;
   return (
     <Card className="p-5">
-      <CardHeader title="Neue Anmeldungen" subtitle="Ohne Einladung registriert – wartet auf Klassenzuweisung" icon={UserCheck} />
+      <CardHeader title="Neue Anmeldungen" subtitle="Ohne Einladung registriert – hier als Schüler (mit Klasse), Lehrkraft, Leitung … freischalten" icon={UserCheck} />
       {list.length === 0 ? (
         <p className="p-4 text-sage-muted text-sm">Keine offenen Anmeldungen.</p>
       ) : (
@@ -206,14 +210,45 @@ function PendingTab() {
                   {u.profile.notes && <div>Bemerkung: {u.profile.notes}</div>}
                 </div>
               )}
-              <div className="flex items-center gap-2 flex-wrap">
-                <select className="input py-1.5 w-auto text-sm" value={picked[u.id] || ''} onChange={(e) => setPicked({ ...picked, [u.id]: e.target.value })}>
-                  <option value="">– Klasse wählen –</option>
-                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-                <Button size="sm" onClick={() => assign(u.id)} disabled={busy === u.id}><CheckCircle2 size={16} /> Zuweisen</Button>
-                <Button size="sm" variant="outline" onClick={() => reject(u.id)} disabled={busy === u.id}><XCircle size={16} /> Ablehnen</Button>
-              </div>
+              {(() => {
+                const p = pick(u.id);
+                const studentRole = p.role === 'schueler' || p.role === 'klassensprecher';
+                const teacherRole = p.role === 'klassenlehrer' || p.role === 'vertretung';
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <label className="text-sm text-sage">Freischalten als</label>
+                      <select className="input py-1.5 w-auto text-sm" value={p.role} onChange={(e) => setPick(u.id, { role: e.target.value, classIds: [] })}>
+                        {ROLES.filter(([v]) => isSuperAdmin || v !== 'super_admin').map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                      {studentRole && (
+                        <select className="input py-1.5 w-auto text-sm" value={p.classIds[0] || ''} onChange={(e) => setPick(u.id, { classIds: e.target.value ? [e.target.value] : [] })}>
+                          <option value="">– Klasse wählen –</option>
+                          {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                    {teacherRole && (
+                      <div className="flex flex-wrap gap-2">
+                        <span className="text-xs text-sage-muted w-full">Unterrichtet in:</span>
+                        {classes.map((c) => {
+                          const on = p.classIds.includes(c.id);
+                          return (
+                            <button key={c.id} type="button" onClick={() => setPick(u.id, { classIds: on ? p.classIds.filter((x) => x !== c.id) : [...p.classIds, c.id] })}
+                              className={['px-3 py-1 rounded-lg border text-sm', on ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage'].join(' ')}>
+                              {c.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" onClick={() => assign(u.id)} disabled={busy === u.id}><CheckCircle2 size={16} /> Freischalten</Button>
+                      <Button size="sm" variant="outline" onClick={() => reject(u.id)} disabled={busy === u.id}><XCircle size={16} /> Ablehnen</Button>
+                    </div>
+                  </div>
+                );
+              })()}
             </li>
           ))}
         </ul>
@@ -305,9 +340,15 @@ function UsersTab() {
         )}
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
-      <p className="text-xs text-sage-muted">
-        Tipp: Neue Personen am besten per <b>Einladung</b> anmelden lassen. Braucht jemand danach weitere Rollen (z. B. Schüler UND Lehrkraft UND Leitung), bei der Person auf <b>Bearbeiten → Rolle hinzufügen</b> – kein zweites Konto, kein zweites Passwort.
-      </p>
+      <details className="rounded-2xl border border-mint/30 bg-mint/5 text-sm">
+        <summary className="cursor-pointer px-4 py-3 text-ivory font-medium">So beförderst du jemanden (z. B. zum Klassenlehrer, zur Leitung oder zum Admin)</summary>
+        <ol className="list-decimal space-y-1.5 px-8 pb-4 text-sage">
+          <li>Hat sich die Person gerade erst registriert, steht sie oben im Reiter <b>„Neue Anmeldungen“</b>. Dort bei <b>„Freischalten als“</b> die Rolle wählen (bei Lehrkräften die Klassen antippen) und <b>Freischalten</b> drücken.</li>
+          <li>Ist die Person schon aktiv: unten in der Liste suchen und auf <b>„Rollen“</b> tippen.</li>
+          <li><b>Nur befördern</b> (z. B. Schüler → Klassenlehrer): im Feld <b>„Hauptrolle“</b> die neue Rolle wählen, Klassen antippen, <b>Speichern</b>.</li>
+          <li><b>Zusätzliche Rolle</b> (bleibt z. B. Schüler UND wird Lehrkraft): im Kasten <b>„Weitere Rollen“</b> die Rolle hinzufügen. Die Person wechselt dann im Konto-Menü zwischen ihren Rollen – ohne zweites Passwort.</li>
+        </ol>
+      </details>
       {show && (
         <Card className="p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
@@ -378,7 +419,7 @@ function UsersTab() {
                         </div>
                       </div>
                       <span className="hidden sm:block text-xs text-sage-muted whitespace-nowrap" title="Zuletzt online">{lastSeenLabel(u.lastSeenAt)}</span>
-                      <Button size="sm" variant="ghost" onClick={() => { setEditing(u); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Bearbeiten</Button>
+                      <Button size="sm" variant="outline" onClick={() => { setEditing(u); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Rollen / Bearbeiten</Button>
                     </li>
                   ))}
                 </ul>
@@ -433,7 +474,8 @@ function PersonRolesCard({ userId, classes, onChanged }) {
   };
   return (
     <div className="rounded-xl border border-line p-3 space-y-3">
-      <div className="text-sm text-sage">Rollen von <span className="text-ivory">{data.person.name}</span> <span className="text-sage-muted">(Anmeldung: {data.person.email || '–'})</span></div>
+      <div className="text-sm text-ivory font-medium">Weitere Rollen <span className="font-normal text-sage-muted">– eine Person, mehrere Rollen, ein Passwort</span></div>
+      <div className="text-xs text-sage-muted">Anmeldung: {data.person.email || '–'}</div>
       <ul className="space-y-1.5">
         {data.accounts.map((a) => (
           <li key={a.id} className={`flex items-center gap-2 text-sm ${a.status === 'disabled' ? 'opacity-50' : ''}`}>
@@ -446,7 +488,7 @@ function PersonRolesCard({ userId, classes, onChanged }) {
       {options.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-end border-t border-line pt-3">
           <label className="block">
-            <span className="text-sm text-sage">Rolle hinzufügen</span>
+            <span className="text-sm text-sage">Zusätzliche Rolle hinzufügen</span>
             <select className="input mt-1" value={role} onChange={(e) => { setRole(e.target.value); setCls([]); }}>
               <option value="">– Rolle wählen –</option>
               {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
@@ -523,12 +565,19 @@ function EditUser({ user, classes, students, onDone, onCancel }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Input label="Name" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
           <label className="block">
-            <span className="text-sm text-sage">Rolle</span>
+            <span className="text-sm text-sage">Hauptrolle (ändern = befördern)</span>
             <select className="input mt-1" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
               {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </select>
           </label>
         </div>
+        {f.role !== user.role && (
+          <p className="rounded-lg bg-mint/10 border border-mint/30 px-3 py-2 text-xs text-sage">
+            Wird beim Speichern von <b>{ROLES.find(([v]) => v === user.role)?.[1] || user.role}</b> zu <b>{ROLES.find(([v]) => v === f.role)?.[1]}</b>.
+            {['klassenlehrer', 'vertretung'].includes(f.role) ? ' Bitte unten die Klassen antippen, in denen unterrichtet wird.' : ''}
+            {' '}Soll die alte Rolle zusätzlich bleiben? Dann stattdessen unten „Weitere Rollen“ nutzen.
+          </p>
+        )}
 
         <label className="flex items-center gap-2 text-sm text-sage">
           <input type="checkbox" checked={f.status === 'active'} onChange={(e) => setF({ ...f, status: e.target.checked ? 'active' : 'disabled' })} />

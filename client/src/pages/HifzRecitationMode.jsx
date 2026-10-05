@@ -130,6 +130,9 @@ export default function HifzRecitationMode({ surahs }) {
   const modelCached = useModelCached();
   const [readMode, setReadMode] = useState(false);
   const [interim, setInterim] = useState('');
+  // Sofort-Vorschau: so viele Wörter nach dem bestätigten Stand sind im
+  // Zwischenergebnis schon eindeutig gehört (siehe HifzEngine.preview).
+  const [preview, setPreview] = useState(0);
   const [noAudioHint, setNoAudioHint] = useState(false);
   const [progress, setProgress] = useState(null); // Modell-Download {loaded,total,phase}
   const [slowDevice, setSlowDevice] = useState(false);
@@ -165,6 +168,7 @@ export default function HifzRecitationMode({ surahs }) {
       if (!engine || readModeRef.current) return;
       try {
         const s = engine.accept(segment);
+        setPreview(0); // neu berechnet mit dem nächsten Zwischenergebnis (kommt direkt danach)
         if (import.meta.env.DEV) console.debug('[hifz]', JSON.stringify(segment.text), '->', s.index, s.status);
         setEngineState(s);
         if (s.status === 'complete') { speechRef.current.stop(); setCapture('ended'); }
@@ -172,10 +176,14 @@ export default function HifzRecitationMode({ surahs }) {
         speechRef.current.stop(); setCapture('error'); setCaptureError(err.message);
       }
     },
-    onState: (state, err) => { setCapture(state); setCaptureError(err || null); if (state !== 'listening') setInterim(''); },
+    onState: (state, err) => { setCapture(state); setCaptureError(err || null); if (state !== 'listening') { setInterim(''); setPreview(0); } },
     onInterim: (text) => {
       if (text) { heardRef.current = true; setNoAudioHint(false); }
-      if (!readModeRef.current) setInterim(text);
+      if (!readModeRef.current) {
+        setInterim(text);
+        const engine = engineRef.current;
+        setPreview(engine ? engine.preview(text) : 0);
+      }
     },
     onProgress: (p) => setProgress(p),
     // Rechenzeit je Sekunde Audio: dauerhaft > 1 heißt, das Gerät kommt nicht hinterher.
@@ -220,7 +228,7 @@ export default function HifzRecitationMode({ surahs }) {
       try { localStorage.setItem('dbz-mushaf-page', String(target)); } catch { /* egal */ }
       setPageData(d); setPage(target); setStarted(false);
       engineRef.current = null; setEngineState(null);
-      setCapture('idle'); setCaptureError(null); setInterim(''); setReadMode(false);
+      setCapture('idle'); setCaptureError(null); setInterim(''); setPreview(0); setReadMode(false);
       if (d.font === 'v1') {
         setFontReady(isPageFontLoaded(d.fontPage));
         ensurePageFont(d.fontPage).then(() => { if (pageReq.current === req) setFontReady(true); });
@@ -285,7 +293,7 @@ export default function HifzRecitationMode({ surahs }) {
   const backToBrowse = () => {
     speechRef.current.stop();
     setStarted(false); engineRef.current = null; setEngineState(null);
-    setCapture('idle'); setCaptureError(null); setReadMode(false); setInterim('');
+    setCapture('idle'); setCaptureError(null); setReadMode(false); setInterim(''); setPreview(0);
   };
 
   const busy = capture === 'requesting' || capture === 'listening' || capture === 'loading';
@@ -407,8 +415,9 @@ export default function HifzRecitationMode({ surahs }) {
                     if (idx == null) {
                       return <span key={wi} className="mushaf-word mushaf-end" aria-hidden="true">﴿{w.t}﴾</span>;
                     }
-                    const visible = !started || readMode || idx < engineState.index || engineState.hints.includes(idx);
-                    const isCurrent = started && !readMode && idx === engineState.index;
+                    const shownIndex = (engineState?.index ?? 0) + (capture === 'listening' ? preview : 0);
+                    const visible = !started || readMode || idx < shownIndex || engineState?.hints.includes(idx);
+                    const isCurrent = started && !readMode && idx === shownIndex;
                     const isSuspected = started && !readMode && engineState.mismatch?.index === idx && engineState.mismatch.suspected;
                     const wasHinted = engineState?.hints.includes(idx);
                     const wasMissed = started && !readMode && engineState?.missed?.includes(idx);

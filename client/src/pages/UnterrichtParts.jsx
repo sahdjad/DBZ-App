@@ -1,9 +1,10 @@
 // Bausteine der Unterricht-Seite: Zeiten & Regeln je Klasse, vergangene
 // Unterrichtstage, gemeinsamer Schultag (Leitung/Admin) und Tagesüberblick.
 import { useEffect, useState } from 'react';
-import { Settings2, History, School, Plus, Trash2, Printer, CalendarDays, Gauge } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Settings2, History, School, Plus, Trash2, Printer, CalendarDays, Gauge, ArrowLeft, ChevronRight, CalendarPlus } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, Spinner, useToast, useBackToClose } from '../components/ui.jsx';
 import { QrStage, printQrCode } from '../components/QrCode.jsx';
 
 export const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
@@ -83,10 +84,17 @@ export function ClassSettingsCard({ classId, onSaved }) {
 }
 
 // Vergangene Unterrichtstage: einzelne (z. B. Testläufe) oder alle löschen.
+const localToday = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 export function SessionHistoryCard({ classId, className, onChanged }) {
   const toast = useToast();
   const [list, setList] = useState(null);
   const [sel, setSel] = useState([]);
+  const [editing, setEditing] = useState(null); // { id, date }
+  const [newDate, setNewDate] = useState('');
   const load = () => api.get(`/classes/${classId}/sessions`).then((d) => { setList(d.sessions); setSel([]); });
   useEffect(() => { load(); }, [classId]);
   const del = async (ids) => {
@@ -107,19 +115,37 @@ export function SessionHistoryCard({ classId, className, onChanged }) {
       load(); onChanged?.();
     } catch (err) { toast.push(err.message, 'error'); }
   };
+  const openDate = async (date) => {
+    if (!date) return;
+    try {
+      const r = await api.post(`/classes/${classId}/days`, { date });
+      setEditing({ id: r.session.id, date });
+      setNewDate('');
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
   const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   return (
     <Card className="p-5">
-      <CardHeader title="Vergangene Unterrichtstage" subtitle="Testläufe oder falsche Tage löschen" icon={History} />
+      <CardHeader title="Anwesenheit nachtragen & korrigieren" subtitle="Tag antippen zum Bearbeiten – auch Tage, die noch fehlen" icon={History} />
+      <div className="flex items-end gap-2 pb-3">
+        <label className="block flex-1">
+          <span className="text-xs text-sage">Tag nachtragen</span>
+          <input type="date" className="input mt-1" value={newDate} max={localToday()} onChange={(e) => setNewDate(e.target.value)} />
+        </label>
+        <Button onClick={() => openDate(newDate)} disabled={!newDate}><CalendarPlus size={16} /> Öffnen</Button>
+      </div>
       {!list ? <Spinner /> : list.length === 0 ? <p className="p-4 text-sm text-sage-muted">Noch keine Unterrichtstage.</p> : (
-        <ul className="divide-y divide-line max-h-80 overflow-y-auto dbz-scroll">
+        <ul className="divide-y divide-line max-h-96 overflow-y-auto dbz-scroll">
           {list.map((x) => (
-            <li key={x.id} className="flex items-center gap-3 py-2 px-1">
+            <li key={x.id} className="flex items-center gap-3 py-1 px-1">
               <input type="checkbox" aria-label={`${fmtDate(x.date)} auswählen`} checked={sel.includes(x.id)} onChange={() => toggle(x.id)} />
-              <div className="flex-1 min-w-0">
-                <div className="text-sm text-ivory">{fmtDate(x.date)} {x.schoolDay && <Badge tone="mint">Schultag</Badge>}</div>
-                <div className="text-xs text-sage-muted">{x.entries ? `${x.present} da · ${x.late} spät · ${x.excused} entsch. · ${x.unexcused} unentsch.` : 'keine Einträge'}</div>
-              </div>
+              <button onClick={() => setEditing({ id: x.id, date: x.date })} className="flex flex-1 min-w-0 items-center gap-2 rounded-lg py-1.5 text-left hover:bg-subtle">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-ivory">{fmtDate(x.date)} {x.schoolDay && <Badge tone="mint">Schultag</Badge>}</div>
+                  <div className="text-xs text-sage-muted">{x.entries ? `${x.present} da · ${x.late} spät · ${x.excused} entsch. · ${x.unexcused} unentsch.` : 'keine Einträge – antippen zum Eintragen'}</div>
+                </div>
+                <ChevronRight size={16} className="text-sage-muted shrink-0" />
+              </button>
               <button onClick={() => del([x.id])} className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10" aria-label="Tag löschen"><Trash2 size={16} /></button>
             </li>
           ))}
@@ -129,7 +155,124 @@ export function SessionHistoryCard({ classId, className, onChanged }) {
         {sel.length > 0 && <Button size="sm" variant="danger" onClick={() => del(sel)}><Trash2 size={16} /> {sel.length} löschen</Button>}
         <Button size="sm" variant="ghost" onClick={resetAll}>Alle Anwesenheitsdaten löschen …</Button>
       </div>
+      {editing && <DayEditor sessionId={editing.id} date={editing.date} onClose={() => { setEditing(null); load(); onChanged?.(); }} />}
     </Card>
+  );
+}
+
+// Ein Unterrichtstag im Nachhinein: Status je Schüler setzen (Handy-tauglich).
+const DAY_STATUSES = [
+  { key: 'present', label: 'Da', status: 'present', cls: 'bg-status-present text-white' },
+  { key: 'late', label: 'Spät', status: 'late', cls: 'bg-status-late text-white' },
+  { key: 'sick', label: 'Krank', status: 'excused', note: 'Krank', cls: 'bg-status-excused text-white' },
+  { key: 'excused', label: 'Entsch.', status: 'excused', cls: 'bg-status-excused text-white' },
+  { key: 'unexcused', label: 'Fehlt', status: 'unexcused', cls: 'bg-status-absent text-white' },
+];
+const keyOf = (r) => {
+  if (r.status === 'excused' && /^krank/i.test(r.note || '')) return 'sick';
+  return ['present', 'late', 'excused', 'unexcused'].includes(r.status) ? r.status : r.status === 'left_early' ? 'present' : null;
+};
+
+function DayEditor({ sessionId, date, onClose }) {
+  useBackToClose(true, onClose);
+  const toast = useToast();
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const load = () => api.get(`/sessions/${sessionId}/attendance`).then((d) => setRows(d.attendance.sort((a, b) => a.name.localeCompare(b.name, 'de'))));
+  useEffect(() => { load().catch((e) => toast.push(e.message, 'error')); }, [sessionId]);
+
+  const setStatus = async (r, opt, minutesLate) => {
+    setBusy(r.studentId);
+    try {
+      const body = { studentId: r.studentId, status: opt.status, note: opt.note || (keyOf(r) === 'sick' ? '' : undefined) };
+      if (opt.status === 'late') body.minutesLate = minutesLate ?? (r.minutesLate || 5);
+      await api.post(`/sessions/${sessionId}/attendance`, body);
+      await load();
+    } catch (err) { toast.push(err.message, 'error'); }
+    setBusy(null);
+  };
+  const clear = async (r) => {
+    setBusy(r.studentId);
+    try { await api.del(`/sessions/${sessionId}/attendance/${r.studentId}`); await load(); }
+    catch (err) { toast.push(err.message, 'error'); }
+    setBusy(null);
+  };
+  const allPresent = async () => {
+    const open = (rows || []).filter((r) => r.status === 'open');
+    if (!open.length) return;
+    setBusy('all');
+    try {
+      for (const r of open) await api.post(`/sessions/${sessionId}/attendance`, { studentId: r.studentId, status: 'present' });
+      await load();
+    } catch (err) { toast.push(err.message, 'error'); }
+    setBusy(null);
+  };
+
+  const counts = (rows || []).reduce((acc, r) => { const k = keyOf(r) || 'open'; acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+
+  return createPortal(
+    <div className="fixed inset-0 z-[85] flex flex-col bg-bg" role="dialog" aria-modal="true" aria-label={`Anwesenheit ${fmtDate(date)}`}>
+      <div className="flex items-center gap-2 border-b border-line bg-card px-3" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.6rem)', paddingBottom: '0.6rem' }}>
+        <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full bg-subtle px-3 py-2 text-sm text-ivory"><ArrowLeft size={18} /> Zurück</button>
+        <div className="min-w-0 flex-1 text-center">
+          <div className="truncate text-sm font-medium text-ivory">{fmtDate(date)}</div>
+          <div className="text-[11px] text-sage-muted">{rows ? `${counts.present || 0} da · ${counts.late || 0} spät · ${(counts.sick || 0) + (counts.excused || 0)} entsch. · ${counts.unexcused || 0} fehlt · ${counts.open || 0} offen` : ' '}</div>
+        </div>
+        <span className="w-16" />
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 pb-10">
+        {!rows ? <Spinner /> : rows.length === 0 ? <p className="p-4 text-sm text-sage-muted">Keine Schüler in dieser Klasse.</p> : (
+          <>
+            {counts.open > 0 && (
+              <div className="mb-3 flex justify-end">
+                <Button size="sm" variant="outline" onClick={allPresent} disabled={busy === 'all'}>Alle offenen auf „Da“</Button>
+              </div>
+            )}
+            <ul className="space-y-2">
+              {rows.map((r) => {
+                const k = keyOf(r);
+                return (
+                  <li key={r.studentId} className={`rounded-xl border border-line bg-card p-3 ${busy === r.studentId ? 'opacity-60' : ''}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="truncate text-sm text-ivory">{r.name}</span>
+                      {r.status !== 'open'
+                        ? <button onClick={() => clear(r)} className="shrink-0 text-[11px] text-sage-muted underline">Eintrag entfernen</button>
+                        : <span className="shrink-0 text-[11px] text-sage-muted">kein Eintrag</span>}
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {DAY_STATUSES.map((opt) => (
+                        <button
+                          key={opt.key}
+                          disabled={busy === r.studentId}
+                          onClick={() => setStatus(r, opt)}
+                          className={`rounded-lg px-1 py-2 text-xs font-medium transition ${k === opt.key ? opt.cls : 'bg-subtle text-sage'}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    {k === 'late' && (
+                      <label className="mt-2 flex items-center gap-2 text-xs text-sage">
+                        Minuten zu spät:
+                        <input
+                          type="number"
+                          min={0}
+                          max={600}
+                          defaultValue={r.minutesLate || 0}
+                          className="input w-20 py-1 text-sm"
+                          onBlur={(e) => { const v = parseInt(e.target.value, 10); if (Number.isInteger(v) && v !== (r.minutesLate || 0)) setStatus(r, DAY_STATUSES[1], v); }}
+                        />
+                      </label>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </div>
+    </div>,
+    document.body,
   );
 }
 

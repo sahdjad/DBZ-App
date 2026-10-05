@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
-import { copyFileSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { copyFileSync, cpSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,6 +15,19 @@ function copyOrtWasm() {
     copyFileSync(from, `${dir}ort-wasm-simd-threaded.wasm`);
   };
   return { name: 'dbz-copy-ort-wasm', config: copy };
+}
+
+// pdf.js braucht zur Laufzeit Zeichensatz-Tabellen (CMaps), Standardschriften
+// und WebAssembly-Decoder (JPEG2000/JBIG2) -- nach public/pdfjs/ kopieren.
+function copyPdfjsAssets() {
+  const copy = () => {
+    const src = fileURLToPath(new URL('./node_modules/pdfjs-dist/', import.meta.url));
+    const dir = fileURLToPath(new URL('./public/pdfjs/', import.meta.url));
+    for (const sub of ['cmaps', 'standard_fonts', 'wasm']) {
+      cpSync(join(src, sub), join(dir, sub), { recursive: true, filter: (f) => !/LICENSE|quickjs/.test(f) });
+    }
+  };
+  return { name: 'dbz-copy-pdfjs', config: copy };
 }
 
 // Jede Ausgabe bekommt eine eindeutige Versionskennung. Die App vergleicht sie
@@ -37,7 +50,7 @@ function versionFile() {
 
 // Dev: /api wird auf den Express-Server (Port 4000) geproxyt.
 export default defineConfig({
-  plugins: [copyOrtWasm(), react(), versionFile()],
+  plugins: [copyOrtWasm(), copyPdfjsAssets(), react(), versionFile()],
   define: { __BUILD_ID__: JSON.stringify(BUILD_ID) },
   worker: { format: 'es' },
   server: {

@@ -103,6 +103,18 @@ const wordMatches = (token, w) => tokenMatches(token, w.token) || (w.alt !== w.t
 const sameWord = (token, w) => [w.token, w.alt].some((x) => token === x || collapse(token) === collapse(x)
   || (Math.min(token.length, x.length) >= 3 && phonetic(token) === phonetic(x)));
 
+// Für die Sofort-Vorschau aus dem Zwischenergebnis: nur ganze, gleich lange
+// Wörter (ein angefangenes Wort am Audio-Ende ist kürzer und passt deshalb
+// nie), höchstens ein vertauschter Laut bei längeren Wörtern.
+function previewMatches(token, w) {
+  if (token.length < 2) return false;
+  if (sameWord(token, w)) return true;
+  return [w.token, w.alt].some((x) => {
+    const pa = phonetic(token), pb = phonetic(x);
+    return pa.length >= 5 && pa.length === pb.length && levenshtein(pa, pb) <= 1;
+  });
+}
+
 export function validatePassage(input) {
   if (!input || typeof input !== 'object') throw new Error('Abschnitt fehlt.');
   for (const key of ['id', 'title', 'edition', 'riwaya', 'source']) {
@@ -181,6 +193,22 @@ export class HifzEngine {
     this.mismatch = null;
     this.status = this.index === this.passage.words.length ? 'complete' : 'waiting';
     return this.snapshot();
+  }
+  /**
+   * Sofort-Vorschau (wie Tarteel): Wie viele der nächsten erwarteten Wörter
+   * stehen schon eindeutig im noch nicht bestätigten Zwischenergebnis? Ändert
+   * den bestätigten Stand NICHT -- die Anzeige deckt diese Wörter nur vorab
+   * auf. Streng: nur in Reihenfolge, ganze Wörter, keine Sprünge/Wiederholungen,
+   * nicht während einer Abweichung. Bestätigt die Erkennung kurz darauf etwas
+   * anderes, verschwindet die Vorschau wieder.
+   */
+  preview(text) {
+    if (this.status === 'complete' || this.mismatch || this.backlog.length || typeof text !== 'string') return 0;
+    const tokens = normalize(text).split(' ').filter(Boolean);
+    const words = this.passage.words;
+    let n = 0;
+    while (n < tokens.length && n < 8 && this.index + n < words.length && previewMatches(tokens[n], words[this.index + n])) n++;
+    return n;
   }
   /** final segments are incremental, immutable, non-overlapping; IDs unique per session. */
   accept({ session, id, final, text, reliable = true }) {

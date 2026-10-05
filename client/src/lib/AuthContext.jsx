@@ -25,8 +25,17 @@ export function AuthProvider({ children }) {
     const start = Date.now();
     (async () => {
       try {
-        const { user } = await api.get('/auth/me');
-        setUser(user);
+        // Server wacht evtl. gerade auf (Kaltstart): bei Verbindungsfehlern
+        // weiter versuchen statt fälschlich zur Anmeldung zu springen.
+        for (let round = 0; ; round++) {
+          try {
+            const { user } = await api.get('/auth/me');
+            setUser(user);
+            break;
+          } catch (err) {
+            if (!err.network || round >= 5) throw err;
+          }
+        }
       } catch {
         setUser(null);
       } finally {

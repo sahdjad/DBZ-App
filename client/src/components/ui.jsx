@@ -1,5 +1,5 @@
 // Wiederverwendbare, token-basierte UI-Komponenten.
-import { createContext, useContext, useCallback, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { X, CheckCircle2, AlertTriangle, Info, ArrowLeft, Download, Paperclip } from 'lucide-react';
 
@@ -394,34 +394,51 @@ export function ImageAttachment({ url, alt = '', className = '' }) {
   );
 }
 
+// PDF-Ansicht (pdf.js) erst bei Bedarf laden -- hält das Haupt-Bundle klein.
+const PdfViewer = lazy(() => import('./PdfViewer.jsx'));
+
 // Beliebiger Anhang: Bild -> Bildvorschau, Audio -> Player, PDF -> In-App-
-// Dokumentansicht, sonst Vorschau mit "Speichern" (öffnet nie einen neuen Tab).
-export function FileAttachment({ url, name, mediaType = '', className = '', icon: Icon = Paperclip }) {
+// Dokumentansicht (direkt offen, mit Zurück und Speichern/Teilen), sonst
+// Vorschau mit "Speichern" (öffnet nie einen neuen Tab).
+// `notesPath`/`canAnnotate`: Notizen der Lehrkraft auf dem PDF (Materialien).
+export function FileAttachment({ url, name, mediaType = '', className = '', icon: Icon = Paperclip, notesPath = null, canAnnotate = false, label = null }) {
   const [open, setOpen] = useState(false);
   const type = String(mediaType || '');
   if (type.startsWith('image')) return <ImageAttachment url={url} alt={name} className={className} />;
   if (type.startsWith('audio')) return <audio controls preload="none" src={url} className={cx('w-full max-w-sm h-10', className)} />;
   const isPdf = type === 'application/pdf' || /\.pdf$/i.test(name || '');
+  const close = () => setOpen(false);
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className={cx('inline-flex items-center gap-2 text-mint-light text-sm hover:underline text-left', className)}>
-        <Icon size={16} className="shrink-0" /> <span className="break-all">{name || 'Datei öffnen'}</span>
+        <Icon size={16} className="shrink-0" /> <span className="break-all">{label || name || 'Datei öffnen'}</span>
       </button>
-      {open && (
-        <PreviewOverlay title={name || 'Datei'} onClose={() => setOpen(false)} downloadUrl={url} downloadName={name}>
-          {isPdf ? (
-            <iframe src={url} title={name || 'Dokument'} className="absolute inset-0 h-full w-full bg-white" />
-          ) : (
-            <div className="absolute inset-0 grid place-items-center p-6 text-center text-white/80 text-sm">
-              <div>
-                <p className="mb-4">Für diese Datei gibt es keine Vorschau.</p>
-                <a href={url} download={name || true} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-white"><Download size={16} /> Datei speichern</a>
-              </div>
+      {open && isPdf && (
+        <Suspense fallback={<PdfLoading onClose={close} />}>
+          <PdfViewer url={url} name={name || 'Dokument'} onClose={close} notesPath={notesPath} canAnnotate={canAnnotate} />
+        </Suspense>
+      )}
+      {open && !isPdf && (
+        <PreviewOverlay title={name || 'Datei'} onClose={close} downloadUrl={url} downloadName={name}>
+          <div className="absolute inset-0 grid place-items-center p-6 text-center text-white/80 text-sm">
+            <div>
+              <p className="mb-4">Für diese Datei gibt es keine Vorschau.</p>
+              <a href={url} download={name || true} className="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-white"><Download size={16} /> Datei speichern</a>
             </div>
-          )}
+          </div>
         </PreviewOverlay>
       )}
     </>
+  );
+}
+
+function PdfLoading({ onClose }) {
+  return (
+    <PreviewOverlay title="PDF" onClose={onClose}>
+      <div className="absolute inset-0 grid place-items-center">
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-mint" />
+      </div>
+    </PreviewOverlay>
   );
 }
 

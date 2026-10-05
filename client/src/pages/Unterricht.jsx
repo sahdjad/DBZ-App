@@ -260,8 +260,8 @@ function TeacherUnterricht() {
       </Card>
       {session?.classId && (
         <div className="grid gap-4 lg:grid-cols-2 items-start mt-4">
-          <ClassSettingsCard classId={session.classId} onSaved={() => loadAttendance(active)} />
           <SessionHistoryCard classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
+          <ClassSettingsCard classId={session.classId} onSaved={() => loadAttendance(active)} />
         </div>
       )}
       <SelectionBar

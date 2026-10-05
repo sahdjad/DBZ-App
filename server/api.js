@@ -988,6 +988,43 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   res.json({ status, minutesLate, lateUnexcused, className: findClass(session.classId)?.name });
 });
 
+// Sitzung für ein beliebiges (vergangenes) Datum holen oder anlegen -- zum
+// Nachtragen/Korrigieren der Anwesenheit und für Protokolle im Nachhinein.
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+function validPastDate(date, maxDaysBack = 400) {
+  if (!DATE_RE.test(String(date || ''))) return 'Ungültiges Datum';
+  const today = todayKey();
+  if (date > today) return 'Das Datum liegt in der Zukunft';
+  const min = new Date(`${today}T12:00:00`);
+  min.setDate(min.getDate() - maxDaysBack);
+  if (date < localDateKey(min)) return 'Das Datum liegt zu weit zurück';
+  return null;
+}
+function sessionForDate(klass, date) {
+  if (date === todayKey()) return ensureTodaySession(klass);
+  let s = db.all('sessions').find((x) => x.classId === klass.id && x.date === date);
+  if (!s) {
+    s = {
+      id: newId('sess'), classId: klass.id, subjectId: null, date, schoolDayId: schoolDayOn(date)?.id || null,
+      scheduledStart: combineDateTime(date, klass.startTime), scheduledEnd: combineDateTime(date, klass.endTime),
+      status: 'ended', qr: null, startedAt: null, endedAt: null, createdAt: new Date().toISOString(), retroactive: true,
+    };
+    db.insert('sessions', s);
+  }
+  return s;
+}
+
+router.post('/classes/:id/days', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const date = String(req.body?.date || '');
+  const err = validPastDate(date);
+  if (err) return res.status(400).json({ error: err });
+  const s = sessionForDate(klass, date);
+  res.json({ session: sessionView(s, klass, req.user) });
+});
+
 // Live-Anwesenheit einer Sitzung (Verwalter).
 router.get('/sessions/:id/attendance', requireAuth, (req, res) => {
   const s = byId('sessions', req.params.id);
@@ -1007,6 +1044,7 @@ router.get('/sessions/:id/attendance', requireAuth, (req, res) => {
       lateUnexcused: Boolean(rec?.lateUnexcused),
       checkInAt: rec ? rec.checkInAt : null,
       source: rec ? rec.source : null,
+      note: rec ? rec.note || null : null,
     };
   });
   res.json({ session: sessionView(s, findClass(s.classId), req.user), attendance: list });
@@ -1027,8 +1065,13 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
   if (!student || !(student.classIds || []).includes(s.classId))
     return res.status(400).json({ error: 'Schüler gehört nicht zur Klasse' });
 
+  let mins = 0;
+  if (status === 'late' && req.body?.minutesLate !== undefined && req.body?.minutesLate !== null && req.body?.minutesLate !== '') {
+    mins = Number(req.body.minutesLate);
+    if (!Number.isInteger(mins) || mins < 0 || mins > 600) return res.status(400).json({ error: 'Ungültige Minutenzahl' });
+  }
   let rec = db.all('attendance').find((a) => a.sessionId === s.id && a.studentId === studentId);
-  const before = rec ? { status: rec.status } : null;
+  const before = rec ? { status: rec.status, minutesLate: rec.minutesLate } : null;
   if (!rec) {
     rec = {
       id: newId('att'),
@@ -1037,7 +1080,7 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
       studentId,
       status,
       checkInAt: null,
-      minutesLate: 0,
+      minutesLate: mins,
       source: 'manual',
       confirmedBy: req.user.id,
       note: note || null,
@@ -1046,7 +1089,8 @@ router.post('/sessions/:id/attendance', requireAuth, (req, res) => {
     db.insert('attendance', rec);
   } else {
     rec.status = status;
-    rec.note = note || rec.note;
+    if (status === 'late') { if (req.body?.minutesLate !== undefined) rec.minutesLate = mins; } else rec.minutesLate = 0;
+    rec.note = note !== undefined ? (note || null) : rec.note;
     rec.source = 'manual';
     rec.confirmedBy = req.user.id;
     rec.updatedAt = new Date().toISOString();
@@ -2684,6 +2728,28 @@ const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v)
 // Protokolle (Klassensprecher-Entwurf -> Lehrer-Freigabe)
 // =============================================================================
 
+const protocolDate = (p) => p.date || byId('sessions', p.sessionId)?.date || String(p.createdAt || '').slice(0, 10);
+const isClassRep = (user, classId) => user.role === ROLES.KLASSENSPRECHER && (user.classIds || []).includes(classId);
+
+function cleanProtocolContent(c) {
+  const v = (x) => String(x || '').trim().slice(0, 5000);
+  return { topics: v(c?.topics), homework: v(c?.homework), notes: v(c?.notes) };
+}
+
+function notifyProtocolApproved(p) {
+  db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(p.classId))
+    .forEach((st) =>
+      notify(st.id, {
+        type: 'protocol_submitted',
+        level: 'info',
+        title: 'Neues Protokoll',
+        body: `Unterrichtsprotokoll vom ${new Date(`${protocolDate(p)}T12:00:00`).toLocaleDateString('de-DE')} ist da.`,
+        deepLink: '/protokolle',
+      }),
+    );
+}
+
 router.get('/protocols', requireAuth, (req, res) => {
   let list = db.all('protocols');
   if (req.user.role === ROLES.KLASSENSPRECHER || req.user.role === ROLES.SCHUELER) {
@@ -2695,7 +2761,76 @@ router.get('/protocols', requireAuth, (req, res) => {
   } else if (!isAdmin(req.user)) {
     list = [];
   }
-  res.json({ protocols: [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).map((p) => ({ ...p, className: findClass(p.classId)?.name || 'Klasse' })) });
+  const out = list.map((p) => ({
+    ...p,
+    date: protocolDate(p),
+    className: findClass(p.classId)?.name || 'Klasse',
+    createdByName: findUserById(p.createdBy)?.name || null,
+    canEdit: canManageClass(req.user, p.classId) || (isClassRep(req.user, p.classId) && p.status !== 'approved'),
+  }));
+  out.sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
+  res.json({ protocols: out });
+});
+
+// Protokoll für einen Tag schreiben -- auch rückwirkend. Lehrkraft: sofort
+// freigegeben. Klassensprecher: Entwurf bzw. eingereicht (Lehrkraft bestätigt).
+router.post('/classes/:id/protocols', requireAuth, (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  const teacher = canManageClass(req.user, klass.id);
+  if (!teacher && !isClassRep(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const date = String(req.body?.date || todayKey());
+  const err = validPastDate(date);
+  if (err) return res.status(400).json({ error: err });
+  const content = cleanProtocolContent(req.body?.content);
+  if (!content.topics && !content.homework && !content.notes) return res.status(400).json({ error: 'Bitte mindestens ein Feld ausfüllen' });
+  const s = sessionForDate(klass, date);
+  let p = db.all('protocols').find((x) => x.sessionId === s.id);
+  const now = new Date().toISOString();
+  const wasApproved = p?.status === 'approved';
+  if (p && wasApproved && !teacher) return res.status(400).json({ error: 'Protokoll ist bereits freigegeben' });
+  if (!p) {
+    p = {
+      id: newId('proto'), sessionId: s.id, classId: klass.id, date, protocolType: 'unterricht', content,
+      status: 'draft', createdBy: req.user.id, submittedAt: null, reviewedBy: null, reviewedAt: null, createdAt: now,
+    };
+    db.insert('protocols', p);
+  } else {
+    p.content = content;
+    p.date = date;
+    p.updatedAt = now;
+    p.updatedBy = req.user.id;
+  }
+  if (teacher) {
+    p.status = 'approved';
+    p.reviewedBy = req.user.id;
+    p.reviewedAt = now;
+  } else if (req.body?.submit) {
+    p.status = 'submitted';
+    p.submittedAt = now;
+  } else if (p.status === 'returned') {
+    p.status = 'draft';
+  }
+  db.commit();
+  audit(req.user.id, 'protocol.write', 'protocol', p.id, null, { date, status: p.status });
+  if (teacher && !wasApproved) notifyProtocolApproved(p);
+  if (!teacher && p.status === 'submitted') {
+    db.all('users').filter((u) => canManageClass(u, p.classId) && !isAdmin(u)).forEach((t) => notify(t.id, {
+      type: 'protocol_submitted', level: 'info', title: 'Protokoll eingereicht', body: 'Ein Klassensprecher-Protokoll wartet auf Bestätigung.', deepLink: '/protokolle',
+    }));
+  }
+  res.json({ protocol: { ...p, date: protocolDate(p), className: klass.name } });
+});
+
+router.delete('/protocols/:id', requireAuth, (req, res) => {
+  const p = byId('protocols', req.params.id);
+  if (!p) return res.status(404).json({ error: 'Protokoll nicht gefunden' });
+  if (!canManageClass(req.user, p.classId)) return res.status(403).json({ error: 'Nur die Lehrkraft der Klasse kann Protokolle löschen' });
+  const list = db.all('protocols');
+  list.splice(list.indexOf(p), 1);
+  db.commit();
+  audit(req.user.id, 'protocol.delete', 'protocol', p.id);
+  res.json({ ok: true });
 });
 
 // Entwurf anlegen/aktualisieren (Klassensprecher der Klasse oder Verwalter).
@@ -2713,6 +2848,7 @@ router.post('/sessions/:id/protocol', requireAuth, (req, res) => {
       id: newId('proto'),
       sessionId: s.id,
       classId: s.classId,
+      date: s.date,
       protocolType: protocolType || 'unterricht',
       content: content || {},
       status: 'draft',
@@ -2768,19 +2904,7 @@ router.post('/protocols/:id/approve', requireAuth, (req, res) => {
   db.commit();
   audit(req.user.id, 'protocol.review', 'protocol', p.id, before, { status: p.status });
   // Nach Freigabe: Schüler der Klasse benachrichtigen (jetzt sichtbar).
-  if (p.status === 'approved') {
-    db.all('users')
-      .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(p.classId))
-      .forEach((st) =>
-        notify(st.id, {
-          type: 'protocol_submitted',
-          level: 'info',
-          title: 'Neues Protokoll',
-          body: 'Ein Unterrichtsprotokoll wurde freigegeben.',
-          deepLink: '/protokolle',
-        }),
-      );
-  }
+  if (p.status === 'approved') notifyProtocolApproved(p);
   res.json({ protocol: p });
 });
 
@@ -4665,78 +4789,137 @@ function canSeeMaterial(user, m) {
   return false;
 }
 
-function materialView(m) {
-  const { fileRef, ...rest } = m;
+// Bearbeiten (Titel, Dateien ergänzen, Notizen aufs PDF schreiben): wer es
+// erstellt hat, Admin/Leitung und jede Lehrkraft der Klasse.
+function canEditMaterial(user, m) {
+  if (isAdmin(user) || m.createdBy === user.id) return true;
+  return !!m.classId && canManageClass(user, m.classId);
+}
+
+const MATERIAL_MAX_FILES = 30;
+
+// Ein Material ist ein "Block" (Thema) mit beliebig vielen Dateien. Ältere
+// Einträge hatten genau eine Datei in `fileRef` -- die wird als Datei "f0"
+// weitergeführt, damit alte Links/Notizen gültig bleiben.
+function materialFiles(m) {
+  if (Array.isArray(m.files)) return m.files;
+  return m.fileRef ? [{ id: 'f0', ...m.fileRef, addedAt: m.createdAt }] : [];
+}
+
+function ensureMaterialFiles(m) {
+  if (!Array.isArray(m.files)) {
+    m.files = materialFiles(m);
+    m.fileRef = null;
+  }
+  return m.files;
+}
+
+// Freies Fach (z. B. "Adab"): Leerzeichen bereinigt, max. 60 Zeichen.
+function cleanSubjectName(v) {
+  return String(v || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function materialSubjectName(m) {
+  return cleanSubjectName(m.subjectName) || findSubject(m.subjectId)?.name || null;
+}
+
+function fileFromUpload(f) {
+  return { id: newId('mf'), filename: f.filename, originalName: f.originalname, mediaType: f.mimetype, size: f.size, addedAt: new Date().toISOString() };
+}
+
+function annotationDoc(materialId, fileId) {
+  return db.all('material_annotations').find((a) => a.materialId === materialId && a.fileId === fileId) || null;
+}
+
+function materialView(m, user) {
+  const { fileRef, files: _files, ...rest } = m;
+  const files = materialFiles(m).map((f) => ({
+    id: f.id,
+    name: f.originalName,
+    mediaType: f.mediaType,
+    size: f.size,
+    addedAt: f.addedAt || m.createdAt,
+    url: `/api/materials/${m.id}/files/${f.id}`,
+    annotations: annotationDoc(m.id, f.id)?.strokes?.length || 0,
+  }));
   return {
     ...rest,
-    subjectName: findSubject(m.subjectId)?.name || null,
+    subjectName: materialSubjectName(m),
     className: m.classId ? findClass(m.classId)?.name : 'Schulweit',
-    fileName: fileRef?.originalName || null,
-    mediaType: fileRef?.mediaType || null,
+    files,
+    canEdit: user ? canEditMaterial(user, m) : false,
+    // Kompatibilität (alte Clients): erste Datei
+    fileName: files[0]?.name || null,
+    mediaType: files[0]?.mediaType || null,
   };
 }
 
 // Neues Material -> Pflicht-Benachrichtigung (inkl. Push) an die Schüler der
 // Klasse bzw. bei schulweitem Material an alle Schüler.
-function announceMaterial(cid, title, count, actor) {
+function announceMaterial(cid, title, count, actor, heading) {
   const students = db.all('users').filter((u) => u.status !== 'disabled' && STUDENT_ROLES.includes(u.role) && (!cid || (u.classIds || []).includes(cid)));
   students.filter((u) => u.id !== actor.id).forEach((u) => notify(u.id, {
-    type: 'material_new', level: 'info', title: count > 1 ? `${count} neue Materialien` : 'Neues Material', body: title, deepLink: '/materialien',
+    type: 'material_new', level: 'info', title: heading || (count > 1 ? `${count} neue Materialien` : 'Neues Material'), body: title, deepLink: '/materialien',
   }));
 }
 
-router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), upload.single('file'), async (req, res) => {
-  const { title, description, materialType, classId, subjectId, url, body } = req.body || {};
-  if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
-  const type = ['file', 'link', 'note'].includes(materialType) ? materialType : 'note';
+function checkMaterialScope(user, cid) {
+  if (cid) return canManageClass(user, cid) ? null : 'Kein Zugriff auf diese Klasse';
+  return isAdmin(user) ? null : 'Schulweites Material nur durch die Leitung';
+}
 
-  // Reichweite: schulweit nur Admin/Leitung; Klassenlehrer nur eigene Klasse
+const materialUpload = upload.fields([{ name: 'files', maxCount: MATERIAL_MAX_FILES }, { name: 'file', maxCount: 1 }]);
+const uploadedFiles = (req) => [...(req.files?.files || []), ...(req.files?.file || [])];
+
+// Neuer Block: Titel + Fach (frei) + beliebig viele Dateien und/oder Link/Text.
+router.post('/materials', requireAuth, requireRole(CLASS_MANAGERS), materialUpload, async (req, res) => {
+  const { title, description, classId, subjectId, subjectName, url, body } = req.body || {};
+  if (!title || !String(title).trim()) return res.status(400).json({ error: 'Titel erforderlich' });
   const cid = classId || null;
-  if (cid) {
-    if (!canManageClass(req.user, cid)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
-  } else if (!isAdmin(req.user)) {
-    return res.status(403).json({ error: 'Schulweites Material nur durch die Leitung' });
-  }
+  const scopeErr = checkMaterialScope(req.user, cid);
+  if (scopeErr) return res.status(403).json({ error: scopeErr });
 
+  const uploads = uploadedFiles(req);
+  const link = String(url || '').trim();
+  const text = String(body || '').trim();
+  if (link && !/^https?:\/\//i.test(link)) return res.status(400).json({ error: 'Link muss mit http:// oder https:// beginnen' });
+  if (!uploads.length && !link && !text) return res.status(400).json({ error: 'Bitte mindestens eine Datei, einen Link oder einen Text hinzufügen' });
+
+  const files = [];
+  for (const f of uploads) {
+    await persistUpload(f); // dauerhaft in Supabase Storage sichern
+    files.push(fileFromUpload(f));
+  }
+  const now = new Date().toISOString();
   const m = {
     id: newId('mat'),
     organizationId: org().id,
-    title: title.trim(),
-    description: description || '',
-    materialType: type,
+    title: String(title).trim().slice(0, 160),
+    description: String(description || '').trim(),
+    materialType: files.length ? 'file' : link ? 'link' : 'note',
     classId: cid,
     subjectId: findSubject(subjectId) ? subjectId : null,
-    url: type === 'link' ? String(url || '').trim() : null,
-    body: type === 'note' ? String(body || '').trim() : null,
-    fileRef: null,
+    subjectName: cleanSubjectName(subjectName) || findSubject(subjectId)?.name || null,
+    url: link || null,
+    body: text || null,
+    files,
     createdBy: req.user.id,
     createdByName: req.user.name,
-    createdAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   };
-  if (type === 'file') {
-    if (!req.file) return res.status(400).json({ error: 'Bitte eine Datei hochladen' });
-    await persistUpload(req.file); // dauerhaft in Supabase Storage sichern
-    m.fileRef = { filename: req.file.filename, originalName: req.file.originalname, mediaType: req.file.mimetype, size: req.file.size };
-  }
-  if (type === 'link' && !m.url) return res.status(400).json({ error: 'Bitte einen Link angeben' });
-  if (type === 'note' && !m.body) return res.status(400).json({ error: 'Bitte einen Text eingeben' });
-
   db.insert('materials', m);
-  audit(req.user.id, 'material.create', 'material', m.id);
+  audit(req.user.id, 'material.create', 'material', m.id, null, { files: files.length });
   announceMaterial(cid, m.title, 1, req.user);
-  res.json({ material: materialView(m) });
+  res.json({ material: materialView(m, req.user) });
 });
 
-// Massen-Upload: mehrere Dateien auf einmal in die Bibliothek. Jede Datei wird
-// ein eigenes Material (Titel = Dateiname). Gleiche Reichweiten-Regeln wie oben.
+// Massen-Upload: jede Datei wird ein eigener Block (Titel = Dateiname).
 router.post('/materials/bulk', requireAuth, requireRole(CLASS_MANAGERS), upload.array('files', 50), async (req, res) => {
-  const { classId, subjectId, description } = req.body || {};
+  const { classId, subjectId, subjectName, description } = req.body || {};
   const cid = classId || null;
-  if (cid) {
-    if (!canManageClass(req.user, cid)) return res.status(403).json({ error: 'Kein Zugriff auf diese Klasse' });
-  } else if (!isAdmin(req.user)) {
-    return res.status(403).json({ error: 'Schulweites Material nur durch die Leitung' });
-  }
+  const scopeErr = checkMaterialScope(req.user, cid);
+  if (scopeErr) return res.status(403).json({ error: scopeErr });
   const files = req.files || [];
   if (!files.length) return res.status(400).json({ error: 'Bitte mindestens eine Datei auswählen' });
 
@@ -4744,47 +4927,216 @@ router.post('/materials/bulk', requireAuth, requireRole(CLASS_MANAGERS), upload.
   for (const f of files) {
     await persistUpload(f); // dauerhaft in Supabase Storage sichern
     const base = String(f.originalname || 'Datei').replace(/\.[^.]+$/, '').trim();
+    const now = new Date().toISOString();
     const m = {
       id: newId('mat'), organizationId: org().id,
       title: base || f.originalname, description: description || '',
       materialType: 'file', classId: cid, subjectId: findSubject(subjectId) ? subjectId : null,
+      subjectName: cleanSubjectName(subjectName) || findSubject(subjectId)?.name || null,
       url: null, body: null,
-      fileRef: { filename: f.filename, originalName: f.originalname, mediaType: f.mimetype, size: f.size },
-      createdBy: req.user.id, createdByName: req.user.name, createdAt: new Date().toISOString(),
+      files: [fileFromUpload(f)],
+      createdBy: req.user.id, createdByName: req.user.name, createdAt: now, updatedAt: now,
     };
     db.insert('materials', m);
-    created.push(materialView(m));
+    created.push(materialView(m, req.user));
   }
   audit(req.user.id, 'material.bulk_create', 'material', null, null, { count: created.length });
   announceMaterial(cid, created.map((m) => m.title).slice(0, 3).join(', ') + (created.length > 3 ? ' …' : ''), created.length, req.user);
   res.json({ created, count: created.length });
 });
 
+// Älteste zuerst: Was zuerst gepostet wurde, bleibt oben -- Schüler scrollen
+// nach unten und sehen, wie viel schon geschafft ist.
 router.get('/materials', requireAuth, (req, res) => {
   let list = db.all('materials').filter((m) => canSeeMaterial(req.user, m));
   if (req.query.classId) list = list.filter((m) => m.classId === req.query.classId);
-  list = list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(materialView);
+  list = list.sort((a, b) => a.createdAt.localeCompare(b.createdAt)).map((m) => materialView(m, req.user));
   res.json({ materials: list });
 });
 
-router.get('/materials/:id/file', requireAuth, async (req, res) => {
+// Block nachträglich bearbeiten (Titel, Beschreibung, Fach, Link, Text).
+router.patch('/materials/:id', requireAuth, (req, res) => {
   const m = byId('materials', req.params.id);
-  if (!m || m.materialType !== 'file' || !m.fileRef) return res.status(404).json({ error: 'Nicht gefunden' });
-  if (!canSeeMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
-  const buf = await readFile(m.fileRef.filename);
-  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
-  return sendBufferWithRange(req, res, buf, m.fileRef.mediaType, m.fileRef.originalName);
+  if (!m) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (!canEditMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const b = req.body || {};
+  const next = {};
+  if (b.title !== undefined) {
+    const t = String(b.title || '').trim();
+    if (!t) return res.status(400).json({ error: 'Titel erforderlich' });
+    next.title = t.slice(0, 160);
+  }
+  if (b.description !== undefined) next.description = String(b.description || '').trim();
+  if (b.subjectName !== undefined) next.subjectName = cleanSubjectName(b.subjectName) || null;
+  if (b.url !== undefined) {
+    const link = String(b.url || '').trim();
+    if (link && !/^https?:\/\//i.test(link)) return res.status(400).json({ error: 'Link muss mit http:// oder https:// beginnen' });
+    next.url = link || null;
+  }
+  if (b.body !== undefined) next.body = String(b.body || '').trim() || null;
+  const files = materialFiles(m);
+  const url = next.url !== undefined ? next.url : m.url;
+  const text = next.body !== undefined ? next.body : m.body;
+  if (!files.length && !url && !text) return res.status(400).json({ error: 'Ein Block braucht mindestens eine Datei, einen Link oder einen Text' });
+  if (next.subjectName !== undefined) next.subjectId = null; // freies Fach ersetzt die alte Auswahl
+  Object.assign(m, next, { updatedAt: new Date().toISOString() });
+  m.materialType = files.length ? 'file' : m.url ? 'link' : 'note';
+  db.commit();
+  audit(req.user.id, 'material.update', 'material', m.id);
+  res.json({ material: materialView(m, req.user) });
 });
+
+// Weitere Dateien zu einem bestehenden Block hinzufügen (z. B. Lösung nachreichen).
+router.post('/materials/:id/files', requireAuth, requireRole(CLASS_MANAGERS), materialUpload, async (req, res) => {
+  const m = byId('materials', req.params.id);
+  if (!m) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (!canEditMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const uploads = uploadedFiles(req);
+  if (!uploads.length) return res.status(400).json({ error: 'Bitte mindestens eine Datei auswählen' });
+  if (materialFiles(m).length + uploads.length > MATERIAL_MAX_FILES) return res.status(400).json({ error: `Höchstens ${MATERIAL_MAX_FILES} Dateien pro Block` });
+  const files = ensureMaterialFiles(m);
+  for (const f of uploads) {
+    await persistUpload(f);
+    files.push(fileFromUpload(f));
+  }
+  m.materialType = 'file';
+  m.updatedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'material.add_files', 'material', m.id, null, { count: uploads.length });
+  announceMaterial(m.classId, `${m.title}: ${uploads.map((f) => f.originalname).slice(0, 3).join(', ')}`, uploads.length, req.user, 'Material ergänzt');
+  res.json({ material: materialView(m, req.user) });
+});
+
+router.delete('/materials/:id/files/:fileId', requireAuth, (req, res) => {
+  const m = byId('materials', req.params.id);
+  if (!m) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (!canEditMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const files = ensureMaterialFiles(m);
+  const idx = files.findIndex((f) => f.id === req.params.fileId);
+  if (idx < 0) return res.status(404).json({ error: 'Datei nicht gefunden' });
+  if (files.length === 1 && !m.url && !m.body) return res.status(400).json({ error: 'Das ist die letzte Datei – lösche stattdessen den ganzen Block' });
+  files.splice(idx, 1);
+  removeAnnotations(m.id, req.params.fileId);
+  m.materialType = files.length ? 'file' : m.url ? 'link' : 'note';
+  m.updatedAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'material.remove_file', 'material', m.id);
+  res.json({ material: materialView(m, req.user) });
+});
+
+async function sendMaterialFile(req, res, fileId) {
+  const m = byId('materials', req.params.id);
+  if (!m) return res.status(404).json({ error: 'Nicht gefunden' });
+  if (!canSeeMaterial(req.user, m)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const files = materialFiles(m);
+  const f = fileId ? files.find((x) => x.id === fileId) : files[0];
+  if (!f) return res.status(404).json({ error: 'Nicht gefunden' });
+  const buf = await readFile(f.filename);
+  if (!buf) return res.status(404).json({ error: 'Datei fehlt' });
+  return sendBufferWithRange(req, res, buf, f.mediaType, f.originalName);
+}
+
+router.get('/materials/:id/files/:fileId', requireAuth, (req, res) => sendMaterialFile(req, res, req.params.fileId));
+router.get('/materials/:id/file', requireAuth, (req, res) => sendMaterialFile(req, res, null)); // alte Links
 
 router.delete('/materials/:id', requireAuth, (req, res) => {
   const list = db.all('materials');
   const idx = list.findIndex((m) => m.id === req.params.id);
   if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
-  if (list[idx].createdBy !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (!canEditMaterial(req.user, list[idx])) return res.status(403).json({ error: 'Kein Zugriff' });
   const [removed] = list.splice(idx, 1);
+  removeAnnotations(removed.id);
   db.commit();
   audit(req.user.id, 'material.delete', 'material', removed.id);
   res.json({ ok: true });
+});
+
+// --- Notizen der Lehrkraft auf PDFs (wie OneNote) -----------------------------
+// Das Original-PDF bleibt unverändert; Striche liegen getrennt darüber (pro
+// Datei ein Dokument mit Versionszähler). Schüler fragen bei geöffnetem PDF
+// regelmäßig mit `since=<version>` nach und sehen neue Striche fast sofort.
+// Koordinaten: ganze Zahlen 0..10000 relativ zur Seite (unabhängig vom Zoom).
+const ANNOT_MAX_STROKES = 4000;
+const ANNOT_MAX_POINTS = 6000; // Zahlen pro Strich (x,y-Paare)
+const ANNOT_TOOLS = new Set(['pen', 'marker']);
+
+function removeAnnotations(materialId, fileId) {
+  const list = db.all('material_annotations');
+  for (let i = list.length - 1; i >= 0; i--) {
+    if (list[i].materialId === materialId && (!fileId || list[i].fileId === fileId)) list.splice(i, 1);
+  }
+}
+
+function cleanStroke(s) {
+  if (!s || typeof s !== 'object') return null;
+  const id = String(s.id || '');
+  if (!/^[A-Za-z0-9_-]{4,40}$/.test(id)) return null;
+  const page = Number(s.page);
+  if (!Number.isInteger(page) || page < 1 || page > 5000) return null;
+  const tool = ANNOT_TOOLS.has(s.tool) ? s.tool : 'pen';
+  const color = /^#[0-9a-fA-F]{6}$/.test(String(s.color || '')) ? String(s.color).toLowerCase() : '#e11d48';
+  const width = Number(s.width);
+  if (!Number.isFinite(width) || width < 0.5 || width > 80) return null;
+  const pts = s.pts;
+  if (!Array.isArray(pts) || pts.length < 2 || pts.length > ANNOT_MAX_POINTS || pts.length % 2) return null;
+  for (const v of pts) if (!Number.isInteger(v) || v < -500 || v > 10500) return null;
+  return { id, page, tool, color, width: Math.round(width * 10) / 10, pts };
+}
+
+function materialFileOr404(req, res) {
+  const m = byId('materials', req.params.id);
+  if (!m) { res.status(404).json({ error: 'Nicht gefunden' }); return null; }
+  if (!canSeeMaterial(req.user, m)) { res.status(403).json({ error: 'Kein Zugriff' }); return null; }
+  if (!materialFiles(m).some((f) => f.id === req.params.fileId)) { res.status(404).json({ error: 'Datei nicht gefunden' }); return null; }
+  return m;
+}
+
+router.get('/materials/:id/files/:fileId/annotations', requireAuth, (req, res) => {
+  const m = materialFileOr404(req, res);
+  if (!m) return;
+  res.setHeader('Cache-Control', 'no-store');
+  const doc = annotationDoc(m.id, req.params.fileId);
+  const version = doc?.version || 0;
+  if (req.query.since !== undefined && Number(req.query.since) === version) return res.json({ version, unchanged: true });
+  res.json({ version, strokes: doc?.strokes || [], updatedAt: doc?.updatedAt || null });
+});
+
+// ops: [{op:'add', stroke}, {op:'remove', id}, {op:'clear', page?}]
+router.post('/materials/:id/files/:fileId/annotations', requireAuth, (req, res) => {
+  const m = materialFileOr404(req, res);
+  if (!m) return;
+  if (!canEditMaterial(req.user, m)) return res.status(403).json({ error: 'Nur Lehrkräfte können Notizen schreiben' });
+  const ops = Array.isArray(req.body?.ops) ? req.body.ops : null;
+  if (!ops || !ops.length || ops.length > 500) return res.status(400).json({ error: 'Ungültige Änderung' });
+  let doc = annotationDoc(m.id, req.params.fileId);
+  if (!doc) {
+    doc = { id: newId('ann'), materialId: m.id, fileId: req.params.fileId, version: 0, strokes: [], updatedAt: null, updatedBy: null };
+    db.all('material_annotations').push(doc);
+  }
+  const next = doc.strokes.slice();
+  for (const op of ops) {
+    if (op?.op === 'add') {
+      const s = cleanStroke(op.stroke);
+      if (!s) return res.status(400).json({ error: 'Ungültiger Strich' });
+      if (next.some((x) => x.id === s.id)) continue; // doppelt gesendet
+      next.push(s);
+    } else if (op?.op === 'remove') {
+      const i = next.findIndex((x) => x.id === op.id);
+      if (i >= 0) next.splice(i, 1);
+    } else if (op?.op === 'clear') {
+      const page = op.page == null ? null : Number(op.page);
+      for (let i = next.length - 1; i >= 0; i--) if (page == null || next[i].page === page) next.splice(i, 1);
+    } else {
+      return res.status(400).json({ error: 'Ungültige Änderung' });
+    }
+  }
+  if (next.length > ANNOT_MAX_STROKES) return res.status(400).json({ error: 'Zu viele Notizen auf dieser Datei' });
+  doc.strokes = next;
+  doc.version += 1;
+  doc.updatedAt = new Date().toISOString();
+  doc.updatedBy = req.user.id;
+  db.commit();
+  res.json({ version: doc.version, count: next.length });
 });
 
 // =============================================================================
@@ -5950,11 +6302,11 @@ function applyChangeRequest(cr) {
   if (cr.type === 'assign_class') {
     const u = findUserById(cr.payload.userId);
     if (!u || u.status !== 'pending') throw new Error('Registrierung nicht mehr offen');
-    const klass = findClass(cr.payload.classId);
-    if (!klass) throw new Error('Klasse nicht gefunden');
-    u.classIds = [klass.id];
-    u.status = 'active';
-    notify(u.id, { type: 'approval', level: 'info', title: 'Willkommen!', body: `Du bist jetzt Klasse „${klass.name}" zugeteilt.`, deepLink: '/dashboard' });
+    const role = cr.payload.role || ROLES.SCHUELER;
+    const classIds = cr.payload.classIds || (cr.payload.classId ? [cr.payload.classId] : []);
+    if (classIds.some((id) => !findClass(id))) throw new Error('Klasse nicht gefunden');
+    if (STUDENT_ROLES.includes(role) && classIds.length !== 1) throw new Error('Klasse nicht gefunden');
+    activatePending(u, role, classIds);
     return u.id;
   }
   throw new Error('Unbekannter Änderungstyp');
@@ -5967,22 +6319,44 @@ router.get('/admin/pending-registrations', requireAuth, requireRole(ROLES.SUPER_
   res.json({ users: list.map(publicUser) });
 });
 
+// Offene Registrierung freischalten: als Schüler einer Klasse (Standard) oder
+// direkt mit einer anderen Rolle (Lehrkraft, Leitung, ...).
+function activatePending(target, role, classIds) {
+  target.role = role;
+  target.classIds = classIds;
+  target.status = 'active';
+  const names = classIds.map((id) => findClass(id)?.name).filter(Boolean);
+  const body = STUDENT_ROLES.includes(role)
+    ? `Du bist jetzt Klasse „${names[0]}" zugeteilt.`
+    : `Dein Konto ist freigeschaltet: ${ROLE_LABELS[role] || role}${names.length ? ` (${names.join(', ')})` : ''}.`;
+  notify(target.id, { type: 'approval', level: 'info', title: 'Willkommen!', body, deepLink: '/dashboard' });
+}
+
 router.post('/admin/pending-registrations/:id/assign', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const target = findUserById(req.params.id);
   if (!target || target.status !== 'pending') return res.status(404).json({ error: 'Registrierung nicht gefunden' });
-  const klass = findClass(req.body?.classId);
-  if (!klass) return res.status(400).json({ error: 'Klasse nicht gefunden' });
+  const role = req.body?.role || ROLES.SCHUELER;
+  if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Unbekannte Rolle' });
+  if (!canGrantRole(req.user, role)) return res.status(403).json({ error: 'Die DBZ-Leitung kann höchstens die Rolle „DBZ-Leitung" vergeben' });
+  let classIds = Array.isArray(req.body?.classIds) ? req.body.classIds : (req.body?.classId ? [req.body.classId] : []);
+  classIds = [...new Set(classIds.map(String))];
+  if (classIds.some((id) => !findClass(id))) return res.status(400).json({ error: 'Klasse nicht gefunden' });
+  if (STUDENT_ROLES.includes(role)) {
+    if (classIds.length !== 1) return res.status(400).json({ error: 'Bitte genau eine Klasse auswählen' });
+  } else if (!TEACHING_ROLES.includes(role)) {
+    classIds = []; // Leitung/Admin/Eltern: keine Klassen
+  }
+  const label = ROLE_LABELS[role] || role;
+  const klassNames = classIds.map((id) => findClass(id).name).join(', ');
 
   if (needsApproval(req.user)) {
-    const cr = submitChangeRequest(req.user, 'assign_class', `Klassenzuweisung: ${target.name} → ${klass.name}`, { userId: target.id, classId: klass.id });
+    const cr = submitChangeRequest(req.user, 'assign_class', `Freischalten: ${target.name} → ${label}${klassNames ? ` (${klassNames})` : ''}`, { userId: target.id, classId: classIds[0] || null, classIds, role });
     return res.json({ pending: true, changeRequest: crView(cr) });
   }
 
-  target.classIds = [klass.id];
-  target.status = 'active';
+  activatePending(target, role, classIds);
   db.commit();
-  audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classId: klass.id });
-  notify(target.id, { type: 'approval', level: 'info', title: 'Willkommen!', body: `Du bist jetzt Klasse „${klass.name}" zugeteilt.`, deepLink: '/dashboard' });
+  audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classIds, role });
   res.json({ ok: true });
 });
 

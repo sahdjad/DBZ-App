@@ -5,3 +5,4 @@ server/data/
 .env
 *.log
 client/public/ort/
+client/public/pdfjs/

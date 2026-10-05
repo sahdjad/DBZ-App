@@ -170,3 +170,18 @@ test('streaming: an omitted word is detected across one-word segments (backlog),
   assert.equal(s.index,4); assert.deepEqual(s.missed,[1]);
   assert.equal(send(e,'شجرة').status,'complete');
 });
+test('Vorschau aus dem Zwischenergebnis: nur ganze Wörter in Reihenfolge, ändert den bestätigten Stand nicht',()=>{
+  const e=new HifzEngine(passage());
+  assert.equal(e.preview('كتاب قلم'),2);
+  assert.equal(e.index,0,'Vorschau bestätigt nichts');
+  assert.equal(e.preview('كتا'),0,'angefangenes Wort (kürzer) deckt nie auf');
+  assert.equal(e.preview('قلم'),0,'kein Sprung über ein nicht gesagtes Wort');
+  assert.equal(e.preview('كتاب باب'),1,'stoppt am ersten nicht passenden Wort');
+  send(e,'كتاب');
+  assert.equal(e.preview('قلم باب'),2);
+});
+test('Vorschau ruht während einer Abweichung',()=>{
+  const e=new HifzEngine(passage()); send(e,'شمس');
+  assert.ok(e.mismatch);
+  assert.equal(e.preview('كتاب'),0);
+});
