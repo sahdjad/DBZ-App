@@ -132,7 +132,9 @@ export default function HifzRecitationMode({ surahs }) {
   const [interim, setInterim] = useState('');
   // Sofort-Vorschau: so viele Wörter nach dem bestätigten Stand sind im
   // Zwischenergebnis schon eindeutig gehört (siehe HifzEngine.preview).
-  const [preview, setPreview] = useState(0);
+  const [preview, setPreviewState] = useState(0);
+  const previewRef = useRef(0);
+  const setPreview = (n) => { previewRef.current = n; setPreviewState(n); };
   const [noAudioHint, setNoAudioHint] = useState(false);
   const [progress, setProgress] = useState(null); // Modell-Download {loaded,total,phase}
   const [slowDevice, setSlowDevice] = useState(false);
@@ -167,8 +169,11 @@ export default function HifzRecitationMode({ surahs }) {
       const engine = engineRef.current;
       if (!engine || readModeRef.current) return;
       try {
+        const shownBefore = engine.index + previewRef.current;
         const s = engine.accept(segment);
-        setPreview(0); // neu berechnet mit dem nächsten Zwischenergebnis (kommt direkt danach)
+        // Schon vorab Aufgedecktes bleibt stehen (kein Flackern), bis das
+        // nächste Zwischenergebnis (kommt direkt danach) die Vorschau neu setzt.
+        setPreview(s.mismatch || s.status === 'complete' ? 0 : Math.max(0, shownBefore - s.index));
         if (import.meta.env.DEV) console.debug('[hifz]', JSON.stringify(segment.text), '->', s.index, s.status);
         setEngineState(s);
         if (s.status === 'complete') { speechRef.current.stop(); setCapture('ended'); }
@@ -182,7 +187,9 @@ export default function HifzRecitationMode({ surahs }) {
       if (!readModeRef.current) {
         setInterim(text);
         const engine = engineRef.current;
-        setPreview(engine ? engine.preview(text) : 0);
+        // Einmal Aufgedecktes bleibt stehen (kein Flackern); zurückgenommen wird
+        // nur, wenn die Erkennung eine Abweichung bestätigt.
+        setPreview(!engine || engine.mismatch || engine.status === 'complete' ? 0 : Math.max(engine.preview(text), previewRef.current));
       }
     },
     onProgress: (p) => setProgress(p),

@@ -207,7 +207,11 @@ export class HifzEngine {
     const tokens = normalize(text).split(' ').filter(Boolean);
     const words = this.passage.words;
     let n = 0;
-    while (n < tokens.length && n < 8 && this.index + n < words.length && previewMatches(tokens[n], words[this.index + n])) n++;
+    // Das letzte Wort des Zwischenergebnisses liegt direkt am Audio-Ende und
+    // ändert sich noch oft (Messung mit echten Aufnahmen: Hauptquelle für
+    // kurz aufblitzende Wörter) -- es wird deshalb nie vorab aufgedeckt.
+    const usable = tokens.length - 1;
+    while (n < usable && n < 8 && this.index + n < words.length && previewMatches(tokens[n], words[this.index + n])) n++;
     return n;
   }
   /** final segments are incremental, immutable, non-overlapping; IDs unique per session. */
