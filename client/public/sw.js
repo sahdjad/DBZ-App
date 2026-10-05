@@ -6,7 +6,8 @@
  *   Beim erneuten Verbinden aktualisiert sich alles automatisch im Hintergrund.
  * - Alle anderen /api/-Aufrufe laufen immer über das Netzwerk (Auth, aktuelle,
  *   veränderliche Daten – nie cachen).
- * - Navigationen (HTML) network-first mit Cache-Fallback (App startet offline).
+ * - Navigationen (HTML) network-first, nach 2,5 s bzw. offline die gespeicherte
+ *   App-Shell (schneller Start auch beim Server-Kaltstart).
  * - Statische Assets inkl. Qur'an-Schrift cache-first (schnell, offline da).
  *
  * WICHTIG bei jedem spürbaren App-Update: CACHE-Versionsnummer hochzählen.
@@ -126,9 +127,25 @@ self.addEventListener('fetch', (event) => {
   // Übrige API: immer Netzwerk (nie cachen).
   if (url.pathname.startsWith('/api/')) return;
 
-  // Navigationen: network-first, Fallback auf gecachte App-Shell.
+  // Navigationen: network-first, aber höchstens ~2,5 s warten -- danach die
+  // gespeicherte App-Shell. So startet die App sofort, auch wenn der kostenlose
+  // Server gerade erst aufwacht (Kaltstart dauert sonst bis zu einer Minute).
   if (request.mode === 'navigate') {
-    event.respondWith(fetch(request).catch(() => caches.match('/index.html')));
+    event.respondWith((async () => {
+      const network = fetch(request).then((res) => {
+        if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put('/index.html', copy)).catch(() => {}); }
+        return res;
+      });
+      const cached = await caches.match('/index.html');
+      if (!cached) return network.catch(() => Response.error());
+      const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 2500));
+      try {
+        const first = await Promise.race([network, timeout]);
+        return first || cached;
+      } catch {
+        return cached;
+      }
+    })());
     return;
   }
 

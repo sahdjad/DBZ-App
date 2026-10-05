@@ -4,6 +4,7 @@ import { HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
+import ServerWakeNotice from './components/ServerWakeNotice.jsx';
 import { initTheme } from './lib/theme.js';
 import './index.css';
 
@@ -16,6 +17,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <AuthProvider>
         <ToastProvider>
           <App />
+          <ServerWakeNotice />
         </ToastProvider>
       </AuthProvider>
     </HashRouter>

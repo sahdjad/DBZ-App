@@ -2260,3 +2260,174 @@ test('App-Version: /api/version liefert eine Build-Kennung (ohne Cache)', async 
   assert.equal(res.headers.get('cache-control'), 'no-store');
   assert.ok((await res.json()).build);
 });
+
+test('Materialien-Block: mehrere Dateien, freies Fach, älteste zuerst, nachträglich ergänzen', async () => {
+  const cookie = await cookieFor('lehrer@dbz.de');
+  const form = new FormData();
+  form.set('title', 'Biografie Abu Bakr');
+  form.set('classId', 'class_3');
+  form.set('subjectName', '  Adab  ');
+  form.append('files', new Blob([Buffer.from('%PDF-1.4 bio')], { type: 'application/pdf' }), 'Biografie.pdf');
+  form.append('files', new Blob([Buffer.from('%PDF-1.4 ha')], { type: 'application/pdf' }), 'Hausaufgabe.pdf');
+  const res = await fetch(base + '/api/materials', { method: 'POST', headers: { cookie }, body: form });
+  assert.equal(res.status, 200);
+  const m = (await res.json()).material;
+  assert.equal(m.subjectName, 'Adab');
+  assert.equal(m.files.length, 2);
+  assert.equal(m.canEdit, true);
+
+  // Datei herunterladen über die neue Datei-URL
+  const f0 = await fetch(base + m.files[1].url, { headers: { cookie } });
+  assert.equal(f0.status, 200);
+  assert.equal(Buffer.from(await f0.arrayBuffer()).toString(), '%PDF-1.4 ha');
+
+  // Lösung nachreichen
+  const add = new FormData();
+  add.append('files', new Blob([Buffer.from('%PDF-1.4 loes')], { type: 'application/pdf' }), 'Loesung.pdf');
+  const r2 = await fetch(base + `/api/materials/${m.id}/files`, { method: 'POST', headers: { cookie }, body: add });
+  assert.equal(r2.status, 200);
+  const m2 = (await r2.json()).material;
+  assert.deepEqual(m2.files.map((f) => f.name), ['Biografie.pdf', 'Hausaufgabe.pdf', 'Loesung.pdf']);
+
+  const teacher = await loginAs('lehrer@dbz.de');
+  // Titel/Fach ändern, Datei entfernen
+  const p = await teacher('PATCH', `/materials/${m.id}`, { title: 'Abu Bakr', subjectName: 'Sirah' });
+  assert.equal(p.data.material.title, 'Abu Bakr');
+  assert.equal(p.data.material.subjectName, 'Sirah');
+  const d = await teacher('DELETE', `/materials/${m.id}/files/${m.files[1].id}`);
+  assert.equal(d.data.material.files.length, 2);
+
+  // Schüler: sieht den Block, darf aber nichts ändern
+  const student = await loginAs('schueler@dbz.de');
+  const list = (await student('GET', '/materials')).data.materials;
+  const mine = list.find((x) => x.id === m.id);
+  assert.ok(mine && mine.canEdit === false);
+  for (let i = 1; i < list.length; i++) assert.ok(list[i - 1].createdAt <= list[i].createdAt, 'älteste zuerst');
+  assert.equal((await student('PATCH', `/materials/${m.id}`, { title: 'x' })).status, 403);
+  assert.equal((await student('DELETE', `/materials/${m.id}/files/${m.files[0].id}`)).status, 403);
+  assert.equal((await student('DELETE', `/materials/${m.id}`)).status, 403);
+});
+
+test('Materialien: Notizen der Lehrkraft auf PDF – live für Schüler, Original bleibt', async () => {
+  const cookie = await cookieFor('lehrer@dbz.de');
+  const form = new FormData();
+  form.set('title', 'Arbeitsblatt');
+  form.set('classId', 'class_3');
+  form.append('files', new Blob([Buffer.from('%PDF-1.4 orig')], { type: 'application/pdf' }), 'Blatt.pdf');
+  const m = (await (await fetch(base + '/api/materials', { method: 'POST', headers: { cookie }, body: form })).json()).material;
+  const path = `/materials/${m.id}/files/${m.files[0].id}/annotations`;
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+
+  assert.deepEqual((await student('GET', path)).data, { version: 0, strokes: [], updatedAt: null });
+  const stroke = { id: 'stroke_abc1', page: 1, tool: 'pen', color: '#E11D48', width: 3.2, pts: [100, 200, 300, 400, 500, 600] };
+  const w = await teacher('POST', path, { ops: [{ op: 'add', stroke }] });
+  assert.equal(w.status, 200);
+  assert.equal(w.data.version, 1);
+  // doppelt gesendet -> keine Verdopplung
+  await teacher('POST', path, { ops: [{ op: 'add', stroke }] });
+  const s1 = (await student('GET', `${path}?since=0`)).data;
+  assert.equal(s1.strokes.length, 1);
+  assert.equal(s1.strokes[0].color, '#e11d48');
+  assert.equal((await student('GET', `${path}?since=${s1.version}`)).data.unchanged, true);
+
+  // Schüler darf nicht schreiben, ungültige Striche werden abgelehnt
+  assert.equal((await student('POST', path, { ops: [{ op: 'add', stroke: { ...stroke, id: 'stroke_x2' } }] })).status, 403);
+  assert.equal((await teacher('POST', path, { ops: [{ op: 'add', stroke: { ...stroke, id: 'stroke_bad', pts: [1, 2, 3] } }] })).status, 400);
+  assert.equal((await teacher('POST', path, { ops: [{ op: 'add', stroke: { ...stroke, id: 'stroke_bad', pts: [1.5, 2] } }] })).status, 400);
+
+  // Original-Datei unverändert
+  const orig = await fetch(base + m.files[0].url, { headers: { cookie } });
+  assert.equal(Buffer.from(await orig.arrayBuffer()).toString(), '%PDF-1.4 orig');
+  // Liste zeigt Anzahl der Notizen
+  const listed = (await student('GET', '/materials')).data.materials.find((x) => x.id === m.id);
+  assert.equal(listed.files[0].annotations, 1);
+
+  // Entfernen + Seite leeren
+  await teacher('POST', path, { ops: [{ op: 'add', stroke: { ...stroke, id: 'stroke_p2', page: 2 } }, { op: 'remove', id: 'stroke_abc1' }] });
+  let s = (await student('GET', path)).data;
+  assert.deepEqual(s.strokes.map((x) => x.id), ['stroke_p2']);
+  await teacher('POST', path, { ops: [{ op: 'clear', page: 2 }] });
+  s = (await student('GET', path)).data;
+  assert.equal(s.strokes.length, 0);
+
+  // Block löschen entfernt auch die Notizen
+  await teacher('POST', path, { ops: [{ op: 'add', stroke }] });
+  assert.equal((await teacher('DELETE', `/materials/${m.id}`)).status, 200);
+  assert.equal((await teacher('GET', path)).status, 404);
+});
+
+test('Protokolle: Lehrkraft schreibt rückwirkend (sofort freigegeben), Klassensprecher reicht ein', async () => {
+  const d = new Date(); d.setDate(d.getDate() - 21);
+  const past = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const teacher = await loginAs('lehrer@dbz.de');
+  const r = await teacher('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'Sure Al-Mulk 1-10', homework: 'Ayat 1-5 lernen' } });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.protocol.status, 'approved');
+  assert.equal(r.data.protocol.date, past);
+  // gleicher Tag -> wird aktualisiert, nicht verdoppelt
+  const r2 = await teacher('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'Sure Al-Mulk 1-12' } });
+  assert.equal(r2.data.protocol.id, r.data.protocol.id);
+  const student = await loginAs('schueler@dbz.de');
+  const seen = (await student('GET', '/protocols')).data.protocols.find((p) => p.id === r.data.protocol.id);
+  assert.equal(seen.content.topics, 'Sure Al-Mulk 1-12');
+  assert.equal(seen.date, past);
+  assert.equal((await student('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'x' } })).status, 403);
+  // Zukunft / Unsinn abgelehnt
+  assert.equal((await teacher('POST', '/classes/class_3/protocols', { date: '2999-01-01', content: { topics: 'x' } })).status, 400);
+  assert.equal((await teacher('POST', '/classes/class_3/protocols', { date: past, content: {} })).status, 400);
+
+  // Klassensprecher: anderer Tag, einreichen -> Lehrkraft gibt frei
+  const d2 = new Date(); d2.setDate(d2.getDate() - 14);
+  const past2 = `${d2.getFullYear()}-${String(d2.getMonth() + 1).padStart(2, '0')}-${String(d2.getDate()).padStart(2, '0')}`;
+  const rep = await loginAs('sprecher@dbz.de');
+  const rp = await rep('POST', '/classes/class_3/protocols', { date: past2, content: { topics: 'Tajwid: Idgham' }, submit: true });
+  assert.equal(rp.status, 200);
+  assert.equal(rp.data.protocol.status, 'submitted');
+  assert.ok(!(await student('GET', '/protocols')).data.protocols.some((p) => p.id === rp.data.protocol.id), 'Schüler sieht Unbestätigtes nicht');
+  // Freigegebenes darf der Klassensprecher nicht mehr ändern
+  assert.equal((await rep('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'x' } })).status, 400);
+  // Lehrkraft löscht
+  assert.equal((await teacher('DELETE', `/protocols/${rp.data.protocol.id}`)).status, 200);
+});
+
+test('Anwesenheit: vergangenen Tag nachtragen und korrigieren (krank, verspätet mit Minuten)', async () => {
+  const d = new Date(); d.setDate(d.getDate() - 10);
+  const past = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const teacher = await loginAs('lehrer@dbz.de');
+  const day = await teacher('POST', '/classes/class_3/days', { date: past });
+  assert.equal(day.status, 200);
+  const sid = day.data.session.id;
+  assert.equal((await teacher('POST', '/classes/class_3/days', { date: past })).data.session.id, sid, 'gleicher Tag -> gleiche Sitzung');
+  assert.equal((await teacher('POST', `/sessions/${sid}/attendance`, { studentId: 'user_yusuf', status: 'late', minutesLate: 12 })).status, 200);
+  assert.equal((await teacher('POST', `/sessions/${sid}/attendance`, { studentId: 'user_amina', status: 'excused', note: 'Krank' })).status, 200);
+  let att = (await teacher('GET', `/sessions/${sid}/attendance`)).data.attendance;
+  assert.equal(att.find((a) => a.studentId === 'user_yusuf').minutesLate, 12);
+  assert.equal(att.find((a) => a.studentId === 'user_amina').note, 'Krank');
+  // korrigieren: doch pünktlich
+  await teacher('POST', `/sessions/${sid}/attendance`, { studentId: 'user_yusuf', status: 'present' });
+  att = (await teacher('GET', `/sessions/${sid}/attendance`)).data.attendance;
+  assert.equal(att.find((a) => a.studentId === 'user_yusuf').status, 'present');
+  assert.ok((await teacher('GET', '/classes/class_3/sessions')).data.sessions.some((x) => x.id === sid));
+  assert.equal((await teacher('POST', '/classes/class_3/days', { date: '2999-01-01' })).status, 400);
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('POST', '/classes/class_3/days', { date: past })).status, 403);
+});
+
+test('Neue Anmeldung direkt als Lehrkraft freischalten (Admin); Leitung kann keinen Admin vergeben', async () => {
+  const email = `reg-${Date.now()}@dbz.de`;
+  const reg = await fetch(base + '/api/auth/register-open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Freund Test', email, password: 'demo1234', consent: true, firstName: 'Freund', lastName: 'Test', birthDate: '2000-01-01', gender: 'm', street: 'A', houseNumber: '1', zip: '12345', city: 'B', phone: '0123', selfPayer: true }) });
+  assert.equal(reg.status, 200);
+  const admin = await loginAs('admin@dbz.de');
+  const pend = (await admin('GET', '/admin/pending-registrations')).data.users.find((u) => u.email === email);
+  assert.ok(pend);
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.equal((await leitung('POST', `/admin/pending-registrations/${pend.id}/assign`, { role: 'super_admin' })).status, 403);
+  assert.equal((await admin('POST', `/admin/pending-registrations/${pend.id}/assign`, { role: 'schueler', classIds: [] })).status, 400);
+  const r = await admin('POST', `/admin/pending-registrations/${pend.id}/assign`, { role: 'klassenlehrer', classIds: ['class_3'] });
+  assert.equal(r.status, 200);
+  const u = (await admin('GET', '/admin/users')).data.users.find((x) => x.email === email);
+  assert.equal(u.role, 'klassenlehrer');
+  assert.equal(u.status, 'active');
+  assert.deepEqual(u.classIds, ['class_3']);
+});
