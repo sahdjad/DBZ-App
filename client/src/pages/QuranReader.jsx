@@ -1266,7 +1266,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       {/* Platz für die feste untere Seiten-Leiste (+ mobile Tab-Leiste darunter),
           damit sie den letzten Zeilen der Seite nichts verdeckt. Gemessen:
           Leiste 67px + mobile Tab-Leiste 65.5px = ~147px, mit Puffer h-40 (160px). */}
-      {data && <div className="h-40 lg:h-20" aria-hidden="true" />}
+      {data && <div className="h-40 lg:h-28" aria-hidden="true" />}
       {data && <PageScrubber page={page} onNavigate={goto} />}
     </div>
   );
