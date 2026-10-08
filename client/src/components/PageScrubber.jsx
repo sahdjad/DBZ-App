@@ -25,15 +25,16 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
   };
   return createPortal(
     <div
+      // Handy: Leiste über die volle Breite, direkt auf der unteren Navigation.
+      // Computer: schwebende, schmale Karte mittig im Inhaltsbereich (rechts
+      // neben der Seitenleiste, nie darüber).
+      className="fixed inset-x-0 z-20 lg:left-64 lg:px-6 lg:pb-4 lg:pointer-events-none"
+      style={{ bottom: 'var(--dbz-tabbar-h, 0px)' }}
+    >
+    <div
       data-testid="page-scrubber"
-      className="fixed inset-x-0 z-20 nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2"
-      // Sitzt direkt auf der unteren Navigation (gemessene Höhe, keine Lücke,
-      // durch die Text durchscheint). Ohne Navigation (Computer) unten am Rand
-      // mit Abstand zum Home-Indikator.
-      style={{
-        bottom: 'var(--dbz-tabbar-h, 0px)',
-        paddingBottom: 'max(8px, calc(env(safe-area-inset-bottom) - var(--dbz-tabbar-h, 0px)))',
-      }}
+      className="nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2 lg:pointer-events-auto lg:mx-auto lg:max-w-xl lg:rounded-2xl lg:border lg:shadow-lg lg:px-5"
+      style={{ paddingBottom: 'max(8px, calc(env(safe-area-inset-bottom) - var(--dbz-tabbar-h, 0px)))' }}
     >
       {/* Große, immer sichtbare Seitenzahl -- nicht nur eine kleine Randnotiz,
           damit man auf einen Blick sieht, wo man gerade ist (auch ohne zu ziehen). */}
@@ -64,6 +65,7 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
         />
         <span className="text-[11px] text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
       </div>
+    </div>
     </div>,
     document.body,
   );
