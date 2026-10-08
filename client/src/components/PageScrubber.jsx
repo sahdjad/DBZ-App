@@ -12,10 +12,27 @@
 // iOS Safari) zuverlässig unterstützt -- stattdessen der Slider per CSS
 // horizontal gespiegelt (scaleX(-1)), das dreht Darstellung UND
 // Ziehrichtung garantiert gemeinsam um, unabhängig vom Browser.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+// Computer (ab 1024 px, Seitenleiste links sichtbar): kein schwebendes
+// Element über dem Text -- die Leiste steht als normaler Block direkt unter
+// der Mushaf-Seite. Handy: fest unten über der Navigation (Daumen-Bereich).
+const DESKTOP = '(min-width: 1024px)';
+function useDesktop() {
+  const [d, setD] = useState(() => typeof window !== 'undefined' && window.matchMedia?.(DESKTOP).matches);
+  useEffect(() => {
+    const mq = window.matchMedia?.(DESKTOP);
+    if (!mq) return undefined;
+    const on = () => setD(mq.matches);
+    mq.addEventListener?.('change', on);
+    return () => mq.removeEventListener?.('change', on);
+  }, []);
+  return d;
+}
+
 export default function PageScrubber({ page, onNavigate, max = 604 }) {
+  const desktop = useDesktop();
   const [dragValue, setDragValue] = useState(null);
   const value = dragValue ?? page ?? 1;
   const commit = (v) => {
@@ -23,18 +40,13 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
     const clamped = Math.max(1, Math.min(max, v));
     if (clamped !== page) onNavigate(clamped);
   };
-  return createPortal(
-    <div
-      // Handy: Leiste über die volle Breite, direkt auf der unteren Navigation.
-      // Computer: schwebende, schmale Karte mittig im Inhaltsbereich (rechts
-      // neben der Seitenleiste, nie darüber).
-      className="fixed inset-x-0 z-20 lg:left-64 lg:px-6 lg:pb-4 lg:pointer-events-none"
-      style={{ bottom: 'var(--dbz-tabbar-h, 0px)' }}
-    >
+  const bar = (
     <div
       data-testid="page-scrubber"
-      className="nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2 lg:pointer-events-auto lg:mx-auto lg:max-w-xl lg:rounded-2xl lg:border lg:shadow-lg lg:px-5"
-      style={{ paddingBottom: 'max(8px, calc(env(safe-area-inset-bottom) - var(--dbz-tabbar-h, 0px)))' }}
+      className={desktop
+        ? 'mx-auto mt-4 max-w-2xl rounded-2xl border border-line bg-card px-5 pt-2 pb-3'
+        : 'nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2'}
+      style={desktop ? undefined : { paddingBottom: 'max(8px, calc(env(safe-area-inset-bottom) - var(--dbz-tabbar-h, 0px)))' }}
     >
       {/* Große, immer sichtbare Seitenzahl -- nicht nur eine kleine Randnotiz,
           damit man auf einen Blick sieht, wo man gerade ist (auch ohne zu ziehen). */}
@@ -66,7 +78,10 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
         <span className="text-[11px] text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
       </div>
     </div>
-    </div>,
+  );
+  if (desktop) return bar;
+  return createPortal(
+    <div className="fixed inset-x-0 z-20" style={{ bottom: 'var(--dbz-tabbar-h, 0px)' }}>{bar}</div>,
     document.body,
   );
 }

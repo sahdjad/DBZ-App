@@ -541,7 +541,7 @@ export default function HifzRecitationMode({ surahs }) {
           wechselt und den Übungsstand verliert. */}
       {!started && (
         <>
-          <div className="h-40 lg:h-28" aria-hidden="true" />
+          <div className="h-40 lg:hidden" aria-hidden="true" />
           <PageScrubber page={page} onNavigate={loadPage} />
         </>
       )}
