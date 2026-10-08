@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut, LayoutGrid, List as ListIcon, BookOpen } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
@@ -138,10 +138,13 @@ export default function QuranReader() {
   );
 }
 
+const VIEW_KEY = 'dbz-surah-view';
 function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
   const [q, setQ] = useState('');
+  const [view, setViewState] = useState(() => { try { return localStorage.getItem(VIEW_KEY) || 'grid'; } catch { return 'grid'; } });
+  const setView = (v) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* egal */ } };
   if (!surahs) return <Spinner />;
-  const filtered = surahs.filter((s) => `${s.n} ${s.name}`.toLowerCase().includes(q.toLowerCase()));
+  const filtered = surahs.filter((s) => `${s.n} ${s.name} ${s.ar || ''}`.toLowerCase().includes(q.toLowerCase()));
 
   const delBookmark = async (id) => { await api.del(`/quran/bookmarks/${id}`); onMarksChanged(); };
 
@@ -149,12 +152,13 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
     <div className="space-y-4">
       {/* Klassische Mushaf-Seitenansicht (Medina-Layout) */}
       <button onClick={() => onOpenPages()}
-        className="w-full flex items-center gap-3 rounded-xl border border-mint/30 bg-mint/[0.06] p-4 hover:bg-mint/10 transition text-left">
-        <span className="grid place-items-center h-11 w-11 rounded-lg bg-mint/15 text-mint shrink-0"><ScrollText size={22} /></span>
-        <div className="min-w-0">
+        className="group w-full flex items-center gap-4 rounded-2xl border border-line bg-card p-4 shadow-sm hover:border-mint/40 hover:shadow-md transition text-left">
+        <span className="grid place-items-center h-12 w-12 rounded-full bg-mint/10 text-mint shrink-0"><BookOpen size={22} /></span>
+        <div className="min-w-0 flex-1">
           <div className="text-ivory font-medium">Mushaf-Ansicht</div>
           <div className="text-xs text-sage-muted">Klassische Seiten wie im gedruckten Qur'an – blättern, Juzʼ, tippen zum Anhören</div>
         </div>
+        <ChevronRight size={20} className="text-sage-muted shrink-0 transition group-hover:translate-x-0.5" />
       </button>
       {marks?.lastRead && (
         <Card className="p-4 flex items-center justify-between gap-3 border-mint/30">
@@ -188,22 +192,35 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
 
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-muted" />
-          <input className="input pl-9" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
+          <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted" />
+          <input className="input pl-10 rounded-xl" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <Link to="/tadschwid" className="shrink-0 inline-flex items-center gap-2 text-sm px-3 py-2 rounded-lg border border-line text-sage hover:bg-hover">
-          <Palette size={16} /> Tadschwid
+        <Link to="/tadschwid" className="shrink-0 inline-flex items-center gap-2 text-sm px-3.5 py-2.5 rounded-xl border border-line bg-card text-ivory hover:bg-hover">
+          <Palette size={17} /> <span className="hidden sm:inline">Tadschwid</span>
         </Link>
+        <div className="shrink-0 inline-flex rounded-xl border border-line bg-card p-0.5" role="group" aria-label="Ansicht">
+          {[['grid', LayoutGrid, 'Kacheln'], ['list', ListIcon, 'Liste']].map(([v, Icon, label]) => (
+            <button key={v} onClick={() => setView(v)} aria-label={label} aria-pressed={view === v}
+              className={`grid place-items-center h-9 w-10 rounded-lg transition ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>
+              <Icon size={18} />
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {filtered.length === 0 && <p className="text-sm text-sage-muted px-1">Keine Sure gefunden.</p>}
+      <div className={view === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-2.5' : 'rounded-2xl border border-line bg-card divide-y divide-line overflow-hidden'}>
         {filtered.map((s) => (
           <button key={s.n} onClick={() => onSelect(s.n)}
-            className="flex items-center gap-3 rounded-xl border border-line bg-card p-3 hover:bg-hover transition text-left">
-            <span className="grid place-items-center h-9 w-9 rounded-lg bg-mint/15 text-mint font-mono text-sm shrink-0">{s.n}</span>
-            <div className="min-w-0">
-              <div className="text-ivory truncate">{s.name}</div>
+            className={view === 'grid'
+              ? 'group flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3 shadow-sm hover:border-mint/40 hover:shadow-md transition text-left'
+              : 'group w-full flex items-center gap-3 px-4 py-2.5 hover:bg-hover transition text-left'}>
+            <span className="grid place-items-center h-9 w-9 rounded-xl bg-subtle text-sage font-mono text-sm shrink-0 group-hover:bg-mint/15 group-hover:text-mint transition">{s.n}</span>
+            <div className="min-w-0 flex-1">
+              <div className="text-ivory font-medium truncate">{s.name}</div>
               <div className="text-xs text-sage-muted">{s.ayat} Ayat</div>
             </div>
+            {s.ar && <span dir="rtl" lang="ar" className="font-arabic text-xl text-ivory/90 shrink-0 leading-none">سورة {s.ar}</span>}
+            <ChevronRight size={18} className="text-sage-muted shrink-0 transition group-hover:translate-x-0.5 group-hover:text-mint" />
           </button>
         ))}
       </div>
@@ -1266,7 +1283,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       {/* Platz für die feste untere Seiten-Leiste (+ mobile Tab-Leiste darunter),
           damit sie den letzten Zeilen der Seite nichts verdeckt. Gemessen:
           Leiste 67px + mobile Tab-Leiste 65.5px = ~147px, mit Puffer h-40 (160px). */}
-      {data && <div className="h-40 lg:h-28" aria-hidden="true" />}
+      {data && <div className="h-40 lg:hidden" aria-hidden="true" />}
       {data && <PageScrubber page={page} onNavigate={goto} />}
     </div>
   );

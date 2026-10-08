@@ -33,6 +33,7 @@ import {
   Gauge,
   ChevronsUpDown,
   Check,
+  Info,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
@@ -562,7 +563,8 @@ function PushNudge({ user }) {
     finally { setBusy(false); }
   };
   return (
-    <div className="shrink-0 bg-mint/10 border-b border-mint/30 px-4 py-2 text-sm flex flex-wrap items-center gap-2" role="note">
+    <div className="shrink-0 mx-4 lg:mx-8 mt-3 rounded-xl border border-mint/25 bg-mint/[0.07] px-4 py-2.5 text-sm flex flex-wrap items-center gap-2" role="note">
+      <Info size={16} className="text-mint shrink-0" aria-hidden="true" />
       <span className="text-ivory flex-1 min-w-[12rem]">
         {ios
           ? 'Für Benachrichtigungen auf dem iPhone bitte „Teilen" → „Zum Home-Bildschirm" wählen und die App von dort öffnen.'
@@ -578,6 +580,7 @@ function PushNudge({ user }) {
         </button>
       )}
       <button onClick={() => setHidden(true)} className="text-xs text-sage-muted underline">Später</button>
+      <button onClick={() => setHidden(true)} className="p-1 rounded-md text-sage-muted hover:bg-hover" aria-label="Hinweis schließen"><X size={16} /></button>
     </div>
   );
 }
