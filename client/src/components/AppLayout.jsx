@@ -370,8 +370,24 @@ export default function AppLayout({ children, title }) {
 
 function MobileTabBar({ items, badges, user, onAccount }) {
   const linkedTotal = badges.linkedTotal || 0;
+  // Tatsächliche Höhe der Leiste (je nach Gerät/Home-Indikator verschieden)
+  // als CSS-Variable bereitstellen -- darauf sitzen z. B. die Seitenleiste im
+  // Qur'an ohne Lücke auf. Am Computer ist die Leiste ausgeblendet (Höhe 0).
+  const navRef = useRef(null);
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return undefined;
+    const root = document.documentElement;
+    const set = () => root.style.setProperty('--dbz-tabbar-h', `${Math.floor(el.getBoundingClientRect().height)}px`);
+    set();
+    const ro = new ResizeObserver(set);
+    ro.observe(el);
+    window.addEventListener('resize', set);
+    return () => { ro.disconnect(); window.removeEventListener('resize', set); root.style.setProperty('--dbz-tabbar-h', '0px'); };
+  }, []);
   return (
     <nav
+      ref={navRef}
       className="nav-surface lg:hidden fixed bottom-0 inset-x-0 z-30 backdrop-blur border-t border-line flex"
       // Safe-Area unten (iPhone Home-Indikator): Leiste sitzt höher, damit
       // Tipps nicht die Home-Geste auslösen. Auf Geräten ohne Indikator = 0.

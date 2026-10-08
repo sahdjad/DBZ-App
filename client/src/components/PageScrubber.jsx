@@ -26,8 +26,14 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
   return createPortal(
     <div
       data-testid="page-scrubber"
-      className="fixed bottom-20 lg:bottom-0 inset-x-0 z-20 nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2"
-      style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 8px)' }}
+      className="fixed inset-x-0 z-20 nav-surface backdrop-blur border-t border-line px-4 pt-1.5 pb-2"
+      // Sitzt direkt auf der unteren Navigation (gemessene Höhe, keine Lücke,
+      // durch die Text durchscheint). Ohne Navigation (Computer) unten am Rand
+      // mit Abstand zum Home-Indikator.
+      style={{
+        bottom: 'var(--dbz-tabbar-h, 0px)',
+        paddingBottom: 'max(8px, calc(env(safe-area-inset-bottom) - var(--dbz-tabbar-h, 0px)))',
+      }}
     >
       {/* Große, immer sichtbare Seitenzahl -- nicht nur eine kleine Randnotiz,
           damit man auf einen Blick sieht, wo man gerade ist (auch ohne zu ziehen). */}
