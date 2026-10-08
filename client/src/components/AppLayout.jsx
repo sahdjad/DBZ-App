@@ -526,6 +526,14 @@ function AccountSwitcherSheet({ open, onClose, currentUser }) {
 const PUSH_REQUIRED = ['schueler', 'klassensprecher', 'eltern'];
 // Mitarbeitende brauchen Push genauso (Entschuldigungen, Nachrichten) -- für sie
 // ist der Hinweis aber abschaltbar (Konto -> Benachrichtigungen -> Aus).
+// Anleitung passend zum Gerät: am Computer gibt es keine "Handy-Einstellungen".
+function blockedHint() {
+  const ua = navigator.userAgent || '';
+  const ios = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (ios) return 'Benachrichtigungen sind blockiert. Auf dem iPhone: Einstellungen → Mitteilungen → DBZ → „Mitteilungen erlauben“ einschalten.';
+  if (/Android/i.test(ua)) return 'Benachrichtigungen sind blockiert. Auf dem Handy: Einstellungen → Apps → DBZ (bzw. Chrome) → Benachrichtigungen erlauben.';
+  return 'Benachrichtigungen sind in diesem Browser blockiert. Links neben der Adresse auf das Schloss-/Einstellungs-Symbol klicken, „Benachrichtigungen“ erlauben und die Seite neu laden.';
+}
 const pushOptedOut = () => { try { return localStorage.getItem('dbz-push-optout') === '1'; } catch { return false; } };
 function PushNudge({ user }) {
   const required = PUSH_REQUIRED.includes(user.role);
@@ -559,7 +567,7 @@ function PushNudge({ user }) {
         {ios
           ? 'Für Benachrichtigungen auf dem iPhone bitte „Teilen" → „Zum Home-Bildschirm" wählen und die App von dort öffnen.'
           : state.permission === 'denied'
-            ? 'Benachrichtigungen sind blockiert. Bitte in den Einstellungen des Handys für die DBZ-App erlauben.'
+            ? blockedHint()
             : required
               ? 'Bitte Benachrichtigungen einschalten, damit du neue Aufgaben, Termine und Nachrichten sofort bekommst.'
               : 'Bitte Benachrichtigungen einschalten, damit du Entschuldigungen und Nachrichten sofort auf dem Sperrbildschirm siehst.'}
