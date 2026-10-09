@@ -120,6 +120,25 @@
   .input {
     @apply w-full rounded-xl bg-card border border-line px-3.5 py-2.5 text-ivory placeholder:text-sage-muted transition-all duration-200;
   }
+  /* Datum/Uhrzeit (v. a. iPad/iPhone): Safari gibt diesen Feldern eine eigene
+     Mindestbreite und Höhe -- sie ragten in Nachbarfelder und waren niedriger
+     als die übrigen Eingaben. Gleiche Höhe, linksbündig, nie breiter als die Spalte. */
+  input.input[type='date'],
+  input.input[type='time'],
+  input.input[type='datetime-local'],
+  input.input[type='month'] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 2.875rem;
+    text-align: left;
+  }
+  input.input::-webkit-date-and-time-value {
+    text-align: left;
+    margin: 0;
+  }
   .input:focus {
     @apply outline-none border-mint/60 ring-2 ring-mint/20;
   }
