@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw } from 'lucide-react';
+import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw, MoreHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, Button, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
+import { Card, Button, Spinner, useToast, ClassFolders, ChoiceDialog } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 
@@ -245,6 +245,7 @@ export default function Klassenliste() {
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busyId, setBusyId] = useState(null);
+  const [menuFor, setMenuFor] = useState(null); // Zeile, deren Aktionsmenü offen ist
 
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -381,10 +382,8 @@ export default function Klassenliste() {
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Aufgaben, in Klammern die davon überfälligen">Offen</abbr></th>
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Offene Strafen (Geld/Seiten)">Strafen</abbr></th>
                     <th className="py-3 px-3 font-medium text-center"><abbr title="Negative Verhaltensvermerke">Vermerke</abbr></th>
-                    <th className="py-3 px-3 font-medium text-center whitespace-nowrap">Zuletzt online</th>
-                    <th className="py-3 px-3 font-medium text-center">Klassensprecher</th>
-                    {isTeacher && <th className="py-3 px-3 font-medium text-center">Probezeit</th>}
-                    {isTeacher && <th className="py-3 px-3 font-medium text-center">Klassenmitgliedschaft</th>}
+                    <th className="py-3 px-3 font-medium text-center whitespace-nowrap hidden xl:table-cell">Zuletzt online</th>
+                    <th className="py-3 px-3 font-medium text-center"><span className="sr-only">Aktionen</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,46 +435,44 @@ export default function Klassenliste() {
                       <td className={`py-3 px-3 text-center font-mono ${r.negativeBehavior > 0 ? 'text-status-late' : 'text-sage-muted'}`}>
                         {r.negativeBehavior}
                       </td>
-                      <td className="py-3 px-3 text-center text-xs text-sage-muted whitespace-nowrap">{lastSeenLabel(r.lastSeenAt)}</td>
-                      <td className="py-3 px-3 text-center">
+                      <td className="py-3 px-3 text-center text-xs text-sage-muted whitespace-nowrap hidden xl:table-cell">{lastSeenLabel(r.lastSeenAt)}</td>
+                      <td className="py-2 px-2 text-center">
                         <button
-                          onClick={(e) => toggleKlassensprecher(e, r)}
+                          onClick={(e) => { e.stopPropagation(); setMenuFor(r); }}
                           disabled={busyId === r.id}
-                          className={`text-xs px-2.5 py-1 rounded-lg border transition ${r.role === 'klassensprecher' ? 'border-gold/40 text-gold bg-gold/10 hover:bg-gold/15' : 'border-line text-sage hover:bg-subtle'}`}
+                          aria-label={`Aktionen für ${r.name}`}
+                          className="grid place-items-center h-9 w-9 rounded-lg border border-line text-sage hover:bg-subtle transition"
                         >
-                          {r.role === 'klassensprecher' ? 'Entfernen' : 'Ernennen'}
+                          <MoreHorizontal size={18} />
                         </button>
                       </td>
-                      {isTeacher && (
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={(e) => toggleProbation(e, r)}
-                            disabled={busyId === r.id}
-                            className={`text-xs px-2.5 py-1 rounded-lg border transition ${r.probation ? 'border-blue-400/40 text-blue-400 bg-blue-400/10 hover:bg-blue-400/15' : 'border-line text-sage hover:bg-subtle'}`}
-                          >
-                            {r.probation ? 'Beenden' : 'Markieren'}
-                          </button>
-                        </td>
-                      )}
-                      {isTeacher && (
-                        <td className="py-3 px-3 text-center">
-                          <button
-                            onClick={(e) => removeFromClass(e, r)}
-                            disabled={busyId === r.id}
-                            title={`${r.name} aus der Klasse entfernen`}
-                            aria-label={`${r.name} aus der Klasse entfernen`}
-                            className="text-xs px-2.5 py-1 rounded-lg border border-line text-sage-muted hover:text-status-absent hover:border-status-absent/40 hover:bg-status-absent/10 transition inline-flex items-center gap-1"
-                          >
-                            <UserMinus size={13} /> Entfernen
-                          </button>
-                        </td>
-                      )}
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           </Card>
+        )}
+        {menuFor && (
+          <ChoiceDialog
+            title={menuFor.name}
+            options={[
+              { key: 'sprecher', label: menuFor.role === 'klassensprecher' ? 'Als Klassensprecher entfernen' : 'Zum Klassensprecher ernennen' },
+              ...(isTeacher ? [
+                { key: 'probation', label: menuFor.probation ? 'Probezeit beenden' : 'Probezeit markieren' },
+                { key: 'remove', label: 'Aus der Klasse entfernen', description: 'Das Konto selbst bleibt bestehen.', variant: 'danger' },
+              ] : []),
+            ]}
+            onClose={() => setMenuFor(null)}
+            onChoose={(key) => {
+              const row = menuFor;
+              setMenuFor(null);
+              const ev = { stopPropagation() {} };
+              if (key === 'sprecher') toggleKlassensprecher(ev, row);
+              else if (key === 'probation') toggleProbation(ev, row);
+              else if (key === 'remove') removeFromClass(ev, row);
+            }}
+          />
         )}
         <p className="text-[11px] text-sage-muted">Tipp: Name antippen oder Zeile anklicken öffnet das Schülerprofil. Spalte „Offen" zeigt offene Aufgaben, die Zahl in Klammern die davon überfälligen. Abkürzungen in den Spaltenüberschriften zeigen beim Antippen/Hovern die volle Bezeichnung.</p>
       </div>

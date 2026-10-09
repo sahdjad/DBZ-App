@@ -53,22 +53,48 @@ export async function printQrCode(code, title = '', subtitle = '') {
     window.print();
     return;
   }
-  const w = window.open('', '_blank');
-  if (!w) { window.print(); return; } // Popup blockiert -> Notfall: normale Druckansicht
-  w.document.write(
-    `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title || 'QR-Code')}</title><style>` +
-    '@page{margin:14mm;}html,body{height:100%;margin:0;font-family:system-ui,-apple-system,sans-serif;}' +
-    '.sheet{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px;}' +
-    '.t{font-size:26px;font-weight:700;color:#0f2a1e;}img{width:115mm;height:115mm;}' +
-    '.c{font-family:ui-monospace,SFMono-Regular,monospace;font-size:30px;letter-spacing:.2em;color:#08150d;}' +
-    '.s{font-size:26px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#b91c1c;max-width:150mm;}</style></head><body><div class="sheet">' +
+  // Druckansicht INNERHALB der App (kein neues Fenster): in der installierten
+  // App auf iPad/iPhone gäbe es dort keinen Weg zurück. Oben "Zurück" und
+  // "Drucken"; Zurück-Geste/Escape schließen ebenfalls.
+  document.getElementById('dbz-qr-print')?.remove();
+  const host = document.createElement('div');
+  host.id = 'dbz-qr-print';
+  host.innerHTML =
+    '<style>' +
+    '#dbz-qr-print{position:fixed;inset:0;z-index:200;background:#fff;overflow:auto;font-family:system-ui,-apple-system,sans-serif;}' +
+    '#dbz-qr-print .bar{position:sticky;top:0;display:flex;justify-content:space-between;gap:12px;padding:max(env(safe-area-inset-top),12px) 16px 12px;background:#0f2a1e;}' +
+    '#dbz-qr-print .bar button{border:0;border-radius:999px;padding:10px 18px;font-size:16px;font-weight:600;cursor:pointer;}' +
+    '#dbz-qr-print .back{background:rgba(255,255,255,.15);color:#fff;}#dbz-qr-print .print{background:#fff;color:#0f2a1e;}' +
+    '#dbz-qr-print .sheet{min-height:calc(100% - 70px);display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:18px;padding:24px;}' +
+    '#dbz-qr-print .t{font-size:26px;font-weight:700;color:#0f2a1e;}#dbz-qr-print img{width:min(115mm,80vw);height:auto;aspect-ratio:1;}' +
+    '#dbz-qr-print .c{font-family:ui-monospace,SFMono-Regular,monospace;font-size:30px;letter-spacing:.2em;color:#08150d;word-break:break-all;}' +
+    '#dbz-qr-print .s{font-size:26px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#b91c1c;max-width:150mm;}' +
+    '@media print{@page{margin:14mm;}body>*:not(#dbz-qr-print){display:none!important;}#dbz-qr-print{position:static;overflow:visible;}#dbz-qr-print .bar{display:none;}#dbz-qr-print .sheet{min-height:90vh;}}' +
+    '</style>' +
+    '<div class="bar"><button type="button" class="back">← Zurück</button><button type="button" class="print">Drucken</button></div>' +
+    '<div class="sheet">' +
     (title ? `<div class="t">${esc(title)}</div>` : '') +
     `<img src="${dataUrl}" alt="QR-Code" />` +
     `<div class="c">${esc(code)}</div>` +
     (subtitle ? `<div class="s">${esc(subtitle)}</div>` : '') +
-    '</div><script>window.onload=function(){setTimeout(function(){window.focus();window.print();},200);};window.onafterprint=function(){window.close();};<\/script></body></html>',
-  );
-  w.document.close();
+    '</div>';
+  document.body.appendChild(host);
+  let closed = false;
+  const close = (fromPop) => {
+    if (closed) return;
+    closed = true;
+    host.remove();
+    window.removeEventListener('popstate', onPop);
+    window.removeEventListener('keydown', onKey);
+    if (!fromPop) { try { window.history.back(); } catch { /* egal */ } }
+  };
+  const onPop = () => close(true);
+  const onKey = (e) => { if (e.key === 'Escape') close(false); };
+  try { window.history.pushState({ ...(window.history.state || {}), dbzQrPrint: true }, ''); } catch { /* egal */ }
+  window.addEventListener('popstate', onPop);
+  window.addEventListener('keydown', onKey);
+  host.querySelector('.back').addEventListener('click', () => close(false));
+  host.querySelector('.print').addEventListener('click', () => window.print());
 }
 
 /**

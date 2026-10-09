@@ -12,7 +12,7 @@ const fmtDate = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { w
 
 function Field({ label, hint, children }) {
   return (
-    <label className="block">
+    <label className="block min-w-0">
       <span className="text-sm text-sage">{label}</span>
       <div className="mt-1">{children}</div>
       {hint && <span className="text-[11px] text-sage-muted">{hint}</span>}
@@ -55,28 +55,26 @@ export function ClassSettingsCard({ classId, onSaved }) {
   };
   return (
     <Card className="p-5">
-      <CardHeader title="Unterrichtszeiten & Regeln" subtitle="Gilt nur für diese Klasse" icon={Settings2} />
+      <CardHeader title="QR-Check-in: Zeiten & Regeln" subtitle="Gilt nur für diese Klasse – hier stellst du ein, wann der QR-Code gilt" icon={Settings2} />
       {!f ? <Spinner /> : (
-        <form onSubmit={save} className="p-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Wochentag">
+        <form onSubmit={save} className="p-4 grid gap-3 grid-cols-2">
+          <div className="col-span-2"><Field label="Wochentag">
             <select className="input" value={f.weekday} onChange={(e) => setF({ ...f, weekday: e.target.value })}>
               {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
             </select>
-          </Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Beginn"><input type="time" className="input" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} required /></Field>
-            <Field label="Ende"><input type="time" className="input" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} required /></Field>
-          </div>
-          <Field label="Pünktlich bis (Minuten nach Beginn)" hint="Wer bis dahin eincheckt, gilt als pünktlich.">
-            <input type="number" min="0" max="120" className="input" value={f.lateAfterMinutes} onChange={(e) => setF({ ...f, lateAfterMinutes: e.target.value })} />
-          </Field>
-          <Field label="Unentschuldigt zu spät ab (Minuten)" hint="Leer lassen = keine Grenze.">
-            <input type="number" min="1" max="300" className="input" value={f.unexcusedLateAfterMinutes} onChange={(e) => setF({ ...f, unexcusedLateAfterMinutes: e.target.value })} placeholder="z. B. 30" />
-          </Field>
-          <Field label="Check-in öffnet (Minuten vor Beginn)">
-            <input type="number" min="0" max="120" className="input" value={f.checkinOpensBefore} onChange={(e) => setF({ ...f, checkinOpensBefore: e.target.value })} />
-          </Field>
-          <div className="sm:col-span-2 flex items-end"><Button type="submit" loading={busy}>Speichern</Button></div>
+          </Field></div>
+          <Field label="Beginn"><input type="time" className="input" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} required /></Field>
+          <Field label="Ende"><input type="time" className="input" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} required /></Field>
+          <div className="col-span-2"><Field label="Pünktlich bis (Minuten nach Beginn)" hint="Wer bis dahin eincheckt, gilt als pünktlich.">
+            <input type="number" inputMode="numeric" min="0" max="120" className="input" value={f.lateAfterMinutes} onChange={(e) => setF({ ...f, lateAfterMinutes: e.target.value })} />
+          </Field></div>
+          <div className="col-span-2"><Field label="Unentschuldigt zu spät ab (Minuten)" hint="Leer lassen = keine Grenze.">
+            <input type="number" inputMode="numeric" min="1" max="300" className="input" value={f.unexcusedLateAfterMinutes} onChange={(e) => setF({ ...f, unexcusedLateAfterMinutes: e.target.value })} placeholder="z. B. 30" />
+          </Field></div>
+          <div className="col-span-2"><Field label="QR-Check-in öffnet (Minuten vor Beginn)" hint="Vorher kann niemand einchecken.">
+            <input type="number" inputMode="numeric" min="0" max="120" className="input" value={f.checkinOpensBefore} onChange={(e) => setF({ ...f, checkinOpensBefore: e.target.value })} />
+          </Field></div>
+          <div className="col-span-2 flex items-end"><Button type="submit" loading={busy}>Speichern</Button></div>
         </form>
       )}
     </Card>
@@ -328,15 +326,13 @@ export function SchoolDaysCard() {
         Normalerweise hat jede Klasse ihren eigenen QR-Code und ihre eigenen Zeiten (stellt die Lehrkraft ein). Nur wenn die ganze Koran-Schule gemeinsam Unterricht hat, legst du hier einen Tag an.
       </p>
       {show && (
-        <form onSubmit={create} className="p-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Bezeichnung"><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field>
-          <Field label="Datum"><input type="date" className="input" min={todayKey} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} required /></Field>
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Beginn"><input type="time" className="input" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} required /></Field>
-            <Field label="Ende"><input type="time" className="input" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} required /></Field>
-          </div>
-          <Field label="Pünktlich bis (Minuten nach Beginn)"><input type="number" min="0" max="120" className="input" value={f.lateAfterMinutes} onChange={(e) => setF({ ...f, lateAfterMinutes: e.target.value })} /></Field>
-          <div className="sm:col-span-2"><Button type="submit">Anlegen & alle benachrichtigen</Button></div>
+        <form onSubmit={create} className="p-4 grid gap-3 grid-cols-2 lg:grid-cols-4 items-end">
+          <div className="col-span-2 lg:col-span-4"><Field label="Bezeichnung"><input className="input" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} /></Field></div>
+          <div className="col-span-2 lg:col-span-1"><Field label="Datum"><input type="date" className="input" min={todayKey} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} required /></Field></div>
+          <Field label="Beginn"><input type="time" className="input" value={f.startTime} onChange={(e) => setF({ ...f, startTime: e.target.value })} required /></Field>
+          <Field label="Ende"><input type="time" className="input" value={f.endTime} onChange={(e) => setF({ ...f, endTime: e.target.value })} required /></Field>
+          <div className="col-span-2 lg:col-span-1"><Field label="Pünktlich bis (Min.)"><input type="number" inputMode="numeric" min="0" max="120" className="input" value={f.lateAfterMinutes} onChange={(e) => setF({ ...f, lateAfterMinutes: e.target.value })} /></Field></div>
+          <div className="col-span-2 lg:col-span-4"><Button type="submit">Anlegen & alle benachrichtigen</Button></div>
         </form>
       )}
       {todayDay?.code && (
