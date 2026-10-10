@@ -5,6 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Ring, StatusBadge, Badge, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { PersonAdminPanel } from '../components/PersonAdmin.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 
@@ -35,6 +36,9 @@ export default function StudentProfil() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  // Leitung/Admin: Steckbrief & Rollen (Verwaltung) zusätzlich zum Lernstand.
+  const isAdmin = ['super_admin', 'leitung'].includes(user.role);
+  const [tab, setTab] = useState('steckbrief');
 
   useEffect(() => {
     setData(null);
@@ -56,6 +60,16 @@ export default function StudentProfil() {
         <ArrowLeft size={16} /> Zurück
       </button>
 
+      {isAdmin && (
+        <div className="flex gap-2 mb-4 flex-wrap">
+          {[['steckbrief', 'Steckbrief & Rollen'], ['lernstand', 'Anwesenheit, Aufgaben & Verhalten']].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`text-sm px-4 py-2 rounded-full border transition ${tab === k ? 'bg-mint text-onaccent border-mint' : 'border-line text-sage hover:bg-hover'}`}>{l}</button>
+          ))}
+        </div>
+      )}
+      {isAdmin && tab === 'steckbrief' && <PersonAdminPanel userId={id} viewer={user} />}
+      {(!isAdmin || tab === 'lernstand') && (<>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Anwesenheit */}
         <Card className="p-5">
@@ -154,6 +168,7 @@ export default function StudentProfil() {
       {/* Strafen: offene (inkl. Zuschlag) + erledigte, mit Herkunft.
           Lehrkräfte/Leitung UND Eltern (für ihre Kinder) sehen sie. */}
       {(MANAGER.includes(user.role) || user.role === 'eltern') && <ProfilePenalties studentId={id} />}
+      </>)}
     </AppLayout>
   );
 }

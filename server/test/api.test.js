@@ -2431,3 +2431,17 @@ test('Neue Anmeldung direkt als Lehrkraft freischalten (Admin); Leitung kann kei
   assert.equal(u.status, 'active');
   assert.deepEqual(u.classIds, ['class_3']);
 });
+
+test('Steckbrief: Admin/Leitung sehen alle Stammdaten einer Person, andere nicht', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const r = await admin('GET', '/admin/users/user_yusuf');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.user.name, 'Yusuf');
+  assert.ok(Array.isArray(r.data.user.classNames));
+  assert.ok(!('passwordHash' in r.data.user));
+  assert.equal(r.data.user.canEditRole, true);
+  const leitung = await loginAs('leitung@dbz.de');
+  assert.equal((await leitung('GET', '/admin/users/user_admin')).data.user.canEditRole, false);
+  const teacher = await loginAs('lehrer@dbz.de');
+  assert.equal((await teacher('GET', '/admin/users/user_yusuf')).status, 403);
+});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -270,11 +270,11 @@ const ROLE_SECTIONS = [
 
 function UsersTab() {
   const toast = useToast();
+  const navigate = useNavigate();
   const { user: me } = useAuth();
   const [users, setUsers] = useState(null);
   const [classes, setClasses] = useState([]);
   const [show, setShow] = useState(false);
-  const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -344,9 +344,9 @@ function UsersTab() {
         <summary className="cursor-pointer px-4 py-3 text-ivory font-medium">So beförderst du jemanden (z. B. zum Klassenlehrer, zur Leitung oder zum Admin)</summary>
         <ol className="list-decimal space-y-1.5 px-8 pb-4 text-sage">
           <li>Hat sich die Person gerade erst registriert, steht sie oben im Reiter <b>„Neue Anmeldungen“</b>. Dort bei <b>„Freischalten als“</b> die Rolle wählen (bei Lehrkräften die Klassen antippen) und <b>Freischalten</b> drücken.</li>
-          <li>Ist die Person schon aktiv: unten in der Liste suchen und auf <b>„Rollen“</b> tippen.</li>
-          <li><b>Nur befördern</b> (z. B. Schüler → Klassenlehrer): im Feld <b>„Hauptrolle“</b> die neue Rolle wählen, Klassen antippen, <b>Speichern</b>.</li>
-          <li><b>Zusätzliche Rolle</b> (bleibt z. B. Schüler UND wird Lehrkraft): im Kasten <b>„Weitere Rollen“</b> die Rolle hinzufügen. Die Person wechselt dann im Konto-Menü zwischen ihren Rollen – ohne zweites Passwort.</li>
+          <li>Ist die Person schon aktiv: unten in der Liste auf den <b>Namen</b> (oder „Öffnen“) tippen – es öffnet sich ihr Steckbrief.</li>
+          <li><b>Befördern</b> (z. B. Schüler → Klassenlehrer): unter <b>„Rollenbearbeitung“</b> steht links die aktuelle Position, rechts die neue Rolle wählen, Klassen antippen und <b>„Befördern“</b> drücken.</li>
+          <li><b>Zusätzliche Rolle</b> (bleibt z. B. Schüler UND wird Lehrkraft): im Kasten <b>„Zusätzliche Rollen“</b> die Rolle hinzufügen. Die Person wechselt dann im Konto-Menü zwischen ihren Rollen – ohne zweites Passwort.</li>
         </ol>
       </details>
       {show && (
@@ -373,15 +373,6 @@ function UsersTab() {
           </form>
         </Card>
       )}
-      {editing && (
-        <EditUser
-          user={editing}
-          classes={classes}
-          students={users.filter((u) => u.role === 'schueler' || u.role === 'klassensprecher')}
-          onDone={() => { setEditing(null); load(); }}
-          onCancel={() => setEditing(null)}
-        />
-      )}
 
       {ROLE_SECTIONS.map(([role, title]) => {
         const list = visible.filter((u) => u.role === role).sort(byName);
@@ -407,7 +398,7 @@ function UsersTab() {
                       ) : <span className="w-[13px]" />}
                       <div className="min-w-0 flex-1">
                         <div className="text-ivory truncate flex items-center gap-2">
-                          {u.name}
+                          <button type="button" onClick={() => navigate(`/person/${u.id}`)} className="truncate hover:underline text-left">{u.name}</button>
                           {u.status !== 'active' && <Badge tone="late">{u.status === 'pending' ? 'wartet' : 'inaktiv'}</Badge>}
                         </div>
                         <div className="text-xs text-sage-muted truncate">
@@ -419,7 +410,7 @@ function UsersTab() {
                         </div>
                       </div>
                       <span className="hidden sm:block text-xs text-sage-muted whitespace-nowrap" title="Zuletzt online">{lastSeenLabel(u.lastSeenAt)}</span>
-                      <Button size="sm" variant="outline" onClick={() => { setEditing(u); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Rollen / Bearbeiten</Button>
+                      <Button size="sm" variant="outline" onClick={() => navigate(`/person/${u.id}`)}>Öffnen</Button>
                     </li>
                   ))}
                 </ul>
@@ -439,203 +430,6 @@ function UsersTab() {
         <div className="p-2"><LinkAccountsAdminCard /></div>
       </details>
     </div>
-  );
-}
-
-// Alle Rollen einer Person an einem Ort: hinzufügen, Klassen anpassen, entziehen.
-function PersonRolesCard({ userId, classes, onChanged }) {
-  const toast = useToast();
-  const [data, setData] = useState(null);
-  const [role, setRole] = useState('');
-  const [cls, setCls] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const load = () => api.get(`/admin/users/${userId}/roles`).then(setData).catch((e) => toast.push(e.message, 'error'));
-  useEffect(() => { load(); }, [userId]);
-  if (!data) return <Spinner label="Rollen laden …" />;
-  const active = data.accounts.filter((a) => a.status !== 'disabled');
-  const has = (r) => active.some((a) => a.role === r || (['schueler', 'klassensprecher'].includes(r) && ['schueler', 'klassensprecher'].includes(a.role)));
-  const options = ROLES.filter(([v]) => data.grantable.includes(v) && !has(v));
-  const needsClass = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'].includes(role);
-  const multi = ['klassenlehrer', 'vertretung'].includes(role);
-  const add = async () => {
-    if (!role) return;
-    setBusy(true);
-    try {
-      await api.post(`/admin/users/${userId}/roles`, { role, classIds: cls });
-      toast.push('Rolle hinzugefügt', 'success');
-      setRole(''); setCls([]);
-      load(); onChanged?.();
-    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
-  };
-  const remove = async (a) => {
-    if (!window.confirm(`Rolle „${a.roleLabel}" entziehen? Der bisherige Verlauf bleibt gespeichert; die Rolle lässt sich später wieder vergeben.`)) return;
-    try { await api.del(`/admin/users/${userId}/roles/${a.id}`); toast.push('Rolle entzogen', 'success'); load(); onChanged?.(); }
-    catch (err) { toast.push(err.message, 'error'); }
-  };
-  return (
-    <div className="rounded-xl border border-line p-3 space-y-3">
-      <div className="text-sm text-ivory font-medium">Weitere Rollen <span className="font-normal text-sage-muted">– eine Person, mehrere Rollen, ein Passwort</span></div>
-      <div className="text-xs text-sage-muted">Anmeldung: {data.person.email || '–'}</div>
-      <ul className="space-y-1.5">
-        {data.accounts.map((a) => (
-          <li key={a.id} className={`flex items-center gap-2 text-sm ${a.status === 'disabled' ? 'opacity-50' : ''}`}>
-            <Badge tone={a.status === 'disabled' ? 'neutral' : 'mint'}>{a.roleLabel}</Badge>
-            <span className="text-sage-muted truncate flex-1">{a.classNames.join(', ') || (['schueler', 'klassensprecher'].includes(a.role) ? 'noch ohne Klasse' : '')}{a.status === 'disabled' ? ' · entzogen' : ''}</span>
-            {!a.login && a.status !== 'disabled' && <Button size="sm" variant="ghost" onClick={() => remove(a)}>Entziehen</Button>}
-          </li>
-        ))}
-      </ul>
-      {options.length > 0 && (
-        <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-end border-t border-line pt-3">
-          <label className="block">
-            <span className="text-sm text-sage">Zusätzliche Rolle hinzufügen</span>
-            <select className="input mt-1" value={role} onChange={(e) => { setRole(e.target.value); setCls([]); }}>
-              <option value="">– Rolle wählen –</option>
-              {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </label>
-          <Button onClick={add} disabled={!role || busy}><Plus size={16} /> Hinzufügen</Button>
-          {needsClass && (
-            <div className="sm:col-span-2 flex flex-wrap gap-2">
-              <span className="text-xs text-sage-muted w-full">{multi ? 'Klassen der Lehrkraft' : 'Klasse (optional – kann später zugewiesen werden)'}</span>
-              {classes.map((c) => {
-                const on = cls.includes(c.id);
-                return (
-                  <button key={c.id} type="button" onClick={() => setCls(on ? cls.filter((x) => x !== c.id) : multi ? [...cls, c.id] : [c.id])}
-                    className={['px-3 py-1.5 rounded-lg border text-sm', on ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage'].join(' ')}>
-                    {c.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function EditUser({ user, classes, students, onDone, onCancel }) {
-  const toast = useToast();
-  const [f, setF] = useState({
-    name: user.name,
-    role: user.role,
-    status: user.status,
-    classIds: user.classIds || [],
-    childIds: user.childIds || [],
-  });
-  const toggle = (key, id) => setF((x) => ({ ...x, [key]: x[key].includes(id) ? x[key].filter((v) => v !== id) : [...x[key], id] }));
-  const [pw, setPw] = useState('');
-
-  const resetPw = async () => {
-    if (pw.length < 6) return toast.push('Mindestens 6 Zeichen', 'error');
-    try {
-      await api.post(`/admin/users/${user.id}/reset-password`, { newPassword: pw });
-      toast.push('Passwort zurückgesetzt – bitte der Person mitteilen', 'success');
-      setPw('');
-    } catch (err) { toast.push(err.message, 'error'); }
-  };
-
-  const save = async () => {
-    try {
-      await api.patch(`/admin/users/${user.id}`, f);
-      toast.push('Gespeichert', 'success');
-      onDone();
-    } catch (err) {
-      toast.push(err.message, 'error');
-    }
-  };
-
-  const remove = async () => {
-    if (!window.confirm(`${user.name} endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
-    try {
-      await api.del(`/admin/users/${user.id}`);
-      toast.push('Nutzer gelöscht', 'success');
-      onDone();
-    } catch (err) {
-      toast.push(err.message, 'error');
-    }
-  };
-
-  const showClasses = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'].includes(f.role);
-  return (
-    <Card className="p-5 border-mint/30">
-      <CardHeader title={`Bearbeiten: ${user.name}`} subtitle={user.email || (user.loginEmail ? `${user.roleLabel} · Anmeldung über ${user.loginEmail}` : user.roleLabel)} icon={Users2} />
-      <div className="p-4 space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input label="Name" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
-          <label className="block">
-            <span className="text-sm text-sage">Hauptrolle (ändern = befördern)</span>
-            <select className="input mt-1" value={f.role} onChange={(e) => setF({ ...f, role: e.target.value })}>
-              {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </label>
-        </div>
-        {f.role !== user.role && (
-          <p className="rounded-lg bg-mint/10 border border-mint/30 px-3 py-2 text-xs text-sage">
-            Wird beim Speichern von <b>{ROLES.find(([v]) => v === user.role)?.[1] || user.role}</b> zu <b>{ROLES.find(([v]) => v === f.role)?.[1]}</b>.
-            {['klassenlehrer', 'vertretung'].includes(f.role) ? ' Bitte unten die Klassen antippen, in denen unterrichtet wird.' : ''}
-            {' '}Soll die alte Rolle zusätzlich bleiben? Dann stattdessen unten „Weitere Rollen“ nutzen.
-          </p>
-        )}
-
-        <label className="flex items-center gap-2 text-sm text-sage">
-          <input type="checkbox" checked={f.status === 'active'} onChange={(e) => setF({ ...f, status: e.target.checked ? 'active' : 'disabled' })} />
-          Konto aktiv
-        </label>
-
-        {showClasses && (
-          <div>
-            <span className="text-sm text-sage">Klassen</span>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {classes.map((c) => (
-                <button key={c.id} onClick={() => toggle('classIds', c.id)}
-                  className={['px-3 py-1.5 rounded-lg border text-sm', f.classIds.includes(c.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage'].join(' ')}>
-                  {c.name}
-                </button>
-              ))}
-              {classes.length === 0 && <span className="text-sage-muted text-sm">Keine Klassen vorhanden.</span>}
-            </div>
-          </div>
-        )}
-
-        {f.role === 'eltern' && (
-          <div>
-            <span className="text-sm text-sage">Verknüpfte Kinder</span>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {students.map((s) => (
-                <button key={s.id} onClick={() => toggle('childIds', s.id)}
-                  className={['px-3 py-1.5 rounded-lg border text-sm', f.childIds.includes(s.id) ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage'].join(' ')}>
-                  {s.name}
-                </button>
-              ))}
-              {students.length === 0 && <span className="text-sage-muted text-sm">Keine Schüler vorhanden.</span>}
-            </div>
-          </div>
-        )}
-
-        <PersonRolesCard userId={user.id} classes={classes} />
-
-        {(user.email || !user.loginEmail) && <div className="rounded-lg border border-line p-3">
-          <div className="text-sm text-sage mb-2 flex items-center gap-2"><KeyRound size={16} /> Passwort zurücksetzen</div>
-          <div className="flex gap-2">
-            <input type="text" className="input" placeholder="Neues Passwort (mind. 6 Zeichen)" value={pw} onChange={(e) => setPw(e.target.value)} />
-            <Button variant="outline" onClick={resetPw}>Zurücksetzen</Button>
-          </div>
-        </div>}
-
-        <div className="flex gap-2">
-          <Button onClick={save}>Speichern</Button>
-          <Button variant="ghost" onClick={onCancel}>Abbrechen</Button>
-          {user.status === 'disabled' && (
-            <Button variant="danger" onClick={remove} className="ml-auto">Endgültig löschen</Button>
-          )}
-        </div>
-        {user.status !== 'disabled' && (
-          <p className="text-[11px] text-sage-muted">Zum endgültigen Löschen zuerst „Konto aktiv" ausschalten und speichern.</p>
-        )}
-      </div>
-    </Card>
   );
 }
 

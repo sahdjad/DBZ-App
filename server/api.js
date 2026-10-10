@@ -6423,6 +6423,26 @@ router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEI
   });
 });
 
+// Steckbrief einer Person (Verwaltung): alle Stammdaten an einem Ort.
+router.get('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const u = findUserById(req.params.id);
+  if (!u || (req.user.isDemo && !u.isDemo)) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
+  const others = (u.linkedAccountIds || []).map(findUserById).filter((x) => x && x.status !== 'disabled');
+  const main = u.email ? u : others.find((x) => x.email);
+  res.json({
+    user: {
+      ...publicUser(u),
+      lastSeenAt: u.lastSeenAt || null,
+      classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
+      childNames: (u.childIds || []).map((c) => findUserById(c)?.name).filter(Boolean),
+      parentNames: db.all('users').filter((p) => (p.childIds || []).includes(u.id)).map((p) => p.name),
+      otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
+      loginEmail: main?.email || null,
+      canEditRole: canGrantRole(req.user, u.role),
+    },
+  });
+});
+
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const { name, email, password, role, classIds, childIds } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: 'Name, E-Mail, Passwort erforderlich' });
