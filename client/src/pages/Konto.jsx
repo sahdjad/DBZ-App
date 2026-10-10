@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { getThemePref, setThemePref } from '../lib/theme.js';
+import { hapticsEnabled, setHapticsEnabled, haptic } from '../lib/haptics.js';
 import { getPushState, enablePush, disablePush, iosNeedsInstall } from '../lib/push.js';
 import { BUILD, buildLabel, fetchLatestBuild, applyUpdate } from '../lib/update.js';
 
@@ -200,6 +201,7 @@ function FamilyCodeCard() {
 // Darstellung: System / Hell / Dunkel
 function ThemeCard() {
   const [pref, setPref] = useState(getThemePref());
+  const [haptics, setHaptics] = useState(hapticsEnabled());
   const OPTIONS = [
     { key: 'system', label: 'System', icon: Monitor },
     { key: 'light', label: 'Hell', icon: Sun },
@@ -226,6 +228,10 @@ function ThemeCard() {
           ))}
         </div>
         <p className="text-[11px] text-sage-muted mt-3">„Dunkel" ist ein warmes, augenschonendes Grün. „System" folgt automatisch der Einstellung deines Geräts.</p>
+        <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5 text-sm text-ivory">
+          <span>Haptisches Feedback beim Tippen <span className="block text-[11px] text-sage-muted">Kurzes Ticken (Android; iPhone ab iOS 18)</span></span>
+          <input type="checkbox" className="h-5 w-5 accent-mint" checked={haptics} onChange={(e) => { setHapticsEnabled(e.target.checked); setHaptics(e.target.checked); if (e.target.checked) haptic(); }} />
+        </label>
       </div>
     </Card>
   );

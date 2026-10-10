@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw, MoreHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -241,7 +241,8 @@ export default function Klassenliste() {
   const isTeacher = TEACHER_ROLES.includes(user.role);
   const isLeadership = ['leitung', 'super_admin'].includes(user.role);
   const [classes, setClasses] = useState(null);
-  const [classId, setClassId] = useState('');
+  const [params] = useSearchParams();
+  const [classId, setClassId] = useState(params.get('klasse') || '');
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
   const [busyId, setBusyId] = useState(null);
@@ -251,7 +252,7 @@ export default function Klassenliste() {
     api.get('/classes').then((d) => {
       setClasses(d.classes);
       // Leitung/Admin wählen erst die Klasse (Ordner-Ansicht), Lehrkräfte starten direkt in ihrer Klasse.
-      if (!isLeadership) setClassId(d.classes[0]?.id || '');
+      if (!isLeadership) setClassId((cur) => (cur && d.classes.some((c) => c.id === cur) ? cur : d.classes[0]?.id || ''));
     });
   }, []);
 
