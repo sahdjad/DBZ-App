@@ -37,7 +37,13 @@ export function haptic(kind = 'light') {
       label.appendChild(input);
       document.body.appendChild(label);
     }
+    // Das Umschalten darf den Fokus nicht wegnehmen (sonst schließen sich z. B.
+    // Auswahllisten oder die Tastatur) -> vorherigen Fokus sofort zurückgeben.
+    const prev = document.activeElement;
     label.click();
+    if (prev && prev !== document.body && prev !== document.activeElement && typeof prev.focus === 'function') {
+      try { prev.focus({ preventScroll: true }); } catch { /* egal */ }
+    }
   } catch { /* egal */ }
 }
 
@@ -46,7 +52,10 @@ export function installHaptics() {
   if (typeof document === 'undefined') return;
   document.addEventListener('click', (e) => {
     if (!e.isTrusted) return;
-    const el = e.target.closest?.('button, a[href], [role="button"], [role="tab"], select, input[type="checkbox"], input[type="radio"]');
+    // Nur echte Knöpfe/Links -- NIE Auswahllisten oder Eingabefelder: dort würde
+    // das Ticken (iOS) den Fokus stehlen und die Auswahl sofort wieder schließen.
+    if (e.target.closest?.('select, input, textarea, label, option, [contenteditable="true"]')) return;
+    const el = e.target.closest?.('button, a[href], [role="button"], [role="tab"]');
     if (!el || el.disabled || (label && label.contains(el))) return;
     haptic();
   }, { capture: true, passive: true });
