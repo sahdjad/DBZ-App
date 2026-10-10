@@ -29,6 +29,7 @@ const Regeln = lazy(() => import('./pages/Regeln.jsx'));
 const Klassenliste = lazy(() => import('./pages/Klassenliste.jsx'));
 const Leitung = lazy(() => import('./pages/Leitung.jsx'));
 const StudentProfil = lazy(() => import('./pages/StudentProfil.jsx'));
+const PersonPage = lazy(() => import('./pages/PersonPage.jsx'));
 const Kalender = lazy(() => import('./pages/Kalender.jsx'));
 const Berichte = lazy(() => import('./pages/Berichte.jsx'));
 const Aktivitaeten = lazy(() => import('./pages/Aktivitaeten.jsx'));
@@ -135,6 +136,7 @@ export default function App() {
         <Route path="/klassenliste" element={<Protected roles={MANAGERS}><Klassenliste /></Protected>} />
         <Route path="/leitung" element={<Protected roles={ADMINS}><Leitung /></Protected>} />
         <Route path="/profil/:id" element={<Protected><StudentProfil /></Protected>} />
+        <Route path="/person/:id" element={<Protected roles={['super_admin', 'leitung']}><PersonPage /></Protected>} />
         <Route path="/kalender" element={<Protected><Kalender /></Protected>} />
         <Route path="/berichte" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Berichte /></Protected>} />
         <Route path="/aktivitaeten" element={<Protected roles={['klassenlehrer', 'vertretung', 'super_admin', 'leitung', 'schueler', 'klassensprecher', 'eltern']}><Aktivitaeten /></Protected>} />
