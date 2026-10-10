@@ -279,7 +279,16 @@ function UsersTab() {
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [q, setQ] = useState('');
-  const [openSections, setOpenSections] = useState(() => new Set(['super_admin', 'leitung', 'klassenlehrer']));
+  const [params] = useSearchParams();
+  // Aus der Leitungs-Übersicht: gewünschte Gruppe direkt aufgeklappt (und ggf. nur ohne Klasse).
+  const focusRole = params.get('rolle');
+  const onlyUnassigned = params.get('ohneKlasse') === '1';
+  const [openSections, setOpenSections] = useState(() => new Set(focusRole ? (focusRole === 'klassenlehrer' ? ['klassenlehrer', 'vertretung'] : [focusRole]) : ['super_admin', 'leitung', 'klassenlehrer']));
+  useEffect(() => {
+    if (!focusRole) return;
+    const t = setTimeout(() => document.getElementById(`rolle-${focusRole}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
+    return () => clearTimeout(t);
+  }, [focusRole]);
   const [showDisabled, setShowDisabled] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
@@ -326,11 +335,18 @@ function UsersTab() {
   if (!users) return <Spinner />;
   const needle = q.trim().toLowerCase();
   const visible = users.filter((u) => (showDisabled || u.status !== 'disabled')
+    && (!onlyUnassigned || ((u.role === 'schueler' || u.role === 'klassensprecher') && !(u.classIds || []).length))
     && (!needle || [u.name, u.email, u.loginEmail, ...(u.classNames || [])].some((x) => String(x || '').toLowerCase().includes(needle))));
   const byName = (a, b) => a.name.localeCompare(b.name, 'de');
   const disabledCount = users.filter((u) => u.status === 'disabled').length;
   return (
     <div className="space-y-4">
+      {onlyUnassigned && (
+        <div className="rounded-xl border border-status-late/30 bg-status-late/10 px-4 py-2.5 text-sm text-ivory flex items-center justify-between gap-2">
+          <span>Es werden nur Schüler <b>ohne Klasse</b> angezeigt – Person öffnen und unter „Rollenbearbeitung“ eine Klasse zuweisen.</span>
+          <a href="#/admin?tab=users" className="text-xs text-sage-muted underline shrink-0">Alle zeigen</a>
+        </div>
+      )}
       <div className="flex gap-2 flex-wrap items-center">
         <input className="input flex-1 min-w-[12rem]" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
         {selected.length > 0 && (
@@ -379,7 +395,7 @@ function UsersTab() {
         if (!list.length && needle) return null;
         const open = Boolean(needle) || openSections.has(role);
         return (
-          <Card key={role} className="p-0 overflow-hidden">
+          <Card key={role} id={`rolle-${role}`} className="p-0 overflow-hidden scroll-mt-4">
             <button type="button" onClick={() => toggleSection(role)} aria-expanded={open}
               className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-hover">
               <span className="text-ivory font-medium">{title}</span>

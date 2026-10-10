@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Users, GraduationCap, UserCheck, Scale, HandCoins, FileText, AlertCircle } from 'lucide-react';
+import { Gauge, Users, GraduationCap, UserCheck, Scale, HandCoins, FileText, AlertCircle, ChevronRight } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Spinner } from '../components/ui.jsx';
@@ -12,17 +12,25 @@ function rateColor(r) {
   return 'text-status-absent';
 }
 
-function Stat({ icon: Icon, label, value, sublabel, tone, onClick }) {
+function Stat({ icon: Icon, label, value, sublabel, tone, onClick, onSublabel }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <Card className={`p-4 flex items-center gap-3 ${onClick ? 'cursor-pointer hover:bg-hover transition' : ''}`} onClick={onClick}>
-      <span className={`grid place-items-center h-10 w-10 rounded-lg shrink-0 ${tone || 'bg-mint/15 text-mint'}`}>
-        <Icon size={20} />
-      </span>
-      <div className="min-w-0">
-        <div className="text-xl text-ivory font-mono leading-tight">{value}</div>
-        <div className="text-xs text-sage-muted">{label}</div>
-        {sublabel && <div className="text-[11px] text-status-late mt-0.5">{sublabel}</div>}
-      </div>
+    <Card className="p-0 overflow-hidden">
+      <Tag type={onClick ? 'button' : undefined} onClick={onClick}
+        className={`w-full h-full p-4 flex items-center gap-3 text-left ${onClick ? 'cursor-pointer hover:bg-hover active:scale-[0.98] transition' : ''}`}>
+        <span className={`grid place-items-center h-10 w-10 rounded-lg shrink-0 ${tone || 'bg-mint/15 text-mint'}`}>
+          <Icon size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-xl text-ivory font-mono leading-tight">{value}</div>
+          <div className="text-xs text-sage-muted">{label}</div>
+          {sublabel && (
+            <div className="text-[11px] text-status-late mt-0.5 underline-offset-2 hover:underline"
+              onClick={onSublabel ? (e) => { e.stopPropagation(); onSublabel(); } : undefined}>{sublabel}</div>
+          )}
+        </div>
+        {onClick && <ChevronRight size={16} className="text-sage-muted shrink-0" />}
+      </Tag>
     </Card>
   );
 }
@@ -41,15 +49,17 @@ export default function Leitung() {
     <AppLayout title="Leitung – Überblick">
       <div className="space-y-4">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Stat icon={Users} label="Klassen" value={counts.classes} />
+          <Stat icon={Users} label="Klassen" value={counts.classes} onClick={() => navigate('/admin?tab=classes')} />
           <Stat
             icon={GraduationCap}
             label="Schüler"
             value={counts.students}
             sublabel={counts.unassignedStudents > 0 ? `${counts.students - counts.unassignedStudents} zugeordnet, ${counts.unassignedStudents} ohne Klasse` : undefined}
+            onClick={() => navigate('/admin?tab=users&rolle=schueler')}
+            onSublabel={() => navigate('/admin?tab=users&rolle=schueler&ohneKlasse=1')}
           />
-          <Stat icon={UserCheck} label="Eltern" value={counts.parents} />
-          <Stat icon={Users} label="Lehrkräfte" value={counts.teachers} />
+          <Stat icon={UserCheck} label="Eltern" value={counts.parents} onClick={() => navigate('/admin?tab=users&rolle=eltern')} />
+          <Stat icon={Users} label="Lehrkräfte" value={counts.teachers} onClick={() => navigate('/admin?tab=users&rolle=klassenlehrer')} />
         </div>
 
         {/* Offene Vorgänge */}
@@ -103,7 +113,7 @@ export default function Leitung() {
               </thead>
               <tbody>
                 {classes.map((c) => (
-                  <tr key={c.id} onClick={() => navigate('/klassenliste')} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
+                  <tr key={c.id} onClick={() => navigate(`/klassenliste?klasse=${c.id}`)} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
                     <td className="py-3 px-4 text-ivory whitespace-nowrap">{c.name}</td>
                     <td className="py-3 px-3 text-center font-mono">{c.students}</td>
                     <td className={`py-3 px-3 text-center font-mono ${rateColor(c.attendanceRate)}`} title={c.attendanceRate === null ? 'Noch keine Daten' : undefined}>{c.attendanceRate === null ? '–' : `${c.attendanceRate}%`}</td>

@@ -6,10 +6,12 @@ import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
 import ServerWakeNotice from './components/ServerWakeNotice.jsx';
 import { initTheme } from './lib/theme.js';
+import { installHaptics } from './lib/haptics.js';
 import './index.css';
 
 // Theme (System/Hell/Dunkel) vor dem Rendern anwenden – kein Aufblitzen.
 initTheme();
+installHaptics();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
