@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X } from 'lucide-react';
+import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog } from '../components/ui.jsx';
@@ -56,8 +56,13 @@ function ProposalForm({ user }) {
   const [mine, setMine] = useState([]);
   const [form, setForm] = useState({ title: '', description: '', type: 'text', dueAt: '' });
   const classId = (user.classIds || [])[0];
+  const [klass, setKlass] = useState(null);
   const load = () => api.get('/assignment-proposals').then((d) => setMine(d.proposals)).catch(() => {});
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api.get('/classes').then((d) => setKlass(d.classes.find((c) => c.id === classId) || null)).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const submit = async (e) => {
     e.preventDefault();
     try {
@@ -78,13 +83,16 @@ function ProposalForm({ user }) {
         <form onSubmit={submit} className="mt-3 space-y-3">
           <Field label="Titel"><input className="input" required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></Field>
           <Field label="Beschreibung"><textarea className="input" rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Art">
               <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
                 <option value="audio">Audio</option><option value="text">Text</option><option value="file">Datei</option><option value="quran">Qur'an</option><option value="mixed">Gemischt</option>
               </select>
             </Field>
-            <Field label="Frist"><input type="datetime-local" className="input" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} /></Field>
+            <Field label="Frist">
+              <input type="datetime-local" className="input" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} />
+              <DuePresets klass={klass} onPick={(v) => setForm((f) => ({ ...f, dueAt: v }))} />
+            </Field>
           </div>
           <Button type="submit">Vorschlag senden</Button>
         </form>
@@ -92,6 +100,103 @@ function ProposalForm({ user }) {
       {mine.length > 0 && (
         <div className="mt-3 text-xs text-sage-muted space-y-1">
           {mine.map((p) => <div key={p.id}>⏳ „{p.title}" wartet auf Bestätigung</div>)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Fristen-Schnellwahl: nächster Samstag 12:00 bzw. Beginn des nächsten
+// Unterrichts der Klasse. Die Lehrkraft kann danach frei ändern.
+function nextWeekdayAt(weekday, hhmm) {
+  const [h, m] = String(hhmm || '12:00').split(':').map(Number);
+  const now = new Date();
+  const d = new Date(now);
+  d.setHours(h || 0, m || 0, 0, 0);
+  d.setDate(d.getDate() + ((weekday - d.getDay() + 7) % 7));
+  if (d <= now) d.setDate(d.getDate() + 7);
+  return d.toISOString();
+}
+
+function DuePresets({ klass, onPick }) {
+  const presets = [['Samstag 12:00', nextWeekdayAt(6, '12:00')]];
+  if (klass && typeof klass.weekday === 'number' && klass.startTime) presets.push(['Bis zum nächsten Unterricht', nextWeekdayAt(klass.weekday, klass.startTime)]);
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1.5">
+      {presets.map(([l, iso]) => (
+        <button key={l} type="button" onClick={() => onPick(toLocalInput(iso))}
+          className="rounded-full border border-line px-2.5 py-1 text-xs text-sage hover:bg-hover">{l}</button>
+      ))}
+    </div>
+  );
+}
+
+// Regeln für Audio-Hausaufgaben pro Klasse (und einzelne Schüler):
+// mehrere Audio-Hausaufgaben am selben Tag markieren, sperren oder erlauben.
+const RULES = [['mark', 'Markieren (rot)'], ['block', 'Sperren'], ['off', 'Erlaubt']];
+function HomeworkRules({ classes }) {
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [classId, setClassId] = useState('');
+  const [data, setData] = useState(null);
+  const cid = classId || classes[0]?.id;
+  useEffect(() => {
+    if (!open || !cid) return;
+    setData(null);
+    api.get(`/classes/${cid}/homework-rules`).then(setData).catch((e) => toast.push(e.message, 'error'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cid]);
+  const save = async (patch) => {
+    try {
+      await api.patch(`/classes/${cid}/homework-rules`, patch);
+      setData(await api.get(`/classes/${cid}/homework-rules`));
+      toast.push('Gespeichert', 'success');
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (!classes.length) return null;
+  return (
+    <Card className="p-4">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
+        <span className="flex items-center gap-2 text-sm text-ivory"><SlidersHorizontal size={16} className="text-mint" /> Regeln für Audio-Hausaufgaben</span>
+        <span className="text-xs text-sage-muted">{open ? 'Schließen' : 'Einstellen'}</span>
+      </button>
+      {open && (
+        <div className="mt-3 space-y-3">
+          <p className="text-xs text-sage-muted">
+            Zu einer Hausaufgabe dürfen Schüler am selben Tag beliebig viele Aufnahmen schicken. Gibt jemand an einem Tag
+            mehrere verschiedene Hausaufgaben ab, kannst du das rot markieren lassen, ganz sperren oder erlauben –
+            für die ganze Klasse oder einzelne Schüler.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {classes.length > 1 && (
+              <Field label="Klasse">
+                <select className="input" value={cid} onChange={(e) => setClassId(e.target.value)}>
+                  {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field label="Mehrere Hausaufgaben am selben Tag (ganze Klasse)">
+              <select className="input" value={data?.rule || 'mark'} disabled={!data} onChange={(e) => save({ rule: e.target.value })}>
+                {RULES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+          {!data ? <Spinner /> : data.students.length > 0 && (
+            <div>
+              <div className="text-sm text-sage mb-1">Abweichend für einzelne Schüler</div>
+              <ul className="divide-y divide-line rounded-lg border border-line">
+                {data.students.map((st) => (
+                  <li key={st.id} className="flex items-center justify-between gap-2 px-3 py-2">
+                    <span className="text-sm text-ivory truncate">{st.name}</span>
+                    <select className="input py-1 w-auto text-sm" value={st.rule || ''} onChange={(e) => save({ overrides: { [st.id]: e.target.value || null } })}>
+                      <option value="">Wie Klasse</option>
+                      {RULES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </Card>
@@ -107,7 +212,7 @@ const toLocalInput = (iso) => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-function ProposalInbox({ onChanged }) {
+function ProposalInbox({ onChanged, classes = [] }) {
   const toast = useToast();
   const [list, setList] = useState([]);
   const [editing, setEditing] = useState(null); // { id, title, description, dueAt }
@@ -136,6 +241,7 @@ function ProposalInbox({ onChanged }) {
                 <textarea className="input" rows={3} aria-label="Beschreibung" value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} />
                 <label className="block text-xs text-sage-muted">Frist
                   <input type="datetime-local" className="input mt-1" value={editing.dueAt} onChange={(e) => setEditing({ ...editing, dueAt: e.target.value })} />
+                  <DuePresets klass={classes.find((c) => c.id === p.classId)} onPick={(v) => setEditing((ed) => ({ ...ed, dueAt: v }))} />
                 </label>
                 <div className="flex gap-2 flex-wrap">
                   <Button size="sm" disabled={!editing.title.trim()} onClick={() => decide(p, true, {
@@ -232,7 +338,8 @@ function ManagerView() {
           {!archived && <Button onClick={() => setShowForm((f) => !f)}><Plus size={18} /> Neue Aufgabe</Button>}
         </div>
       </div>
-      {!archived && <ProposalInbox onChanged={load} />}
+      {!archived && <ProposalInbox onChanged={load} classes={classes} />}
+      {!archived && <HomeworkRules classes={classes} />}
       {archived && (
         <p className="text-xs text-sage-muted">
           Archivierte Aufgaben sind nur aus deiner Übersicht und der Korrektur-Liste ausgeblendet. Abgaben, Bewertungen und
@@ -275,6 +382,7 @@ function ManagerView() {
               </Field>
               <Field label="Frist">
                 <input type="datetime-local" className="input" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} />
+                <DuePresets klass={classes.find((c) => c.id === form.classId)} onPick={(v) => setForm((f) => ({ ...f, dueAt: v }))} />
               </Field>
             </div>
             <div className="flex gap-2">

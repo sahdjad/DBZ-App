@@ -2445,3 +2445,41 @@ test('Steckbrief: Admin/Leitung sehen alle Stammdaten einer Person, andere nicht
   const teacher = await loginAs('lehrer@dbz.de');
   assert.equal((await teacher('GET', '/admin/users/user_yusuf')).status, 403);
 });
+
+test('Audio-Hausaufgaben: mehrere Audios pro Aufgabe am selben Tag ok; zweite Aufgabe am selben Tag markiert bzw. gesperrt', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const mk = async (title) => (await teacher('POST', '/assignments', { classId: 'class_3', title, type: 'audio', dueAt: new Date(Date.now() + 5 * 86400000).toISOString() })).data.assignment;
+  const a1 = await mk(`HA1 ${Date.now()}`);
+  const a2 = await mk(`HA2 ${Date.now()}`);
+  const a3 = await mk(`HA3 ${Date.now()}`);
+  const cookie = await cookieFor('schueler@dbz.de');
+  const send = async (a) => {
+    const fd = new FormData();
+    fd.append('files', new Blob([Buffer.from('audio')], { type: 'audio/mp4' }), 'aufnahme.m4a');
+    return fetch(base + `/api/assignments/${a.id}/submit`, { method: 'POST', headers: { cookie }, body: fd });
+  };
+  assert.equal((await send(a1)).status, 200);
+  assert.equal((await send(a1)).status, 200, 'zweites Audio zur selben Aufgabe am selben Tag erlaubt');
+  // Standard: markieren
+  assert.equal((await send(a2)).status, 200);
+  const queue = (await teacher('GET', '/review-queue')).data.submissions;
+  const s2 = queue.find((x) => x.assignmentId === a2.id);
+  assert.ok(s2.sameDay.length && s2.sameDay[0].with.includes(a1.title), 'rot markiert mit HA1');
+  assert.equal(queue.find((x) => x.assignmentId === a1.id).files.length, 2);
+  // Lehrkraft sperrt für diesen Schüler
+  assert.equal((await teacher('PATCH', '/classes/class_3/homework-rules', { overrides: { user_yusuf: 'block' } })).status, 200);
+  const r3 = await send(a3);
+  assert.equal(r3.status, 400);
+  assert.match((await r3.json()).error, /Pro Tag nur eine Hausaufgabe/);
+  const rules = (await teacher('GET', '/classes/class_3/homework-rules')).data;
+  assert.equal(rules.rule, 'mark');
+  assert.equal(rules.students.find((x) => x.id === 'user_yusuf').rule, 'block');
+  // Schüler sieht den Hinweis vorab
+  const student = await loginAs('schueler@dbz.de');
+  const d3 = (await student('GET', `/assignments/${a3.id}`)).data.assignment;
+  assert.equal(d3.audioDayRule, 'block');
+  assert.ok(d3.otherAudioToday.length >= 1);
+  await teacher('PATCH', '/classes/class_3/homework-rules', { overrides: { user_yusuf: null } });
+  const st = (await loginAs('schueler@dbz.de'));
+  assert.equal((await st('POST', '/classes/class_3/homework-rules', {})).status, 404);
+});

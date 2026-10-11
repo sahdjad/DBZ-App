@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
+import SameDayWarning from '../components/SameDayWarning.jsx';
 import { api } from '../lib/api.js';
 import { Card, StatusBadge, Spinner, FileAttachment, ClassFolders } from '../components/ui.jsx';
 
@@ -28,6 +29,7 @@ function AssignmentGroup({ title, dueAt, subs }) {
                 <span className="text-ivory">{s.studentName}</span>
                 <span className="flex items-center gap-2 text-xs text-sage-muted">{fmt(s.submittedAt)} <StatusBadge status={s.status} /></span>
               </div>
+              <SameDayWarning sameDay={s.sameDay} />
               {s.text && <p className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
               {s.files?.map((f) => (
                 <div key={f.id}><FileAttachment url={`/api/submissions/${s.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
