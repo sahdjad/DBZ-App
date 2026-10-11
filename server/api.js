@@ -2401,6 +2401,75 @@ function effectiveDue(assignment, studentId) {
   return ext ? ext.newDueAt : assignment.dueAt;
 }
 
+// --- Audio-Hausaufgaben: "eine Hausaufgabe pro Tag" ---------------------------
+// Innerhalb EINER Hausaufgabe darf ein Schüler am selben Tag mehrere Audios
+// schicken (abgebrochen, neu angefangen ...). Verschiedene Hausaufgaben sollen
+// aber an verschiedenen Tagen gemacht werden. Die Lehrkraft legt je Klasse
+// (und bei Bedarf je Schüler) fest: 'mark' = erlaubt, aber rot markiert
+// (Standard), 'block' = gesperrt, 'off' = egal.
+const AUDIO_DAY_RULES = ['mark', 'block', 'off'];
+const AUDIO_TYPES = ['audio', 'quran', 'mixed'];
+const isAudioFile = (f) => String(f?.mediaType || '').startsWith('audio') && !f.deleted;
+const fileDay = (f, sub) => f.day || localDateKey(new Date(f.uploadedAt || sub.submittedAt));
+
+function audioDayRuleFor(classId, studentId) {
+  const k = findClass(classId);
+  const o = k?.audioDayOverrides?.[studentId];
+  if (AUDIO_DAY_RULES.includes(o)) return o;
+  return AUDIO_DAY_RULES.includes(k?.audioDayRule) ? k.audioDayRule : 'mark';
+}
+
+// Andere Hausaufgaben, zu denen der Schüler am Tag `day` Audios geschickt hat.
+function otherAudioHomeworkOn(studentId, assignmentId, day) {
+  return db.all('submissions')
+    .filter((s) => s.studentId === studentId && s.assignmentId !== assignmentId && (s.files || []).some((f) => isAudioFile(f) && fileDay(f, s) === day))
+    .map((s) => ({ assignmentId: s.assignmentId, title: byId('assignments', s.assignmentId)?.title || 'Hausaufgabe' }));
+}
+
+// Für die Lehrkraft: an welchen Tagen hat diese Abgabe Audios, an denen auch
+// eine ANDERE Hausaufgabe abgegeben wurde? -> rot markieren.
+function sameDayInfo(sub) {
+  if (audioDayRuleFor(sub.classId, sub.studentId) === 'off') return [];
+  const days = [...new Set((sub.files || []).filter(isAudioFile).map((f) => fileDay(f, sub)))];
+  return days
+    .map((day) => ({ day, with: otherAudioHomeworkOn(sub.studentId, sub.assignmentId, day).map((x) => x.title) }))
+    .filter((x) => x.with.length);
+}
+
+router.get('/classes/:id/homework-rules', requireAuth, (req, res) => {
+  const k = findClass(req.params.id);
+  if (!k) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, k.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const students = db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (u.classIds || []).includes(k.id))
+    .map((u) => ({ id: u.id, name: u.name, rule: k.audioDayOverrides?.[u.id] || null }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  res.json({ rule: AUDIO_DAY_RULES.includes(k.audioDayRule) ? k.audioDayRule : 'mark', students });
+});
+
+router.patch('/classes/:id/homework-rules', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const k = findClass(req.params.id);
+  if (!k) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, k.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const { rule, overrides } = req.body || {};
+  if (rule !== undefined) {
+    if (!AUDIO_DAY_RULES.includes(rule)) return res.status(400).json({ error: 'Ungültige Regel' });
+    k.audioDayRule = rule;
+  }
+  if (overrides && typeof overrides === 'object') {
+    k.audioDayOverrides = { ...(k.audioDayOverrides || {}) };
+    for (const [sid, r] of Object.entries(overrides)) {
+      const st = findUserById(sid);
+      if (!st || !(st.classIds || []).includes(k.id)) continue;
+      if (r === null || r === '') delete k.audioDayOverrides[sid];
+      else if (AUDIO_DAY_RULES.includes(r)) k.audioDayOverrides[sid] = r;
+    }
+  }
+  db.commit();
+  audit(req.user.id, 'class.homework_rules', 'class', k.id, null, { rule: k.audioDayRule });
+  res.json({ ok: true });
+});
+
 router.get('/assignments', requireAuth, (req, res) => {
   if (STUDENT_ROLES.includes(req.user.role)) {
     const list = db
@@ -2445,10 +2514,14 @@ function decorateForStudent(a, studentId) {
   const isRevision = sub && sub.status === 'revision_required';
   // Nach dem Absenden gesperrt (10-Min-Kulanz), außer der Lehrer gab zur Überarbeitung frei.
   const GRACE_MS = 10 * 60 * 1000;
+  const today = localDateKey();
+  // Audio-Hausaufgabe: am Tag der Aufnahme dürfen weitere Audios dazukommen.
+  const audioToday = !!sub && AUDIO_TYPES.includes(a.type) && (sub.files || []).some((f) => isAudioFile(f) && fileDay(f, sub) === today);
   const locked =
-    !!sub && sub.status === 'submitted' && !isRevision && sub.submittedAt
+    !!sub && sub.status === 'submitted' && !isRevision && sub.submittedAt && !audioToday
       ? Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS
       : false;
+  const otherToday = AUDIO_TYPES.includes(a.type) && !audioToday ? otherAudioHomeworkOn(studentId, a.id, today).map((x) => x.title) : [];
   let studentStatus = 'not_opened';
   if (sub) {
     studentStatus =
@@ -2472,6 +2545,9 @@ function decorateForStudent(a, studentId) {
     canSubmit: isRevision || (!isOverdue && !locked),
     locked,
     studentStatus,
+    audioToday,
+    otherAudioToday: otherToday,
+    audioDayRule: audioDayRuleFor(a.classId, studentId),
   };
 }
 
@@ -2535,12 +2611,24 @@ router.post(
     if (due && new Date(due).getTime() < Date.now() && !isRevision)
       return res.status(400).json({ error: 'Die Abgabefrist ist abgelaufen' });
     // Nach dem Absenden gesperrt (10-Min-Kulanz), außer der Lehrer gibt sie zur Überarbeitung frei.
+    // Audio-Hausaufgabe: am selben Tag dürfen weitere Aufnahmen nachgereicht werden.
     const GRACE_MS = 10 * 60 * 1000;
-    if (sub && sub.status === 'submitted' && !isRevision &&
+    const today = localDateKey();
+    const audioToday = !!sub && AUDIO_TYPES.includes(a.type) && (sub.files || []).some((f) => isAudioFile(f) && fileDay(f, sub) === today);
+    if (sub && sub.status === 'submitted' && !isRevision && !audioToday &&
         Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS)
       return res.status(400).json({
         error: 'Diese Abgabe ist gesperrt. Bitte deine Lehrkraft, sie zurückzusetzen oder die Frist zu verlängern.',
       });
+    // Eine Hausaufgabe pro Tag (Regel der Lehrkraft).
+    if ((req.files || []).some((f) => String(f.mimetype || '').startsWith('audio'))) {
+      const others = otherAudioHomeworkOn(req.user.id, a.id, today);
+      if (others.length && audioDayRuleFor(a.classId, req.user.id) === 'block') {
+        return res.status(400).json({
+          error: `Heute hast du schon „${others[0].title}" abgegeben. Pro Tag nur eine Hausaufgabe – diese bitte an einem anderen Tag aufnehmen.`,
+        });
+      }
+    }
 
     // Dateien dauerhaft sichern (Supabase Storage), bevor wir bestätigen.
     await Promise.all((req.files || []).map((f) => persistUpload(f)));
@@ -2550,6 +2638,8 @@ router.post(
       originalName: f.originalname,
       mediaType: f.mimetype,
       size: f.size,
+      uploadedAt: new Date().toISOString(),
+      day: today,
     }));
     const text = (req.body?.text || '').trim();
     if (!files.length && !text)
@@ -2656,6 +2746,7 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
         status: s.status,
         submittedAt: s.submittedAt,
         review: review || null,
+        sameDay: sameDayInfo(s),
       };
     })
     .sort((a, b) => {

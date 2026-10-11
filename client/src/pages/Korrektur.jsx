@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { CheckSquare, EyeOff, ListChecks } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
+import SameDayWarning from '../components/SameDayWarning.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 
@@ -72,7 +73,7 @@ function DoneRow({ s, selection }) {
       className={`p-3 flex items-center justify-between gap-3 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
     >
       {selection.active && <SelectCheck checked={selected} />}
-      <div className="text-sm min-w-0 flex-1 truncate"><span className="text-ivory">{s.studentName}</span> <span className="text-sage-muted">· {s.assignmentTitle}</span></div>
+      <div className="text-sm min-w-0 flex-1 truncate"><span className="text-ivory">{s.studentName}</span> <span className="text-sage-muted">· {s.assignmentTitle}</span>{s.sameDay?.length > 0 && <span className="ml-2 text-status-absent text-xs">● gleicher Tag</span>}</div>
       <StatusBadge status={s.status} />
     </Card>
   );
@@ -102,6 +103,7 @@ function ReviewCard({ sub, onDone }) {
         </div>
         <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>{open ? 'Schließen' : 'Bewerten'}</Button>
       </div>
+      <SameDayWarning sameDay={sub.sameDay} />
 
       {sub.text && <p className="text-sage text-sm mt-3 whitespace-pre-line">{sub.text}</p>}
       {sub.files?.length > 0 && (

@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Camera } from 'lucide-react';
+import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Camera, AlertTriangle, Info } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
+
+const fmtDay = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' });
+const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 
@@ -81,6 +84,18 @@ export default function AufgabeDetail() {
   const sub = data.submission;
   const review = data.review;
   const canSubmit = a.canSubmit;
+  const isAudioType = ['audio', 'quran', 'mixed'].includes(a.type);
+  // Andere Audio-Hausaufgabe heute schon abgegeben? Je nach Lehrer-Einstellung
+  // gesperrt ("block") oder nur für die Lehrkraft rot markiert ("mark").
+  const otherToday = isAudioType ? (a.otherAudioToday || []) : [];
+  const blockedToday = otherToday.length > 0 && a.audioDayRule === 'block';
+  // Abgegebene Dateien nach Tag gruppieren (mehrere Aufnahmen pro Tag erlaubt).
+  const fileDays = [];
+  (sub?.files || []).filter((f) => !f.deleted).forEach((f) => {
+    const day = f.day || localDay(f.uploadedAt || sub.submittedAt);
+    const g = fileDays.find((x) => x.day === day);
+    if (g) g.files.push(f); else fileDays.push({ day, files: [f] });
+  });
 
   return (
     <AppLayout title="Aufgabe">
@@ -104,8 +119,13 @@ export default function AufgabeDetail() {
           <CardHeader title="Deine Abgabe" subtitle={`Abgegeben ${fmt(sub.submittedAt)}`} />
           <div className="p-4 space-y-3">
             {sub.text && <p className="text-sage whitespace-pre-line">{sub.text}</p>}
-            {sub.files?.map((f) => (
-              <div key={f.id}><FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
+            {fileDays.map((g) => (
+              <div key={g.day} className="space-y-2">
+                {fileDays.length > 1 && <div className="text-[11px] font-bold uppercase tracking-wider text-mint">{fmtDay(g.day)}</div>}
+                {g.files.map((f) => (
+                  <div key={f.id}><FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
+                ))}
+              </div>
             ))}
             {review && (
               <div className="mt-3 rounded-lg border border-line bg-subtle p-3">
@@ -130,7 +150,23 @@ export default function AufgabeDetail() {
         <Card className="p-5">
           <CardHeader title={sub ? 'Erneut abgeben / überarbeiten' : 'Abgabe'} icon={Upload} />
           <div className="p-4 space-y-4">
-            {(a.type === 'audio' || a.type === 'quran' || a.type === 'mixed') && (
+            {isAudioType && a.audioToday && (
+              <div className="flex items-start gap-2 rounded-lg border border-mint/40 bg-mint/10 p-3 text-sm text-sage">
+                <Info size={16} className="shrink-0 mt-0.5 text-mint" />
+                <span>Du kannst heute noch weitere Aufnahmen zu dieser Hausaufgabe hinzufügen (z. B. wenn eine Aufnahme abgebrochen ist). Ab morgen ist die Abgabe abgeschlossen.</span>
+              </div>
+            )}
+            {otherToday.length > 0 && (
+              <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${blockedToday ? 'border-status-absent/50 bg-status-absent/10 text-status-absent' : 'border-gold/50 bg-gold/10 text-sage'}`}>
+                <AlertTriangle size={16} className={`shrink-0 mt-0.5 ${blockedToday ? '' : 'text-gold'}`} />
+                <span>
+                  {blockedToday
+                    ? `Du hast heute schon „${otherToday.join('“, „')}“ abgegeben. Pro Tag nur eine Hausaufgabe – bitte nimm diese an einem anderen Tag auf.`
+                    : `Du hast heute schon „${otherToday.join('“, „')}“ abgegeben. Normal ist eine Hausaufgabe pro Tag – wenn du jetzt abgibst, sieht deine Lehrkraft das markiert.`}
+                </span>
+              </div>
+            )}
+            {isAudioType && !blockedToday && (
               <div className="rounded-lg border border-line p-4">
                 <div className="text-sm text-sage mb-2">Audio direkt aufnehmen</div>
                 {!recording ? (
@@ -178,7 +214,7 @@ export default function AufgabeDetail() {
               </label>
             )}
 
-            <Button onClick={submit} disabled={busy}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
+            <Button onClick={submit} disabled={busy || (blockedToday && files.some((f) => String(f.type).startsWith('audio')))}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
           </div>
         </Card>
       ) : (
