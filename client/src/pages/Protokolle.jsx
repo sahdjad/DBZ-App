@@ -99,10 +99,10 @@ export default function Protokolle() {
                     {(isManager || isLeadership) && p.canEdit && <button onClick={() => remove(p)} className="p-1.5 rounded-lg text-status-absent hover:bg-subtle" aria-label="Löschen"><Trash2 size={15} /></button>}
                   </div>
                 </div>
-                <div className="mt-2 text-sm space-y-1">
-                  {p.content?.topics && <p className="text-sage whitespace-pre-line"><span className="text-ivory">Themen:</span> {p.content.topics}</p>}
-                  {p.content?.homework && <p className="text-sage whitespace-pre-line"><span className="text-ivory">Hausaufgaben:</span> {p.content.homework}</p>}
-                  {p.content?.notes && <p className="text-sage whitespace-pre-line"><span className="text-ivory">Vorkommnisse:</span> {p.content.notes}</p>}
+                <div className="mt-3 space-y-2.5">
+                  <Section label="Behandelte Themen" text={p.content?.topics} />
+                  <Section label="Hausaufgaben" text={p.content?.homework} accent />
+                  <Section label="Besondere Vorkommnisse" text={p.content?.notes} />
                 </div>
                 {isManager && p.status === 'submitted' && (
                   <div className="flex gap-2 mt-3">
@@ -164,9 +164,9 @@ function ProtocolForm({ form, setForm, classes, isRep, protocols, onDone }) {
             <input type="date" className="input mt-1" value={form.date} max={today()} onChange={(e) => e.target.value && changeKey({ date: e.target.value })} />
           </label>
         </div>
-        <Field label="Behandelte Themen" value={form.content.topics} onChange={(v) => set('topics', v)} />
-        <Field label="Aufgegebene Hausaufgaben" value={form.content.homework} onChange={(v) => set('homework', v)} />
-        <Field label="Besondere Vorkommnisse" value={form.content.notes} onChange={(v) => set('notes', v)} />
+        <Field label="Behandelte Themen" hint="Was wurde im Unterricht durchgenommen?" value={form.content.topics} onChange={(v) => set('topics', v)} />
+        <Field label="Aufgegebene Hausaufgaben" hint="Was ist bis zum nächsten Mal zu tun?" value={form.content.homework} onChange={(v) => set('homework', v)} />
+        <Field label="Besondere Vorkommnisse" hint="Optional" value={form.content.notes} onChange={(v) => set('notes', v)} />
         <div className="flex gap-2 flex-wrap">
           {isRep ? (
             <>
@@ -183,11 +183,24 @@ function ProtocolForm({ form, setForm, classes, isRep, protocols, onDone }) {
   );
 }
 
-function Field({ label, value, onChange }) {
+// Feste Überschrift (Vorlage) klar abgesetzt vom geschriebenen Inhalt:
+// kleine, fette, farbige Überschrift oben -- darunter der Text in normaler Schrift.
+function Section({ label, text, accent = false }) {
+  if (!text) return null;
+  return (
+    <div className={`rounded-xl border px-3 py-2.5 ${accent ? 'border-gold/40 bg-gold/[0.07]' : 'border-line bg-card'}`}>
+      <div className={`text-[11px] font-bold uppercase tracking-wider ${accent ? 'text-gold' : 'text-mint'}`}>{label}</div>
+      <p className="mt-1 text-[15px] leading-relaxed text-ivory whitespace-pre-line">{text}</p>
+    </div>
+  );
+}
+
+function Field({ label, hint, value, onChange }) {
   return (
     <label className="block">
-      <span className="text-sm text-sage">{label}</span>
-      <textarea className="input mt-1" rows={3} value={value} onChange={(e) => onChange(e.target.value)} />
+      <span className="text-[11px] font-bold uppercase tracking-wider text-mint">{label}</span>
+      {hint && <span className="block text-[11px] text-sage-muted">{hint}</span>}
+      <textarea className="input mt-1.5 text-[15px] leading-relaxed" rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Hier schreiben …" />
     </label>
   );
 }
