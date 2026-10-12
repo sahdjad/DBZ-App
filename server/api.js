@@ -10,7 +10,7 @@ import fs from 'fs';
 import crypto from 'node:crypto';
 import { db, newId, UPLOAD_DIR, isLiveDeployment, runInSandbox, inSandbox, resetSandbox } from './store.js';
 import { seedDemoData } from './seed.js';
-import { persistUpload, readFile } from './files.js';
+import { persistUpload, readFile, deleteFile } from './files.js';
 import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
 import {
   ROLES,
@@ -437,6 +437,42 @@ router.patch('/me/password', requireAuth, async (req, res) => {
   db.commit();
   audit(req.user.id, 'user.password_change', 'user', target.id);
   res.json({ ok: true });
+});
+
+// Eigenes Konto endgültig löschen (DSGVO / App-Store-Pflicht). Bestätigung per
+// Passwort. Gelöscht werden Anmeldung, Kontaktdaten, Rollenkonten, Push-Geräte
+// und die selbst hochgeladenen Abgabe-Dateien (Audios/Fotos). Schulische
+// Einträge (Anwesenheit, Bewertungen) bleiben für die Schule erhalten.
+router.delete('/me', requireAuth, async (req, res) => {
+  if (req.user.isDemo || inSandbox()) return res.status(400).json({ error: 'Im Demo-Modus kann kein Konto gelöscht werden' });
+  const target = req.user.email ? req.user : (personAccounts(req.user).find((a) => a.email) || req.user);
+  if (!target.passwordHash || !(await verifyPassword(req.body?.password || '', target.passwordHash)))
+    return res.status(400).json({ error: 'Passwort ist falsch' });
+  const ids = new Set([target.id, ...db.all('users').filter((u) => u.roleOf === target.id && !u.email).map((u) => u.id)]);
+  if ([...ids].some((id) => isLastSuperAdmin(findUserById(id))))
+    return res.status(400).json({ error: 'Der letzte System-Administrator kann sein Konto nicht löschen' });
+
+  const classIds = new Set([...ids].flatMap((id) => findUserById(id)?.classIds || []));
+  const files = [];
+  db.all('submissions').filter((s) => ids.has(s.studentId)).forEach((s) => {
+    (s.files || []).forEach((f) => { if (!f.deleted) { files.push(f.filename); f.deleted = true; } });
+  });
+  const subs = db.all('push_subscriptions');
+  for (let i = subs.length - 1; i >= 0; i--) if (ids.has(subs[i].userId)) subs.splice(i, 1);
+  hardDeleteUser(target);
+  db.commit();
+  audit(target.id, 'user.self_delete', 'user', target.id, { name: target.name, email: target.email, role: target.role }, null);
+  db.all('users')
+    .filter((u) => u.status !== 'disabled' && [...classIds].some((c) => canManageClass(u, c)) && !isAdmin(u))
+    .forEach((u) => notify(u.id, { type: 'user_self_deleted', level: 'info', title: 'Konto gelöscht', body: `${target.name} hat das eigene Konto gelöscht.`, deepLink: '/klassenliste' }));
+  clearToken(res);
+  res.json({ ok: true });
+  // Dateien im Hintergrund entfernen (Supabase + lokale Kopie).
+  for (const fn of files) {
+    if (!fn) continue;
+    deleteFile(fn);
+    fs.promises.unlink(path.join(UPLOAD_DIR, fn)).catch(() => {});
+  }
 });
 
 // =============================================================================
