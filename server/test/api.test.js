@@ -2483,3 +2483,20 @@ test('Audio-Hausaufgaben: mehrere Audios pro Aufgabe am selben Tag ok; zweite Au
   const st = (await loginAs('schueler@dbz.de'));
   assert.equal((await st('POST', '/classes/class_3/homework-rules', {})).status, 404);
 });
+
+test('Konto selbst löschen: nur mit Passwort, danach kein Login mehr, Lehrkraft wird informiert', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const email = `selbst-${Date.now()}@dbz.de`;
+  const created = (await admin('POST', '/admin/users', { name: 'Selbst Löscher', email, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user;
+  const me = await loginAs(email);
+  assert.equal((await me('DELETE', '/me', { password: 'falsch' })).status, 400, 'falsches Passwort');
+  assert.equal((await me('DELETE', '/me', { password: 'demo1234' })).status, 200);
+  assert.equal((await me('GET', '/auth/me')).data.user, null, 'Sitzung beendet');
+  const c = client();
+  assert.equal((await c('POST', '/auth/login', { email, password: 'demo1234' })).status, 401, 'Login nicht mehr möglich');
+  const users = (await admin('GET', '/admin/users')).data.users;
+  assert.ok(!users.some((u) => u.id === created.id), 'Konto entfernt');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const notes = (await teacher('GET', '/notifications')).data.items;
+  assert.ok(notes.some((n) => n.type === 'user_self_deleted' && n.body.includes('Selbst Löscher')));
+});

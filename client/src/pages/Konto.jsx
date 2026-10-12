@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff } from 'lucide-react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
@@ -65,6 +65,7 @@ export default function Konto() {
 
         <LinkedAccountsCard />
         <PasswordCard />
+        {!user.isDemo && !user.demo && <DeleteAccountCard />}
       </div>
     </AppLayout>
   );
@@ -461,6 +462,65 @@ function PasswordCard() {
         </label>
         <Button type="submit" disabled={busy}><KeyRound size={18} /> Passwort ändern</Button>
       </form>
+    </Card>
+  );
+}
+
+// Eigenes Konto endgültig löschen (DSGVO / App-Store-Pflicht).
+function DeleteAccountCard() {
+  const { logout } = useAuth();
+  const toast = useToast();
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const ready = password && confirm.trim().toUpperCase() === 'LÖSCHEN';
+
+  const remove = async (e) => {
+    e.preventDefault();
+    if (!ready) return;
+    setBusy(true);
+    try {
+      await api.del('/me', { password });
+      toast.push('Dein Konto wurde gelöscht', 'success');
+      await logout().catch(() => {});
+    } catch (err) {
+      toast.push(err.message, 'error');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card className="p-5 border-status-absent/40">
+      <CardHeader title="Konto löschen" subtitle="Endgültig – kann nicht rückgängig gemacht werden" icon={Trash2} />
+      <div className="p-4 space-y-3">
+        {!open ? (
+          <Button variant="outline" onClick={() => setOpen(true)} className="text-status-absent border-status-absent/50">
+            <Trash2 size={18} /> Mein Konto löschen …
+          </Button>
+        ) : (
+          <form onSubmit={remove} className="space-y-3">
+            <div className="rounded-lg border border-status-absent/40 bg-status-absent/10 p-3 text-sm text-sage space-y-1">
+              <p className="text-ivory font-medium">Was passiert beim Löschen?</p>
+              <p>Gelöscht werden: deine Anmeldung, Name und E-Mail, deine Rollenkonten, Push-Geräte und deine hochgeladenen Abgaben (Audios, Fotos, Dateien).</p>
+              <p>Bleibt für die Schule erhalten: Anwesenheit und Bewertungen (Schulunterlagen).</p>
+              <p>Deine Lehrkraft wird informiert. Möchtest du später wieder dabei sein, musst du dich neu registrieren.</p>
+            </div>
+            <label className="block">
+              <span className="text-sm text-sage">Passwort zur Bestätigung</span>
+              <input type="password" autoComplete="current-password" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            </label>
+            <label className="block">
+              <span className="text-sm text-sage">Tippe <b className="text-ivory">LÖSCHEN</b> ein</span>
+              <input className="input mt-1" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoCapitalize="characters" />
+            </label>
+            <div className="flex gap-2 flex-wrap">
+              <Button type="submit" variant="danger" disabled={!ready || busy}><Trash2 size={18} /> {busy ? 'Löscht …' : 'Endgültig löschen'}</Button>
+              <Button type="button" variant="ghost" onClick={() => { setOpen(false); setPassword(''); setConfirm(''); }}>Abbrechen</Button>
+            </div>
+          </form>
+        )}
+      </div>
     </Card>
   );
 }
