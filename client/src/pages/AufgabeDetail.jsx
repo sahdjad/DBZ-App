@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Camera, AlertTriangle, Info } from 'lucide-react';
+import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Pause, Send, Camera, AlertTriangle, Info, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
@@ -20,6 +20,8 @@ export default function AufgabeDetail() {
 
   // Audioaufnahme
   const [recording, setRecording] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const stopResolveRef = useRef(null);
   const [seconds, setSeconds] = useState(0);
   const recRef = useRef(null);
   const chunksRef = useRef([]);
@@ -42,37 +44,69 @@ export default function AufgabeDetail() {
         const ext = type.includes('mp4') || type.includes('aac') || type.includes('m4a') ? 'm4a' : type.includes('ogg') ? 'ogg' : 'webm';
         const blob = new Blob(chunksRef.current, { type });
         const file = new File([blob], `aufnahme-${Date.now()}.${ext}`, { type });
-        setFiles((f) => [...f, file]);
         stream.getTracks().forEach((t) => t.stop());
+        if (stopResolveRef.current) { stopResolveRef.current(file); stopResolveRef.current = null; }
+        else setFiles((f) => [...f, file]);
       };
       rec.start();
       recRef.current = rec;
       setRecording(true);
+      setPaused(false);
       setSeconds(0);
       timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
     } catch {
       toast.push('Kein Mikrofonzugriff. Bitte Datei hochladen.', 'error');
     }
   };
-  const stopRec = () => {
-    recRef.current?.stop();
+  // Wie bei WhatsApp: Aufnahme pausieren und weitermachen.
+  const togglePause = () => {
+    const rec = recRef.current;
+    if (!rec || typeof rec.pause !== 'function') return;
+    if (rec.state === 'recording') {
+      rec.pause();
+      clearInterval(timerRef.current);
+      setPaused(true);
+    } else if (rec.state === 'paused') {
+      rec.resume();
+      timerRef.current = setInterval(() => setSeconds((x) => x + 1), 1000);
+      setPaused(false);
+    }
+  };
+  // Stopp: Aufnahme landet in der Liste (anhören, dann abgeben).
+  // Mit `asFile` liefert sie die Datei direkt zurück (für "Senden").
+  const stopRec = (asFile = false) => new Promise((resolve) => {
+    const rec = recRef.current;
     clearInterval(timerRef.current);
     setRecording(false);
+    setPaused(false);
+    if (!rec || rec.state === 'inactive') return resolve(null);
+    if (asFile) stopResolveRef.current = resolve; else resolve(null);
+    rec.stop();
+  });
+  // Senden direkt aus der Aufnahme heraus: stoppen + sofort abgeben.
+  const stopAndSend = async () => {
+    const file = await stopRec(true);
+    if (file) submit([file]);
   };
+  const canPause = typeof MediaRecorder !== 'undefined' && typeof MediaRecorder.prototype?.pause === 'function';
+  const mmss = (n) => `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`;
 
-  const submit = async () => {
-    if (!text.trim() && files.length === 0) return toast.push('Bitte Text oder Datei hinzufügen', 'error');
+  const submit = async (extra = []) => {
+    const all = [...files, ...(Array.isArray(extra) ? extra : [])];
+    if (!text.trim() && all.length === 0) return toast.push('Bitte Text oder Datei hinzufügen', 'error');
     setBusy(true);
     try {
       const form = new FormData();
       if (text.trim()) form.set('text', text.trim());
-      files.forEach((f) => form.append('files', f));
+      all.forEach((f) => form.append('files', f));
       await api.upload(`/assignments/${id}/submit`, form);
       toast.push('Abgabe gesendet', 'success');
       setText('');
       setFiles([]);
       load();
     } catch (err) {
+      // Aufnahme nicht verlieren: bleibt in der Liste für einen neuen Versuch.
+      if (Array.isArray(extra) && extra.length) setFiles((f) => [...f, ...extra]);
       toast.push(err.message, 'error');
     } finally {
       setBusy(false);
@@ -87,8 +121,11 @@ export default function AufgabeDetail() {
   const isAudioType = ['audio', 'quran', 'mixed'].includes(a.type);
   // Andere Audio-Hausaufgabe heute schon abgegeben? Je nach Lehrer-Einstellung
   // gesperrt ("block") oder nur für die Lehrkraft rot markiert ("mark").
+  const isWrittenType = ['text', 'file', 'mixed'].includes(a.type);
   const otherToday = isAudioType ? (a.otherAudioToday || []) : [];
+  const otherWritten = isWrittenType ? (a.otherWrittenToday || []) : [];
   const blockedToday = otherToday.length > 0 && a.audioDayRule === 'block';
+  const blockedWritten = otherWritten.length > 0 && a.audioDayRule === 'block';
   // Abgegebene Dateien nach Tag gruppieren (mehrere Aufnahmen pro Tag erlaubt).
   const fileDays = [];
   (sub?.files || []).filter((f) => !f.deleted).forEach((f) => {
@@ -166,13 +203,40 @@ export default function AufgabeDetail() {
                 </span>
               </div>
             )}
+            {otherWritten.length > 0 && (
+              <div className={`flex items-start gap-2 rounded-lg border p-3 text-sm ${blockedWritten ? 'border-status-absent/50 bg-status-absent/10 text-status-absent' : 'border-gold/50 bg-gold/10 text-sage'}`}>
+                <AlertTriangle size={16} className={`shrink-0 mt-0.5 ${blockedWritten ? '' : 'text-gold'}`} />
+                <span>
+                  {blockedWritten
+                    ? `Du hast heute schon die schriftliche Hausaufgabe „${otherWritten.join('“, „')}“ abgegeben. Pro Tag nur eine schriftliche Hausaufgabe – bitte an einem anderen Tag.`
+                    : `Du hast heute schon „${otherWritten.join('“, „')}“ schriftlich abgegeben. Normal ist eine pro Tag – wenn du jetzt abgibst, sieht deine Lehrkraft das markiert.`}
+                </span>
+              </div>
+            )}
             {isAudioType && !blockedToday && (
               <div className="rounded-lg border border-line p-4">
                 <div className="text-sm text-sage mb-2">Audio direkt aufnehmen</div>
                 {!recording ? (
-                  <Button onClick={startRec} variant="outline"><Mic size={18} /> Aufnahme starten</Button>
+                  <Button onClick={startRec} variant="outline" disabled={busy}><Mic size={18} /> Aufnahme starten</Button>
                 ) : (
-                  <Button onClick={stopRec} variant="danger"><Square size={18} /> Stopp ({seconds}s)</Button>
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={`h-2.5 w-2.5 rounded-full ${paused ? 'bg-gold' : 'bg-status-absent animate-pulse'}`} />
+                      <span className="text-ivory tabular-nums">{mmss(seconds)}</span>
+                      <span className="text-sage-muted">{paused ? 'pausiert' : 'nimmt auf …'}</span>
+                    </div>
+                    {/* Alle drei Knöpfe nebeneinander – Senden direkt neben Stopp. */}
+                    <div className={`grid gap-2 ${canPause ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                      {canPause && (
+                        <Button onClick={togglePause} variant="outline" className="!px-1.5 !gap-1.5" aria-label={paused ? 'Weiter aufnehmen' : 'Pause'}>
+                          {paused ? <><Mic size={16} className="shrink-0" /> Weiter</> : <><Pause size={16} className="shrink-0" /> Pause</>}
+                        </Button>
+                      )}
+                      <Button onClick={() => stopRec(false)} variant="outline" className="!px-1.5 !gap-1.5" aria-label="Stopp"><Square size={16} className="shrink-0" /> Stopp</Button>
+                      <Button onClick={stopAndSend} disabled={busy} className="!px-1.5 !gap-1.5" aria-label="Senden"><Send size={16} className="shrink-0" /> Senden</Button>
+                    </div>
+                    <p className="text-[11px] text-sage-muted">Stopp = erst anhören, dann abgeben · Senden = sofort abgeben</p>
+                  </div>
                 )}
               </div>
             )}
@@ -199,22 +263,25 @@ export default function AufgabeDetail() {
             {files.length > 0 && (
               <ul className="text-sm text-sage-muted space-y-1">
                 {files.map((f, i) => (
-                  <li key={i} className="flex items-center justify-between gap-2">
-                    <span className="truncate">{f.name} · {(f.size / 1024 / 1024).toFixed(2)} MB</span>
-                    <button onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))} className="text-status-absent">entfernen</button>
+                  <li key={i} className="rounded-lg border border-line p-2 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate">{f.name.startsWith('aufnahme-') ? `Aufnahme ${i + 1}` : f.name} · {(f.size / 1024 / 1024).toFixed(2)} MB</span>
+                      <button onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))} className="text-status-absent inline-flex items-center gap-1"><Trash2 size={14} /> entfernen</button>
+                    </div>
+                    {String(f.type).startsWith('audio') && <PendingAudio file={f} />}
                   </li>
                 ))}
               </ul>
             )}
 
-            {(a.type === 'text' || a.type === 'mixed') && (
+            {(a.type === 'text' || a.type === 'mixed') && !blockedWritten && (
               <label className="block">
                 <span className="text-sm text-sage">Schriftliche Antwort</span>
                 <textarea className="input mt-1" rows={4} value={text} onChange={(e) => setText(e.target.value)} />
               </label>
             )}
 
-            <Button onClick={submit} disabled={busy || (blockedToday && files.some((f) => String(f.type).startsWith('audio')))}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
+            <Button onClick={() => submit()} disabled={busy || recording || (blockedToday && files.some((f) => String(f.type).startsWith('audio'))) || (blockedWritten && (text.trim() || files.some((f) => !String(f.type).startsWith('audio'))))}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
           </div>
         </Card>
       ) : (
@@ -226,4 +293,15 @@ export default function AufgabeDetail() {
       )}
     </AppLayout>
   );
+}
+
+// Vorschau einer noch nicht abgegebenen Aufnahme (anhören vor dem Abgeben).
+function PendingAudio({ file }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    const u = URL.createObjectURL(file);
+    setUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [file]);
+  return url ? <audio controls src={url} className="w-full h-10" preload="metadata" /> : null;
 }

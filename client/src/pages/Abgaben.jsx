@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
+import HomeworkOverview from '../components/HomeworkOverview.jsx';
 import { api } from '../lib/api.js';
 import { Card, StatusBadge, Spinner, FileAttachment, ClassFolders } from '../components/ui.jsx';
 
@@ -43,7 +44,37 @@ function AssignmentGroup({ title, dueAt, subs }) {
   );
 }
 
+// Nur ansehen: Übersicht nach Schülern (x von y pro Woche) oder nach Aufgaben.
+function ReadOnlySubmission({ s }) {
+  return (
+    <div className="rounded-lg border border-line bg-subtle/40 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2 text-xs text-sage-muted">Abgegeben {fmt(s.submittedAt)} <StatusBadge status={s.status} /></div>
+      <SameDayWarning sameDay={s.sameDay} />
+      {s.text && <p className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
+      {s.files?.map((f) => (
+        <div key={f.id}><FileAttachment url={`/api/submissions/${s.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
+      ))}
+    </div>
+  );
+}
+
 export default function Abgaben() {
+  const [view, setView] = useState('students');
+  return (
+    <AppLayout title="Abgaben">
+      <p className="text-sm text-sage-muted mb-3">Alle abgegebenen Hausaufgaben. Bewerten tut die Lehrkraft der Klasse – hier nur zum Ansehen.</p>
+      <div className="inline-flex rounded-xl border border-line p-1 mb-4" role="tablist">
+        {[['students', 'Nach Schülern'], ['assignments', 'Nach Aufgaben']].map(([v, l]) => (
+          <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
+        ))}
+      </div>
+      {view === 'students' ? <HomeworkOverview renderSubmission={(sub) => <ReadOnlySubmission s={sub} />} /> : <ByAssignment />}
+    </AppLayout>
+  );
+}
+
+function ByAssignment() {
   const [subs, setSubs] = useState(null);
   const [classes, setClasses] = useState([]);
   const [cls, setCls] = useState(null);
@@ -66,8 +97,7 @@ export default function Abgaben() {
     return [...m.values()].sort((a, b) => String(b.dueAt || '').localeCompare(String(a.dueAt || '')));
   }, [subs, cls]);
   return (
-    <AppLayout title="Abgaben">
-      <p className="text-sm text-sage-muted mb-4">Alle abgegebenen Hausaufgaben, geordnet nach Klasse. Bewerten tut die Lehrkraft der Klasse – hier nur zum Ansehen.</p>
+    <>
       {!subs ? <Spinner /> : (
         <>
           <ClassFolders groups={groups} selected={cls} onSelect={setCls} />
@@ -76,6 +106,6 @@ export default function Abgaben() {
             : <div className="space-y-3">{byAssignment.map((g) => <AssignmentGroup key={g.id} {...g} />)}</div>)}
         </>
       )}
-    </AppLayout>
+    </>
   );
 }
