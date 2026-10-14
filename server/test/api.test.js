@@ -2529,3 +2529,20 @@ test('Hausaufgaben-Übersicht: x von y pro Schüler und Woche; Audio + schriftli
   const student = await loginAs('schueler@dbz.de');
   assert.equal((await student('GET', '/homework-overview')).status, 403);
 });
+
+test('Frist abgelaufen: Schüler kann nichts mehr hochladen, Lehrkraft sieht ihn rot (missed)', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const email = `frist-${Date.now()}@dbz.de`;
+  const st = (await admin('POST', '/admin/users', { name: 'Frist Schüler', email, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user;
+  const a = (await teacher('POST', '/assignments', { classId: 'class_3', title: `Frist ${Date.now()}`, type: 'text', dueAt: new Date(Date.now() - 60000).toISOString() })).data.assignment;
+  const me = await loginAs(email);
+  const r = await me('POST', `/assignments/${a.id}/submit`, { text: 'zu spät' });
+  assert.equal(r.status, 400);
+  assert.match(r.data.error, /frist ist abgelaufen/i);
+  assert.equal((await me('GET', `/assignments/${a.id}`)).data.assignment.canSubmit, false);
+  const ov = (await teacher('GET', `/homework-overview?classId=class_3&week=${new Date(Date.now() - 60000).toISOString().slice(0, 10)}`)).data;
+  const row = ov.students.find((x) => x.id === st.id);
+  assert.equal(row.items.find((i) => i.assignmentId === a.id).state, 'missed');
+  assert.ok(row.missed >= 1, 'rot markiert');
+});
