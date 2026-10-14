@@ -2444,8 +2444,6 @@ function effectiveDue(assignment, studentId) {
 // (und bei Bedarf je Schüler) fest: 'mark' = erlaubt, aber rot markiert
 // (Standard), 'block' = gesperrt, 'off' = egal.
 const AUDIO_DAY_RULES = ['mark', 'block', 'off'];
-const AUDIO_TYPES = ['audio', 'quran', 'mixed'];
-const isAudioFile = (f) => String(f?.mediaType || '').startsWith('audio') && !f.deleted;
 const fileDay = (f, sub) => f.day || localDateKey(new Date(f.uploadedAt || sub.submittedAt));
 
 function audioDayRuleFor(classId, studentId) {
@@ -2455,20 +2453,34 @@ function audioDayRuleFor(classId, studentId) {
   return AUDIO_DAY_RULES.includes(k?.audioDayRule) ? k.audioDayRule : 'mark';
 }
 
-// Andere Hausaufgaben, zu denen der Schüler am Tag `day` Audios geschickt hat.
-function otherAudioHomeworkOn(studentId, assignmentId, day) {
+// Art eines Eintrags: Audio oder schriftlich (Text, Foto, PDF). Eine Audio-
+// und eine schriftliche Hausaufgabe am selben Tag sind ok – nur mehrere
+// Hausaufgaben DERSELBEN Art an einem Tag fallen unter die Regel.
+const entryKind = (f) => (String(f?.mediaType || f?.mimetype || '').startsWith('audio') ? 'audio' : 'schrift');
+const KIND_LABEL = { audio: 'Audio', schrift: 'schriftlich' };
+
+// Alle Einträge (Tag + Art) einer Abgabe.
+function subEntries(sub) {
+  const out = (sub.files || []).filter((f) => !f.deleted).map((f) => ({ day: fileDay(f, sub), kind: entryKind(f) }));
+  if (sub.text) out.push({ day: sub.textDay || localDateKey(new Date(sub.submittedAt)), kind: 'schrift' });
+  return out;
+}
+
+// Andere Hausaufgaben, zu denen der Schüler am Tag `day` etwas derselben Art abgegeben hat.
+function otherHomeworkOn(studentId, assignmentId, day, kind) {
   return db.all('submissions')
-    .filter((s) => s.studentId === studentId && s.assignmentId !== assignmentId && (s.files || []).some((f) => isAudioFile(f) && fileDay(f, s) === day))
+    .filter((s) => s.studentId === studentId && s.assignmentId !== assignmentId && subEntries(s).some((e) => e.day === day && e.kind === kind))
     .map((s) => ({ assignmentId: s.assignmentId, title: byId('assignments', s.assignmentId)?.title || 'Hausaufgabe' }));
 }
 
-// Für die Lehrkraft: an welchen Tagen hat diese Abgabe Audios, an denen auch
-// eine ANDERE Hausaufgabe abgegeben wurde? -> rot markieren.
+// Für die Lehrkraft: an welchen Tagen wurde zusammen mit dieser Abgabe eine
+// ANDERE Hausaufgabe derselben Art abgegeben? -> rot markieren.
 function sameDayInfo(sub) {
   if (audioDayRuleFor(sub.classId, sub.studentId) === 'off') return [];
-  const days = [...new Set((sub.files || []).filter(isAudioFile).map((f) => fileDay(f, sub)))];
-  return days
-    .map((day) => ({ day, with: otherAudioHomeworkOn(sub.studentId, sub.assignmentId, day).map((x) => x.title) }))
+  const seen = new Set();
+  return subEntries(sub)
+    .filter((e) => { const k = `${e.day}|${e.kind}`; if (seen.has(k)) return false; seen.add(k); return true; })
+    .map((e) => ({ day: e.day, kind: e.kind, kindLabel: KIND_LABEL[e.kind], with: otherHomeworkOn(sub.studentId, sub.assignmentId, e.day, e.kind).map((x) => x.title) }))
     .filter((x) => x.with.length);
 }
 
@@ -2551,13 +2563,16 @@ function decorateForStudent(a, studentId) {
   // Nach dem Absenden gesperrt (10-Min-Kulanz), außer der Lehrer gab zur Überarbeitung frei.
   const GRACE_MS = 10 * 60 * 1000;
   const today = localDateKey();
-  // Audio-Hausaufgabe: am Tag der Aufnahme dürfen weitere Audios dazukommen.
-  const audioToday = !!sub && AUDIO_TYPES.includes(a.type) && (sub.files || []).some((f) => isAudioFile(f) && fileDay(f, sub) === today);
+  // Am Tag der Abgabe dürfen weitere Aufnahmen/Fotos dazukommen.
+  const todayKinds = new Set(sub ? subEntries(sub).filter((e) => e.day === today).map((e) => e.kind) : []);
+  const audioToday = todayKinds.size > 0;
   const locked =
     !!sub && sub.status === 'submitted' && !isRevision && sub.submittedAt && !audioToday
       ? Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS
       : false;
-  const otherToday = AUDIO_TYPES.includes(a.type) && !audioToday ? otherAudioHomeworkOn(studentId, a.id, today).map((x) => x.title) : [];
+  const othersFor = (kind) => (todayKinds.has(kind) ? [] : otherHomeworkOn(studentId, a.id, today, kind).map((x) => x.title));
+  const otherToday = othersFor('audio');
+  const otherWrittenToday = othersFor('schrift');
   let studentStatus = 'not_opened';
   if (sub) {
     studentStatus =
@@ -2583,6 +2598,7 @@ function decorateForStudent(a, studentId) {
     studentStatus,
     audioToday,
     otherAudioToday: otherToday,
+    otherWrittenToday,
     audioDayRule: audioDayRuleFor(a.classId, studentId),
   };
 }
@@ -2650,19 +2666,24 @@ router.post(
     // Audio-Hausaufgabe: am selben Tag dürfen weitere Aufnahmen nachgereicht werden.
     const GRACE_MS = 10 * 60 * 1000;
     const today = localDateKey();
-    const audioToday = !!sub && AUDIO_TYPES.includes(a.type) && (sub.files || []).some((f) => isAudioFile(f) && fileDay(f, sub) === today);
+    const audioToday = !!sub && subEntries(sub).some((e) => e.day === today);
     if (sub && sub.status === 'submitted' && !isRevision && !audioToday &&
         Date.now() - new Date(sub.submittedAt).getTime() > GRACE_MS)
       return res.status(400).json({
         error: 'Diese Abgabe ist gesperrt. Bitte deine Lehrkraft, sie zurückzusetzen oder die Frist zu verlängern.',
       });
-    // Eine Hausaufgabe pro Tag (Regel der Lehrkraft).
-    if ((req.files || []).some((f) => String(f.mimetype || '').startsWith('audio'))) {
-      const others = otherAudioHomeworkOn(req.user.id, a.id, today);
-      if (others.length && audioDayRuleFor(a.classId, req.user.id) === 'block') {
-        return res.status(400).json({
-          error: `Heute hast du schon „${others[0].title}" abgegeben. Pro Tag nur eine Hausaufgabe – diese bitte an einem anderen Tag aufnehmen.`,
-        });
+    // Eine Hausaufgabe pro Tag und Art (Regel der Lehrkraft): Audio + schriftlich
+    // am selben Tag ist ok, zwei Audio-Hausaufgaben (oder zwei schriftliche) nicht.
+    if (audioDayRuleFor(a.classId, req.user.id) === 'block') {
+      const kinds = new Set((req.files || []).map(entryKind));
+      if ((req.body?.text || '').trim()) kinds.add('schrift');
+      for (const kind of kinds) {
+        const others = otherHomeworkOn(req.user.id, a.id, today, kind);
+        if (others.length) {
+          return res.status(400).json({
+            error: `Heute hast du schon „${others[0].title}" abgegeben (${KIND_LABEL[kind]}). Pro Tag nur eine Hausaufgabe dieser Art – diese bitte an einem anderen Tag machen.`,
+          });
+        }
       }
     }
 
@@ -2689,12 +2710,14 @@ router.post(
         studentId: req.user.id,
         studentName: req.user.name,
         text,
+        ...(text ? { textDay: today } : {}),
         files,
         status: 'submitted',
         submittedAt: new Date().toISOString(),
       };
       db.insert('submissions', sub);
     } else {
+      if (text) sub.textDay = today;
       sub.text = text || sub.text;
       sub.files = [...sub.files, ...files];
       sub.status = 'submitted';
@@ -2790,6 +2813,75 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
       return (b.submittedAt || '').localeCompare(a.submittedAt || '');
     });
   res.json({ submissions: subs });
+});
+
+// --- Hausaufgaben-Übersicht pro Woche --------------------------------------
+// Pro Schüler: "x von y" Hausaufgaben der Woche abgegeben, rot wenn eine Frist
+// vorbei ist und noch etwas fehlt. Die Woche (Mo–So) richtet sich nach der Frist
+// der Hausaufgabe (ohne Frist: nach dem Erstellungsdatum). Wie viele
+// Hausaufgaben es pro Woche gibt und welcher Art, entscheidet die Lehrkraft
+// einfach dadurch, was sie aufgibt.
+const addDays = (key, n) => { const d = new Date(`${key}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const mondayOf = (key) => addDays(key, -((new Date(`${key}T12:00:00Z`).getUTCDay() + 6) % 7));
+const DONE_STATUSES = ['submitted', 'passed'];
+
+router.get('/homework-overview', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const classes = db.all('classes').filter((c) => c.active !== false && canManageClass(req.user, c.id) && (!req.user.isDemo || c.isDemo))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  const classId = classes.some((c) => c.id === req.query.classId) ? req.query.classId : classes[0]?.id;
+  const ref = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.week || '')) ? req.query.week : localDateKey();
+  const weekStart = mondayOf(ref);
+  const weekEnd = addDays(weekStart, 6);
+  const base = { classes: classes.map((c) => ({ id: c.id, name: c.name })), classId: classId || null, weekStart, weekEnd };
+  if (!classId) return res.json({ ...base, assignments: [], students: [], summary: null });
+
+  const weekOf = (a) => mondayOf(localDateKey(new Date(a.dueAt || a.createdAt || Date.now())));
+  const assignments = db.all('assignments')
+    .filter((a) => a.classId === classId && !a.archived && weekOf(a) === weekStart)
+    .sort((a, b) => String(a.dueAt || a.createdAt).localeCompare(String(b.dueAt || b.createdAt)));
+  const now = Date.now();
+  const students = db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled' && (u.classIds || []).includes(classId))
+    .sort((a, b) => a.name.localeCompare(b.name, 'de'))
+    .map((u) => {
+      const items = assignments.filter((a) => targetsFor(a).includes(u.id)).map((a) => {
+        const sub = db.all('submissions').find((x) => x.assignmentId === a.id && x.studentId === u.id);
+        const due = effectiveDue(a, u.id);
+        const done = !!sub && DONE_STATUSES.includes(sub.status);
+        const overdue = !!due && new Date(due).getTime() < now;
+        const review = sub ? db.all('reviews').find((r) => r.submissionId === sub.id) : null;
+        return {
+          assignmentId: a.id,
+          state: done ? 'done' : sub?.status === 'revision_required' ? 'revision' : overdue ? 'missed' : 'open',
+          dueAt: due || null,
+          submission: sub ? {
+            id: sub.id, assignmentId: a.id, assignmentTitle: a.title, studentName: u.name, className: findClass(classId)?.name,
+            text: sub.text, files: (sub.files || []).filter((f) => !f.deleted), status: sub.status, submittedAt: sub.submittedAt,
+            review: review || null, sameDay: sameDayInfo(sub),
+          } : null,
+        };
+      });
+      const done = items.filter((i) => i.state === 'done').length;
+      return {
+        id: u.id, name: u.name, items, done, total: items.length,
+        missed: items.filter((i) => i.state === 'missed' || (i.state === 'revision' && i.dueAt && new Date(i.dueAt).getTime() < now)).length,
+        toReview: items.filter((i) => i.submission?.status === 'submitted').length,
+        sameDay: items.some((i) => i.submission?.sameDay?.length),
+      };
+    });
+  res.json({
+    ...base,
+    assignments: assignments.map((a) => ({ id: a.id, title: a.title, type: a.type, dueAt: a.dueAt || null })),
+    students,
+    summary: {
+      studentsTotal: students.length,
+      studentsComplete: students.filter((x) => x.total > 0 && x.done === x.total).length,
+      done: students.reduce((n, x) => n + x.done, 0),
+      expected: students.reduce((n, x) => n + x.total, 0),
+      toReview: students.reduce((n, x) => n + x.toReview, 0),
+      missedStudents: students.filter((x) => x.missed > 0).length,
+    },
+  });
 });
 
 // Korrektur-Liste aufräumen: Abgaben nur aus der Liste ausblenden. Die Abgabe,

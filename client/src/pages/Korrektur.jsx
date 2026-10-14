@@ -2,12 +2,32 @@ import { useEffect, useState } from 'react';
 import { CheckSquare, EyeOff, ListChecks } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
+import HomeworkOverview from '../components/HomeworkOverview.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
+// Standard: Übersicht nach Schülern ("x von y" pro Woche). Die bisherige Liste
+// aller Abgaben (mit Ausblenden) bleibt als zweiter Reiter erhalten.
 export default function Korrektur() {
+  const [view, setView] = useState('students');
+  return (
+    <AppLayout title="Korrektur">
+      <div className="inline-flex rounded-xl border border-line p-1 mb-4" role="tablist">
+        {[['students', 'Nach Schülern'], ['list', 'Alle Abgaben']].map(([v, l]) => (
+          <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
+            className={`px-3 py-1.5 rounded-lg text-sm ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
+        ))}
+      </div>
+      {view === 'students'
+        ? <HomeworkOverview renderSubmission={(sub, reload) => <ReviewCard sub={sub} onDone={reload} compact />} />
+        : <SubmissionList />}
+    </AppLayout>
+  );
+}
+
+function SubmissionList() {
   const [list, setList] = useState(null);
   const toast = useToast();
   const selection = useSelection();
@@ -22,12 +42,12 @@ export default function Korrektur() {
   };
   useEffect(() => { load(); }, []);
 
-  if (!list) return <AppLayout title="Korrektur"><Spinner /></AppLayout>;
+  if (!list) return <Spinner />;
   const open = list.filter((s) => s.status === 'submitted');
   const done = list.filter((s) => s.status !== 'submitted');
 
   return (
-    <AppLayout title="Korrektur">
+    <>
       <Card className="p-5 mb-4">
         <CardHeader title="Offene Abgaben" subtitle={`${open.length} warten auf Korrektur`} icon={CheckSquare} />
       </Card>
@@ -59,7 +79,7 @@ export default function Korrektur() {
           />
         </>
       )}
-    </AppLayout>
+    </>
   );
 }
 
@@ -79,7 +99,7 @@ function DoneRow({ s, selection }) {
   );
 }
 
-function ReviewCard({ sub, onDone }) {
+function ReviewCard({ sub, onDone, compact = false }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ outcome: 'passed', gradeLabel: '', feedbackText: '', tajwid: '', pronunciation: '', fluency: '', memorization: '', errorCount: '' });
@@ -95,11 +115,12 @@ function ReviewCard({ sub, onDone }) {
   };
 
   return (
-    <Card className="p-4">
+    <Card className={compact ? 'p-3 bg-subtle/40' : 'p-4'}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-ivory">{sub.studentName}</div>
-          <div className="text-xs text-sage-muted">{sub.assignmentTitle} · {sub.className} · {fmt(sub.submittedAt)}</div>
+          {!compact && <div className="text-ivory">{sub.studentName}</div>}
+          <div className="text-xs text-sage-muted">{compact ? `Abgegeben ${fmt(sub.submittedAt)}` : `${sub.assignmentTitle} · ${sub.className} · ${fmt(sub.submittedAt)}`}</div>
+          {compact && sub.status !== 'submitted' && <div className="mt-1"><StatusBadge status={sub.status} /></div>}
         </div>
         <Button size="sm" variant="outline" onClick={() => setOpen((o) => !o)}>{open ? 'Schließen' : 'Bewerten'}</Button>
       </div>

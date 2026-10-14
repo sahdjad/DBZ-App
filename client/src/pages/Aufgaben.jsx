@@ -157,15 +157,16 @@ function HomeworkRules({ classes }) {
   return (
     <Card className="p-4">
       <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
-        <span className="flex items-center gap-2 text-sm text-ivory"><SlidersHorizontal size={16} className="text-mint" /> Regeln für Audio-Hausaufgaben</span>
+        <span className="flex items-center gap-2 text-sm text-ivory"><SlidersHorizontal size={16} className="text-mint" /> Regeln: eine Hausaufgabe pro Tag</span>
         <span className="text-xs text-sage-muted">{open ? 'Schließen' : 'Einstellen'}</span>
       </button>
       {open && (
         <div className="mt-3 space-y-3">
           <p className="text-xs text-sage-muted">
-            Zu einer Hausaufgabe dürfen Schüler am selben Tag beliebig viele Aufnahmen schicken. Gibt jemand an einem Tag
-            mehrere verschiedene Hausaufgaben ab, kannst du das rot markieren lassen, ganz sperren oder erlauben –
-            für die ganze Klasse oder einzelne Schüler.
+            Zu einer Hausaufgabe dürfen Schüler am selben Tag beliebig viele Aufnahmen schicken. Verschiedene Hausaufgaben
+            sollen an verschiedenen Tagen gemacht werden – eine Audio- und eine schriftliche Hausaufgabe am selben Tag sind ok,
+            zwei Audio-Hausaufgaben (oder zwei schriftliche) nicht. Ob das rot markiert, gesperrt oder erlaubt wird,
+            stellst du hier ein – für die ganze Klasse oder einzelne Schüler.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {classes.length > 1 && (
@@ -175,7 +176,7 @@ function HomeworkRules({ classes }) {
                 </select>
               </Field>
             )}
-            <Field label="Mehrere Hausaufgaben am selben Tag (ganze Klasse)">
+            <Field label="Mehrere Hausaufgaben derselben Art am selben Tag (ganze Klasse)">
               <select className="input" value={data?.rule || 'mark'} disabled={!data} onChange={(e) => save({ rule: e.target.value })}>
                 {RULES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>

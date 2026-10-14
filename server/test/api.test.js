@@ -2500,3 +2500,32 @@ test('Konto selbst löschen: nur mit Passwort, danach kein Login mehr, Lehrkraft
   const notes = (await teacher('GET', '/notifications')).data.items;
   assert.ok(notes.some((n) => n.type === 'user_self_deleted' && n.body.includes('Selbst Löscher')));
 });
+
+test('Hausaufgaben-Übersicht: x von y pro Schüler und Woche; Audio + schriftlich am selben Tag erlaubt, zweimal schriftlich gesperrt', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const email = `woche-${Date.now()}@dbz.de`;
+  const st = (await admin('POST', '/admin/users', { name: 'Wochen Schüler', email, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user;
+  const due = new Date(Date.now() + 2 * 86400000).toISOString();
+  const mk = async (title, type) => (await teacher('POST', '/assignments', { classId: 'class_3', title, type, dueAt: due })).data.assignment;
+  const audio = await mk(`W-Audio ${Date.now()}`, 'audio');
+  const text1 = await mk(`W-Text1 ${Date.now()}`, 'text');
+  const text2 = await mk(`W-Text2 ${Date.now()}`, 'text');
+  assert.equal((await teacher('PATCH', '/classes/class_3/homework-rules', { overrides: { [st.id]: 'block' } })).status, 200);
+  const cookie = await cookieFor(email);
+  const fd = new FormData();
+  fd.append('files', new Blob([Buffer.from('a')], { type: 'audio/mp4' }), 'a.m4a');
+  assert.equal((await fetch(base + `/api/assignments/${audio.id}/submit`, { method: 'POST', headers: { cookie }, body: fd })).status, 200);
+  const me = await loginAs(email);
+  assert.equal((await me('POST', `/assignments/${text1.id}/submit`, { text: 'Antwort 1' })).status, 200, 'schriftlich + Audio am selben Tag ok');
+  const r = await me('POST', `/assignments/${text2.id}/submit`, { text: 'Antwort 2' });
+  assert.equal(r.status, 400, 'zweite schriftliche am selben Tag gesperrt');
+  const ov = (await teacher('GET', '/homework-overview?classId=class_3')).data;
+  const row = ov.students.find((x) => x.id === st.id);
+  assert.ok(row.total >= 3);
+  assert.equal(row.done, 2);
+  assert.ok(ov.summary.expected >= ov.summary.done);
+  assert.ok(ov.assignments.some((a) => a.id === text2.id));
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('GET', '/homework-overview')).status, 403);
+});

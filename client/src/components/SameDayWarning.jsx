@@ -8,9 +8,9 @@ export default function SameDayWarning({ sameDay }) {
   return (
     <div className="mt-2 rounded-lg border border-status-absent/50 bg-status-absent/10 px-3 py-2 text-xs text-status-absent space-y-0.5">
       {sameDay.map((d) => (
-        <div key={d.day} className="flex items-start gap-1.5">
+        <div key={`${d.day}-${d.kind}`} className="flex items-start gap-1.5">
           <AlertTriangle size={14} className="shrink-0 mt-px" />
-          <span>Am {fmtDay(d.day)} mehrere Hausaufgaben abgegeben – zusammen mit: {d.with.join(', ')}</span>
+          <span>Am {fmtDay(d.day)} mehrere {d.kind === 'schrift' ? 'schriftliche' : 'Audio-'}Hausaufgaben abgegeben – zusammen mit: {d.with.join(', ')}</span>
         </div>
       ))}
     </div>
