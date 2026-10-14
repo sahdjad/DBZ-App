@@ -22,6 +22,7 @@ export default function HomeworkOverview({ renderSubmission }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [openId, setOpenId] = useState(null);
+  const [onlyMissing, setOnlyMissing] = useState(false);
 
   const load = () => {
     const q = new URLSearchParams();
@@ -77,7 +78,13 @@ export default function HomeworkOverview({ renderSubmission }) {
         <Card className="p-6 text-sm text-sage-muted">In dieser Woche sind keine Hausaufgaben fällig.</Card>
       ) : (
         <div className="space-y-2">
-          {data.students.map((st) => {
+          {s.missedStudents > 0 && (
+            <label className="flex items-center gap-2 text-sm text-sage px-1 cursor-pointer select-none">
+              <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="accent-current" />
+              Nur zeigen, wer nicht abgegeben hat ({s.missedStudents})
+            </label>
+          )}
+          {data.students.filter((st) => !onlyMissing || st.missed > 0).map((st) => {
             const red = st.missed > 0;
             const complete = st.total > 0 && st.done === st.total;
             const open = openId === st.id;
@@ -85,7 +92,17 @@ export default function HomeworkOverview({ renderSubmission }) {
               <Card key={st.id} className={`p-0 overflow-hidden ${red ? 'border-status-absent/60 bg-status-absent/[0.06]' : ''}`}>
                 <button type="button" onClick={() => setOpenId(open ? null : st.id)} aria-expanded={open}
                   className="w-full flex items-center gap-3 p-3.5 text-left hover:bg-hover">
-                  <span className={`min-w-0 flex-1 truncate ${red ? 'text-status-absent font-medium' : 'text-ivory'}`}>{st.name}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={`block truncate ${red ? 'text-status-absent font-medium' : 'text-ivory'}`}>{st.name}</span>
+                    {/* Ein Kästchen pro Hausaufgabe: grün = abgegeben, rot = Frist verpasst, grau = noch offen */}
+                    <span className="flex gap-1 mt-1" aria-hidden="true">
+                      {st.items.map((it) => (
+                        <span key={it.assignmentId} title={`${titles[it.assignmentId]}: ${STATE[it.state][0]}`}
+                          className={`h-2 w-5 rounded-sm ${it.state === 'done' ? 'bg-mint' : it.state === 'missed' ? 'bg-status-absent' : it.state === 'revision' ? 'bg-gold' : 'bg-line'}`} />
+                      ))}
+                    </span>
+                    {red && <span className="block text-[11px] text-status-absent mt-0.5">fehlt: {st.items.filter((i) => i.state === 'missed' || i.state === 'revision').map((i) => titles[i.assignmentId]).join(', ')}</span>}
+                  </span>
                   {st.sameDay && <AlertTriangle size={15} className="text-status-absent shrink-0" aria-label="Mehrere Hausaufgaben am selben Tag" />}
                   {st.toReview > 0 && <span className="text-[11px] rounded-full bg-gold/15 text-gold px-2 py-0.5 shrink-0">{st.toReview} zu bewerten</span>}
                   <span className={`text-sm font-semibold tabular-nums shrink-0 ${red ? 'text-status-absent' : complete ? 'text-mint' : 'text-sage'}`}>
@@ -112,7 +129,7 @@ export default function HomeworkOverview({ renderSubmission }) {
           })}
         </div>
       )}
-      <p className="text-xs text-sage-muted flex items-center gap-1.5"><ClipboardCheck size={14} /> Die Woche richtet sich nach der Frist der Hausaufgabe. Wie viele Hausaufgaben es pro Woche gibt, bestimmst du einfach durch das, was du aufgibst.</p>
+      <p className="text-xs text-sage-muted flex items-center gap-1.5"><ClipboardCheck size={14} className="shrink-0" /> Rot = Frist vorbei und nicht abgegeben – danach kann der Schüler nichts mehr hochladen. Die Woche richtet sich nach der Frist der Hausaufgabe. Wie viele Hausaufgaben es pro Woche gibt, bestimmst du einfach durch das, was du aufgibst.</p>
     </div>
   );
 }
