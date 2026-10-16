@@ -2577,3 +2577,20 @@ test('Hausaufgabe nachträglich bearbeiten: Lehrkraft direkt, Klassensprecher nu
   assert.equal(d.status, 200);
   assert.equal((await student('GET', `/assignments/${a.id}`)).data.assignment.description, 'Seite 562–564');
 });
+
+test('Audio-Upload aus Dateien/Sprachnachrichten: .opus/.m4a/.amr ohne oder mit falschem Typ werden als Audio erkannt', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const a = (await teacher('POST', '/assignments', { classId: 'class_3', title: `Datei-Audio ${Date.now()}`, type: 'audio', dueAt: new Date(Date.now() + 86400000).toISOString() })).data.assignment;
+  const cookie = await cookieFor('schueler@dbz.de');
+  const fd = new FormData();
+  fd.append('files', new Blob([Buffer.from('opus')], { type: 'application/octet-stream' }), 'WhatsApp Audio 2026.opus');
+  fd.append('files', new Blob([Buffer.from('m4a')], { type: 'video/mp4' }), 'Sprachmemo.m4a');
+  fd.append('files', new Blob([Buffer.from('amr')], { type: '' }), 'Aufnahme.amr');
+  const r = await fetch(base + `/api/assignments/${a.id}/submit`, { method: 'POST', headers: { cookie }, body: fd });
+  assert.equal(r.status, 200);
+  const types = (await r.json()).submission.files.map((f) => f.mediaType);
+  assert.deepEqual(types, ['audio/ogg', 'audio/mp4', 'audio/amr']);
+  const bad = new FormData();
+  bad.append('files', new Blob([Buffer.from('x')], { type: 'application/octet-stream' }), 'virus.exe');
+  assert.notEqual((await fetch(base + `/api/assignments/${a.id}/submit`, { method: 'POST', headers: { cookie }, body: bad })).status, 200);
+});

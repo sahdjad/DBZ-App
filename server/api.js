@@ -317,11 +317,39 @@ const ALLOWED_MIME = new Set([
   'audio/wav',
   'audio/webm',
   'audio/ogg',
+  'audio/amr',
+  'audio/3gpp',
+  'audio/x-caf',
+  'audio/flac',
   'application/pdf',
   'image/jpeg',
   'image/png',
   'image/webp',
 ]);
+
+// Sprachnachrichten/Sprachmemos kommen je nach Handy/App mit sehr
+// unterschiedlichen oder gar keinen Dateitypen an (WhatsApp .opus,
+// iPhone-Sprachmemos .m4a, Android-Rekorder .amr/.3gp …). Deshalb Typ
+// vereinheitlichen und bei fehlendem/allgemeinem Typ über die Endung erkennen.
+const EXT_MIME = {
+  '.m4a': 'audio/mp4', '.mp4a': 'audio/mp4', '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.amr': 'audio/amr', '.3gp': 'audio/3gpp',
+  '.3gpp': 'audio/3gpp', '.caf': 'audio/x-caf', '.webm': 'audio/webm', '.weba': 'audio/webm', '.flac': 'audio/flac',
+  '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp',
+};
+const MIME_ALIAS = {
+  'audio/x-wav': 'audio/wav', 'audio/wave': 'audio/wav', 'audio/vnd.wave': 'audio/wav', 'audio/opus': 'audio/ogg',
+  'audio/x-aac': 'audio/aac', 'audio/x-mp3': 'audio/mpeg', 'audio/mpeg3': 'audio/mpeg', 'audio/x-mpeg': 'audio/mpeg',
+  'audio/x-flac': 'audio/flac', 'audio/amr-wb': 'audio/amr', 'audio/x-amr': 'audio/amr', 'image/jpg': 'image/jpeg',
+};
+function normalizeMime(file) {
+  const raw = String(file.mimetype || '').split(';')[0].trim().toLowerCase();
+  const m = MIME_ALIAS[raw] || raw;
+  const byExt = EXT_MIME[path.extname(file.originalname || '').toLowerCase()];
+  // Reine Audio-Endung, aber als Video/Container gemeldet (z. B. .m4a als video/mp4, .3gp als video/3gpp).
+  if (byExt?.startsWith('audio/') && (m.startsWith('video/') || !ALLOWED_MIME.has(m))) return byExt;
+  return ALLOWED_MIME.has(m) ? m : byExt || m;
+}
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
@@ -331,6 +359,7 @@ const rawUpload = multer({
   storage,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB (Audio-Kostenkontrolle, COST_STRATEGY.md)
   fileFilter: (_req, file, cb) => {
+    file.mimetype = normalizeMime(file);
     if (ALLOWED_MIME.has(file.mimetype)) cb(null, true);
     else cb(new Error('Dateityp nicht erlaubt (nur Audio, PDF, Bild)'));
   },
