@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Pause, Send, Camera, AlertTriangle, Info, Trash2, Pencil } from 'lucide-react';
+import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Pause, Send, Camera, AlertTriangle, Info, Trash2, Pencil, FolderOpen } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
@@ -9,6 +9,14 @@ import { AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
 
 const fmtDay = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' });
 const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+
+// Audio-Dateien aus der Dateien-App, Sprachmemos, WhatsApp-/Telegram-
+// Sprachnachrichten: die Endungen ausdrücklich nennen, sonst graut das
+// iPhone z. B. .opus-Dateien in der Auswahl aus.
+const AUDIO_ACCEPT = 'audio/*,.m4a,.mp3,.wav,.aac,.ogg,.oga,.opus,.amr,.3gp,.caf,.webm,.flac';
+const AUDIO_EXT = /\.(m4a|mp3|wav|aac|ogg|oga|opus|amr|3gp|caf|webm|flac)$/i;
+const isAudio = (f) => String(f.type).startsWith('audio') || AUDIO_EXT.test(f.name || '');
+const MAX_MB = 25;
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 
@@ -31,6 +39,15 @@ export default function AufgabeDetail() {
   const chunksRef = useRef([]);
   const timerRef = useRef(null);
   const cameraInputRef = useRef(null);
+  const audioInputRef = useRef(null);
+  // Dateien hinzufügen – zu große gleich hier abfangen (verständliche Meldung).
+  const addFiles = (list) => {
+    const arr = Array.from(list || []);
+    const tooBig = arr.filter((f) => f.size > MAX_MB * 1024 * 1024);
+    if (tooBig.length) toast.push(`„${tooBig[0].name}" ist größer als ${MAX_MB} MB`, 'error');
+    const ok = arr.filter((f) => f.size <= MAX_MB * 1024 * 1024);
+    if (ok.length) setFiles((f) => [...f, ...ok]);
+  };
 
   const load = () => api.get(`/assignments/${id}`).then(setData).catch((e) => toast.push(e.message, 'error'));
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [id]);
@@ -240,9 +257,20 @@ export default function AufgabeDetail() {
             )}
             {isAudioType && !blockedToday && (
               <div className="rounded-lg border border-line p-4">
-                <div className="text-sm text-sage mb-2">Audio direkt aufnehmen</div>
+                <div className="text-sm text-sage mb-2">Audio aufnehmen oder hochladen</div>
                 {!recording ? (
-                  <Button onClick={startRec} variant="outline" disabled={busy}><Mic size={18} /> Aufnahme starten</Button>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-2">
+                      <Button onClick={startRec} variant="outline" disabled={busy}><Mic size={18} /> Aufnahme starten</Button>
+                      <Button onClick={() => audioInputRef.current?.click()} variant="outline" disabled={busy}><FolderOpen size={18} /> Audio-Datei wählen</Button>
+                    </div>
+                    <input ref={audioInputRef} type="file" multiple accept={AUDIO_ACCEPT} className="hidden"
+                           onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
+                    <p className="text-[11px] text-sage-muted leading-snug">
+                      Schon aufgenommen? Wähle die Datei aus der Dateien-App oder den Sprachmemos. Sprachnachricht aus WhatsApp:
+                      Nachricht lange drücken → Teilen → „In Dateien sichern“ und dann hier auswählen.
+                    </p>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm">
@@ -275,13 +303,13 @@ export default function AufgabeDetail() {
                   (Rückkamera) statt erst die Datei-/Galerieauswahl -- kein
                   Umweg über "erst in Fotos speichern, dann Datei suchen". */}
               <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" className="hidden"
-                     onChange={(e) => { if (e.target.files.length) setFiles((f) => [...f, ...Array.from(e.target.files)]); e.target.value = ''; }} />
+                     onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
             </div>
 
             <label className="block">
               <span className="text-sm text-sage">Datei(en) hochladen (Audio, PDF, Bild – max. 25 MB)</span>
-              <input type="file" multiple accept="audio/*,application/pdf,image/*"
-                     onChange={(e) => setFiles((f) => [...f, ...Array.from(e.target.files)])}
+              <input type="file" multiple accept={`${AUDIO_ACCEPT},application/pdf,image/*`}
+                     onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }}
                      className="mt-1 block w-full text-sm text-sage file:mr-3 file:rounded-lg file:border-0 file:bg-mint file:px-3 file:py-2 file:text-onaccent" />
             </label>
 
@@ -293,7 +321,7 @@ export default function AufgabeDetail() {
                       <span className="truncate">{f.name.startsWith('aufnahme-') ? `Aufnahme ${i + 1}` : f.name} · {(f.size / 1024 / 1024).toFixed(2)} MB</span>
                       <button onClick={() => setFiles((arr) => arr.filter((_, j) => j !== i))} className="text-status-absent inline-flex items-center gap-1"><Trash2 size={14} /> entfernen</button>
                     </div>
-                    {String(f.type).startsWith('audio') && <PendingAudio file={f} />}
+                    {isAudio(f) && <PendingAudio file={f} />}
                   </li>
                 ))}
               </ul>
@@ -306,7 +334,7 @@ export default function AufgabeDetail() {
               </label>
             )}
 
-            <Button onClick={() => submit()} disabled={busy || recording || (blockedToday && files.some((f) => String(f.type).startsWith('audio'))) || (blockedWritten && (text.trim() || files.some((f) => !String(f.type).startsWith('audio'))))}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
+            <Button onClick={() => submit()} disabled={busy || recording || (blockedToday && files.some(isAudio)) || (blockedWritten && (text.trim() || files.some((f) => !isAudio(f))))}><Upload size={18} /> {busy ? 'Senden …' : 'Abgeben'}</Button>
           </div>
         </Card>
       ) : (
