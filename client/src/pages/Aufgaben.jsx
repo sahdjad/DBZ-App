@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal } from 'lucide-react';
+import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal, Pencil } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { DuePresets, toLocalInput, AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -99,35 +100,10 @@ function ProposalForm({ user }) {
       )}
       {mine.length > 0 && (
         <div className="mt-3 text-xs text-sage-muted space-y-1">
-          {mine.map((p) => <div key={p.id}>⏳ „{p.title}" wartet auf Bestätigung</div>)}
+          {mine.map((p) => <div key={p.id}>⏳ {p.kind === 'edit' ? `Korrektur an „${p.title}"` : `„${p.title}"`} wartet auf Bestätigung</div>)}
         </div>
       )}
     </Card>
-  );
-}
-
-// Fristen-Schnellwahl: nächster Samstag 12:00 bzw. Beginn des nächsten
-// Unterrichts der Klasse. Die Lehrkraft kann danach frei ändern.
-function nextWeekdayAt(weekday, hhmm) {
-  const [h, m] = String(hhmm || '12:00').split(':').map(Number);
-  const now = new Date();
-  const d = new Date(now);
-  d.setHours(h || 0, m || 0, 0, 0);
-  d.setDate(d.getDate() + ((weekday - d.getDay() + 7) % 7));
-  if (d <= now) d.setDate(d.getDate() + 7);
-  return d.toISOString();
-}
-
-function DuePresets({ klass, onPick }) {
-  const presets = [['Samstag 12:00', nextWeekdayAt(6, '12:00')]];
-  if (klass && typeof klass.weekday === 'number' && klass.startTime) presets.push(['Bis zum nächsten Unterricht', nextWeekdayAt(klass.weekday, klass.startTime)]);
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-1.5">
-      {presets.map(([l, iso]) => (
-        <button key={l} type="button" onClick={() => onPick(toLocalInput(iso))}
-          className="rounded-full border border-line px-2.5 py-1 text-xs text-sage hover:bg-hover">{l}</button>
-      ))}
-    </div>
   );
 }
 
@@ -205,13 +181,6 @@ function HomeworkRules({ classes }) {
 }
 
 // Lehrkraft: offene Vorschläge des Klassensprechers bestätigen/ablehnen.
-// "YYYY-MM-DDTHH:MM" für <input type="datetime-local"> in Ortszeit.
-const toLocalInput = (iso) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
 
 function ProposalInbox({ onChanged, classes = [] }) {
   const toast = useToast();
@@ -222,7 +191,7 @@ function ProposalInbox({ onChanged, classes = [] }) {
   const decide = async (p, approve, edits) => {
     try {
       await api.post(`/assignment-proposals/${p.id}/decide`, { approve, ...(edits ? { edits } : {}) });
-      toast.push(approve ? 'Aufgabe freigegeben – die Klasse wurde benachrichtigt' : 'Vorschlag abgelehnt', 'success');
+      toast.push(approve ? (p.kind === 'edit' ? 'Korrektur übernommen – die Klasse wurde benachrichtigt' : 'Aufgabe freigegeben – die Klasse wurde benachrichtigt') : 'Vorschlag abgelehnt', 'success');
       setEditing(null);
       load();
       if (approve) onChanged();
@@ -235,7 +204,9 @@ function ProposalInbox({ onChanged, classes = [] }) {
       <div className="space-y-2">
         {list.map((p) => (
           <div key={p.id} className="rounded-lg border border-line p-3">
-            {editing?.id === p.id ? (
+            {p.kind === 'edit' ? (
+              <EditProposal p={p} klass={classes.find((c) => c.id === p.classId)} onDecide={(approve, edits) => decide(p, approve, edits)} />
+            ) : editing?.id === p.id ? (
               // Vor dem Freigeben anpassen (Titel, Beschreibung, Frist).
               <div className="space-y-2">
                 <input className="input" aria-label="Titel" value={editing.title} onChange={(e) => setEditing({ ...editing, title: e.target.value })} />
@@ -273,6 +244,40 @@ function ProposalInbox({ onChanged, classes = [] }) {
   );
 }
 
+// Korrekturvorschlag des Klassensprechers zu einer bestehenden Hausaufgabe:
+// zeigt alt -> neu; die Lehrkraft übernimmt, passt an oder lehnt ab.
+const FIELD_LABEL = { title: 'Titel', description: 'Beschreibung', type: 'Art', dueAt: 'Frist', subjectId: 'Fach' };
+function EditProposal({ p, klass, onDecide }) {
+  const [editing, setEditing] = useState(false);
+  const show = (k, v) => (k === 'dueAt' ? fmt(v) : v || '–');
+  if (editing) {
+    return (
+      <AssignmentEditForm assignment={{ ...p.current, ...p.changes }} klass={klass} submitLabel="Geändert übernehmen"
+        onSubmit={(edits) => onDecide(true, edits)} onCancel={() => setEditing(false)} />
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <div className="text-ivory">Korrektur zu „{p.current?.title || p.title}"</div>
+      <div className="text-xs text-sage-muted">{p.className} · von {p.proposedByName}{p.note ? ` · „${p.note}"` : ''}</div>
+      <ul className="text-sm space-y-1">
+        {Object.entries(p.changes || {}).map(([k, v]) => (
+          <li key={k} className="break-words">
+            <span className="text-sage-muted">{FIELD_LABEL[k] || k}: </span>
+            <span className="line-through text-sage-muted">{show(k, p.current?.[k])}</span>{' → '}
+            <span className="text-ivory">{show(k, v)}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-1 flex-wrap">
+        <Button size="sm" onClick={() => onDecide(true)}><Check size={15} /> Übernehmen</Button>
+        <Button size="sm" variant="outline" onClick={() => setEditing(true)}>Bearbeiten</Button>
+        <Button size="sm" variant="ghost" onClick={() => onDecide(false)}><X size={15} /> Ablehnen</Button>
+      </div>
+    </div>
+  );
+}
+
 function ManagerView() {
   const toast = useToast();
   const [list, setList] = useState(null);
@@ -282,7 +287,17 @@ function ManagerView() {
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [showForm, setShowForm] = useState(false);
+  const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ classId: '', title: '', description: '', subjectId: '', type: 'audio', dueAt: '' });
+  const saveEdit = async (a, edits) => {
+    if (!Object.keys(edits).length) { setEditId(null); return; }
+    try {
+      await api.patch(`/assignments/${a.id}`, edits);
+      toast.push('Hausaufgabe geändert – die Schüler wurden benachrichtigt', 'success');
+      setEditId(null);
+      load();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
 
   const load = () => api.get(`/assignments${archived ? '?archived=1' : ''}`).then((d) => setList(d.assignments));
   useEffect(() => { setList(null); selection.clear(); load(); /* eslint-disable-next-line */ }, [archived]);
@@ -404,11 +419,19 @@ function ManagerView() {
           )}
         </Card>
       ) : (
-        list.map((a) => (
+        list.map((a) => (editId === a.id ? (
+          <Card key={a.id} className="p-4 border-mint/50">
+            <div className="text-sm text-ivory font-medium mb-3 flex items-center gap-2"><Pencil size={15} /> Hausaufgabe bearbeiten</div>
+            <AssignmentEditForm assignment={a} klass={classes.find((c) => c.id === a.classId)} subjects={subjects}
+              onSubmit={(edits) => saveEdit(a, edits)} onCancel={() => setEditId(null)} />
+            <p className="text-[11px] text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
+          </Card>
+        ) : (
           <AssignmentRow key={a.id} a={a} selection={selection} archived={archived}
+            onEdit={() => setEditId(a.id)}
             onDelete={() => setConfirm({ ids: [a.id], title: a.title })}
             onRestore={() => runBulk([a.id], 'unarchive')} />
-        ))
+        )))
       )}
 
       <SelectionBar
@@ -444,7 +467,7 @@ function ManagerView() {
   );
 }
 
-function AssignmentRow({ a, selection, archived, onDelete, onRestore }) {
+function AssignmentRow({ a, selection, archived, onEdit, onDelete, onRestore }) {
   const longPress = useLongPress(() => selection.start(a.id));
   const selected = selection.has(a.id);
   return (
@@ -467,10 +490,16 @@ function AssignmentRow({ a, selection, archived, onDelete, onRestore }) {
             <ArchiveRestore size={16} />
           </button>
         ) : (
+          <>
+          <button onClick={onEdit} title="Bearbeiten" aria-label="Aufgabe bearbeiten"
+                  className="p-1.5 rounded-lg text-sage-muted hover:text-ivory hover:bg-hover">
+            <Pencil size={16} />
+          </button>
           <button onClick={onDelete} title="Aufgabe entfernen" aria-label="Aufgabe entfernen"
                   className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10">
             <Trash2 size={16} />
           </button>
+          </>
         ))}
       </div>
     </Card>

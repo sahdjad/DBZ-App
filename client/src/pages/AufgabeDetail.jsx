@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Pause, Send, Camera, AlertTriangle, Info, Trash2 } from 'lucide-react';
+import { Mic, Square, Upload, ArrowLeft, Paperclip, Play, Pause, Send, Camera, AlertTriangle, Info, Trash2, Pencil } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
+import { useAuth } from '../lib/AuthContext.jsx';
+import { AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
 
 const fmtDay = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: '2-digit' });
 const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -13,6 +15,8 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: '
 export default function AufgabeDetail() {
   const { id } = useParams();
   const toast = useToast();
+  const { user } = useAuth();
+  const [proposing, setProposing] = useState(false);
   const [data, setData] = useState(null);
   const [text, setText] = useState('');
   const [files, setFiles] = useState([]); // File[]
@@ -149,6 +153,27 @@ export default function AufgabeDetail() {
           <StatusBadge status={a.studentStatus} />
         </div>
         {a.description && <p className="text-sage mt-3 whitespace-pre-line">{a.description}</p>}
+        {/* Klassensprecher: Fehler in der Hausaufgabe melden -> Lehrkraft bestätigt. */}
+        {user?.role === 'klassensprecher' && !proposing && (
+          <button type="button" onClick={() => setProposing(true)} className="mt-3 inline-flex items-center gap-1.5 text-xs text-sage-muted hover:text-ivory">
+            <Pencil size={13} /> Fehler? Korrektur vorschlagen
+          </button>
+        )}
+        {proposing && (
+          <div className="mt-4 border-t border-line pt-4">
+            <div className="text-sm text-ivory mb-2">Korrektur vorschlagen – die Lehrkraft bestätigt sie</div>
+            <AssignmentEditForm assignment={a} withNote submitLabel="Vorschlag senden"
+              onCancel={() => setProposing(false)}
+              onSubmit={async (edits, note) => {
+                if (!Object.keys(edits).length && !note) { toast.push('Du hast nichts geändert', 'error'); return; }
+                try {
+                  await api.post(`/assignments/${a.id}/change-proposal`, { ...edits, note });
+                  toast.push('Korrektur an die Lehrkraft gesendet', 'success');
+                  setProposing(false);
+                } catch (err) { toast.push(err.message, 'error'); }
+              }} />
+          </div>
+        )}
       </Card>
 
       {sub && (
