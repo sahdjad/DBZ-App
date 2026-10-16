@@ -2293,6 +2293,87 @@ router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
   res.json({ assignment: createAssignment(req.user, body) });
 });
 
+// --- Hausaufgabe nachträglich bearbeiten (z. B. Tippfehler, falsche Frist) ----
+// Übernimmt nur erlaubte Felder; benachrichtigt die Schüler, wenn sich etwas
+// für sie Sichtbares geändert hat. Abgaben bleiben unverändert erhalten.
+const EDITABLE_FIELDS = ['title', 'description', 'subjectId', 'type', 'dueAt'];
+function cleanAssignmentEdits(edits = {}) {
+  const out = {};
+  if (edits.title !== undefined) {
+    const t = String(edits.title || '').trim();
+    if (!t) throw Object.assign(new Error('Titel ist erforderlich'), { status: 400 });
+    out.title = t;
+  }
+  if (edits.description !== undefined) out.description = String(edits.description || '');
+  if (edits.subjectId !== undefined) out.subjectId = findSubject(edits.subjectId) ? edits.subjectId : null;
+  if (edits.type !== undefined) {
+    if (!ASSIGNMENT_TYPES.includes(edits.type)) throw Object.assign(new Error('Ungültige Art'), { status: 400 });
+    out.type = edits.type;
+  }
+  if (edits.dueAt !== undefined) {
+    if (edits.dueAt && Number.isNaN(new Date(edits.dueAt).getTime())) throw Object.assign(new Error('Ungültige Frist'), { status: 400 });
+    out.dueAt = edits.dueAt ? new Date(edits.dueAt).toISOString() : null;
+  }
+  return out;
+}
+function applyAssignmentEdits(actor, a, edits) {
+  const before = {};
+  const changed = EDITABLE_FIELDS.filter((k) => edits[k] !== undefined && (edits[k] ?? null) !== (a[k] ?? null));
+  if (!changed.length) return [];
+  changed.forEach((k) => { before[k] = a[k] ?? null; a[k] = edits[k]; });
+  a.updatedAt = new Date().toISOString();
+  a.updatedBy = actor.id;
+  db.commit();
+  audit(actor.id, 'assignment.update', 'assignment', a.id, before, Object.fromEntries(changed.map((k) => [k, a[k]])));
+  const parts = [];
+  if (changed.includes('dueAt')) parts.push(a.dueAt ? `neue Frist: ${new Date(a.dueAt).toLocaleString('de-DE', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' })}` : 'keine Frist mehr');
+  if (changed.some((k) => k !== 'dueAt')) parts.push('Inhalt aktualisiert');
+  targetsFor(a).forEach((sid) => notify(sid, {
+    type: 'assignment_updated', level: 'info', title: `Hausaufgabe geändert: ${a.title}`,
+    body: parts.join(' · '), deepLink: `/aufgaben/${a.id}`, refId: a.id,
+  }));
+  return changed;
+}
+
+router.patch('/assignments/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const a = byId('assignments', req.params.id);
+  if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  if (!canManageClass(req.user, a.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  try {
+    const changed = applyAssignmentEdits(req.user, a, cleanAssignmentEdits(req.body || {}));
+    res.json({ assignment: a, changed });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// Klassensprecher: Korrektur an einer bestehenden Hausaufgabe vorschlagen.
+// Wirksam erst, wenn eine Lehrkraft der Klasse sie bestätigt.
+router.post('/assignments/:id/change-proposal', requireAuth, requireRole(ROLES.KLASSENSPRECHER), (req, res) => {
+  const a = byId('assignments', req.params.id);
+  if (!a) return res.status(404).json({ error: 'Aufgabe nicht gefunden' });
+  if (!(req.user.classIds || []).includes(a.classId)) return res.status(403).json({ error: 'Nur für die eigene Klasse' });
+  let changes;
+  try { changes = cleanAssignmentEdits(req.body || {}); } catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+  Object.keys(changes).forEach((k) => { if ((changes[k] ?? null) === (a[k] ?? null)) delete changes[k]; });
+  const note = String(req.body?.note || '').trim().slice(0, 500);
+  if (!Object.keys(changes).length && !note) return res.status(400).json({ error: 'Keine Änderung angegeben' });
+  // Ein offener Änderungsvorschlag pro Aufgabe und Klassensprecher – ein neuer ersetzt den alten.
+  db.all('assignment_proposals')
+    .filter((x) => x.kind === 'edit' && x.assignmentId === a.id && x.proposedBy === req.user.id && x.status === 'pending')
+    .forEach((x) => { x.status = 'replaced'; });
+  const p = {
+    id: newId('aprop'), kind: 'edit', assignmentId: a.id, classId: a.classId, title: changes.title || a.title,
+    changes, note, proposedBy: req.user.id, proposedByName: req.user.name, status: 'pending', createdAt: new Date().toISOString(),
+  };
+  db.insert('assignment_proposals', p);
+  classManagersOfClasses([a.classId]).filter((u) => TEACHING_ROLES.includes(u.role)).forEach((u) => notify(u.id, {
+    type: 'assignment_proposal', level: 'warning', title: `Korrekturvorschlag vom Klassensprecher: ${a.title}`,
+    body: 'Bitte unter „Aufgaben" übernehmen oder ablehnen.', deepLink: '/aufgaben', refId: p.id,
+  }));
+  res.json({ proposal: p });
+});
+
 // --- Aufgaben-Vorschläge des Klassensprechers ---------------------------------
 // Getrennt von echten Aufgaben gespeichert: ein unbestätigter Vorschlag zählt
 // nirgends (Statistik, Klassenliste, Schüleransicht). Erst die Lehrkraft macht
@@ -2319,7 +2400,10 @@ router.get('/assignment-proposals', requireAuth, (req, res) => {
   if (req.user.role === ROLES.KLASSENSPRECHER) list = list.filter((p) => p.proposedBy === req.user.id);
   else if (TEACHING_ROLES.includes(req.user.role)) list = list.filter((p) => (req.user.classIds || []).includes(p.classId));
   else list = [];
-  res.json({ proposals: list.map((p) => ({ ...p, className: findClass(p.classId)?.name || null })) });
+  res.json({ proposals: list.map((p) => {
+    const a = p.kind === 'edit' ? byId('assignments', p.assignmentId) : null;
+    return { ...p, className: findClass(p.classId)?.name || null, ...(a ? { current: Object.fromEntries(EDITABLE_FIELDS.map((k) => [k, a[k] ?? null])) } : {}) };
+  }) });
 });
 
 router.post('/assignment-proposals/:id/decide', requireAuth, (req, res) => {
@@ -2328,6 +2412,26 @@ router.post('/assignment-proposals/:id/decide', requireAuth, (req, res) => {
   if (!(TEACHING_ROLES.includes(req.user.role) && (req.user.classIds || []).includes(p.classId)))
     return res.status(403).json({ error: 'Nur Lehrkräfte dieser Klasse' });
   const approve = req.body?.approve === true;
+  if (p.kind === 'edit') {
+    const a = byId('assignments', p.assignmentId);
+    if (approve && !a) return res.status(404).json({ error: 'Die Aufgabe gibt es nicht mehr' });
+    let changed = [];
+    if (approve) {
+      try { changed = applyAssignmentEdits(req.user, a, cleanAssignmentEdits({ ...p.changes, ...(req.body?.edits || {}) })); }
+      catch (err) { return res.status(err.status || 400).json({ error: err.message }); }
+    }
+    p.status = approve ? 'approved' : 'rejected';
+    p.decidedBy = req.user.id;
+    p.decidedAt = new Date().toISOString();
+    notify(p.proposedBy, {
+      type: 'assignment_proposal', level: approve ? 'info' : 'warning',
+      title: approve ? `Deine Korrektur wurde übernommen: ${a?.title || p.title}` : `Deine Korrektur wurde abgelehnt: ${a?.title || p.title}`,
+      body: '', deepLink: a ? `/aufgaben/${a.id}` : '/aufgaben', refId: p.id,
+    });
+    db.commit();
+    audit(req.user.id, approve ? 'assignment_change.approve' : 'assignment_change.reject', 'assignment_proposal', p.id);
+    return res.json({ ok: true, assignment: a || null, changed });
+  }
   p.status = approve ? 'approved' : 'rejected';
   p.decidedBy = req.user.id;
   p.decidedAt = new Date().toISOString();

@@ -2546,3 +2546,34 @@ test('Frist abgelaufen: Schüler kann nichts mehr hochladen, Lehrkraft sieht ihn
   assert.equal(row.items.find((i) => i.assignmentId === a.id).state, 'missed');
   assert.ok(row.missed >= 1, 'rot markiert');
 });
+
+test('Hausaufgabe nachträglich bearbeiten: Lehrkraft direkt, Klassensprecher nur per Vorschlag mit Bestätigung', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const a = (await teacher('POST', '/assignments', { classId: 'class_3', title: 'Sure Al-Mlk', type: 'audio', dueAt: new Date(Date.now() - 60000).toISOString() })).data.assignment;
+  // Lehrkraft korrigiert Titel und verlängert die Frist -> Schüler kann wieder abgeben.
+  const newDue = new Date(Date.now() + 3 * 86400000).toISOString();
+  const r = await teacher('PATCH', `/assignments/${a.id}`, { title: 'Sure Al-Mulk', dueAt: newDue });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.changed.sort(), ['dueAt', 'title']);
+  const student = await loginAs('schueler@dbz.de');
+  const view = (await student('GET', `/assignments/${a.id}`)).data.assignment;
+  assert.equal(view.title, 'Sure Al-Mulk');
+  assert.equal(view.canSubmit, true, 'nach Fristverlängerung wieder offen');
+  const notes = (await student('GET', '/notifications')).data.items;
+  assert.ok(notes.some((n) => n.type === 'assignment_updated' && n.refId === a.id));
+  assert.equal((await teacher('PATCH', `/assignments/${a.id}`, { title: '  ' })).status, 400);
+  // Schüler darf nicht direkt bearbeiten.
+  assert.equal((await student('PATCH', `/assignments/${a.id}`, { title: 'x' })).status, 403);
+  // Klassensprecher schlägt eine Korrektur vor; erst nach Bestätigung wirksam.
+  const rep = await loginAs('sprecher@dbz.de');
+  assert.equal((await rep('PATCH', `/assignments/${a.id}`, { title: 'x' })).status, 403);
+  const prop = await rep('POST', `/assignments/${a.id}/change-proposal`, { description: 'Seite 562–564', note: 'Seiten fehlten' });
+  assert.equal(prop.status, 200);
+  assert.equal((await student('GET', `/assignments/${a.id}`)).data.assignment.description, '', 'noch nicht übernommen');
+  const inbox = (await teacher('GET', '/assignment-proposals')).data.proposals.find((p) => p.id === prop.data.proposal.id);
+  assert.equal(inbox.kind, 'edit');
+  assert.equal(inbox.current.title, 'Sure Al-Mulk');
+  const d = await teacher('POST', `/assignment-proposals/${inbox.id}/decide`, { approve: true });
+  assert.equal(d.status, 200);
+  assert.equal((await student('GET', `/assignments/${a.id}`)).data.assignment.description, 'Seite 562–564');
+});
