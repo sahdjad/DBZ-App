@@ -163,6 +163,13 @@ Bis dahin gilt: neue Daten sind flüchtig.
 - [ ] Kalender-Umbau (Jahr/Monat/Woche/Tag, eigene Termine, Farben, Samstag automatisch).
 - [ ] QR: fester Klassen-QR + zeitgesteuertes Fenster (auto-öffnen, fern verlängern).
 
+- [ ] **App-Guide (vom Nutzer gewünscht, 18.10.2026 – noch nicht beauftragt):** Anleitung
+      in der App, je Rolle (Schüler, Klassensprecher, Lehrer, Eltern, Leitung, Admin):
+      kurze Einführungstour beim ersten Login + Hilfe-Seite zum Nachlesen (z. B. Audio
+      aufnehmen/hochladen inkl. WhatsApp-Sprachnachricht, Hausaufgaben-Regeln „eine pro
+      Tag“, Korrektur „x von y“/rot, Hausaufgabe bearbeiten/Korrektur vorschlagen,
+      Konto löschen, App auf den Home-Bildschirm legen). Vor Umsetzung Umfang mit Nutzer klären.
+
 ### P2 — Fundament / Datenmodell (nach Nutzerwunsch DANACH)
 - [ ] **Dauerhafte Datenbank + Objektspeicher (Supabase, kostenlos)** — löst Audio/Persistenz.
 - [ ] Registrierung mit vollen Kontaktdaten (Eltern-/Notfallnummer).
