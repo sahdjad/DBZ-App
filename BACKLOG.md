@@ -170,6 +170,12 @@ Bis dahin gilt: neue Daten sind flüchtig.
       Tag“, Korrektur „x von y“/rot, Hausaufgabe bearbeiten/Korrektur vorschlagen,
       Konto löschen, App auf den Home-Bildschirm legen). Vor Umsetzung Umfang mit Nutzer klären.
 
+- [ ] **Sprachen Deutsch / Englisch (vom Nutzer gewünscht, 18.10.2026 – noch nicht beauftragt):**
+      Sprachumschalter im Konto (Standard: Gerätesprache), alle Texte der App übersetzbar
+      (bisher fest auf Deutsch, kein Übersetzungssystem vorhanden), auch Push-Nachrichten
+      und E-Mails. Qur'an-Text bleibt Arabisch. Gut mit dem App-Guide kombinierbar
+      (Guide gleich zweisprachig). Großer Umbau (~40 Seiten) → in Etappen.
+
 ### P2 — Fundament / Datenmodell (nach Nutzerwunsch DANACH)
 - [ ] **Dauerhafte Datenbank + Objektspeicher (Supabase, kostenlos)** — löst Audio/Persistenz.
 - [ ] Registrierung mit vollen Kontaktdaten (Eltern-/Notfallnummer).
