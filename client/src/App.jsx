@@ -59,20 +59,19 @@ const ADMINS = ['super_admin', 'leitung'];
 function Splash() {
   const [logoOk, setLogoOk] = useState(true);
   return (
-    <div className="app-splash min-h-screen grid place-items-center bg-sidebar">
+    <div className="app-splash min-h-screen grid place-items-center">
       <div className="flex flex-col items-center">
         <div className="splash-mark relative grid place-items-center h-28 w-28">
           <svg className="splash-ring absolute inset-0" viewBox="0 0 112 112" aria-hidden="true"><circle cx="56" cy="56" r="52" /></svg>
-          <span className="splash-glow" aria-hidden="true" />
           {logoOk ? (
-            <img src="/logo.png" alt="DBZ" className="h-16 w-16 rounded-2xl object-cover" onError={() => setLogoOk(false)} />
+            <img src="/logo.png" alt="DBZ" className="splash-logo" onError={() => setLogoOk(false)} />
           ) : (
-            <span className="font-display text-2xl text-mint-light">DBZ</span>
+            <span className="font-display text-2xl text-[#f7f4e8]">DBZ</span>
           )}
         </div>
-        <div className="splash-text mt-5 text-center">
-          <div className="font-display text-xl text-ivory">Deen Bildungszentrum</div>
-          <div className="splash-dots mt-2 flex justify-center gap-1.5" aria-label="wird geladen"><i /><i /><i /></div>
+        <div className="splash-text text-center">
+          <div className="splash-title">Deen Bildungszentrum</div>
+          <div className="splash-dots mt-2.5 flex justify-center gap-1.5" aria-label="wird geladen"><i /><i /><i /></div>
         </div>
       </div>
     </div>
