@@ -5,15 +5,18 @@
 import { createTranslator } from './translate.js';
 
 const KEY = 'dbz-lang';
-export const LANGS = [['de', 'Deutsch'], ['en', 'English']];
+export const LANGS = [['de', 'Deutsch'], ['en', 'English'], ['fr', 'Français']];
+const CODES = LANGS.map(([c]) => c);
+const LOCALE = { en: 'en-GB', fr: 'fr-FR' };
 
 export function getLang() {
   try {
     const v = localStorage.getItem(KEY);
-    if (v === 'de' || v === 'en') return v;
+    if (CODES.includes(v)) return v;
   } catch { /* egal */ }
   const nav = (typeof navigator !== 'undefined' && (navigator.languages?.[0] || navigator.language)) || 'de';
-  return String(nav).toLowerCase().startsWith('de') ? 'de' : 'en';
+  const code = String(nav).toLowerCase().slice(0, 2);
+  return CODES.includes(code) ? code : 'en';
 }
 
 export function setLang(lang, { reload = true } = {}) {
@@ -56,9 +59,9 @@ function walk(root) {
   while (n) { if (n.nodeType === 3) doText(n); else doAttrs(n); n = w.nextNode(); }
 }
 
-// Datums-/Zahlenformate: Code nutzt 'de-DE' -> bei Englisch 'en-GB'.
-function patchLocales() {
-  const fix = (loc) => (loc === undefined || /^de(-|$)/i.test(String(loc)) ? 'en-GB' : loc);
+// Datums-/Zahlenformate: Code nutzt 'de-DE' -> in der gewählten Sprache.
+function patchLocales(target) {
+  const fix = (loc) => (loc === undefined || /^de(-|$)/i.test(String(loc)) ? target : loc);
   for (const m of ['toLocaleString', 'toLocaleDateString', 'toLocaleTimeString']) {
     const orig = Date.prototype[m];
     Date.prototype[m] = function (loc, opts) { return orig.call(this, fix(loc), opts); };
@@ -75,12 +78,12 @@ function patchLocales() {
 export async function initI18n() {
   const lang = getLang();
   document.documentElement.lang = lang;
-  if (lang !== 'en') return;
+  if (lang === 'de') return;
   try {
-    const data = (await import('./en.json')).default;
+    const data = (await (lang === 'fr' ? import('./fr.json') : import('./en.json'))).default;
     translate = createTranslator(data);
   } catch { return; }
-  patchLocales();
+  patchLocales(LOCALE[lang]);
   const start = () => {
     walk(document.body);
     new MutationObserver((list) => {

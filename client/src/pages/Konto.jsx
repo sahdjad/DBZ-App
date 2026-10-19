@@ -16,7 +16,7 @@ const LINKABLE = ['schueler', 'klassensprecher'];
 function LanguageCard() {
   return (
     <Card className="p-5">
-      <CardHeader title="Sprache / Language" subtitle="Deutsch oder English" icon={Languages} />
+      <CardHeader title="Sprache / Language" subtitle="Deutsch · English · Français" icon={Languages} />
       <div className="p-4"><LanguageSwitch /></div>
     </Card>
   );
@@ -487,8 +487,8 @@ function DeleteAccountCard() {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   // Bestätigungswort je Sprache (beide werden akzeptiert).
-  const word = getLang() === 'en' ? 'DELETE' : 'LÖSCHEN';
-  const ready = password && ['LÖSCHEN', 'DELETE'].includes(confirm.trim().toUpperCase());
+  const word = { en: 'DELETE', fr: 'SUPPRIMER' }[getLang()] || 'LÖSCHEN';
+  const ready = password && ['LÖSCHEN', 'DELETE', 'SUPPRIMER'].includes(confirm.trim().toUpperCase());
 
   const remove = async (e) => {
     e.preventDefault();
@@ -525,7 +525,7 @@ function DeleteAccountCard() {
               <input type="password" autoComplete="current-password" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
             <label className="block">
-              <span data-noi18n className="text-sm text-sage">{word === 'DELETE' ? <>Type <b className="text-ivory">DELETE</b></> : <>Tippe <b className="text-ivory">LÖSCHEN</b> ein</>}</span>
+              <span data-noi18n className="text-sm text-sage">{word === 'DELETE' ? <>Type <b className="text-ivory">DELETE</b></> : word === 'SUPPRIMER' ? <>Tape <b className="text-ivory">SUPPRIMER</b></> : <>Tippe <b className="text-ivory">LÖSCHEN</b> ein</>}</span>
               <input className="input mt-1" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoCapitalize="characters" />
             </label>
             <div className="flex gap-2 flex-wrap">
