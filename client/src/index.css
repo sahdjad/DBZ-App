@@ -85,6 +85,7 @@
   --c-card: 12 50 36;
   --c-mint: 120 202 156;
   --c-mint-light: 150 216 178;
+  --c-gold: 216 195 138;
 }
 
 @layer base {
@@ -314,18 +315,18 @@
   }
 }
 
-/* Markenstart (Splash): Logo blendet sanft ein, ein weicher Schein pulsiert. */
-.app-splash .splash-mark { animation: splashPop 0.6s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
-.app-splash .splash-text { animation: splashFade 0.7s ease 0.2s both; }
-.app-splash .splash-glow {
-  position: absolute;
-  inset: -30%;
-  border-radius: 9999px;
-  background: radial-gradient(closest-side, rgba(30, 138, 86, 0.28), transparent 70%);
-  animation: splashGlow 1.8s ease-in-out infinite;
-  z-index: 0;
+/* Markenstart (Splash): exakt wie der HTML-Start-Bildschirm (index.html), damit
+   beim Übergang nichts springt oder verrutscht. Logo auf hellem Feld (das Logo
+   selbst ist grün und wäre auf dem dunklen Grün kaum zu sehen). */
+.app-splash { background: #062d1f; color: #f7f4e8; }
+.app-splash .splash-mark { animation: none; }
+.app-splash .splash-mark::before { content: ''; position: absolute; inset: 2.5px; border-radius: 9999px; border: 3px solid rgba(216, 195, 138, 0.18); }
+.app-splash .splash-logo {
+  position: relative; z-index: 1; width: 76px; height: 76px; box-sizing: border-box; padding: 8px;
+  object-fit: contain; background: #fbf8ee; border-radius: 20px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
 }
-.app-splash .splash-mark img,
+.app-splash .splash-text { margin-top: 20px; }
+.app-splash .splash-title { font-weight: 600; font-size: 20px; letter-spacing: 0.02em; color: #f7f4e8; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
 .app-splash .splash-mark span { position: relative; z-index: 1; }
 @keyframes splashPop { 0% { opacity: 0; transform: scale(0.82); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes splashFade { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
@@ -494,7 +495,7 @@ body {
   border: 3px solid rgba(21, 101, 63, 0.15); border-top-color: rgb(var(--c-mint, 21 101 63)); border-right-color: #d8c38a;
   animation: dbzSpin 0.9s linear infinite;
 }
-.dbz-loader img { width: 30px; height: 30px; border-radius: 9px; animation: dbzBreath 1.6s ease-in-out infinite; }
+.dbz-loader img { width: 32px; height: 32px; box-sizing: border-box; padding: 3px; object-fit: contain; background: #fbf8ee; border-radius: 9px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15); animation: dbzBreath 1.6s ease-in-out infinite; }
 @keyframes dbzBreath { 0%, 100% { transform: scale(0.92); opacity: 0.85; } 50% { transform: scale(1.05); opacity: 1; } }
 .dbz-fade-in { animation: splashFade 0.4s ease both; }
 
@@ -524,8 +525,9 @@ body {
 #dbz-updating { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: #062d1f; color: #f4efe2; animation: splashFade 0.25s ease both; }
 #dbz-updating .dbz-upd-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 #dbz-updating .dbz-upd-mark { position: relative; width: 112px; height: 112px; display: grid; place-items: center; margin-bottom: 10px; }
+#dbz-updating .dbz-upd-mark::before { content: ''; position: absolute; inset: 2.5px; border-radius: 9999px; border: 3px solid rgba(216, 195, 138, 0.18); }
 #dbz-updating svg { position: absolute; inset: 0; animation: dbzSpin 1.6s linear infinite; }
 #dbz-updating circle { fill: none; stroke: #d8c38a; stroke-width: 3; stroke-linecap: round; stroke-dasharray: 250 90; }
-#dbz-updating img { width: 64px; height: 64px; border-radius: 18px; }
+#dbz-updating img { position: relative; width: 76px; height: 76px; box-sizing: border-box; padding: 8px; object-fit: contain; background: #fbf8ee; border-radius: 20px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 #dbz-updating b { font-size: 18px; font-weight: 600; }
 #dbz-updating span { font-size: 12px; color: #9fb8a8; }

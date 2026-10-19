@@ -27,17 +27,20 @@
     <style>
       #boot{position:fixed;inset:0;display:grid;place-items:center;background:#062d1f;color:#f4efe2;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;z-index:9999}
       #boot .m{position:relative;width:112px;height:112px;display:grid;place-items:center}
+      #boot .m::before{content:'';position:absolute;inset:2.5px;border-radius:50%;border:3px solid rgba(216,195,138,.18)}
       #boot svg{position:absolute;inset:0;animation:bspin 2.4s linear infinite}
       #boot circle{fill:none;stroke:#d8c38a;stroke-width:3;stroke-linecap:round;stroke-dasharray:250 90;opacity:.9}
-      #boot img{width:64px;height:64px;border-radius:18px;animation:bpop .7s cubic-bezier(.22,.61,.36,1) both}
-      #boot .t{margin-top:18px;text-align:center;animation:bfade .8s ease .15s both}
-      #boot .t b{display:block;font-weight:600;font-size:19px;letter-spacing:.02em}
-      #boot .t span{font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:#9fb8a8}
+      #boot img{position:relative;width:76px;height:76px;box-sizing:border-box;padding:8px;object-fit:contain;background:#fbf8ee;border-radius:20px;box-shadow:0 6px 18px rgba(0,0,0,.35);animation:bfade .5s ease both}
+      #boot .t{margin-top:20px;text-align:center}
+      #boot .t b{display:block;font-weight:600;font-size:20px;letter-spacing:.02em;color:#f7f4e8}
+      #boot .d{display:flex;justify-content:center;gap:6px;margin-top:10px}
+      #boot .d i{width:7px;height:7px;border-radius:50%;background:#d8c38a;animation:bdot 1.1s ease-in-out infinite}
+      #boot .d i:nth-child(2){animation-delay:.15s}#boot .d i:nth-child(3){animation-delay:.3s}
+      @keyframes bdot{0%,80%,100%{opacity:.35;transform:translateY(0)}40%{opacity:1;transform:translateY(-5px)}}
       @keyframes bspin{to{transform:rotate(360deg)}}
-      @keyframes bpop{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:none}}
-      @keyframes bfade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+      @keyframes bfade{from{opacity:0}to{opacity:1}}
     </style>
-    <div id="root"><div id="boot"><div><div class="m"><svg viewBox="0 0 112 112"><circle cx="56" cy="56" r="52"/></svg><img src="/logo.png" alt="DBZ" /></div><div class="t"><b>Deen Bildungszentrum</b><span>DBZ</span></div></div></div></div>
+    <div id="root"><div id="boot"><div><div class="m"><svg viewBox="0 0 112 112"><circle cx="56" cy="56" r="52"/></svg><img src="/logo.png" alt="DBZ" /></div><div class="t"><b>Deen Bildungszentrum</b><div class="d"><i></i><i></i><i></i></div></div></div></div></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

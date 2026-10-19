@@ -156,7 +156,7 @@ function Brand() {
         <img
           src="/logo.png"
           alt="DBZ"
-          className="h-11 w-11 rounded-2xl object-cover ring-1 ring-white/10 shadow-md"
+          className="h-12 w-12 shrink-0 rounded-2xl object-contain bg-[#fbf8ee] p-1 shadow-md"
           onError={() => setLogoOk(false)}
         />
       ) : (
@@ -165,8 +165,8 @@ function Brand() {
         </span>
       )}
       <div className="leading-tight">
-        <div className="font-display text-lg text-ivory">DBZ</div>
-        <div className="text-[11px] font-mono uppercase tracking-widest text-sage-muted">
+        <div className="font-display text-xl text-ivory">DBZ</div>
+        <div className="text-[11px] font-mono uppercase tracking-widest text-gold">
           Deen Bildungszentrum
         </div>
       </div>
