@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Alle Fächer": "All subjects",
+"Älteste oben, Neueste unten": "Oldest at the top, newest at the bottom",
+"Zum Neuesten": "Jump to newest",
+"Fach antippen, um die Dateien zu sehen.": "Tap a subject to see its files.",
+"Zuletzt": "Last",
+"neu": "new",
+"Dateien": "Files",
+"Vorschlag antippen oder selbst eintragen": "Tap a suggestion or type your own",
+"Neuen Eintrag hinzufügen": "Add new entry",
 "Aktuelles Protokoll": "Current minutes",
 "Ältere Protokolle": "Older minutes",
 "Wartet auf deine Freigabe": "Waiting for your approval",
