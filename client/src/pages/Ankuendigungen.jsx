@@ -72,7 +72,7 @@ export default function Ankuendigungen() {
                   <button onClick={() => remove(a.id)} className="text-status-absent p-1 shrink-0" aria-label="Löschen"><Trash2 size={16} /></button>
                 )}
               </div>
-              <p className="text-sage mt-3 whitespace-pre-line">{a.body}</p>
+              <p data-noi18n className="text-sage mt-3 whitespace-pre-line">{a.body}</p>
               <ReactionBar a={a} onReact={(e) => react(a.id, e)} />
               {a.readStats && (
                 <button type="button" onClick={() => setReadersOf(a)} className="mt-2 text-xs text-mint inline-flex items-center gap-1 hover:underline">

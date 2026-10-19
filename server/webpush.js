@@ -11,6 +11,7 @@
 import crypto from 'node:crypto';
 import { db, newId } from './store.js';
 import { ROLE_LABELS } from './rbac.js';
+import { translateFor } from './i18n.js';
 
 const b64url = (buf) =>
   Buffer.from(buf).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -171,9 +172,12 @@ export async function pushToUser(userId, payload) {
     // Meldung für eine andere Rolle als die, mit der das Gerät angemeldet ist:
     // Rolle voranstellen und beim Antippen dorthin wechseln.
     const other = s.userId !== userId;
+    // Sprache der Person (am Konto gespeichert) -> Push ggf. auf Englisch.
+    const lang = db.all('users').find((u) => u.id === s.userId)?.lang || target?.lang;
+    const local = { ...payload, title: translateFor(lang, payload.title), body: translateFor(lang, payload.body) };
     const body = other
-      ? { ...payload, title: `${ROLE_LABELS[target?.role] || 'DBZ'}: ${payload.title}`, as: userId }
-      : payload;
+      ? { ...local, title: `${translateFor(lang, ROLE_LABELS[target?.role]) || 'DBZ'}: ${local.title}`, as: userId }
+      : local;
     try {
       const res = await sendPush(s, body);
       if (res.status === 404 || res.status === 410) gone.push(s.id);

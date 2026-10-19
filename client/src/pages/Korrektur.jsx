@@ -126,7 +126,7 @@ function ReviewCard({ sub, onDone, compact = false }) {
       </div>
       <SameDayWarning sameDay={sub.sameDay} />
 
-      {sub.text && <p className="text-sage text-sm mt-3 whitespace-pre-line">{sub.text}</p>}
+      {sub.text && <p data-noi18n className="text-sage text-sm mt-3 whitespace-pre-line">{sub.text}</p>}
       {sub.files?.length > 0 && (
         <div className="mt-3 space-y-2">
           {sub.files.map((f) => (

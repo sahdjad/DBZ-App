@@ -81,7 +81,7 @@ function ReportView({ report, subjects = [] }) {
       {report.teacherComment && (
         <div className="rounded-lg border border-line bg-subtle p-4">
           <div className="text-sm text-ivory mb-1">Kommentar der Lehrkraft</div>
-          <p className="text-sage whitespace-pre-line">{report.teacherComment}</p>
+          <p data-noi18n className="text-sage whitespace-pre-line">{report.teacherComment}</p>
         </div>
       )}
     </div>

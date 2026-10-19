@@ -386,7 +386,7 @@ function BroadcastDetail({ id, onBack, onOpenThread }) {
           <div className="text-[11px] text-sage-muted">als {b.fromLabel} · {fmt(b.createdAt)} · gelesen {b.read}/{b.total}</div>
         </div>
       </div>
-      {b.body && <p className="p-4 text-sm text-sage whitespace-pre-line border-b border-line">{b.body}</p>}
+      {b.body && <p data-noi18n className="p-4 text-sm text-sage whitespace-pre-line border-b border-line">{b.body}</p>}
       <ul className="divide-y divide-line">
         {data.recipients.map((r) => (
           <li key={r.id}>
@@ -508,7 +508,7 @@ function ThreadView({ id, onBack }) {
               <div className="group flex items-end gap-1.5 max-w-[85%]">
                 {mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
                 <div className={['rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-onaccent rounded-br-sm' : 'bg-card border border-line text-sage rounded-bl-sm'].join(' ')}>
-                  {m.body && <p className="text-sm whitespace-pre-line">{m.body}</p>}
+                  {m.body && <p data-noi18n className="text-sm whitespace-pre-line">{m.body}</p>}
                   <Attachment threadId={id} m={m} />
                   <div className={`text-[10px] mt-1 flex items-center gap-1 ${mine ? 'text-onaccent/70 justify-end' : 'text-sage-muted'}`}>
                     {fmt(m.createdAt)}

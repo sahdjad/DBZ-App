@@ -69,7 +69,7 @@ function RulesCard({ data, onReload, toast }) {
         ) : (
           <>
             {data.rules.isClassSpecific && <Badge tone="present">Eigene Regeln dieser Klasse</Badge>}
-            <p className="text-sage text-sm whitespace-pre-line mt-2 leading-relaxed">{data.rules.text}</p>
+            <p data-noi18n className="text-sage text-sm whitespace-pre-line mt-2 leading-relaxed">{data.rules.text}</p>
           </>
         )}
       </div>

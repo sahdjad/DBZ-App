@@ -4,6 +4,7 @@ import { LogIn, Download } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Button, Card, useToast } from '../components/ui.jsx';
+import LanguageSwitch from '../components/LanguageSwitch.jsx';
 
 
 export default function Login() {
@@ -62,6 +63,9 @@ export default function Login() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-[#0B1F14]/75 via-[#0B1F14]/72 to-[#0B1F14]/90" />
 
+      <div className="absolute top-3 right-3 z-20 bg-[#0B1F14]/60 rounded-xl" style={{ top: 'max(env(safe-area-inset-top), 0.75rem)' }}>
+        <LanguageSwitch compact saveToAccount={false} />
+      </div>
       <div className="relative z-10 min-h-[100dvh] flex flex-col items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm">
           {/* Marke */}
