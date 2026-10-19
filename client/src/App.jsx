@@ -47,6 +47,7 @@ const Nachrichten = lazy(() => import('./pages/Nachrichten.jsx'));
 const Benachrichtigungen = lazy(() => import('./pages/Benachrichtigungen.jsx'));
 const DbzOnline = lazy(() => import('./pages/DbzOnline.jsx'));
 const Konto = lazy(() => import('./pages/Konto.jsx'));
+const Hilfe = lazy(() => import('./pages/Hilfe.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
 
 const MANAGERS = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -155,6 +156,7 @@ export default function App() {
         <Route path="/benachrichtigungen" element={<Protected><Benachrichtigungen /></Protected>} />
         <Route path="/dbz-online" element={<Protected><DbzOnline /></Protected>} />
         <Route path="/konto" element={<Protected><Konto /></Protected>} />
+        <Route path="/hilfe" element={<Protected><Hilfe /></Protected>} />
         <Route path="/admin" element={<Protected roles={ADMINS}><Admin /></Protected>} />
 
         <Route path="*" element={<NotFound />} />

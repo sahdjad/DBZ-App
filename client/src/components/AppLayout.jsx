@@ -34,11 +34,13 @@ import {
   ChevronsUpDown,
   Check,
   Info,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Avatar, Button, Spinner, useToast } from './ui.jsx';
 import { ConsentGate } from './Consent.jsx';
+import { GuideGate } from './GuideTour.jsx';
 
 // Rollen-abhängige Navigation (docs/INFORMATION_ARCHITECTURE.md).
 const ITEMS = {
@@ -70,6 +72,7 @@ const ITEMS = {
   benachrichtigungen: { to: '/benachrichtigungen', label: 'Benachrichtigungen', icon: Bell },
   dbzonline: { to: '/dbz-online', label: 'DBZ Online', icon: Share2 },
   konto: { to: '/konto', label: 'Konto', icon: UserCog },
+  hilfe: { to: '/hilfe', label: 'Hilfe & Anleitung', icon: LifeBuoy },
 };
 
 // Arbeitsbereich je Navigationspfad – für sichtbare Gruppierung im Menü
@@ -97,7 +100,7 @@ function navForRole(role) {
         'aufgaben', 'checkin', 'kalender', 'anwesenheit', 'abwesenheit', 'protokolle',
         'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
         'verhalten', 'strafen', 'regeln',
-        'dbzonline', 'konto',
+        'dbzonline', 'hilfe', 'konto',
       );
     case 'klassensprecher':
       return k(
@@ -106,7 +109,7 @@ function navForRole(role) {
         'aufgaben', 'checkin', 'kalender', 'anwesenheit', 'abwesenheit', 'protokolle',
         'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
         'verhalten', 'strafen', 'regeln',
-        'dbzonline', 'konto',
+        'dbzonline', 'hilfe', 'konto',
       );
     case 'klassenlehrer':
     case 'vertretung':
@@ -116,7 +119,7 @@ function navForRole(role) {
         'unterricht', 'klassenliste', 'aufgaben', 'kalender', 'korrektur', 'entschuldigungen', 'anwesenheit', 'protokolle',
         'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
         'verhalten', 'strafen', 'regeln',
-        'dbzonline', 'konto',
+        'dbzonline', 'hilfe', 'konto',
       );
     case 'eltern':
       return k(
@@ -125,7 +128,7 @@ function navForRole(role) {
         'kalender', 'abwesenheit',
         'quran', 'hifz', 'materialien', 'berichte', 'aktivitaeten',
         'verhalten', 'strafen', 'regeln',
-        'dbzonline', 'konto',
+        'dbzonline', 'hilfe', 'konto',
       );
     case 'super_admin':
     case 'leitung':
@@ -138,10 +141,10 @@ function navForRole(role) {
         'unterricht', 'klassenliste', 'kalender', 'abgaben', 'entschuldigungen', 'protokolle', 'aktivitaeten',
         'strafen', 'regeln',
         'admin', 'dbzonline',
-        'konto',
+        'hilfe', 'konto',
       );
     default:
-      return k('dashboard', 'benachrichtigungen', 'konto');
+      return k('dashboard', 'benachrichtigungen', 'hilfe', 'konto');
   }
 }
 
@@ -356,6 +359,7 @@ export default function AppLayout({ children, title }) {
         <UpdateBanner />
         <RoleFromLink user={user} />
         {user && <ConsentGate user={user} onDone={refresh} />}
+        <GuideGate />
         {user?.demo && (
           <div className="shrink-0 bg-status-late/15 text-status-late text-xs px-4 py-1.5 text-center border-b border-status-late/30" role="note">
             Demo-Modus – nur zum Ausprobieren. Nichts wird gespeichert, es gibt keinen Zugriff auf echte Daten.

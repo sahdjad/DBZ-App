@@ -2625,3 +2625,11 @@ test('Protokoll: Klassensprecher kann freigegebenes Protokoll nachträglich änd
   await rep('POST', '/classes/class_3/protocols', { date, content: { topics: 'Al-Mulk 1–5', homework: 'Seite 562–563' } });
   assert.equal((await student('GET', '/notifications')).data.items.length, before);
 });
+
+test('App-Guide: gesehen wird je Rolle gemerkt', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const r = await student('POST', '/me/guide', { version: 1 });
+  assert.equal(r.status, 200);
+  assert.equal(r.data.user.guideSeen.schueler, 1);
+  assert.equal((await student('GET', '/auth/me')).data.user.guideSeen.schueler, 1);
+});

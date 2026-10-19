@@ -443,6 +443,15 @@ router.patch('/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+// App-Guide: merken, welche Einführung (je Rolle + Version) schon gesehen wurde,
+// damit sie nicht auf jedem Gerät erneut startet.
+router.post('/me/guide', requireAuth, (req, res) => {
+  const version = Number(req.body?.version) || 1;
+  req.user.guideSeen = { ...(req.user.guideSeen || {}), [req.user.role]: version };
+  db.commit();
+  res.json({ user: publicUser(req.user) });
+});
+
 // Eine Einwilligung für alles (Datenschutz, Mikrofon, Kamera, Benachrichtigungen)
 // -- gilt für alle Rollen der Person.
 router.post('/me/consent', requireAuth, (req, res) => {
