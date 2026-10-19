@@ -2385,8 +2385,10 @@ test('Protokolle: Lehrkraft schreibt rückwirkend (sofort freigegeben), Klassens
   assert.equal(rp.status, 200);
   assert.equal(rp.data.protocol.status, 'submitted');
   assert.ok(!(await student('GET', '/protocols')).data.protocols.some((p) => p.id === rp.data.protocol.id), 'Schüler sieht Unbestätigtes nicht');
-  // Freigegebenes darf der Klassensprecher nicht mehr ändern
-  assert.equal((await rep('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'x' } })).status, 400);
+  // Freigegebenes darf der Klassensprecher nachträglich korrigieren – es bleibt freigegeben
+  const fix = await rep('POST', '/classes/class_3/protocols', { date: past, content: { topics: 'Sure Al-Mulk 1-12 (korrigiert)' } });
+  assert.equal(fix.status, 200);
+  assert.equal(fix.data.protocol.status, 'approved');
   // Lehrkraft löscht
   assert.equal((await teacher('DELETE', `/protocols/${rp.data.protocol.id}`)).status, 200);
 });
@@ -2593,4 +2595,33 @@ test('Audio-Upload aus Dateien/Sprachnachrichten: .opus/.m4a/.amr ohne oder mit 
   const bad = new FormData();
   bad.append('files', new Blob([Buffer.from('x')], { type: 'application/octet-stream' }), 'virus.exe');
   assert.notEqual((await fetch(base + `/api/assignments/${a.id}/submit`, { method: 'POST', headers: { cookie }, body: bad })).status, 200);
+});
+
+test('Protokoll: Klassensprecher kann freigegebenes Protokoll nachträglich ändern, Klasse wird benachrichtigt; Badges je Bereich', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const rep = await loginAs('sprecher@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const date = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
+  const w = await teacher('POST', '/classes/class_3/protocols', { date, content: { topics: 'Al-Mulk 1–5', homework: 'Seite 562' } });
+  assert.equal(w.status, 200);
+  assert.equal(w.data.protocol.status, 'approved');
+  // Klassensprecher korrigiert die Hausaufgabe im freigegebenen Protokoll.
+  const e = await rep('POST', '/classes/class_3/protocols', { date, content: { topics: 'Al-Mulk 1–5', homework: 'Seite 562–563' } });
+  assert.equal(e.status, 200);
+  assert.equal(e.data.protocol.status, 'approved', 'bleibt für die Klasse sichtbar');
+  const seen = (await student('GET', '/protocols')).data.protocols.find((p) => p.id === w.data.protocol.id);
+  assert.equal(seen.content.homework, 'Seite 562–563');
+  const sNotes = (await student('GET', '/notifications')).data.items;
+  assert.ok(sNotes.some((n) => n.type === 'protocol_updated' && n.refId === w.data.protocol.id), 'Schüler informiert');
+  const tNotes = (await teacher('GET', '/notifications')).data.items;
+  assert.ok(tNotes.some((n) => n.type === 'protocol_updated' && /Klassensprecher/.test(n.title)), 'Lehrkraft informiert');
+  // Badges je Bereich + beim Öffnen des Bereichs gelesen.
+  const b = (await student('GET', '/badges')).data;
+  assert.ok(b.byRoute['/protokolle'] >= 1);
+  await student('POST', '/notifications/read-route', { route: '/protokolle' });
+  assert.equal((await student('GET', '/badges')).data.byRoute['/protokolle'] || 0, 0);
+  // Ohne Änderung keine neue Benachrichtigung.
+  const before = (await student('GET', '/notifications')).data.items.length;
+  await rep('POST', '/classes/class_3/protocols', { date, content: { topics: 'Al-Mulk 1–5', homework: 'Seite 562–563' } });
+  assert.equal((await student('GET', '/notifications')).data.items.length, before);
 });

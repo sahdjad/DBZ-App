@@ -3102,6 +3102,26 @@ function notifyProtocolApproved(p) {
     );
 }
 
+// Freigegebenes Protokoll wurde nachträglich geändert: Klasse (und Lehrkraft,
+// wenn der Klassensprecher geändert hat) bekommen Bescheid – damit niemand mit
+// der alten Fassung lernt.
+function notifyProtocolUpdated(p, editor) {
+  const day = new Date(`${protocolDate(p)}T12:00:00`).toLocaleDateString('de-DE');
+  db.all('users')
+    .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(p.classId) && u.id !== editor.id)
+    .forEach((st) => notify(st.id, {
+      type: 'protocol_updated', level: 'info', title: 'Protokoll aktualisiert',
+      body: `Das Unterrichtsprotokoll vom ${day} wurde geändert – bitte die neue Fassung ansehen.`,
+      deepLink: '/protokolle', refId: p.id,
+    }));
+  if (!canManageClass(editor, p.classId)) {
+    db.all('users').filter((u) => canManageClass(u, p.classId) && !isAdmin(u)).forEach((t) => notify(t.id, {
+      type: 'protocol_updated', level: 'info', title: 'Protokoll vom Klassensprecher geändert',
+      body: `${editor.name} hat das Protokoll vom ${day} nachträglich bearbeitet.`, deepLink: '/protokolle', refId: p.id,
+    }));
+  }
+}
+
 router.get('/protocols', requireAuth, (req, res) => {
   let list = db.all('protocols');
   if (req.user.role === ROLES.KLASSENSPRECHER || req.user.role === ROLES.SCHUELER) {
@@ -3118,7 +3138,8 @@ router.get('/protocols', requireAuth, (req, res) => {
     date: protocolDate(p),
     className: findClass(p.classId)?.name || 'Klasse',
     createdByName: findUserById(p.createdBy)?.name || null,
-    canEdit: canManageClass(req.user, p.classId) || (isClassRep(req.user, p.classId) && p.status !== 'approved'),
+    canEdit: canManageClass(req.user, p.classId) || isClassRep(req.user, p.classId),
+    updatedByName: p.editedAfterApproval ? findUserById(p.updatedBy)?.name || null : null,
   }));
   out.sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || '').localeCompare(a.createdAt || ''));
   res.json({ protocols: out });
@@ -3140,7 +3161,7 @@ router.post('/classes/:id/protocols', requireAuth, (req, res) => {
   let p = db.all('protocols').find((x) => x.sessionId === s.id);
   const now = new Date().toISOString();
   const wasApproved = p?.status === 'approved';
-  if (p && wasApproved && !teacher) return res.status(400).json({ error: 'Protokoll ist bereits freigegeben' });
+  const changed = !!p && JSON.stringify(p.content || {}) !== JSON.stringify(content);
   if (!p) {
     p = {
       id: newId('proto'), sessionId: s.id, classId: klass.id, date, protocolType: 'unterricht', content,
@@ -3157,6 +3178,10 @@ router.post('/classes/:id/protocols', requireAuth, (req, res) => {
     p.status = 'approved';
     p.reviewedBy = req.user.id;
     p.reviewedAt = now;
+  } else if (wasApproved) {
+    // Klassensprecher korrigiert ein schon freigegebenes Protokoll: bleibt
+    // freigegeben (die Klasse soll es weiter sehen), Lehrkraft wird informiert.
+    p.status = 'approved';
   } else if (req.body?.submit) {
     p.status = 'submitted';
     p.submittedAt = now;
@@ -3166,6 +3191,11 @@ router.post('/classes/:id/protocols', requireAuth, (req, res) => {
   db.commit();
   audit(req.user.id, 'protocol.write', 'protocol', p.id, null, { date, status: p.status });
   if (teacher && !wasApproved) notifyProtocolApproved(p);
+  if (wasApproved && changed) {
+    p.editedAfterApproval = now;
+    db.commit();
+    notifyProtocolUpdated(p, req.user);
+  }
   if (!teacher && p.status === 'submitted') {
     db.all('users').filter((u) => canManageClass(u, p.classId) && !isAdmin(u)).forEach((t) => notify(t.id, {
       type: 'protocol_submitted', level: 'info', title: 'Protokoll eingereicht', body: 'Ein Klassensprecher-Protokoll wartet auf Bestätigung.', deepLink: '/protokolle',
@@ -5107,6 +5137,11 @@ router.post('/threads/:id/messages/:mid/recall', requireAuth, requireRole(CLASS_
   res.json({ message: messageView(m) });
 });
 
+// "/aufgaben/asg_1?x" -> "/aufgaben"
+const routeOf = (link) => { const m = /^\/[^/?#]+/.exec(String(link || '')); return m ? m[0] : null; };
+// Nachrichten und Ankündigungen haben eigene Gelesen-Logik (pro Thread/Beitrag).
+const OWN_READ_ROUTES = ['/nachrichten', '/ankuendigungen'];
+
 // Ungelesen-Zähler je Kategorie (für Navigations-Badges + App-Symbol-Badge).
 router.get('/badges', requireAuth, (req, res) => {
   const mine = db.all('notifications').filter((n) => n.userId === req.user.id && !n.read);
@@ -5121,6 +5156,9 @@ router.get('/badges', requireAuth, (req, res) => {
     messages: mine.filter((n) => n.type === 'message').length,
     announcements: mine.filter((n) => n.type === 'announcement').length,
     total: mine.length,
+    // Ungelesene je Bereich (Korrektur, Aufgaben, Protokolle …) für die Zahlen
+    // in der Seitenleiste – damit Meldungen nicht untergehen.
+    byRoute: mine.reduce((acc, n) => { const r = routeOf(n.deepLink); if (r) acc[r] = (acc[r] || 0) + 1; return acc; }, {}),
     linked,
     linkedTotal,
     grandTotal: mine.length + linkedTotal,
@@ -6378,6 +6416,18 @@ router.post('/notifications/read', requireAuth, (req, res) => {
   });
   db.commit();
   res.json({ ok: true });
+});
+
+// Bereich geöffnet (z. B. Korrektur): dessen Benachrichtigungen gelten als gelesen.
+router.post('/notifications/read-route', requireAuth, (req, res) => {
+  const route = routeOf(req.body?.route);
+  if (!route || OWN_READ_ROUTES.includes(route)) return res.json({ ok: true, marked: 0 });
+  let marked = 0;
+  db.all('notifications').forEach((n) => {
+    if (n.userId === req.user.id && !n.read && routeOf(n.deepLink) === route) { n.read = true; marked++; }
+  });
+  if (marked) db.commit();
+  res.json({ ok: true, marked });
 });
 
 // Mehrfachauswahl: ausgewählte Benachrichtigungen als gelesen markieren oder löschen.

@@ -92,6 +92,11 @@ export default function Protokolle() {
                   <div>
                     <div className="text-sm text-ivory font-medium">{fmtDate(p.date)}</div>
                     <div className="text-xs text-sage-muted">{p.className}{p.createdByName ? ` · ${p.createdByName}` : ''}</div>
+                    {p.editedAfterApproval && (
+                      <div className="text-[11px] text-gold mt-0.5">
+                        Aktualisiert {new Date(p.editedAfterApproval).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{p.updatedByName ? ` von ${p.updatedByName}` : ''}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     <StatusBadge status={p.status} />
@@ -131,13 +136,15 @@ function ProtocolForm({ form, setForm, classes, isRep, protocols, onDone }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [existing?.id]);
 
+  // Schon freigegeben? Dann sieht die Klasse jede Änderung sofort (mit Hinweis).
+  const approved = protocols.find((p) => p.id === form.id)?.status === 'approved';
   const changeKey = (patch) => setForm((f) => ({ ...f, ...patch, id: undefined, content: f.id ? { ...EMPTY } : f.content }));
 
   const save = async (submit) => {
     setBusy(true);
     try {
       await api.post(`/classes/${form.classId}/protocols`, { date: form.date, content: form.content, submit });
-      toast.push(isRep ? (submit ? 'Eingereicht – die Lehrkraft bestätigt' : 'Entwurf gespeichert') : 'Protokoll gespeichert', 'success');
+      toast.push(approved ? 'Gespeichert – die Klasse wurde über die Änderung benachrichtigt' : isRep ? (submit ? 'Eingereicht – die Lehrkraft bestätigt' : 'Entwurf gespeichert') : 'Protokoll gespeichert', 'success');
       onDone();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -167,8 +174,13 @@ function ProtocolForm({ form, setForm, classes, isRep, protocols, onDone }) {
         <Field label="Behandelte Themen" hint="Was wurde im Unterricht durchgenommen?" value={form.content.topics} onChange={(v) => set('topics', v)} />
         <Field label="Aufgegebene Hausaufgaben" hint="Was ist bis zum nächsten Mal zu tun?" value={form.content.homework} onChange={(v) => set('homework', v)} />
         <Field label="Besondere Vorkommnisse" hint="Optional" value={form.content.notes} onChange={(v) => set('notes', v)} />
+        {approved && (
+          <p className="text-xs text-sage-muted rounded-lg border border-line bg-subtle/40 px-3 py-2">
+            Dieses Protokoll ist schon freigegeben. Wenn du etwas änderst, bekommt die Klasse eine Nachricht „Protokoll aktualisiert“{isRep ? ' und die Lehrkraft wird informiert' : ''}.
+          </p>
+        )}
         <div className="flex gap-2 flex-wrap">
-          {isRep ? (
+          {isRep && !approved ? (
             <>
               <Button variant="outline" onClick={() => save(false)} disabled={busy}>Entwurf speichern</Button>
               <Button onClick={() => save(true)} disabled={busy}>Zur Bestätigung einreichen</Button>
