@@ -1,6 +1,9 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Aktuelles Protokoll": "Procès-verbal actuel",
+"Ältere Protokolle": "Procès-verbaux précédents",
+"Wartet auf deine Freigabe": "En attente de ta validation",
 "% Anteil": "% de part",
 "(aktuell)": "(actuel)",
 "(angepasst)": "(ajusté)",

@@ -1,6 +1,9 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Aktuelles Protokoll": "Current minutes",
+"Ältere Protokolle": "Older minutes",
+"Wartet auf deine Freigabe": "Waiting for your approval",
 "% Anteil": "% share",
 "(aktuell)": "(current)",
 "(angepasst)": "(adjusted)",
