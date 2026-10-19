@@ -2651,3 +2651,12 @@ test('Sprache: Groß-/Kleinschreibung am Wortanfang wird ausgeglichen', async ()
   const { translateFor } = await import('../i18n.js');
   assert.equal(translateFor('en', ' abgegeben'), ' submitted');
 });
+
+test('Sprache: Französisch für Push und Konto', async () => {
+  const { translateFor } = await import('../i18n.js');
+  assert.equal(translateFor('fr', 'Hausaufgaben'), 'Devoirs');
+  assert.equal(translateFor('fr', 'Hausaufgabe geändert: Sure Al-Mulk'), 'Devoir modifié : Sure Al-Mulk');
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('PATCH', '/me', { lang: 'fr' })).data.user.lang, 'fr');
+  await student('PATCH', '/me', { lang: 'de' });
+});

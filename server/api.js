@@ -435,7 +435,7 @@ router.get('/auth/me', (req, res) => {
 router.patch('/me', requireAuth, (req, res) => {
   const { name, lang } = req.body || {};
   // Sprache gilt für die ganze Person (alle Rollenkonten) – für Push-Nachrichten.
-  if (lang === 'de' || lang === 'en') {
+  if (['de', 'en', 'fr'].includes(lang)) {
     personAccounts(req.user).forEach((a) => { a.lang = lang; });
     db.commit();
   }

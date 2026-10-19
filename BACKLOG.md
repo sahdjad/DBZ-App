@@ -170,7 +170,7 @@ Bis dahin gilt: neue Daten sind flüchtig.
       Tag“, Korrektur „x von y“/rot, Hausaufgabe bearbeiten/Korrektur vorschlagen,
       Konto löschen, App auf den Home-Bildschirm legen). Vor Umsetzung Umfang mit Nutzer klären.
 
-- [x] **Sprachen Deutsch / Englisch (umgesetzt 19.10.2026 – Wörterbuch client/src/i18n/en.json):**
+- [x] **Sprachen Deutsch / Englisch / Französisch (umgesetzt 19.10.2026 – Wörterbücher client/src/i18n/en.json, fr.json):**
       Sprachumschalter im Konto (Standard: Gerätesprache), alle Texte der App übersetzbar
       (bisher fest auf Deutsch, kein Übersetzungssystem vorhanden), auch Push-Nachrichten
       und E-Mails. Qur'an-Text bleibt Arabisch. Gut mit dem App-Guide kombinierbar
