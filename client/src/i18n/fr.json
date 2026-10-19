@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Alle Fächer": "Toutes les matières",
+"Älteste oben, Neueste unten": "Les plus anciens en haut, les plus récents en bas",
+"Zum Neuesten": "Aller au plus récent",
+"Fach antippen, um die Dateien zu sehen.": "Touche une matière pour voir ses fichiers.",
+"Zuletzt": "Dernier ajout",
+"neu": "nouveau",
+"Dateien": "Fichiers",
+"Vorschlag antippen oder selbst eintragen": "Choisis une suggestion ou saisis la tienne",
+"Neuen Eintrag hinzufügen": "Ajouter une entrée",
 "Aktuelles Protokoll": "Procès-verbal actuel",
 "Ältere Protokolle": "Procès-verbaux précédents",
 "Wartet auf deine Freigabe": "En attente de ta validation",

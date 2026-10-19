@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   FolderOpen, Plus, FileText, Link2 as LinkIcon, ExternalLink, Trash2, UploadCloud, Pencil, X, PenLine, Image as ImageIcon, Check,
+  Folder, ChevronLeft, ChevronRight, ArrowDown,
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
@@ -14,13 +16,21 @@ const NO_SUBJECT = 'Ohne Fach';
 const subjectKey = (name) => (name || NO_SUBJECT).trim().toLocaleLowerCase('de');
 const mb = (bytes) => `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
+const NEW_DAYS = 7;
+const isNew = (iso) => iso && Date.now() - new Date(iso).getTime() < NEW_DAYS * 864e5;
+const SubjectSuggestions = createContext([]);
+
 export default function Materialien() {
   const { user } = useAuth();
   const toast = useToast();
   const [list, setList] = useState(null);
   const [subjects, setSubjects] = useState([]);
   const [mode, setMode] = useState(null); // null | 'new' | 'bulk'
-  const [activeSubject, setActiveSubject] = useState('all');
+  // Geöffnetes Fach steht in der Adresse (?fach=…), damit „Zurück“ (Wischgeste,
+  // Android-Taste) wieder zur Fächer-Übersicht führt.
+  const [params, setParams] = useSearchParams();
+  const activeSubject = params.get('fach');
+  const openSubject = (id) => { setMode(null); setParams(id ? { fach: id } : {}); window.scrollTo(0, 0); };
 
   const load = () => api.get('/materials').then((d) => setList(d.materials)).catch((e) => { setList([]); toast.push(e.message, 'error'); });
   useEffect(() => { load(); api.get('/subjects').then((d) => setSubjects(d.subjects)).catch(() => {}); }, []);
@@ -35,7 +45,8 @@ export default function Materialien() {
     return [...seen.values()].sort((a, b) => a.localeCompare(b, 'de'));
   }, [subjects, list]);
 
-  // Nach Fach gruppiert; innerhalb eines Fachs bleibt das zuerst Gepostete oben.
+  // Nach Fach gruppiert; innerhalb eines Fachs steht das Älteste oben und das
+  // Neueste ganz unten (wie ein Ordner, der übers Jahr wächst).
   const groups = useMemo(() => {
     if (!list) return [];
     const map = new Map();
@@ -45,11 +56,18 @@ export default function Materialien() {
       map.get(key).items.push(m);
     }
     const arr = [...map.values()];
-    arr.sort((a, b) => (a.id === subjectKey(NO_SUBJECT)) - (b.id === subjectKey(NO_SUBJECT)) || a.items[0].createdAt.localeCompare(b.items[0].createdAt));
+    for (const g of arr) {
+      g.items.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      g.files = g.items.reduce((n, m) => n + (m.files || []).length, 0);
+      g.last = g.items.reduce((d, m) => ((m.updatedAt || m.createdAt) > d ? m.updatedAt || m.createdAt : d), '');
+      g.fresh = g.items.filter((m) => isNew(m.createdAt)).length;
+    }
+    arr.sort((a, b) => (a.id === subjectKey(NO_SUBJECT)) - (b.id === subjectKey(NO_SUBJECT)) || a.name.localeCompare(b.name, 'de'));
     return arr;
   }, [list]);
 
-  const shown = activeSubject === 'all' ? groups : groups.filter((g) => g.id === activeSubject);
+  const group = activeSubject ? groups.find((g) => g.id === activeSubject) : null;
+  const presetSubject = group && group.id !== subjectKey(NO_SUBJECT) ? group.name : '';
 
   const replace = (m) => setList((prev) => prev.map((x) => (x.id === m.id ? m : x)));
   const remove = async (m) => {
@@ -57,61 +75,110 @@ export default function Materialien() {
     try { await api.del(`/materials/${m.id}`); toast.push('Gelöscht', 'success'); setList((prev) => prev.filter((x) => x.id !== m.id)); }
     catch (err) { toast.push(err.message, 'error'); }
   };
+  const created = (m) => {
+    setMode(null);
+    setList((prev) => [...(prev || []), m]);
+    openSubject(subjectKey(m.subjectName));
+  };
+
+  const forms = (
+    <>
+      {mode === 'new' && <NewBlockForm user={user} initialSubject={presetSubject} onDone={created} onCancel={() => setMode(null)} />}
+      {mode === 'bulk' && <BulkForm user={user} initialSubject={presetSubject} onDone={() => { setMode(null); load(); }} onCancel={() => setMode(null)} />}
+    </>
+  );
 
   return (
     <AppLayout title="Materialien">
-      <datalist id="dbz-subjects">{subjectSuggestions.map((s) => <option key={s} value={s} />)}</datalist>
-      {isManager && (
-        <div className="flex justify-end gap-2 mb-4 flex-wrap">
-          <Button variant="outline" onClick={() => setMode((m) => (m === 'bulk' ? null : 'bulk'))}><UploadCloud size={18} /> Viele einzeln</Button>
-          <Button onClick={() => setMode((m) => (m === 'new' ? null : 'new'))}><Plus size={18} /> Neuer Block</Button>
-        </div>
-      )}
-      {mode === 'new' && <NewBlockForm user={user} onDone={(m) => { setMode(null); setList((prev) => [...(prev || []), m]); }} onCancel={() => setMode(null)} />}
-      {mode === 'bulk' && <BulkForm user={user} onDone={() => { setMode(null); load(); }} onCancel={() => setMode(null)} />}
-
-      {!list ? <Spinner /> : list.length === 0 ? (
-        <Card className="p-8 text-center text-sage-muted">
-          <FolderOpen size={32} className="mx-auto mb-3 opacity-50" />
-          Noch keine Materialien. Hier erscheinen Dateien und Links, die deine Klasse zum Lernen bereitgestellt bekommt{isManager ? ' – oben rechts hochladen.' : '.'}
-        </Card>
-      ) : (
-        <div className="space-y-6">
-          {groups.length > 1 && (
-            <div className="flex gap-2 flex-wrap">
-              <Chip active={activeSubject === 'all'} onClick={() => setActiveSubject('all')}>Alle</Chip>
-              {groups.map((g) => (
-                <Chip key={g.id} active={activeSubject === g.id} onClick={() => setActiveSubject(g.id)}>
-                  {g.name} <span className="text-sage-muted">({g.items.length})</span>
-                </Chip>
-              ))}
+      <SubjectSuggestions.Provider value={subjectSuggestions}>
+        {!list ? <Spinner /> : group ? (
+          // ---- Ein Fach geöffnet: Einträge vom Ältesten (oben) zum Neuesten (unten)
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <button onClick={() => openSubject(null)} className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 -ml-2 text-sm text-mint hover:bg-subtle">
+                <ChevronLeft size={18} /> Alle Fächer
+              </button>
             </div>
-          )}
-          {shown.map((g) => (
-            <section key={g.id}>
-              <h2 className="text-sm font-medium text-sage mb-2 flex items-center gap-2">
-                {g.name} <span className="text-xs text-sage-muted font-normal">{g.items.length} {g.items.length === 1 ? 'Eintrag' : 'Einträge'}</span>
-              </h2>
-              <ol className="space-y-3">
-                {g.items.map((m, i) => (
-                  <li key={m.id}>
-                    <MaterialBlock m={m} index={i + 1} subjectSuggestions={subjectSuggestions} onChange={replace} onDelete={() => remove(m)} />
-                  </li>
-                ))}
-              </ol>
-            </section>
-          ))}
-        </div>
-      )}
+            <div className="flex items-end justify-between gap-3 flex-wrap">
+              <div className="min-w-0">
+                <h2 data-noi18n={group.id !== subjectKey(NO_SUBJECT) ? '' : undefined} className="font-display text-2xl text-ivory break-words">{group.name}</h2>
+                <p className="text-xs text-sage-muted mt-0.5">
+                  {group.items.length} {group.items.length === 1 ? 'Eintrag' : 'Einträge'} · {group.files} {group.files === 1 ? 'Datei' : 'Dateien'} · Älteste oben, Neueste unten
+                </p>
+              </div>
+              {group.items.length > 3 && (
+                <button
+                  onClick={() => document.getElementById('mat-end')?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
+                  className="inline-flex items-center gap-1 text-xs text-mint hover:underline"
+                >
+                  <ArrowDown size={14} /> Zum Neuesten
+                </button>
+              )}
+            </div>
+            <ol className="space-y-3">
+              {group.items.map((m, i) => (
+                <li key={m.id}>
+                  <MaterialBlock m={m} index={i + 1} onChange={replace} onDelete={() => remove(m)} />
+                </li>
+              ))}
+            </ol>
+            <div id="mat-end" />
+            {isManager && !mode && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <Button onClick={() => setMode('new')}><Plus size={18} /> Neuen Eintrag hinzufügen</Button>
+                <Button variant="outline" onClick={() => setMode('bulk')}><UploadCloud size={18} /> Viele Dateien einzeln</Button>
+              </div>
+            )}
+            {forms}
+          </div>
+        ) : (
+          // ---- Übersicht: Fächer als Ordner
+          <>
+            {isManager && (
+              <div className="flex justify-end gap-2 mb-4 flex-wrap">
+                <Button variant="outline" onClick={() => setMode((m) => (m === 'bulk' ? null : 'bulk'))}><UploadCloud size={18} /> Viele einzeln</Button>
+                <Button onClick={() => setMode((m) => (m === 'new' ? null : 'new'))}><Plus size={18} /> Neuer Block</Button>
+              </div>
+            )}
+            {forms}
+            {list.length === 0 ? (
+              <Card className="p-8 text-center text-sage-muted">
+                <FolderOpen size={32} className="mx-auto mb-3 opacity-50" />
+                Noch keine Materialien. Hier erscheinen Dateien und Links, die deine Klasse zum Lernen bereitgestellt bekommt{isManager ? ' – oben rechts hochladen.' : '.'}
+              </Card>
+            ) : (
+              <>
+                <p className="text-sm text-sage-muted mb-3">Fach antippen, um die Dateien zu sehen.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {groups.map((g) => (
+                    <button
+                      key={g.id}
+                      onClick={() => openSubject(g.id)}
+                      className="group text-left rounded-2xl border border-line bg-card p-4 flex items-center gap-3 shadow-sm hover:border-mint/50 hover:bg-subtle/50 transition"
+                    >
+                      <span className="grid place-items-center h-12 w-12 shrink-0 rounded-xl bg-mint/15 text-mint">
+                        <Folder size={24} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span data-noi18n={g.id !== subjectKey(NO_SUBJECT) ? '' : undefined} className="font-medium text-ivory truncate">{g.name}</span>
+                          {g.fresh > 0 && <Badge tone="mint">{g.fresh} neu</Badge>}
+                        </span>
+                        <span className="block text-xs text-sage-muted mt-0.5">
+                          {g.items.length} {g.items.length === 1 ? 'Eintrag' : 'Einträge'} · {g.files} {g.files === 1 ? 'Datei' : 'Dateien'}
+                        </span>
+                        <span className="block text-[11px] text-sage-muted">Zuletzt {fmt(g.last)}</span>
+                      </span>
+                      <ChevronRight size={18} className="shrink-0 text-sage-muted group-hover:text-mint" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </SubjectSuggestions.Provider>
     </AppLayout>
-  );
-}
-
-function Chip({ active, onClick, children }) {
-  return (
-    <button onClick={onClick} className={`text-xs px-3 py-1.5 rounded-full border transition ${active ? 'border-mint bg-mint/10 text-ivory' : 'border-line text-sage hover:bg-subtle'}`}>
-      {children}
-    </button>
   );
 }
 
@@ -130,7 +197,7 @@ function MaterialBlock({ m, index, onChange, onDelete }) {
         <div className="flex items-start gap-3 min-w-0">
           <span className="grid place-items-center h-9 w-9 rounded-lg bg-mint/15 text-mint shrink-0 text-sm font-semibold tabular-nums">{index}</span>
           <div className="min-w-0">
-            <div className="text-ivory font-medium break-words">{m.title}</div>
+            <div className="text-ivory font-medium break-words">{m.title} {isNew(m.createdAt) && <Badge tone="mint">Neu</Badge>}</div>
             <div className="text-xs text-sage-muted">
               {m.className} · {fmt(m.createdAt)}{changed ? ` · ergänzt ${fmt(m.updatedAt)}` : ''}{m.createdByName ? ` · ${m.createdByName}` : ''}
             </div>
@@ -217,22 +284,45 @@ function FilePicker({ files, setFiles, label = 'Dateien hinzufügen' }) {
   );
 }
 
+// Fach frei eintippen ODER einen Vorschlag antippen (Standardfächer + schon
+// benutzte). Antippen ersetzt den Text; erneutes Antippen leert ihn.
 function SubjectInput({ value, onChange }) {
+  const suggestions = useContext(SubjectSuggestions);
+  const cur = subjectKey(value);
   return (
-    <label className="block">
-      <span className="text-sm text-sage">Fach / Thema</span>
-      <input className="input mt-1" list="dbz-subjects" value={value} onChange={(e) => onChange(e.target.value)} placeholder="z. B. Adab, Sirah, Fiqh …" maxLength={60} />
-    </label>
+    <div className="block sm:col-span-2">
+      <label className="block">
+        <span className="text-sm text-sage">Fach / Thema</span>
+        <input className="input mt-1" value={value} onChange={(e) => onChange(e.target.value)} placeholder="Vorschlag antippen oder selbst eintragen" maxLength={60} />
+      </label>
+      {suggestions.length > 0 && (
+        <div className="mt-2 flex gap-1.5 flex-wrap">
+          {suggestions.map((s) => {
+            const on = value.trim() && subjectKey(s) === cur;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => onChange(on ? '' : s)}
+                className={`text-xs px-2.5 py-1 rounded-full border transition ${on ? 'border-mint bg-mint text-white' : 'border-line text-sage hover:bg-subtle'}`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
 // Neuer Block: ein Thema mit beliebig vielen Dateien (z. B. Biografie +
 // Hausaufgabe + Lösung), optional Link und Text.
-function NewBlockForm({ user, onDone, onCancel }) {
+function NewBlockForm({ user, initialSubject = '', onDone, onCancel }) {
   const toast = useToast();
   const isAdmin = ADMIN.includes(user.role);
   const [classes, setClasses] = useState([]);
-  const [f, setF] = useState({ title: '', description: '', classId: '', subjectName: '', url: '', body: '' });
+  const [f, setF] = useState({ title: '', description: '', classId: '', subjectName: initialSubject, url: '', body: '' });
   const [files, setFiles] = useState([]);
   const [extra, setExtra] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -390,12 +480,12 @@ function EditBlock({ m, onSaved, onClose }) {
 
 // Massen-Upload: viele PDFs/Bilder auf einmal, jede Datei wird ein eigener
 // Block (Titel = Dateiname) -- z. B. für ein Archiv alter Protokolle.
-function BulkForm({ user, onDone, onCancel }) {
+function BulkForm({ user, initialSubject = '', onDone, onCancel }) {
   const toast = useToast();
   const isAdmin = ADMIN.includes(user.role);
   const [classes, setClasses] = useState([]);
   const [classId, setClassId] = useState('');
-  const [subjectName, setSubjectName] = useState('');
+  const [subjectName, setSubjectName] = useState(initialSubject);
   const [description, setDescription] = useState('');
   const [files, setFiles] = useState([]);
   const [busy, setBusy] = useState(false);
