@@ -2633,3 +2633,21 @@ test('App-Guide: gesehen wird je Rolle gemerkt', async () => {
   assert.equal(r.data.user.guideSeen.schueler, 1);
   assert.equal((await student('GET', '/auth/me')).data.user.guideSeen.schueler, 1);
 });
+
+test('Sprache: Englisch wird am Konto gespeichert; Wörterbuch übersetzt Texte und Muster', async () => {
+  const { translateFor } = await import('../i18n.js');
+  assert.equal(translateFor('en', 'Hausaufgaben'), 'Homework');
+  assert.equal(translateFor('en', 'Hausaufgabe geändert: Sure Al-Mulk'), 'Homework changed: Sure Al-Mulk');
+  assert.equal(translateFor('en', '  Abgeben '), '  Submit ');
+  assert.equal(translateFor('de', 'Hausaufgaben'), 'Hausaufgaben');
+  assert.equal(translateFor('en', 'Amina'), 'Amina', 'Namen bleiben');
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('PATCH', '/me', { lang: 'en' })).data.user.lang, 'en');
+  assert.equal((await student('PATCH', '/me', { lang: 'xx' })).data.user.lang, 'en', 'ungültig ignoriert');
+  await student('PATCH', '/me', { lang: 'de' });
+});
+
+test('Sprache: Groß-/Kleinschreibung am Wortanfang wird ausgeglichen', async () => {
+  const { translateFor } = await import('../i18n.js');
+  assert.equal(translateFor('en', ' abgegeben'), ' submitted');
+});

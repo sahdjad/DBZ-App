@@ -8,23 +8,27 @@ import ServerWakeNotice from './components/ServerWakeNotice.jsx';
 import { initTheme } from './lib/theme.js';
 import { installHaptics } from './lib/haptics.js';
 import './index.css';
+import { initI18n } from './i18n/index.js';
 
 // Theme (System/Hell/Dunkel) vor dem Rendern anwenden – kein Aufblitzen.
 initTheme();
 installHaptics();
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <HashRouter>
-      <AuthProvider>
-        <ToastProvider>
-          <App />
-          <ServerWakeNotice />
-        </ToastProvider>
-      </AuthProvider>
-    </HashRouter>
-  </React.StrictMode>,
-);
+// Sprache zuerst laden (bei Englisch das Wörterbuch), dann rendern.
+initI18n().finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <HashRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <App />
+            <ServerWakeNotice />
+          </ToastProvider>
+        </AuthProvider>
+      </HashRouter>
+    </React.StrictMode>,
+  );
+});
 
 // Service Worker nur im Produktions-Build registrieren (installierbare PWA,
 // Offline-Shell). Im Dev-Modus deaktiviert, damit HMR nicht gestört wird.

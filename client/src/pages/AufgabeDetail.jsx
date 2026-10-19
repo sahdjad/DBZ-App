@@ -169,7 +169,7 @@ export default function AufgabeDetail() {
           </div>
           <StatusBadge status={a.studentStatus} />
         </div>
-        {a.description && <p className="text-sage mt-3 whitespace-pre-line">{a.description}</p>}
+        {a.description && <p data-noi18n className="text-sage mt-3 whitespace-pre-line">{a.description}</p>}
         {/* Klassensprecher: Fehler in der Hausaufgabe melden -> Lehrkraft bestätigt. */}
         {user?.role === 'klassensprecher' && !proposing && (
           <button type="button" onClick={() => setProposing(true)} className="mt-3 inline-flex items-center gap-1.5 text-xs text-sage-muted hover:text-ivory">
@@ -197,7 +197,7 @@ export default function AufgabeDetail() {
         <Card className="p-5 mb-4">
           <CardHeader title="Deine Abgabe" subtitle={`Abgegeben ${fmt(sub.submittedAt)}`} />
           <div className="p-4 space-y-3">
-            {sub.text && <p className="text-sage whitespace-pre-line">{sub.text}</p>}
+            {sub.text && <p data-noi18n className="text-sage whitespace-pre-line">{sub.text}</p>}
             {fileDays.map((g) => (
               <div key={g.day} className="space-y-2">
                 {fileDays.length > 1 && <div className="text-[11px] font-bold uppercase tracking-wider text-mint">{fmtDay(g.day)}</div>}
@@ -210,7 +210,7 @@ export default function AufgabeDetail() {
               <div className="mt-3 rounded-lg border border-line bg-subtle p-3">
                 <div className="text-sm text-ivory mb-1">Feedback der Lehrkraft</div>
                 {review.gradeLabel && <div className="text-sm text-mint-light">Bewertung: {review.gradeLabel}</div>}
-                {review.feedbackText && <p className="text-sage text-sm whitespace-pre-line mt-1">{review.feedbackText}</p>}
+                {review.feedbackText && <p data-noi18n className="text-sage text-sm whitespace-pre-line mt-1">{review.feedbackText}</p>}
                 {(review.tajwid || review.pronunciation || review.fluency) && (
                   <div className="text-xs text-sage-muted mt-2 flex flex-wrap gap-3">
                     {review.tajwid != null && <span>Tajwid: {review.tajwid}</span>}

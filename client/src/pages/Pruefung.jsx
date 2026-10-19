@@ -155,7 +155,7 @@ function StudentExam() {
               <div key={q.id} className="rounded-lg border border-line p-3">
                 <div className="text-ivory mb-2">{i + 1}. {q.prompt} <span className="text-xs text-sage-muted">({q.points} P)</span></div>
                 {q.type === 'text' ? (
-                  <p className="text-sage text-sm whitespace-pre-line">{myAns.text || '—'}{typeof myAns.awardedPoints === 'number' ? ` · ${myAns.awardedPoints}/${q.points} P` : ''}</p>
+                  <p data-noi18n className="text-sage text-sm whitespace-pre-line">{myAns.text || '—'}{typeof myAns.awardedPoints === 'number' ? ` · ${myAns.awardedPoints}/${q.points} P` : ''}</p>
                 ) : (
                   <div className="space-y-1">
                     {q.options.map((o) => {
@@ -350,7 +350,7 @@ function GradeCard({ exam, att, onDone }) {
             return (
               <div key={q.id} className="rounded-lg border border-line p-3">
                 <div className="text-sm text-sage-muted mb-1">{i + 1}. {q.prompt} ({q.points} P)</div>
-                <p className="text-sage text-sm whitespace-pre-line mb-2">{a.text || '—'}</p>
+                <p data-noi18n className="text-sage text-sm whitespace-pre-line mb-2">{a.text || '—'}</p>
                 <label className="text-xs text-sage-muted flex items-center gap-2">
                   Punkte:
                   <input type="number" min={0} max={q.points} className="input py-1 w-20 text-sm"

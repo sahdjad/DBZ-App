@@ -148,8 +148,8 @@ function MaterialBlock({ m, index, onChange, onDelete }) {
         <EditBlock m={m} onSaved={(nm) => onChange(nm)} onClose={() => setEditing(false)} />
       ) : (
         <>
-          {m.description && <p className="text-sage text-sm mt-2 whitespace-pre-line">{m.description}</p>}
-          {m.body && <p className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-subtle border border-line p-3">{m.body}</p>}
+          {m.description && <p data-noi18n className="text-sage text-sm mt-2 whitespace-pre-line">{m.description}</p>}
+          {m.body && <p data-noi18n className="text-sage text-sm mt-2 whitespace-pre-line rounded-lg bg-subtle border border-line p-3">{m.body}</p>}
           {m.url && (
             <a href={m.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-mint-light text-sm hover:underline break-all">
               <LinkIcon size={14} /> {m.url.replace(/^https?:\/\//, '').slice(0, 60)} <ExternalLink size={13} />

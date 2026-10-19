@@ -433,7 +433,12 @@ router.get('/auth/me', (req, res) => {
 });
 
 router.patch('/me', requireAuth, (req, res) => {
-  const { name } = req.body || {};
+  const { name, lang } = req.body || {};
+  // Sprache gilt für die ganze Person (alle Rollenkonten) – für Push-Nachrichten.
+  if (lang === 'de' || lang === 'en') {
+    personAccounts(req.user).forEach((a) => { a.lang = lang; });
+    db.commit();
+  }
   if (name && name.trim()) {
     req.user.name = name.trim();
     // Rollenkonten derselben Person tragen denselben Namen.

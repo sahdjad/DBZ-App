@@ -31,7 +31,7 @@ function AssignmentGroup({ title, dueAt, subs }) {
                 <span className="flex items-center gap-2 text-xs text-sage-muted">{fmt(s.submittedAt)} <StatusBadge status={s.status} /></span>
               </div>
               <SameDayWarning sameDay={s.sameDay} />
-              {s.text && <p className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
+              {s.text && <p data-noi18n className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
               {s.files?.map((f) => (
                 <div key={f.id}><FileAttachment url={`/api/submissions/${s.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
               ))}
@@ -50,7 +50,7 @@ function ReadOnlySubmission({ s }) {
     <div className="rounded-lg border border-line bg-subtle/40 p-3 space-y-2">
       <div className="flex items-center justify-between gap-2 text-xs text-sage-muted">Abgegeben {fmt(s.submittedAt)} <StatusBadge status={s.status} /></div>
       <SameDayWarning sameDay={s.sameDay} />
-      {s.text && <p className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
+      {s.text && <p data-noi18n className="text-sm text-sage whitespace-pre-wrap">{s.text}</p>}
       {s.files?.map((f) => (
         <div key={f.id}><FileAttachment url={`/api/submissions/${s.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
       ))}

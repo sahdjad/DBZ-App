@@ -202,7 +202,7 @@ function Section({ label, text, accent = false }) {
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${accent ? 'border-gold/40 bg-gold/[0.07]' : 'border-line bg-card'}`}>
       <div className={`text-[11px] font-bold uppercase tracking-wider ${accent ? 'text-gold' : 'text-mint'}`}>{label}</div>
-      <p className="mt-1 text-[15px] leading-relaxed text-ivory whitespace-pre-line">{text}</p>
+      <p data-noi18n className="mt-1 text-[15px] leading-relaxed text-ivory whitespace-pre-line">{text}</p>
     </div>
   );
 }

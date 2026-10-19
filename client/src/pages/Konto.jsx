@@ -1,15 +1,26 @@
 import { useEffect, useState } from 'react';
-import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2 } from 'lucide-react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2, Languages } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import LanguageSwitch from '../components/LanguageSwitch.jsx';
+import { getLang } from '../i18n/index.js';
 import { getThemePref, setThemePref } from '../lib/theme.js';
 import { hapticsEnabled, setHapticsEnabled, haptic } from '../lib/haptics.js';
 import { getPushState, enablePush, disablePush, iosNeedsInstall } from '../lib/push.js';
 import { BUILD, buildLabel, fetchLatestBuild, applyUpdate } from '../lib/update.js';
 
 const LINKABLE = ['schueler', 'klassensprecher'];
+
+function LanguageCard() {
+  return (
+    <Card className="p-5">
+      <CardHeader title="Sprache / Language" subtitle="Deutsch oder English" icon={Languages} />
+      <div className="p-4"><LanguageSwitch /></div>
+    </Card>
+  );
+}
 
 export default function Konto() {
   const { user, updateName } = useAuth();
@@ -55,6 +66,7 @@ export default function Konto() {
           </div>
         </Card>
 
+        <LanguageCard />
         <ThemeCard />
         {/* Für Schüler/Eltern ohne "Aus"-Knopf (Pflicht), aber mit Test. */}
         <NotificationsCard />
@@ -474,7 +486,9 @@ function DeleteAccountCard() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
-  const ready = password && confirm.trim().toUpperCase() === 'LÖSCHEN';
+  // Bestätigungswort je Sprache (beide werden akzeptiert).
+  const word = getLang() === 'en' ? 'DELETE' : 'LÖSCHEN';
+  const ready = password && ['LÖSCHEN', 'DELETE'].includes(confirm.trim().toUpperCase());
 
   const remove = async (e) => {
     e.preventDefault();
@@ -511,7 +525,7 @@ function DeleteAccountCard() {
               <input type="password" autoComplete="current-password" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required />
             </label>
             <label className="block">
-              <span className="text-sm text-sage">Tippe <b className="text-ivory">LÖSCHEN</b> ein</span>
+              <span data-noi18n className="text-sm text-sage">{word === 'DELETE' ? <>Type <b className="text-ivory">DELETE</b></> : <>Tippe <b className="text-ivory">LÖSCHEN</b> ein</>}</span>
               <input className="input mt-1" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoCapitalize="characters" />
             </label>
             <div className="flex gap-2 flex-wrap">

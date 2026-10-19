@@ -119,7 +119,7 @@ export default function BerichtDruck() {
           {report.teacherComment && (
             <div className="mt-6">
               <div className="text-xs uppercase tracking-wide text-[#132a1e]/50 mb-1">Kommentar der Lehrkraft</div>
-              <p className="whitespace-pre-line leading-relaxed">{report.teacherComment}</p>
+              <p data-noi18n className="whitespace-pre-line leading-relaxed">{report.teacherComment}</p>
             </div>
           )}
 

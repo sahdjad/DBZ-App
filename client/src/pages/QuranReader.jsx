@@ -72,7 +72,7 @@ function TafsirPanel({ data, edition, onEdition }) {
       ) : data.error ? (
         <p className="text-sm text-status-absent">{data.error}</p>
       ) : (
-        <div dir={data.dir || 'ltr'} className={`text-sm whitespace-pre-line ${data.dir === 'rtl' ? 'font-arabic text-lg leading-loose text-ivory' : 'text-sage'}`}>
+        <div data-noi18n dir={data.dir || 'ltr'} className={`text-sm whitespace-pre-line ${data.dir === 'rtl' ? 'font-arabic text-lg leading-loose text-ivory' : 'text-sage'}`}>
           {data.text || 'Kein Eintrag zu dieser Ayah.'}
         </div>
       )}
