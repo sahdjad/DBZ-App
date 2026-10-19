@@ -1,6 +1,16 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"KW": "Wk",
+"Letzte Woche": "Last week",
+"Ohne Frist": "No deadline",
+"Vergangene Wochen": "Past weeks",
+"Alles erledigt – gerade ist keine Hausaufgabe offen.": "All done – no homework is open right now.",
+"Von Hand ausgeblendet": "Hidden manually",
+"Hausaufgaben kommen nach Ablauf der Frist automatisch hierher, sortiert nach Kalenderwoche. Abgaben, Bewertungen und Korrektur bleiben vollständig erhalten.": "Homework moves here automatically once the deadline has passed, sorted by calendar week. Submissions, grades and marking are fully kept.",
+"Noch keine Hausaufgaben mit abgelaufener Frist.": "No homework with a passed deadline yet.",
+"Keine offenen Hausaufgaben. Hausaufgaben mit abgelaufener Frist findest du im Archiv.": "No open homework. Homework with a passed deadline is in the archive.",
+"Neue Aufgabe erstellen": "Create new assignment",
 "Alle Fächer": "All subjects",
 "Älteste oben, Neueste unten": "Oldest at the top, newest at the bottom",
 "Zum Neuesten": "Jump to newest",
@@ -2009,6 +2019,14 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["{} Hausaufgabe · {}/{} abgegeben", "{1} homework · {2}/{3} submitted"],
+["{} Hausaufgaben · {}/{} abgegeben", "{1} homework · {2}/{3} submitted"],
+["· {} zu korrigieren", "· {1} to mark"],
+["{} von {} erledigt", "{1} of {2} done"],
+["· {} verpasst", "· {1} missed"],
+["{} Hausaufgabe", "{1} homework"],
+["{} Hausaufgaben", "{1} homework"],
+["{} · auch aus der Korrektur ausgeblendet, jederzeit wiederherstellbar", "{1} · also hidden from marking, can be restored any time"],
 [
 "Weiße Tage in {} Tag",
 "White Days in {1} day"
