@@ -72,7 +72,7 @@ export function ConsentGate({ user, onDone }) {
     // Push für ALLE Rollen (Lehrkräfte brauchen Entschuldigungen/Nachrichten genauso).
     const perms = requestDevicePermissions({ wantsPush: true });
     const save = needsConsent ? api.post('/me/consent', { version: CONSENT_VERSION }) : Promise.resolve();
-    Promise.allSettled([perms, save]).then(() => { setHidden(true); onDone?.(); });
+    Promise.allSettled([perms, save]).then(() => { setHidden(true); onDone?.(); window.dispatchEvent(new Event('dbz:consent-closed')); });
   };
 
   return (
@@ -87,7 +87,7 @@ export function ConsentGate({ user, onDone }) {
         )}
         <div className="mt-3 flex gap-2">
           <Button className="flex-1" onClick={agree} loading={busy}>{needsConsent ? 'Zustimmen' : 'Erlauben'}</Button>
-          {!needsConsent && <Button variant="ghost" onClick={() => { markDeviceSetup(); setHidden(true); }}>Später</Button>}
+          {!needsConsent && <Button variant="ghost" onClick={() => { markDeviceSetup(); setHidden(true); window.dispatchEvent(new Event('dbz:consent-closed')); }}>Später</Button>}
         </div>
       </div>
     </div>
