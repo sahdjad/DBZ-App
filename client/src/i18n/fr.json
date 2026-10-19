@@ -1,6 +1,16 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"KW": "Sem.",
+"Letzte Woche": "Semaine dernière",
+"Ohne Frist": "Sans date limite",
+"Vergangene Wochen": "Semaines passées",
+"Alles erledigt – gerade ist keine Hausaufgabe offen.": "Tout est fait – aucun devoir en cours pour le moment.",
+"Von Hand ausgeblendet": "Masqués manuellement",
+"Hausaufgaben kommen nach Ablauf der Frist automatisch hierher, sortiert nach Kalenderwoche. Abgaben, Bewertungen und Korrektur bleiben vollständig erhalten.": "Les devoirs arrivent ici automatiquement une fois la date limite passée, classés par semaine. Rendus, notes et corrections sont entièrement conservés.",
+"Noch keine Hausaufgaben mit abgelaufener Frist.": "Aucun devoir dont la date limite est passée.",
+"Keine offenen Hausaufgaben. Hausaufgaben mit abgelaufener Frist findest du im Archiv.": "Aucun devoir en cours. Les devoirs dont la date limite est passée sont dans les archives.",
+"Neue Aufgabe erstellen": "Créer un devoir",
 "Alle Fächer": "Toutes les matières",
 "Älteste oben, Neueste unten": "Les plus anciens en haut, les plus récents en bas",
 "Zum Neuesten": "Aller au plus récent",
@@ -2011,6 +2021,14 @@
 "Audio": "Audio"
 },
 "patterns": [
+["{} Hausaufgabe · {}/{} abgegeben", "{1} devoir · {2}/{3} rendus"],
+["{} Hausaufgaben · {}/{} abgegeben", "{1} devoirs · {2}/{3} rendus"],
+["· {} zu korrigieren", "· {1} à corriger"],
+["{} von {} erledigt", "{1} sur {2} faits"],
+["· {} verpasst", "· {1} manqué(s)"],
+["{} Hausaufgabe", "{1} devoir"],
+["{} Hausaufgaben", "{1} devoirs"],
+["{} · auch aus der Korrektur ausgeblendet, jederzeit wiederherstellbar", "{1} · aussi masqués de la correction, restaurables à tout moment"],
 [
 "Weiße Tage in {} Tag",
 "Jours blancs dans {1} jour"

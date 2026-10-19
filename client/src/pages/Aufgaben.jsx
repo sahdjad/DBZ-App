@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal, Pencil } from 'lucide-react';
+import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal, Pencil, ChevronDown, Archive } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { DuePresets, toLocalInput, AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
+import { groupByWeek, weekInfo } from '../lib/weeks.js';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -25,26 +26,95 @@ export default function Aufgaben() {
   );
 }
 
+// Schüler: oben nur, was noch zu tun ist (nach Woche), darunter vergangene
+// Wochen zusammengeklappt – eine Zeile pro Kalenderwoche.
 function StudentView() {
   const [list, setList] = useState(null);
+  const [openWeeks, setOpenWeeks] = useState(() => new Set());
   useEffect(() => {
     api.get('/assignments').then((d) => setList(d.assignments)).catch(() => setList([]));
   }, []);
   if (!list) return <Spinner />;
   if (!list.length) return <Card className="p-6 text-sage-muted">Aktuell sind keine Aufgaben zugewiesen.</Card>;
+  const isCurrent = (a) => a.canSubmit || a.studentStatus === 'revision_required' || !a.dueAt;
+  const current = groupByWeek(list.filter(isCurrent), (a) => a.dueAt);
+  const past = groupByWeek(list.filter((a) => !isCurrent(a)), (a) => a.dueAt, { newestFirst: true });
+  const toggle = (k) => setOpenWeeks((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const row = (a) => (
+    <Link key={a.id} to={`/aufgaben/${a.id}`} className="block">
+      <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-ivory truncate">{a.title}</div>
+          <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · Frist {fmt(a.dueAt)}</div>
+        </div>
+        <StatusBadge status={a.studentStatus} />
+      </Card>
+    </Link>
+  );
   return (
-    <div className="space-y-3">
-      {list.map((a) => (
-        <Link key={a.id} to={`/aufgaben/${a.id}`}>
-          <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-ivory truncate">{a.title}</div>
-              <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · {a.type} · Frist {fmt(a.dueAt)}</div>
-            </div>
-            <StatusBadge status={a.studentStatus} />
-          </Card>
-        </Link>
-      ))}
+    <div className="space-y-5">
+      {current.length === 0 ? (
+        <Card className="p-5 text-sage-muted text-sm">Alles erledigt – gerade ist keine Hausaufgabe offen.</Card>
+      ) : current.map((w) => {
+        const info = w.key ? weekInfo(w.key) : null;
+        return (
+          <section key={w.key || 'none'}>
+            <WeekTitle info={info} count={w.items.length} />
+            <div className="space-y-2.5">{w.items.map(row)}</div>
+          </section>
+        );
+      })}
+      {past.length > 0 && (
+        <section>
+          <div className="text-xs font-bold uppercase tracking-wider text-sage-muted mb-2 px-1">Vergangene Wochen</div>
+          <div className="space-y-2">
+            {past.map((w) => {
+              const info = weekInfo(w.key);
+              const open = openWeeks.has(w.key);
+              const done = w.items.filter((a) => ['submitted', 'passed'].includes(a.studentStatus)).length;
+              const missed = w.items.filter((a) => a.studentStatus === 'missed').length;
+              return (
+                <div key={w.key}>
+                  <button type="button" onClick={() => toggle(w.key)} aria-expanded={open}
+                    className="w-full flex items-center gap-3 text-left rounded-2xl border border-line bg-card px-4 py-3 hover:bg-subtle/60">
+                    <WeekBadge kw={info.kw} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-ivory">{info.range}</span>
+                      <span className="block text-xs text-sage-muted">
+                        {`${done} von ${w.items.length} erledigt`}{missed > 0 ? <span className="text-status-absent">{` · ${missed} verpasst`}</span> : null}
+                      </span>
+                    </span>
+                    <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  {open && <div className="space-y-2.5 mt-2">{w.items.map(row)}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+function WeekBadge({ kw }) {
+  return (
+    <span className="grid place-items-center shrink-0 h-11 w-11 rounded-xl bg-mint/15 text-mint leading-none">
+      {kw ? (<><span className="text-[9px] font-bold tracking-wider">KW</span><span className="text-base font-semibold">{kw}</span></>) : <span className="text-xs">–</span>}
+    </span>
+  );
+}
+
+function WeekTitle({ info, count }) {
+  return (
+    <div className="flex items-center gap-3 mb-2 px-1">
+      <WeekBadge kw={info?.kw} />
+      <div className="min-w-0">
+        <div className="text-sm font-medium text-ivory">
+          {info ? info.range : 'Ohne Frist'}{info?.hint ? <span className="ml-2 text-xs font-normal text-mint">{info.hint}</span> : null}
+        </div>
+        <div className="text-xs text-sage-muted">{`${count} ${count === 1 ? 'Hausaufgabe' : 'Hausaufgaben'}`}</div>
+      </div>
     </div>
   );
 }
@@ -299,7 +369,22 @@ function ManagerView() {
     } catch (err) { toast.push(err.message, 'error'); }
   };
 
-  const load = () => api.get(`/assignments${archived ? '?archived=1' : ''}`).then((d) => setList(d.assignments));
+  // Aktuell = Frist noch nicht vorbei (oder keine Frist). Nach der Frist landet
+  // eine Hausaufgabe automatisch im Archiv – nur in der Ansicht: Korrektur,
+  // Abgaben und Statistik behalten sie. Von Hand Ausgeblendetes steht im
+  // Archiv getrennt darunter.
+  const [hidden, setHidden] = useState([]);
+  const load = () => Promise.all([
+    api.get('/assignments'),
+    archived ? api.get('/assignments?archived=1') : Promise.resolve({ assignments: [] }),
+  ]).then(([d, h]) => { setList(d.assignments); setHidden(h.assignments); });
+  const now = Date.now();
+  const isPast = (a) => Boolean(a.dueAt) && new Date(a.dueAt).getTime() < now;
+  const visible = useMemo(() => (list ? list.filter((a) => (archived ? isPast(a) : !isPast(a))) : []), [list, archived]); // eslint-disable-line react-hooks/exhaustive-deps
+  const weeks = useMemo(() => groupByWeek(visible, (a) => a.dueAt || a.createdAt, { newestFirst: archived }), [visible, archived]);
+  const [openWeeks, setOpenWeeks] = useState(() => new Set());
+  const toggleWeek = (k) => setOpenWeeks((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
+  const allIds = [...visible, ...hidden].map((a) => a.id);
   useEffect(() => { setList(null); selection.clear(); load(); /* eslint-disable-next-line */ }, [archived]);
   useEffect(() => {
     api.get('/classes').then((d) => {
@@ -337,6 +422,20 @@ function ManagerView() {
     }
   };
 
+  const renderRow = (a, isHidden) => (editId === a.id ? (
+    <Card key={a.id} className="p-4 border-mint/50">
+      <div className="text-sm text-ivory font-medium mb-3 flex items-center gap-2"><Pencil size={15} /> Hausaufgabe bearbeiten</div>
+      <AssignmentEditForm assignment={a} klass={classes.find((c) => c.id === a.classId)} subjects={subjects}
+        onSubmit={(edits) => saveEdit(a, edits)} onCancel={() => setEditId(null)} />
+      <p className="text-[11px] text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
+    </Card>
+  ) : (
+    <AssignmentRow key={a.id} a={a} selection={selection} archived={isHidden}
+      onEdit={() => setEditId(a.id)}
+      onDelete={() => setConfirm({ ids: [a.id], title: a.title })}
+      onRestore={() => runBulk([a.id], 'unarchive')} />
+  ));
+
   if (!list) return <Spinner />;
   return (
     <div className="space-y-4">
@@ -348,7 +447,7 @@ function ManagerView() {
           ))}
         </div>
         <div className="flex gap-2">
-          {list.length > 0 && !selection.active && (
+          {allIds.length > 0 && !selection.active && (
             <Button variant="outline" onClick={() => selection.start()}><ListChecks size={18} /> Auswählen</Button>
           )}
           {!archived && <Button onClick={() => setShowForm((f) => !f)}><Plus size={18} /> Neue Aufgabe</Button>}
@@ -358,8 +457,8 @@ function ManagerView() {
       {!archived && <HomeworkRules classes={classes} />}
       {archived && (
         <p className="text-xs text-sage-muted">
-          Archivierte Aufgaben sind nur aus deiner Übersicht und der Korrektur-Liste ausgeblendet. Abgaben, Bewertungen und
-          Statistiken bleiben vollständig erhalten; Schüler sehen sie weiterhin in ihrem Verlauf.
+          Hausaufgaben kommen nach Ablauf der Frist automatisch hierher, sortiert nach Kalenderwoche. Abgaben, Bewertungen und
+          Korrektur bleiben vollständig erhalten.
         </p>
       )}
 
@@ -409,40 +508,83 @@ function ManagerView() {
         </Card>
       )}
 
-      {list.length === 0 ? (
+      {visible.length === 0 && hidden.length === 0 ? (
         <Card className="p-6 text-sage-muted">
-          {archived ? <p>Keine archivierten Aufgaben.</p> : (
+          {archived ? <p>Noch keine Hausaufgaben mit abgelaufener Frist.</p> : (
             <>
-              <p>Hier erscheinen die Aufgaben, die du dieser Klasse stellst, mit Abgabestatus je Schüler.</p>
-              {!showForm && <Button size="sm" className="mt-3" onClick={() => setShowForm(true)}>Erste Aufgabe erstellen</Button>}
+              <p>Keine offenen Hausaufgaben. Hausaufgaben mit abgelaufener Frist findest du im Archiv.</p>
+              {!showForm && <Button size="sm" className="mt-3" onClick={() => setShowForm(true)}>Neue Aufgabe erstellen</Button>}
             </>
           )}
         </Card>
       ) : (
-        list.map((a) => (editId === a.id ? (
-          <Card key={a.id} className="p-4 border-mint/50">
-            <div className="text-sm text-ivory font-medium mb-3 flex items-center gap-2"><Pencil size={15} /> Hausaufgabe bearbeiten</div>
-            <AssignmentEditForm assignment={a} klass={classes.find((c) => c.id === a.classId)} subjects={subjects}
-              onSubmit={(edits) => saveEdit(a, edits)} onCancel={() => setEditId(null)} />
-            <p className="text-[11px] text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
-          </Card>
-        ) : (
-          <AssignmentRow key={a.id} a={a} selection={selection} archived={archived}
-            onEdit={() => setEditId(a.id)}
-            onDelete={() => setConfirm({ ids: [a.id], title: a.title })}
-            onRestore={() => runBulk([a.id], 'unarchive')} />
-        )))
+        <div className="space-y-5">
+          {weeks.map((w) => {
+            const info = w.key ? weekInfo(w.key) : null;
+            const open = !archived || openWeeks.has(w.key) || selection.active;
+            const sub = w.items.reduce((n, a) => n + (a.submittedCount || 0), 0);
+            const tgt = w.items.reduce((n, a) => n + (a.targetCount || 0), 0);
+            const pend = w.items.reduce((n, a) => n + (a.pendingReview || 0), 0);
+            return (
+              <section key={w.key || 'none'}>
+                <button
+                  type="button"
+                  onClick={() => archived && toggleWeek(w.key)}
+                  className={`w-full flex items-center gap-3 text-left mb-2 ${archived ? 'rounded-2xl border border-line bg-card px-4 py-3 hover:bg-subtle/60' : 'px-1 cursor-default'}`}
+                  aria-expanded={open}
+                >
+                  <WeekBadge kw={info?.kw} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-ivory">
+                      {info ? info.range : 'Ohne Frist'}{info?.hint ? <span className="ml-2 text-xs font-normal text-mint">{info.hint}</span> : null}
+                    </span>
+                    <span className="block text-xs text-sage-muted">
+                      {`${w.items.length} ${w.items.length === 1 ? 'Hausaufgabe' : 'Hausaufgaben'} · ${sub}/${tgt} abgegeben`}{pend > 0 ? <span className="text-gold">{` · ${pend} zu korrigieren`}</span> : null}
+                    </span>
+                  </span>
+                  {archived && <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />}
+                </button>
+                {open && (
+                  <div className="space-y-2.5">
+                    {w.items.map((a) => renderRow(a, false))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          {archived && hidden.length > 0 && (
+            <section>
+              <button
+                type="button"
+                onClick={() => toggleWeek('__hidden')}
+                className="w-full flex items-center gap-3 text-left mb-2 rounded-2xl border border-dashed border-line px-4 py-3 hover:bg-subtle/60"
+                aria-expanded={openWeeks.has('__hidden')}
+              >
+                <span className="grid place-items-center shrink-0 h-11 w-11 rounded-xl bg-subtle text-sage-muted"><Archive size={18} /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-ivory">Von Hand ausgeblendet</span>
+                  <span className="block text-xs text-sage-muted">{`${hidden.length} · auch aus der Korrektur ausgeblendet, jederzeit wiederherstellbar`}</span>
+                </span>
+                <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${openWeeks.has('__hidden') ? 'rotate-180' : ''}`} />
+              </button>
+              {(openWeeks.has('__hidden') || selection.active) && (
+                <div className="space-y-2.5">{hidden.map((a) => renderRow(a, true))}</div>
+              )}
+            </section>
+          )}
+        </div>
       )}
 
       <SelectionBar
         selection={selection}
-        allIds={list.map((a) => a.id)}
-        actions={archived
-          ? [
-            { label: 'Wiederherstellen', icon: ArchiveRestore, onClick: () => runBulk([...selection.ids], 'unarchive') },
-            { label: 'Endgültig löschen', icon: Trash2, variant: 'danger', onClick: () => setConfirm({ ids: [...selection.ids], onlyDelete: true }) },
-          ]
-          : [{ label: 'Entfernen …', icon: Trash2, variant: 'danger', onClick: () => setConfirm({ ids: [...selection.ids] }) }]}
+        allIds={allIds}
+        actions={[
+          ...([...selection.ids].some((id) => hidden.some((h) => h.id === id))
+            ? [{ label: 'Wiederherstellen', icon: ArchiveRestore, onClick: () => runBulk([...selection.ids].filter((id) => hidden.some((h) => h.id === id)), 'unarchive') }]
+            : []),
+          { label: 'Entfernen …', icon: Trash2, variant: 'danger', onClick: () => setConfirm({ ids: [...selection.ids] }) },
+        ]}
       />
 
       {confirm && (
