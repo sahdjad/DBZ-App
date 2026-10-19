@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ClipboardList, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ClipboardList, Plus, Pencil, Trash2, ChevronDown, History } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
@@ -81,46 +81,159 @@ export default function Protokolle() {
 
       {isLeadership && protocols && <ClassFolders groups={groups} selected={cls} onSelect={setCls} emptyText="Noch keine Protokolle." />}
       {(!isLeadership || cls) && (
-        <Card className="p-5">
-          <CardHeader title="Protokolle" subtitle="Neueste zuerst" icon={ClipboardList} />
-          <div className="grid gap-3 lg:grid-cols-2 items-start">
-            {!shown ? <Spinner /> : shown.length === 0 ? (
-              <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
-            ) : shown.map((p) => (
-              <div key={p.id} className="rounded-lg border border-line bg-subtle/40 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm text-ivory font-medium">{fmtDate(p.date)}</div>
-                    <div className="text-xs text-sage-muted">{p.className}{p.createdByName ? ` · ${p.createdByName}` : ''}</div>
-                    {p.editedAfterApproval && (
-                      <div className="text-[11px] text-gold mt-0.5">
-                        Aktualisiert {new Date(p.editedAfterApproval).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{p.updatedByName ? ` von ${p.updatedByName}` : ''}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <StatusBadge status={p.status} />
-                    {p.canEdit && <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-sage hover:bg-subtle" aria-label="Bearbeiten"><Pencil size={15} /></button>}
-                    {(isManager || isLeadership) && p.canEdit && <button onClick={() => remove(p)} className="p-1.5 rounded-lg text-status-absent hover:bg-subtle" aria-label="Löschen"><Trash2 size={15} /></button>}
-                  </div>
-                </div>
-                <div className="mt-3 space-y-2.5">
-                  <Section label="Behandelte Themen" text={p.content?.topics} />
-                  <Section label="Hausaufgaben" text={p.content?.homework} accent />
-                  <Section label="Besondere Vorkommnisse" text={p.content?.notes} />
-                </div>
-                {isManager && p.status === 'submitted' && (
-                  <div className="flex gap-2 mt-3">
-                    <Button size="sm" onClick={() => decide(p.id, 'approve')}>Freigeben</Button>
-                    <Button size="sm" variant="outline" onClick={() => decide(p.id, 'return')}>Zurückgeben</Button>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </Card>
+        !shown ? <Spinner /> : shown.length === 0 ? (
+          <Card className="p-5">
+            <CardHeader title="Protokolle" icon={ClipboardList} />
+            <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
+          </Card>
+        ) : (
+          <ProtocolList
+            protocols={shown}
+            isManager={isManager}
+            isLeadership={isLeadership}
+            onEdit={openEdit}
+            onRemove={remove}
+            onDecide={decide}
+          />
+        )
       )}
     </AppLayout>
+  );
+}
+
+// Aufbau: oben groß das aktuelle (neueste) Protokoll, darunter die älteren als
+// kompakte Liste (Datum + Vorschau). Antippen klappt ein Protokoll auf.
+// Bei mehreren Klassen: oben Klasse wählen, jede Klasse hat ihr eigenes „aktuell".
+function ProtocolList({ protocols, isManager, isLeadership, onEdit, onRemove, onDecide }) {
+  const classes = useMemo(() => {
+    const m = new Map();
+    protocols.forEach((p) => { if (!m.has(p.classId)) m.set(p.classId, p.className); });
+    return [...m.entries()];
+  }, [protocols]);
+  const [classId, setClassId] = useState(null);
+  const activeClass = classes.some(([id]) => id === classId) ? classId : classes[0]?.[0];
+  const list = classes.length > 1 ? protocols.filter((p) => p.classId === activeClass) : protocols;
+  // Wartende Protokolle (Klassensprecher eingereicht) bleiben für die Lehrkraft
+  // immer aufgeklappt sichtbar, damit keine Freigabe untergeht.
+  const pending = isManager ? list.filter((p) => p.status === 'submitted') : [];
+  const [current, ...older] = list.filter((p) => !pending.includes(p));
+  const [openId, setOpenId] = useState(null);
+  const actions = { isManager, isLeadership, onEdit, onRemove, onDecide };
+
+  return (
+    <div className="space-y-4">
+      {classes.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+          {classes.map(([id, name]) => (
+            <button
+              key={id}
+              onClick={() => { setClassId(id); setOpenId(null); }}
+              className={`shrink-0 rounded-full px-3.5 py-1.5 text-sm border transition ${id === activeClass ? 'bg-mint text-white border-mint' : 'border-line text-sage hover:bg-subtle'}`}
+            >
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {pending.map((p) => (
+        <Card key={p.id} className="p-4 border-gold/50">
+          <div className="text-[11px] font-bold uppercase tracking-wider text-gold mb-2">Wartet auf deine Freigabe</div>
+          <ProtocolBody p={p} {...actions} />
+        </Card>
+      ))}
+
+      {current && (
+        <Card className="p-4 sm:p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-mint/10 text-mint text-[11px] font-bold uppercase tracking-wider px-2.5 py-1">
+              <ClipboardList size={13} /> Aktuelles Protokoll
+            </span>
+          </div>
+          <ProtocolBody p={current} {...actions} large />
+        </Card>
+      )}
+
+      {older.length > 0 && (
+        <Card className="p-0 overflow-hidden">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-line">
+            <History size={16} className="text-sage-muted" />
+            <span className="text-sm font-medium text-ivory">Ältere Protokolle</span>
+            <span className="ml-auto text-xs text-sage-muted">{older.length}</span>
+          </div>
+          <ul className="divide-y divide-line">
+            {older.map((p) => {
+              const open = openId === p.id;
+              const d = new Date(`${p.date}T12:00:00`);
+              return (
+                <li key={p.id}>
+                  <button
+                    onClick={() => setOpenId(open ? null : p.id)}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-subtle/60 transition"
+                    aria-expanded={open}
+                  >
+                    <span className="grid place-items-center shrink-0 w-12 h-12 rounded-xl bg-subtle border border-line leading-none">
+                      <span className="text-lg font-semibold text-ivory">{d.getDate()}</span>
+                      <span className="text-[10px] uppercase tracking-wide text-sage-muted">{d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '')}</span>
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-ivory">{fmtDate(p.date)}</span>
+                        {p.status !== 'approved' && <StatusBadge status={p.status} />}
+                      </span>
+                      <span data-noi18n className="block text-xs text-sage-muted truncate">{preview(p)}</span>
+                    </span>
+                    <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+                  </button>
+                  {open && (
+                    <div className="px-4 pb-4 dbz-fade-in">
+                      <ProtocolBody p={p} {...actions} hideDate />
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// Erste Zeile der Themen als Vorschau in der Liste.
+const preview = (p) => (p.content?.topics || p.content?.homework || p.content?.notes || '').split('\n').map((x) => x.trim()).filter(Boolean).join(' · ');
+
+function ProtocolBody({ p, isManager, isLeadership, onEdit, onRemove, onDecide, large = false, hideDate = false }) {
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {!hideDate && <div className={`${large ? 'font-display text-xl' : 'text-sm font-medium'} text-ivory`}>{fmtDate(p.date)}</div>}
+          <div className="text-xs text-sage-muted">{p.className}{p.createdByName ? ` · ${p.createdByName}` : ''}</div>
+          {p.editedAfterApproval && (
+            <div className="text-[11px] text-gold mt-0.5">
+              Aktualisiert {new Date(p.editedAfterApproval).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{p.updatedByName ? ` von ${p.updatedByName}` : ''}
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {p.status !== 'approved' && hideDate === false && <StatusBadge status={p.status} />}
+          {p.canEdit && <button onClick={() => onEdit(p)} className="p-2 rounded-lg text-sage hover:bg-subtle" aria-label="Bearbeiten"><Pencil size={16} /></button>}
+          {(isManager || isLeadership) && p.canEdit && <button onClick={() => onRemove(p)} className="p-2 rounded-lg text-status-absent hover:bg-subtle" aria-label="Löschen"><Trash2 size={16} /></button>}
+        </div>
+      </div>
+      <div className="mt-3 space-y-2.5">
+        <Section label="Behandelte Themen" text={p.content?.topics} />
+        <Section label="Hausaufgaben" text={p.content?.homework} accent />
+        <Section label="Besondere Vorkommnisse" text={p.content?.notes} />
+      </div>
+      {isManager && p.status === 'submitted' && (
+        <div className="flex gap-2 mt-3">
+          <Button size="sm" onClick={() => onDecide(p.id, 'approve')}>Freigeben</Button>
+          <Button size="sm" variant="outline" onClick={() => onDecide(p.id, 'return')}>Zurückgeben</Button>
+        </div>
+      )}
+    </div>
   );
 }
 
