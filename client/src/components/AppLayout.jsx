@@ -176,7 +176,9 @@ function badgeFor(to, badges) {
   if (to === '/nachrichten') return badges.messages;
   if (to === '/ankuendigungen') return badges.announcements;
   if (to === '/benachrichtigungen') return badges.total;
-  return 0;
+  // Alle anderen Bereiche (Korrektur, Aufgaben, Protokolle, Entschuldigungen …):
+  // ungelesene Benachrichtigungen, die dorthin führen.
+  return badges.byRoute?.[to] || 0;
 }
 
 function NavItems({ items, badges, onNavigate }) {
@@ -233,6 +235,7 @@ function setAppBadge(n) {
 export default function AppLayout({ children, title }) {
   const { user, logout, refresh } = useAuth();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [badges, setBadges] = useState({ messages: 0, announcements: 0, total: 0 });
@@ -256,13 +259,15 @@ export default function AppLayout({ children, title }) {
         .get('/badges')
         .then((d) => {
           if (!alive) return;
-          const b = { messages: d.messages || 0, announcements: d.announcements || 0, total: d.total || 0, linkedTotal: d.linkedTotal || 0, grandTotal: d.grandTotal ?? (d.total || 0) };
+          const b = { messages: d.messages || 0, announcements: d.announcements || 0, total: d.total || 0, byRoute: d.byRoute || {}, linkedTotal: d.linkedTotal || 0, grandTotal: d.grandTotal ?? (d.total || 0) };
           setBadges(b);
           // App-Symbol-Badge zählt ALLE Konten der Person (auch verknüpfte).
           setAppBadge(b.grandTotal);
         })
         .catch(() => {});
-    refresh();
+    // Bereich geöffnet -> seine Meldungen gelten als gelesen, danach Zahlen holen.
+    const section = `/${pathname.split('/')[1] || ''}`;
+    api.post('/notifications/read-route', { route: section }).catch(() => {}).finally(refresh);
     // Neu berechnen bei: Lesen/Änderung, Fensterfokus, Sichtbarkeit, Push, Intervall.
     const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
     window.addEventListener('dbz:notifications', refresh);
