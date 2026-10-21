@@ -7,12 +7,14 @@ import { ToastProvider } from './components/ui.jsx';
 import ServerWakeNotice from './components/ServerWakeNotice.jsx';
 import { initTheme } from './lib/theme.js';
 import { installHaptics } from './lib/haptics.js';
+import { installSingleAudio } from './lib/singleAudio.js';
 import './index.css';
 import { initI18n } from './i18n/index.js';
 
 // Theme (System/Hell/Dunkel) vor dem Rendern anwenden – kein Aufblitzen.
 initTheme();
 installHaptics();
+installSingleAudio();
 
 // Sprache zuerst laden (bei Englisch das Wörterbuch), dann rendern.
 initI18n().finally(() => {
