@@ -15,7 +15,7 @@ function Field({ label, hint, children }) {
     <label className="block min-w-0">
       <span className="text-sm text-sage">{label}</span>
       <div className="mt-1">{children}</div>
-      {hint && <span className="text-[11px] text-sage-muted">{hint}</span>}
+      {hint && <span className="text-caption text-sage-muted">{hint}</span>}
     </label>
   );
 }
@@ -54,7 +54,7 @@ export function ClassSettingsCard({ classId, onSaved }) {
     } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
   };
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="QR-Check-in: Zeiten & Regeln" subtitle="Gilt nur für diese Klasse – hier stellst du ein, wann der QR-Code gilt" icon={Settings2} />
       {!f ? <Spinner /> : (
         <form onSubmit={save} className="p-4 grid gap-3 grid-cols-2">
@@ -123,7 +123,7 @@ export function SessionHistoryCard({ classId, className, onChanged }) {
   };
   const toggle = (id) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Anwesenheit nachtragen & korrigieren" subtitle="Tag antippen zum Bearbeiten – auch Tage, die noch fehlen" icon={History} />
       <div className="flex items-end gap-2 pb-3">
         <label className="block flex-1">
@@ -214,7 +214,7 @@ function DayEditor({ sessionId, date, onClose }) {
         <button onClick={onClose} className="inline-flex items-center gap-1.5 rounded-full bg-subtle px-3 py-2 text-sm text-ivory"><ArrowLeft size={18} /> Zurück</button>
         <div className="min-w-0 flex-1 text-center">
           <div className="truncate text-sm font-medium text-ivory">{fmtDate(date)}</div>
-          <div className="text-[11px] text-sage-muted">{rows ? `${counts.present || 0} da · ${counts.late || 0} spät · ${(counts.sick || 0) + (counts.excused || 0)} entsch. · ${counts.unexcused || 0} fehlt · ${counts.open || 0} offen` : ' '}</div>
+          <div className="text-caption text-sage-muted">{rows ? `${counts.present || 0} da · ${counts.late || 0} spät · ${(counts.sick || 0) + (counts.excused || 0)} entsch. · ${counts.unexcused || 0} fehlt · ${counts.open || 0} offen` : ' '}</div>
         </div>
         <span className="w-16" />
       </div>
@@ -234,8 +234,8 @@ function DayEditor({ sessionId, date, onClose }) {
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <span className="truncate text-sm text-ivory">{r.name}</span>
                       {r.status !== 'open'
-                        ? <button onClick={() => clear(r)} className="shrink-0 text-[11px] text-sage-muted underline">Eintrag entfernen</button>
-                        : <span className="shrink-0 text-[11px] text-sage-muted">kein Eintrag</span>}
+                        ? <button onClick={() => clear(r)} className="shrink-0 text-caption text-sage-muted underline">Eintrag entfernen</button>
+                        : <span className="shrink-0 text-caption text-sage-muted">kein Eintrag</span>}
                     </div>
                     <div className="grid grid-cols-5 gap-1">
                       {DAY_STATUSES.map((opt) => (
@@ -315,7 +315,7 @@ export function SchoolDaysCard() {
   };
   const todayDay = days?.find((d) => d.isToday);
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader
         title="Gemeinsamer Unterricht (ganze Schule)"
         subtitle="Ein QR-Code für alle Klassen – nur an diesem Tag gültig"
@@ -373,10 +373,10 @@ export function SchoolTodayCard() {
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, []);
-  if (!data) return <Card className="p-5 mb-4"><Spinner /></Card>;
+  if (!data) return <Card className="p-4 sm:p-5 mb-4"><Spinner /></Card>;
   const withLesson = data.classes.filter((c) => c.lessonToday);
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader title="Heute in der Schule" subtitle={withLesson.length ? `${withLesson.length} Klasse(n) haben heute Unterricht` : 'Heute hat keine Klasse Unterricht'} icon={Gauge} />
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 p-3">
         {(withLesson.length ? withLesson : data.classes).map((c) => (
@@ -391,7 +391,7 @@ export function SchoolTodayCard() {
               <div><div className="text-lg text-status-excused font-semibold">{c.excused}</div>entsch.</div>
               <div><div className="text-lg text-sage font-semibold">{c.open}</div>offen</div>
             </div>
-            {c.lateUnexcused > 0 && <div className="text-[11px] text-status-absent mt-1">{c.lateUnexcused} davon unentschuldigt zu spät</div>}
+            {c.lateUnexcused > 0 && <div className="text-caption text-status-absent mt-1">{c.lateUnexcused} davon unentschuldigt zu spät</div>}
           </div>
         ))}
       </div>

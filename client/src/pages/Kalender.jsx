@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X, Rss, Copy, RefreshCw, Users, School, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Spinner, useToast, Segmented } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -125,21 +125,17 @@ export default function Kalender() {
   return (
     <AppLayout title="Kalender">
       <Card className="p-4 sm:p-5">
-        {/* Kopfzeile */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <div className="flex items-center gap-1">
-            <button onClick={() => move(-1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-subtle" aria-label="Zurück"><ChevronLeft size={20} /></button>
-            <button onClick={() => move(1)} className="p-2 rounded-lg text-sage hover:text-ivory hover:bg-subtle" aria-label="Weiter"><ChevronRight size={20} /></button>
-          </div>
-          <h2 className="font-display text-lg text-ivory capitalize mr-auto">{title}</h2>
-          <button onClick={goToday} className="text-sm px-3 py-1.5 rounded-lg border border-line text-sage hover:bg-hover">Heute</button>
-          <div className="flex rounded-lg border border-line overflow-hidden">
-            {[['year', 'Jahr'], ['month', 'Monat'], ['week', 'Woche'], ['day', 'Tag']].map(([v, l]) => (
-              <button key={v} onClick={() => setView(v)} className={`text-sm px-3 py-1.5 ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
-            ))}
-          </div>
-          <Button size="sm" variant="outline" onClick={() => setSubOpen((v) => !v)}><Rss size={16} /> Abonnieren</Button>
-          <Button size="sm" onClick={() => openNew()}><Plus size={16} /> Termin</Button>
+        {/* Kopfzeile: Monat groß, Blättern + Heute rechts, darunter die Ansicht */}
+        <div className="flex items-center gap-1 mb-3">
+          <h2 className="text-title2 font-bold text-ivory capitalize mr-auto truncate">{title}</h2>
+          <button onClick={goToday} className="text-subhead font-medium px-3 h-9 rounded-full text-mint-light dark:text-mint hover:bg-hover">Heute</button>
+          <button onClick={() => move(-1)} className="grid place-items-center h-9 w-9 rounded-full text-mint-light dark:text-mint hover:bg-hover" aria-label="Zurück"><ChevronLeft size={22} /></button>
+          <button onClick={() => move(1)} className="grid place-items-center h-9 w-9 rounded-full text-mint-light dark:text-mint hover:bg-hover" aria-label="Weiter"><ChevronRight size={22} /></button>
+        </div>
+        <Segmented className="w-full mb-3" options={[['year', 'Jahr'], ['month', 'Monat'], ['week', 'Woche'], ['day', 'Tag']]} value={view} onChange={setView} />
+        <div className="flex items-center gap-2 mb-4">
+          <Button size="sm" variant="ghost" onClick={() => setSubOpen((v) => !v)}><Rss size={15} /> Abonnieren</Button>
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => openNew()}><Plus size={16} /> Termin</Button>
         </div>
 
         {subOpen && <SubscribeCard onClose={() => setSubOpen(false)} />}
@@ -157,7 +153,7 @@ export default function Kalender() {
       </Card>
 
       {view === 'month' && events && (
-        <Card className="p-5 mt-4">
+        <Card className="p-4 sm:p-5 mt-4">
           <div className="flex items-center justify-between">
             <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
             <Button size="sm" variant="outline" onClick={() => openNew(selected)}><Plus size={16} /></Button>
@@ -191,8 +187,8 @@ function MonthView({ cursor, today, selected, setSelected, byDate, onAdd }) {
   const start = addDays(first, -mondayIndex(first));
   const grid = Array.from({ length: 42 }, (_, i) => addDays(start, i));
   return (
-    <div className="grid grid-cols-7 gap-1">
-      {WEEKDAYS.map((w) => <div key={w} className="text-center text-[11px] font-mono text-sage-muted py-1">{w}</div>)}
+    <div className="grid grid-cols-7 gap-y-1">
+      {WEEKDAYS.map((w) => <div key={w} className="text-center text-caption font-semibold text-sage-muted pb-2 border-b border-line/70 mb-1">{w}</div>)}
       {grid.map((d) => {
         const inMonth = d.getMonth() === cursor.getMonth();
         const evs = byDate[key(d)] || [];
@@ -200,11 +196,11 @@ function MonthView({ cursor, today, selected, setSelected, byDate, onAdd }) {
         const isSel = sameDay(d, selected);
         return (
           <button key={key(d)} onDoubleClick={() => onAdd(d)} onClick={() => setSelected(new Date(d))}
-            className={['min-h-[52px] rounded-lg flex flex-col items-center py-1.5 gap-1 text-sm transition border',
-              isSel ? 'border-mint bg-mint/10' : 'border-transparent hover:bg-subtle',
-              inMonth ? 'text-ivory' : 'text-sage-muted/50'].join(' ')}>
-            <span className={isToday ? 'h-6 w-6 grid place-items-center rounded-full bg-mint text-onaccent font-semibold' : ''}>{d.getDate()}</span>
-            <span className="flex flex-wrap justify-center gap-0.5 px-1">
+            className={['min-h-[3.25rem] flex flex-col items-center pt-1 gap-1 transition-colors rounded-xl active:bg-hover',
+              inMonth ? 'text-ivory' : 'text-sage-muted/40'].join(' ')}>
+            <span className={['h-8 w-8 grid place-items-center rounded-full text-[1.0625rem] font-mono',
+              isSel ? (isToday ? 'bg-mint text-onaccent font-semibold' : 'bg-ivory text-bg font-semibold') : isToday ? 'text-mint-light dark:text-mint font-bold' : ''].join(' ')}>{d.getDate()}</span>
+            <span className="flex flex-wrap justify-center gap-0.5 px-1 h-1.5">
               {evs.slice(0, 4).map((e, i) => <span key={i} className="h-1.5 w-1.5 rounded-full" style={{ background: eventColor(e) }} />)}
             </span>
           </button>
@@ -225,7 +221,7 @@ function WeekView({ cursor, today, byDate, onPick, onEvent }) {
         return (
           <div key={key(d)} className="rounded-lg border border-line p-2 min-h-[120px]">
             <button onClick={() => onPick(d)} className="w-full text-left mb-1.5">
-              <div className="text-[11px] font-mono text-sage-muted">{WEEKDAYS[mondayIndex(d)]}</div>
+              <div className="text-caption font-mono text-sage-muted">{WEEKDAYS[mondayIndex(d)]}</div>
               <div className={`text-sm ${isToday ? 'text-mint font-semibold' : 'text-ivory'}`}>{d.getDate()}.{d.getMonth() + 1}.</div>
             </button>
             <div className="space-y-1">
@@ -267,7 +263,7 @@ function YearView({ cursor, today, byDate, onPickMonth }) {
                 const has = (byDate[key(d)] || []).length > 0;
                 const isToday = sameDay(d, today);
                 return (
-                  <span key={key(d)} className={`h-4 grid place-items-center text-[9px] rounded ${isToday ? 'bg-mint text-onaccent' : inMonth ? 'text-sage' : 'text-sage-muted/40'}`}>
+                  <span key={key(d)} className={`h-4 grid place-items-center text-[0.5625rem] rounded ${isToday ? 'bg-mint text-onaccent' : inMonth ? 'text-sage' : 'text-sage-muted/40'}`}>
                     <span className="relative">{d.getDate()}{has && inMonth && <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 h-1 w-1 rounded-full bg-mint" />}</span>
                   </span>
                 );
@@ -283,7 +279,7 @@ function YearView({ cursor, today, byDate, onPickMonth }) {
 function EventChip({ e, onClick }) {
   const c = eventColor(e);
   return (
-    <button onClick={onClick} className="w-full text-left text-[11px] rounded px-1.5 py-1 flex items-center gap-1 truncate" style={{ background: `${c}1a`, color: c }}>
+    <button onClick={onClick} className="w-full text-left text-caption rounded px-1.5 py-1 flex items-center gap-1 truncate" style={{ background: `${c}1a`, color: c }}>
       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: c }} />
       <span className="truncate">{e.time && !e.allDay ? `${e.time} ` : ''}{e.scope === 'class' && e.className ? `${e.className}: ` : ''}{e.title}</span>
     </button>
@@ -389,7 +385,7 @@ function EventModal({ init, user, classes, onClose, onSave, onDelete }) {
                 {scopeOpts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
               {target !== 'personal' && (
-                <span className="block text-[11px] text-sage-muted mt-1">
+                <span className="block text-caption text-sage-muted mt-1">
                   {target === 'school'
                     ? 'Alle werden per Push benachrichtigt. Klassentermine der Lehrkräfte bleiben davon unberührt.'
                     : user.role === 'klassensprecher'
@@ -491,7 +487,7 @@ function SubscribeCard({ onClose }) {
             <Button as="a" href={data.webcal} size="sm"><CalendarDays size={16} /> In Kalender öffnen</Button>
             <Button size="sm" variant="ghost" onClick={rotate} disabled={busy}><RefreshCw size={16} /> Neu</Button>
           </div>
-          <div className="text-[11px] text-sage-muted space-y-1">
+          <div className="text-caption text-sage-muted space-y-1">
             <p><span className="text-sage">iPhone/iPad:</span> „In Kalender öffnen" tippen → Abonnieren. Oder: Einstellungen → Kalender → Accounts → Account hinzufügen → Andere → Kalenderabo, Link einfügen.</p>
             <p><span className="text-sage">Google Kalender:</span> Am Computer: Weitere Kalender → Per URL → Link einfügen.</p>
             <p>Der Link ist persönlich – bitte nicht weitergeben. Bei Bedarf „Neu" drücken.</p>

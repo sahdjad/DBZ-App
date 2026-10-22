@@ -14,7 +14,7 @@ const DEVICE_KEY = 'dbz-device-permissions-v1';
 
 export function ConsentText({ className = '' }) {
   return (
-    <span className={`text-[11px] leading-snug text-sage-muted ${className}`}>
+    <span className={`text-caption leading-snug text-sage-muted ${className}`}>
       Ich stimme zu, dass das DBZ meine Angaben für den Schulbetrieb speichert (Anwesenheit, Aufgaben, Nachrichten, Leistungen) und
       dass die App <b>Mikrofon</b> (Sprachnachrichten, Hifz-Erkennung – die Stimme wird nur auf dem Gerät ausgewertet und nicht gespeichert),
       <b> Kamera</b> (QR-Check-in, Fotos von Hausaufgaben) und <b>Benachrichtigungen</b> nutzt. Details regelt die Datenschutzerklärung des DBZ; ein Widerruf ist jederzeit über die DBZ-Leitung möglich.

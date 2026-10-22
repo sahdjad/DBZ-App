@@ -1,38 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Gauge, Users, GraduationCap, UserCheck, Scale, HandCoins, FileText, AlertCircle, ChevronRight } from 'lucide-react';
+import { Users, GraduationCap, UserCheck, Scale } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Spinner } from '../components/ui.jsx';
+import { Card, Spinner, Section, ListGroup, ListRow, Stat } from '../components/ui.jsx';
 
 function rateColor(r) {
   if (r === null || r === undefined) return 'text-sage-muted';
   if (r >= 90) return 'text-status-present';
   if (r >= 75) return 'text-status-late';
   return 'text-status-absent';
-}
-
-function Stat({ icon: Icon, label, value, sublabel, tone, onClick, onSublabel }) {
-  const Tag = onClick ? 'button' : 'div';
-  return (
-    <Card className="p-0 overflow-hidden">
-      <Tag type={onClick ? 'button' : undefined} onClick={onClick}
-        className={`w-full h-full p-4 flex items-center gap-3 text-left ${onClick ? 'cursor-pointer hover:bg-hover active:scale-[0.98] transition' : ''}`}>
-        <span className={`grid place-items-center h-10 w-10 rounded-lg shrink-0 ${tone || 'bg-mint/15 text-mint'}`}>
-          <Icon size={20} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-xl text-ivory font-mono leading-tight">{value}</div>
-          <div className="text-xs text-sage-muted">{label}</div>
-          {sublabel && (
-            <div className="text-[11px] text-status-late mt-0.5 underline-offset-2 hover:underline"
-              onClick={onSublabel ? (e) => { e.stopPropagation(); onSublabel(); } : undefined}>{sublabel}</div>
-          )}
-        </div>
-        {onClick && <ChevronRight size={16} className="text-sage-muted shrink-0" />}
-      </Tag>
-    </Card>
-  );
 }
 
 export default function Leitung() {
@@ -46,96 +23,92 @@ export default function Leitung() {
   const hasPending = counts.pendingUsers > 0 || penalties.pendingApprovals > 0;
 
   return (
-    <AppLayout title="Leitung – Überblick">
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Stat icon={Users} label="Klassen" value={counts.classes} onClick={() => navigate('/admin?tab=classes')} />
-          <Stat
-            icon={GraduationCap}
-            label="Schüler"
-            value={counts.students}
-            sublabel={counts.unassignedStudents > 0 ? `${counts.students - counts.unassignedStudents} zugeordnet, ${counts.unassignedStudents} ohne Klasse` : undefined}
+    <AppLayout title="Leitung">
+      {hasPending && (
+        <Section title="Offene Vorgänge" className="mt-0">
+          <ListGroup>
+            {counts.pendingUsers > 0 && (
+              <ListRow onClick={() => navigate('/admin?tab=pending')} icon={UserCheck} iconTone="late" title="Registrierungen freigeben" subtitle="Neue Konten warten" badge={counts.pendingUsers} chevron />
+            )}
+            {penalties.pendingApprovals > 0 && (
+              <ListRow onClick={() => navigate('/strafen')} icon={Scale} iconTone="late" title="Strafen genehmigen" subtitle="Vom Klassensprecher erfasst" badge={penalties.pendingApprovals} chevron />
+            )}
+          </ListGroup>
+        </Section>
+      )}
+
+      <Section title="Schule" className={hasPending ? '' : 'mt-0'}>
+        <ListGroup>
+          <ListRow onClick={() => navigate('/admin?tab=classes')} icon={Users} title="Klassen" value={counts.classes} chevron />
+          <ListRow
             onClick={() => navigate('/admin?tab=users&rolle=schueler')}
-            onSublabel={() => navigate('/admin?tab=users&rolle=schueler&ohneKlasse=1')}
+            icon={GraduationCap}
+            title="Schüler"
+            subtitle={counts.unassignedStudents > 0 ? `${counts.unassignedStudents} ohne Klasse` : undefined}
+            value={counts.students}
+            chevron
           />
-          <Stat icon={UserCheck} label="Eltern" value={counts.parents} onClick={() => navigate('/admin?tab=users&rolle=eltern')} />
-          <Stat icon={Users} label="Lehrkräfte" value={counts.teachers} onClick={() => navigate('/admin?tab=users&rolle=klassenlehrer')} />
-        </div>
-
-        {/* Offene Vorgänge */}
-        {hasPending && (
-          <Card className="p-5">
-            <CardHeader title="Offene Vorgänge" subtitle="Wartet auf Bearbeitung" icon={AlertCircle} />
-            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {counts.pendingUsers > 0 && (
-                <button onClick={() => navigate('/admin?tab=pending')} className="flex items-center gap-3 rounded-xl border border-status-late/30 bg-status-late/10 px-4 py-3 text-left hover:bg-status-late/15 transition">
-                  <UserCheck size={20} className="text-status-late" />
-                  <div>
-                    <div className="text-ivory">{counts.pendingUsers} Registrierung(en) freigeben</div>
-                    <div className="text-xs text-sage-muted">Zur Verwaltung →</div>
-                  </div>
-                </button>
-              )}
-              {penalties.pendingApprovals > 0 && (
-                <button onClick={() => navigate('/strafen')} className="flex items-center gap-3 rounded-xl border border-status-late/30 bg-status-late/10 px-4 py-3 text-left hover:bg-status-late/15 transition">
-                  <Scale size={20} className="text-status-late" />
-                  <div>
-                    <div className="text-ivory">{penalties.pendingApprovals} Strafe(n) genehmigen</div>
-                    <div className="text-xs text-sage-muted">Zu den Strafen →</div>
-                  </div>
-                </button>
-              )}
-            </div>
-          </Card>
+          <ListRow onClick={() => navigate('/admin?tab=users&rolle=eltern')} icon={UserCheck} title="Eltern" value={counts.parents} chevron />
+          <ListRow onClick={() => navigate('/admin?tab=users&rolle=klassenlehrer')} icon={Users} title="Lehrkräfte" value={counts.teachers} chevron />
+        </ListGroup>
+        {counts.unassignedStudents > 0 && (
+          <button type="button" onClick={() => navigate('/admin?tab=users&rolle=schueler&ohneKlasse=1')} className="mt-2 px-1 text-footnote text-status-late font-medium">
+            {counts.unassignedStudents} Schüler ohne Klasse zuordnen →
+          </button>
         )}
+      </Section>
 
-        {/* Strafen schulweit */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          <Stat icon={HandCoins} label="Offene Geldstrafen" value={`${penalties.openMoney} €`} tone="bg-status-late/15 text-status-late" onClick={() => navigate('/strafen')} />
-          <Stat icon={FileText} label="Offene Seiten-Strafen" value={`${penalties.openPages}`} tone="bg-status-late/15 text-status-late" onClick={() => navigate('/strafen')} />
-          <Stat icon={Scale} label="Offene Strafen gesamt" value={penalties.openCount} onClick={() => navigate('/strafen')} />
-        </div>
-
-        {/* Je Klasse */}
-        <Card className="overflow-hidden">
-          <CardHeader title="Je Klasse" subtitle="Anwesenheit & offene Strafen" icon={Gauge} />
-          <p className="sm:hidden px-4 pb-1 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
-          <div className="overflow-x-auto" role="region" aria-label="Je Klasse, seitlich scrollbar" tabIndex={0}>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-sage-muted border-b border-line">
-                  <th className="py-3 px-4 font-medium">Klasse</th>
-                  <th className="py-3 px-3 font-medium text-center">Schüler</th>
-                  <th className="py-3 px-3 font-medium text-center">Anw.</th>
-                  <th className="py-3 px-3 font-medium text-center">Unent.</th>
-                  <th className="py-3 px-3 font-medium text-center">Offene Strafen</th>
-                </tr>
-              </thead>
-              <tbody>
-                {classes.map((c) => (
-                  <tr key={c.id} onClick={() => navigate(`/klassenliste?klasse=${c.id}`)} className="border-b border-line last:border-0 hover:bg-hover cursor-pointer">
-                    <td className="py-3 px-4 text-ivory whitespace-nowrap">{c.name}</td>
-                    <td className="py-3 px-3 text-center font-mono">{c.students}</td>
-                    <td className={`py-3 px-3 text-center font-mono ${rateColor(c.attendanceRate)}`} title={c.attendanceRate === null ? 'Noch keine Daten' : undefined}>{c.attendanceRate === null ? '–' : `${c.attendanceRate}%`}</td>
-                    <td className={`py-3 px-3 text-center font-mono ${c.unexcused > 0 ? 'text-status-absent' : 'text-sage-muted'}`}>{c.unexcused}</td>
-                    <td className="py-3 px-3 text-center font-mono whitespace-nowrap">
-                      {c.openMoney === 0 && c.openPages === 0 ? (
-                        <span className="text-sage-muted">–</span>
-                      ) : (
-                        <span className="text-status-late">
-                          {c.openMoney > 0 && `${c.openMoney} €`}
-                          {c.openMoney > 0 && c.openPages > 0 && ' · '}
-                          {c.openPages > 0 && `${c.openPages} S.`}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+      <Section title="Strafen" action={<button type="button" onClick={() => navigate('/strafen')} className="text-subhead text-mint-light dark:text-mint font-medium">Öffnen</button>}>
+        <Card className="p-5 grid grid-cols-3 gap-4">
+          <Stat label="Geldstrafen offen" value={`${penalties.openMoney} €`} tone={penalties.openMoney ? 'late' : undefined} />
+          <Stat label="Seiten offen" value={penalties.openPages} tone={penalties.openPages ? 'late' : undefined} />
+          <Stat label="Strafen gesamt" value={penalties.openCount} />
         </Card>
-      </div>
+      </Section>
+
+      <Section title="Je Klasse" footer="Anwesenheitsquote: grün ab 90 %, gelb ab 75 %.">
+        {/* Handy: Liste, Computer: Tabelle */}
+        <ListGroup className="sm:hidden">
+          {classes.map((c) => (
+            <ListRow
+              key={c.id}
+              onClick={() => navigate(`/klassenliste?klasse=${c.id}`)}
+              title={c.name}
+              subtitle={[`${c.students} Schüler`, c.unexcused > 0 ? `${c.unexcused} unentschuldigt` : null, c.openMoney > 0 ? `${c.openMoney} €` : null, c.openPages > 0 ? `${c.openPages} S.` : null].filter(Boolean).join(' · ')}
+              value={c.attendanceRate === null ? '–' : `${c.attendanceRate} %`}
+              chevron
+            />
+          ))}
+        </ListGroup>
+        <Card className="hidden sm:block overflow-hidden">
+          <table className="w-full text-subhead">
+            <thead>
+              <tr className="text-left text-footnote text-sage-muted border-b border-line/70">
+                <th className="py-3 px-5 font-medium">Klasse</th>
+                <th className="py-3 px-3 font-medium text-right">Schüler</th>
+                <th className="py-3 px-3 font-medium text-right">Anwesenheit</th>
+                <th className="py-3 px-3 font-medium text-right">Unentschuldigt</th>
+                <th className="py-3 px-5 font-medium text-right">Offene Strafen</th>
+              </tr>
+            </thead>
+            <tbody>
+              {classes.map((c) => (
+                <tr key={c.id} onClick={() => navigate(`/klassenliste?klasse=${c.id}`)} className="border-b border-line/70 last:border-0 hover:bg-hover/60 cursor-pointer">
+                  <td className="py-3 px-5 text-ivory font-medium whitespace-nowrap">{c.name}</td>
+                  <td className="py-3 px-3 text-right font-mono">{c.students}</td>
+                  <td className={`py-3 px-3 text-right font-mono ${rateColor(c.attendanceRate)}`}>{c.attendanceRate === null ? '–' : `${c.attendanceRate} %`}</td>
+                  <td className={`py-3 px-3 text-right font-mono ${c.unexcused > 0 ? 'text-status-absent' : 'text-sage-muted'}`}>{c.unexcused}</td>
+                  <td className="py-3 px-5 text-right font-mono whitespace-nowrap">
+                    {c.openMoney === 0 && c.openPages === 0 ? <span className="text-sage-muted">–</span> : (
+                      <span className="text-status-late">{[c.openMoney > 0 && `${c.openMoney} €`, c.openPages > 0 && `${c.openPages} S.`].filter(Boolean).join(' · ')}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      </Section>
     </AppLayout>
   );
 }

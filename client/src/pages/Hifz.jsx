@@ -42,7 +42,7 @@ function RecordingPlayer({ goalId, recording }) {
   if (!recording) return null;
   return (
     <div className="mt-3 rounded-lg border border-mint/25 bg-mint/[0.04] p-2.5">
-      <div className="text-[11px] text-sage-muted mb-1">🎤 Audio-Abgabe · {fmt(recording.submittedAt)}</div>
+      <div className="text-caption text-sage-muted mb-1">🎤 Audio-Abgabe · {fmt(recording.submittedAt)}</div>
       <audio controls preload="none" className="w-full" src={`/api/quran-goals/${goalId}/recording`} />
     </div>
   );
@@ -97,11 +97,11 @@ function AttemptForm({ onSubmit, onCancel }) {
     <div className="rounded-lg border border-line p-3 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
-          <span className="text-[11px] text-sage-muted">Punkte (0–10)</span>
+          <span className="text-caption text-sage-muted">Punkte (0–10)</span>
           <input type="number" min={0} max={10} className="input py-1.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} />
         </label>
         <label className="block">
-          <span className="text-[11px] text-sage-muted">Extra-Punkte (Fleiß, 0–5)</span>
+          <span className="text-caption text-sage-muted">Extra-Punkte (Fleiß, 0–5)</span>
           <input type="number" min={0} max={5} className="input py-1.5" value={f.bonus} onChange={(e) => setF({ ...f, bonus: e.target.value })} />
         </label>
       </div>
@@ -124,7 +124,7 @@ function AttemptForm({ onSubmit, onCancel }) {
 function ProgressCard({ memorizedAyat }) {
   const pct = Math.min(100, Math.round((memorizedAyat / 6236) * 100));
   return (
-    <Card className="p-5 flex items-center gap-4">
+    <Card className="p-4 sm:p-5 flex items-center gap-4">
       <Ring value={pct} size={84} stroke={8} label={`${pct}%`} sublabel="vom Qur'an" />
       <div>
         <div className="font-mono text-2xl text-mint-light">{memorizedAyat}</div>
@@ -138,7 +138,7 @@ function ProgressCard({ memorizedAyat }) {
 function MitarbeitCard({ m }) {
   if (!m) return null;
   return (
-    <Card className="p-5 flex items-center gap-4">
+    <Card className="p-4 sm:p-5 flex items-center gap-4">
       <span className="grid place-items-center h-16 w-16 rounded-xl bg-mint/15 text-mint shrink-0"><Award size={26} /></span>
       <div>
         <div className="font-mono text-2xl text-mint-light">{m.total}<span className="text-base text-sage-muted"> Punkte</span></div>
@@ -193,7 +193,7 @@ function AudioSubmit({ goalId, onDone }) {
         <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={rec.start}><Mic size={15} /> Aufnehmen</Button>
           <Button size="sm" variant="ghost" onClick={() => inputRef.current?.click()}><Paperclip size={15} /> Datei</Button>
-          <span className="text-[11px] text-sage-muted">Rezitation aufnehmen und abgeben – die Lehrkraft hört sie an.</span>
+          <span className="text-caption text-sage-muted">Rezitation aufnehmen und abgeben – die Lehrkraft hört sie an.</span>
         </div>
       )}
     </div>
@@ -281,9 +281,9 @@ function GoalForm({ surahs, onSubmit, onCancel }) {
     });
   };
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Neue Aufgabe" subtitle="z. B. Sure An-Nas bis Al-Aʻla wiederholen" icon={BookOpen} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <label className="block">
           <span className="text-sm text-sage">Art</span>
           <select className="input mt-1" value={f.goalType} onChange={(e) => setF({ ...f, goalType: e.target.value })}>

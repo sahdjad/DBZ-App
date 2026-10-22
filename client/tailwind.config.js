@@ -33,15 +33,39 @@ export default {
         },
       },
       fontFamily: {
-        display: ['Fraunces', 'Georgia', 'Cambria', '"Times New Roman"', 'serif'],
-        sans: ['"Hanken Grotesk"', 'system-ui', '-apple-system', '"Segoe UI"', 'Roboto', '"Helvetica Neue"', 'Arial', 'sans-serif'],
-        mono: ['"JetBrains Mono"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+        // Eine Familie für alles (Apple-Systemschrift, vom Nutzer umstellbar).
+        // „display“ und „mono“ bleiben als Namen bestehen, zeigen aber auf die
+        // UI-Schrift (Zahlen dann mit tabular-nums, siehe index.css).
+        display: ['var(--font-ui)'],
+        sans: ['var(--font-ui)'],
+        mono: ['var(--font-ui)'],
+        code: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+        serif: ['ui-serif', '"New York"', '"Iowan Old Style"', 'Georgia', 'serif'],
         arabic: ['"Uthmanic Hafs"', '"Amiri Quran"', 'Amiri', '"Noto Naskh Arabic"', '"Geeza Pro"', '"Times New Roman"', 'serif'],
+        'arabic-ui': ['"Geeza Pro"', '"Noto Naskh Arabic"', '"Noto Sans Arabic"', '"Segoe UI"', 'Tahoma', 'serif'],
         mushaf: ['"Uthmanic Hafs"', '"Amiri Quran"', 'Amiri', '"Noto Naskh Arabic"', '"Geeza Pro"', 'serif'],
       },
       borderRadius: {
-        lg: '0.75rem',
-        xl: '1rem',
+        md: '0.5rem',
+        lg: '0.625rem',
+        xl: '0.75rem',
+        '2xl': '1rem',
+        '3xl': '1.375rem',
+      },
+      boxShadow: {
+        card: 'var(--shadow-card)',
+        float: 'var(--shadow-float)',
+      },
+      fontSize: {
+        // iOS-angelehnte Skala (rem -> wächst mit der Textgröße-Einstellung)
+        caption: ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.01em' }],
+        footnote: ['0.8125rem', { lineHeight: '1.125rem' }],
+        subhead: ['0.9375rem', { lineHeight: '1.3rem' }],
+        body: ['1rem', { lineHeight: '1.45rem' }],
+        title3: ['1.25rem', { lineHeight: '1.6rem', letterSpacing: '-0.01em' }],
+        title2: ['1.375rem', { lineHeight: '1.75rem', letterSpacing: '-0.015em' }],
+        title1: ['1.75rem', { lineHeight: '2.1rem', letterSpacing: '-0.02em' }],
+        large: ['2rem', { lineHeight: '2.4rem', letterSpacing: '-0.022em' }],
       },
       keyframes: {
         'fade-up': {

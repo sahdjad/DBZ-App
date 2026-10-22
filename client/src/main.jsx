@@ -6,6 +6,7 @@ import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
 import ServerWakeNotice from './components/ServerWakeNotice.jsx';
 import { initTheme } from './lib/theme.js';
+import { initDisplay } from './lib/display.js';
 import { installHaptics } from './lib/haptics.js';
 import { installSingleAudio } from './lib/singleAudio.js';
 import './index.css';
@@ -13,6 +14,7 @@ import { initI18n } from './i18n/index.js';
 
 // Theme (System/Hell/Dunkel) vor dem Rendern anwenden – kein Aufblitzen.
 initTheme();
+initDisplay();
 installHaptics();
 installSingleAudio();
 

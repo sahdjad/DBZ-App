@@ -2,8 +2,7 @@
 // (13.–15. des Mondmonats, Sunna-Fasten), Freitag, wechselnder Hadith und die
 // neuesten Ankündigungen als sanftes Laufband.
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Moon, Megaphone, Sparkles } from 'lucide-react';
+import { Moon } from 'lucide-react';
 
 // Bekannte, authentische Ahadith (Sahih) mit Quellenangabe. Übersetzung
 // sinngemäß ins Deutsche.
@@ -45,7 +44,9 @@ export function whiteDaysInfo(now = new Date()) {
   return null;
 }
 
-export default function DayCard({ announcements = [] }) {
+// Kopf der Startseite: Begrüßung, islamisches Datum und ein Hadith – als
+// ruhiger, redaktioneller Bereich direkt unter der grünen Kopfzeile.
+export default function DayHero({ name, subtitle }) {
   const now = new Date();
   const h = hijriParts(now);
   const arabic = useMemo(() => {
@@ -54,61 +55,55 @@ export default function DayCard({ announcements = [] }) {
   const white = useMemo(() => whiteDaysInfo(now), []);
   const dayIndex = Math.floor(now.getTime() / 86400000);
   const [hi, setHi] = useState(dayIndex % HADITHS.length);
-  const [ai, setAi] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setHi((x) => (x + 1) % HADITHS.length), 12000);
+    const t = setInterval(() => setHi((x) => (x + 1) % HADITHS.length), 14000);
     return () => clearInterval(t);
   }, []);
-  useEffect(() => {
-    if (announcements.length < 2) return undefined;
-    const t = setInterval(() => setAi((x) => (x + 1) % announcements.length), 5000);
-    return () => clearInterval(t);
-  }, [announcements.length]);
   const isFriday = now.getDay() === 5;
   const ramadanIn = h && h.month === 8 ? (() => {
     for (let i = 1; i <= 31; i++) { const p = hijriParts(new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, 12)); if (p?.month === 9) return i; }
     return null;
   })() : null;
-  const ann = announcements[ai];
   const hadith = HADITHS[hi];
+  const chips = [
+    white && (white.today ? `Heute ist Weißer Tag ${white.n}/3 – Fasten ist Sunna` : `Weiße Tage in ${white.inDays} Tag${white.inDays === 1 ? '' : 'en'}`),
+    isFriday && 'Jumuʿa Mubārak – Sure Al-Kahf lesen',
+    ramadanIn && `Ramadan in ca. ${ramadanIn} Tagen`,
+  ].filter(Boolean);
 
   return (
-    <div className="day-card mb-5 rounded-2xl overflow-hidden border border-gold/30 text-[#f4efe2]">
-      <div className="p-4 sm:p-5 grid gap-4 sm:grid-cols-[auto_1fr] items-start">
-        <div className="flex sm:flex-col items-center sm:items-start gap-3 sm:gap-1 sm:min-w-[11rem]">
-          <Moon size={22} className="text-[#d8c38a] shrink-0" aria-hidden="true" />
-          <div>
-            {arabic && <div className="font-arabic text-lg leading-tight" dir="rtl">{arabic}</div>}
-            {h && <div className="text-xs text-[#cfe3d6]">{h.day}. {HIJRI_MONTHS[h.month - 1]} {h.year} n. H.</div>}
-            <div className="text-[11px] text-[#9fb8a8]">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-          </div>
+    <section className="nav-surface pattern-geo -mx-4 sm:-mx-6 lg:mx-0 -mt-5 lg:mt-0 lg:rounded-3xl px-5 sm:px-7 pt-3 pb-6 lg:pt-7 rounded-b-[1.75rem] text-ivory">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-footnote text-sage-muted">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          <h2 className="mt-1 text-title1 font-bold text-ivory leading-tight">
+            <span className="block text-title3 font-medium text-sage">As-salāmu ʿalaykum,</span>
+            <span data-noi18n>{name}</span>
+          </h2>
+          {subtitle && <p className="mt-1.5 text-footnote text-sage-muted">{subtitle}</p>}
         </div>
-        <div className="space-y-2 min-w-0">
-          <div className="flex flex-wrap gap-2">
-            {white && (
-              <span className="chip">
-                {white.today ? `Heute ist Weißer Tag ${white.n}/3 – Fasten ist Sunna` : `Weiße Tage in ${white.inDays} Tag${white.inDays === 1 ? '' : 'en'}`}
-              </span>
-            )}
-            {isFriday && <span className="chip">Jumuʿa Mubārak – Sure Al-Kahf lesen</span>}
-            {ramadanIn && <span className="chip">Ramadan in ca. {ramadanIn} Tagen</span>}
-          </div>
-          <figure key={hi} className="dbz-fade-in">
-            <blockquote className="text-sm leading-relaxed">
-              <Sparkles size={13} className="inline -mt-0.5 mr-1 text-[#d8c38a]" aria-hidden="true" />
-              „{hadith.t}“
-            </blockquote>
-            <figcaption className="text-[11px] text-[#9fb8a8] mt-0.5">Hadith · {hadith.s}</figcaption>
-          </figure>
-        </div>
+        <p className="font-arabic-ui text-title3 leading-none text-gold shrink-0 pt-7" lang="ar" dir="rtl">السلام عليكم</p>
       </div>
-      {ann && (
-        <Link to="/ankuendigungen" className="flex items-center gap-2 px-4 py-2 bg-black/20 hover:bg-black/30 transition text-sm">
-          <Megaphone size={15} className="text-[#d8c38a] shrink-0" />
-          <span key={ann.id} className="truncate dbz-slide-in"><b className="font-medium">{ann.fromLabel || 'Ankündigung'}:</b> {ann.title}</span>
-        </Link>
-      )}
+
+      <div className="mt-5 pt-4 border-t border-white/10">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+          <div className="flex items-center gap-2 min-w-0">
+            <Moon size={16} className="text-gold shrink-0 self-center" aria-hidden="true" />
+            {h && <span className="text-subhead font-medium text-ivory">{h.day}. {HIJRI_MONTHS[h.month - 1]} {h.year} n. H.</span>}
+          </div>
+          {arabic && <span className="font-arabic-ui text-subhead text-sage-muted" lang="ar" dir="rtl">{arabic}</span>}
+        </div>
+        {chips.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {chips.map((c) => <span key={c} className="rounded-full bg-white/[0.08] px-2.5 py-1 text-caption font-medium text-gold">{c}</span>)}
+          </div>
+        )}
+        <figure key={hi} className="dbz-fade-in mt-4">
+          <blockquote className="font-serif text-[1.0625rem] leading-relaxed text-ivory/95">„{hadith.t}“</blockquote>
+          <figcaption className="text-caption text-sage-muted mt-1.5">Hadith · {hadith.s}</figcaption>
+        </figure>
+      </div>
       <p className="sr-only">Datum nach Umm-al-Qura-Kalender, Abweichung von einem Tag möglich.</p>
-    </div>
+    </section>
   );
 }

@@ -123,7 +123,7 @@ function GradesEditor({ subjects, grades, onChange, computedAvg, override, onOve
             placeholder="auto" value={override ?? ''} onChange={(e) => onOverride(e.target.value === '' ? null : Number(e.target.value))} />
         </label>
       </div>
-      <p className="text-[11px] text-sage-muted mt-2">Leer lassen = automatischer Durchschnitt. Ein eingetragener Wert überschreibt ihn im Zeugnis.</p>
+      <p className="text-caption text-sage-muted mt-2">Leer lassen = automatischer Durchschnitt. Ein eingetragener Wert überschreibt ihn im Zeugnis.</p>
     </div>
   );
 }
@@ -151,7 +151,7 @@ function StandingPanel({ standing, onApplyAverage }) {
         <div className="text-sm text-ivory inline-flex items-center gap-1.5"><Sparkles size={16} className="text-mint-light" /> Automatischer Notenvorschlag</div>
         <div className="text-right leading-none">
           <div className="text-2xl font-mono text-mint-light">{gradeLabel(standing.suggestedGradeHalf)}</div>
-          <div className="text-[10px] text-sage-muted mt-0.5">rechnerisch {avgLabel(standing.suggestedGrade)}</div>
+          <div className="text-[0.625rem] text-sage-muted mt-0.5">rechnerisch {avgLabel(standing.suggestedGrade)}</div>
         </div>
       </div>
       <div className="grid gap-1.5 sm:grid-cols-2">
@@ -162,7 +162,7 @@ function StandingPanel({ standing, onApplyAverage }) {
           </div>
         ))}
       </div>
-      <p className="text-[11px] text-sage-muted mt-3">{standing.summary} Der Vorschlag ist unverbindlich – du entscheidest.</p>
+      <p className="text-caption text-sage-muted mt-3">{standing.summary} Der Vorschlag ist unverbindlich – du entscheidest.</p>
       <div className="mt-3">
         <Button size="sm" variant="outline" onClick={() => onApplyAverage(standing.suggestedGradeHalf)}><Wand2 size={14} /> Als Gesamt-Ø übernehmen</Button>
       </div>
@@ -250,14 +250,14 @@ function ManagerView() {
         <button onClick={() => setActive(null)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
           <ChevronLeft size={16} /> Zur Übersicht
         </button>
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader
             title={active.studentName}
             subtitle={active.periodName}
             icon={FileText}
             action={<StatusBadge status={active.status === 'released' ? 'approved' : 'draft'} />}
           />
-          <div className="p-4 space-y-4">
+          <div className="space-y-4">
             <div className="flex items-center gap-2 text-sm">
               <span className="text-sage-muted">Auswertungs­zeitraum:</span>
               <select className="input w-auto py-1.5 text-sm" value={month} onChange={(e) => setMonth(e.target.value)}>
@@ -307,7 +307,7 @@ function ManagerView() {
       {tab === 'overview' ? (
         <ClassOverview periodId={periodId} classId={classes.length > 1 ? classId : ''} month={month} onOpen={openReport} />
       ) : (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Schüler" subtitle="Zeugnis erstellen oder öffnen" icon={FileText} />
           <div className="divide-y divide-line">
             {students.map((s) => (
@@ -344,7 +344,7 @@ function ClassOverview({ periodId, classId, month, onOpen }) {
   const classAvg = withAvg.length ? Math.round((withAvg.reduce((a, r) => a + r.effectiveAverage, 0) / withAvg.length) * 100) / 100 : null;
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Klassenübersicht" subtitle={`Ø der Klasse: ${avgLabel(classAvg)}`} icon={Table2} />
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
@@ -397,14 +397,14 @@ function ReadView() {
         <button onClick={() => setActive(null)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
           <ChevronLeft size={16} /> Zurück
         </button>
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader
             title={active.periodName}
             subtitle={active.studentName}
             icon={FileText}
             action={<Button as={Link} to={`/bericht/${active.id}/druck`} variant="outline" size="sm"><Printer size={16} /> PDF</Button>}
           />
-          <div className="p-4"><ReportView report={active} subjects={subjects} /></div>
+          <div><ReportView report={active} subjects={subjects} /></div>
         </Card>
       </div>
     );

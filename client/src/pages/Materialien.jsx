@@ -167,7 +167,7 @@ export default function Materialien() {
                         <span className="block text-xs text-sage-muted mt-0.5">
                           {g.items.length} {g.items.length === 1 ? 'Eintrag' : 'Einträge'} · {g.files} {g.files === 1 ? 'Datei' : 'Dateien'}
                         </span>
-                        <span className="block text-[11px] text-sage-muted">Zuletzt {fmt(g.last)}</span>
+                        <span className="block text-caption text-sage-muted">Zuletzt {fmt(g.last)}</span>
                       </span>
                       <ChevronRight size={18} className="shrink-0 text-sage-muted group-hover:text-mint" />
                     </button>
@@ -355,9 +355,9 @@ function NewBlockForm({ user, initialSubject = '', onDone, onCancel }) {
   };
 
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader title="Neuer Block" subtitle="Ein Thema mit allen zugehörigen Dateien – z. B. Text, Hausaufgabe und Lösung zusammen" icon={FolderOpen} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <label className="block">
           <span className="text-sm text-sage">Titel</span>
           <input className="input mt-1" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} placeholder="z. B. Biografie Abu Bakr" maxLength={160} />
@@ -514,9 +514,9 @@ function BulkForm({ user, initialSubject = '', onDone, onCancel }) {
   };
 
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader title="Viele Dateien einzeln" subtitle="Jede Datei wird ein eigener Eintrag (Titel = Dateiname). Für ein Thema mit mehreren Dateien: „Neuer Block“." icon={UploadCloud} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="block">
             <span className="text-sm text-sage">Klasse</span>

@@ -103,7 +103,7 @@ function AttendanceDetail({ records }) {
         subtitle={showAll ? 'Alle Sitzungen' : 'Verspätungen & Fehlzeiten'}
         icon={CalendarCheck}
       />
-      <div className="p-4">
+      <div>
         <div className="flex justify-end mb-3">
           <Button variant="outline" size="sm" onClick={() => setShowAll((v) => !v)}>
             {showAll ? 'Nur Auffälligkeiten' : 'Alle Sitzungen zeigen'}
@@ -117,7 +117,7 @@ function AttendanceDetail({ records }) {
               <li key={i} className="py-2.5 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-ivory text-sm">{fmtDate(r.date)}</div>
-                  {r.note && <div className="text-[11px] text-sage-muted">{r.note}</div>}
+                  {r.note && <div className="text-caption text-sage-muted">{r.note}</div>}
                 </div>
                 <div className="flex items-center gap-3">
                   {r.status === 'late' && r.minutesLate > 0 && (

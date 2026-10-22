@@ -88,7 +88,7 @@ export default function PruefungDruck() {
           </div>
         </div>
 
-        <div className="px-8 py-3 bg-[#f2f6f3] text-[11px] text-[#132a1e]/50 text-center">
+        <div className="px-8 py-3 bg-[#f2f6f3] text-caption text-[#132a1e]/50 text-center">
           {org?.name || 'Deen Bildungszentrum'} · Erstellt in der DBZ-App.
         </div>
       </div>

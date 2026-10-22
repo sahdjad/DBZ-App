@@ -4,7 +4,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
 import HomeworkOverview from '../components/HomeworkOverview.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
+import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -14,12 +14,7 @@ export default function Korrektur() {
   const [view, setView] = useState('students');
   return (
     <AppLayout title="Korrektur">
-      <div className="inline-flex rounded-xl border border-line p-1 mb-4" role="tablist">
-        {[['students', 'Nach Schülern'], ['list', 'Alle Abgaben']].map(([v, l]) => (
-          <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-sm ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
-        ))}
-      </div>
+      <Segmented className="mb-5 w-full sm:w-auto" options={[['students', 'Nach Schülern'], ['list', 'Alle Abgaben']]} value={view} onChange={setView} />
       {view === 'students'
         ? <HomeworkOverview renderSubmission={(sub, reload) => <ReviewCard sub={sub} onDone={reload} compact />} />
         : <SubmissionList />}
@@ -48,7 +43,7 @@ function SubmissionList() {
 
   return (
     <>
-      <Card className="p-5 mb-4">
+      <Card className="p-4 sm:p-5 mb-4">
         <CardHeader title="Offene Abgaben" subtitle={`${open.length} warten auf Korrektur`} icon={CheckSquare} />
       </Card>
       <div className="space-y-3">
@@ -140,7 +135,7 @@ function ReviewCard({ sub, onDone, compact = false }) {
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
             {[['tajwid', 'Tajwid'], ['pronunciation', 'Aussprache'], ['fluency', 'Flüssigkeit'], ['memorization', 'Hifz'], ['errorCount', 'Fehler']].map(([k, l]) => (
               <label key={k} className="block">
-                <span className="text-[11px] text-sage-muted">{l}</span>
+                <span className="text-caption text-sage-muted">{l}</span>
                 <input type="number" className="input py-1.5" value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
               </label>
             ))}

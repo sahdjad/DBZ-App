@@ -24,11 +24,12 @@ export default function Admin() {
   const isSuperAdmin = user?.role === 'super_admin';
   return (
     <AppLayout title="Verwaltung">
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="no-scrollbar flex gap-2 mb-5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap" role="tablist">
         {TABS.map(([k, label, Icon]) => (
-          <Button key={k} variant={tab === k ? 'primary' : 'outline'} size="sm" onClick={() => setTab(k)}>
-            <Icon size={16} /> {label}
-          </Button>
+          <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+            className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-3.5 h-9 text-footnote font-semibold transition-colors ${tab === k ? 'bg-mint text-onaccent' : 'bg-card border border-line/70 text-sage hover:bg-hover'}`}>
+            <Icon size={15} /> {label}
+          </button>
         ))}
       </div>
       {tab === 'users' && <UsersTab />}
@@ -62,7 +63,7 @@ function ApprovalsTab({ isSuperAdmin }) {
   if (!requests) return <Spinner />;
   const STAT = { pending: ['Offen', 'late'], approved: ['Bestätigt', 'present'], rejected: ['Abgelehnt', 'absent'] };
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader
         title={isSuperAdmin ? 'Zu bestätigen' : 'Meine Anträge'}
         subtitle={isSuperAdmin ? 'Neue Konten und Klassen der Leitung freigeben' : 'Deine Änderungen warten auf Bestätigung durch den Administrator'}
@@ -124,9 +125,9 @@ function LinkAccountsAdminCard() {
     } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
   };
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Konten verknüpfen" subtitle="Dieselbe Person mit mehreren Rollen zusammenführen (z. B. Schüler + Klassenlehrer + Leitung)" icon={Link2} />
-      <form onSubmit={link} className="p-4 grid gap-2 sm:grid-cols-2">
+      <form onSubmit={link} className="grid gap-2 sm:grid-cols-2">
         <input className="input" type="email" placeholder="E-Mail Konto 1" value={f.emailA} onChange={(e) => setF({ ...f, emailA: e.target.value })} required />
         <input className="input" type="email" placeholder="E-Mail Konto 2" value={f.emailB} onChange={(e) => setF({ ...f, emailB: e.target.value })} required />
         <div className="sm:col-span-2"><Button type="submit" disabled={busy}><Link2 size={16} /> Verknüpfen</Button></div>
@@ -177,7 +178,7 @@ function PendingTab() {
 
   if (!list) return <Spinner />;
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Neue Anmeldungen" subtitle="Ohne Einladung registriert – hier als Schüler (mit Klasse), Lehrkraft, Leitung … freischalten" icon={UserCheck} />
       {list.length === 0 ? (
         <p className="p-4 text-sage-muted text-sm">Keine offenen Anmeldungen.</p>
@@ -366,9 +367,9 @@ function UsersTab() {
         </ol>
       </details>
       {show && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
-          <form onSubmit={create} className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <form onSubmit={create} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Input label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
             <Input label="E-Mail" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} required />
             <Input label="Passwort" type="text" value={form.password} onChange={(v) => setForm({ ...form, password: v })} required />
@@ -468,9 +469,9 @@ function ClassesTab() {
   if (!classes) return <Spinner />;
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Neue Klasse" icon={School} />
-        <form onSubmit={create} className="p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
+        <form onSubmit={create} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
           <Input label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
           <label className="block">
             <span className="text-sm text-sage">Wochentag</span>
@@ -574,9 +575,9 @@ function SettingsTab() {
   if (!org) return <Spinner />;
   return (
     <div className="grid gap-4 lg:grid-cols-2 items-start">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Organisation & Social Links" subtitle="Ohne neues Release änderbar" icon={Settings} />
-        <form onSubmit={save} className="p-4 space-y-3">
+        <form onSubmit={save} className="space-y-3">
           <Input label="Name der Organisation" value={org.name} onChange={(v) => setOrg({ ...org, name: v })} />
           <Input label="Verspätungsgrenze (Minuten)" type="number" value={org.lateAfterMinutes} onChange={(v) => setOrg({ ...org, lateAfterMinutes: v })} />
           <Input label="Check-in schließt automatisch um (HH:MM)" type="time" value={org.checkinAutoClose || '16:00'} onChange={(v) => setOrg({ ...org, checkinAutoClose: v })} />
@@ -621,10 +622,10 @@ function GradeWeightsCard({ weights, onChange, onSave }) {
   const sumRaw = WEIGHT_FIELDS.reduce((s, [k]) => s + raw(k), 0);
   const set = (k, pts) => onChange({ ...w, [k]: Math.max(0, Math.min(100, Number(pts) || 0)) / 100 });
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Notengewichte" subtitle="Relative Gewichtung je Bereich – der tatsächliche Anteil wird automatisch auf 100 % normiert" icon={Settings} />
-      <div className="p-4 space-y-2">
-        <div className="flex items-center gap-3 text-[11px] text-sage-muted px-1" aria-hidden="true">
+      <div className="space-y-2">
+        <div className="flex items-center gap-3 text-caption text-sage-muted px-1" aria-hidden="true">
           <span className="w-32 shrink-0" />
           <span className="flex-1">Relatives Gewicht</span>
           <span className="w-20 text-center">Zahl</span>
@@ -642,7 +643,7 @@ function GradeWeightsCard({ weights, onChange, onSave }) {
             </div>
           );
         })}
-        <p className="text-[11px] text-sage-muted mt-2">
+        <p className="text-caption text-sage-muted mt-2">
           Die Zahlen sind relative Gewichte, kein Prozentwert für sich genommen – sie werden automatisch so ins Verhältnis gesetzt, dass der tatsächliche Anteil an der Endnote (rechte Spalte) immer 100% ergibt. Bereiche ohne Daten werden fair auf die übrigen verteilt. Es bleibt ein Vorschlag – die Lehrkraft entscheidet.
         </p>
         <Button onClick={onSave} disabled={sumRaw <= 0}>Speichern</Button>
@@ -785,7 +786,7 @@ function AuditTab() {
   if (!logs) return <Spinner />;
   return (
     <Card className="p-0 overflow-hidden">
-      <p className="sm:hidden px-4 pt-3 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+      <p className="sm:hidden px-4 pt-3 text-caption text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
       <div className="overflow-x-auto" role="region" aria-label="Audit-Log, seitlich scrollbar" tabIndex={0}>
         <table className="w-full text-sm">
           <thead><tr className="text-left text-sage-muted border-b border-line">
@@ -851,9 +852,9 @@ function InvitesTab() {
   if (!invites) return <Spinner />;
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Neue Einladung" subtitle="Sicherer, befristeter Registrierungslink" icon={Mail} />
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
           <label className="block">
             <span className="text-sm text-sage">Rolle</span>
             <select className="input mt-1" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>

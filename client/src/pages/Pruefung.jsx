@@ -22,7 +22,7 @@ function ExamAttachments({ examId, files }) {
   if (!files?.length) return null;
   return (
     <div className="rounded-lg border border-mint/25 bg-mint/[0.04] p-3 space-y-2">
-      <div className="text-[11px] text-sage-muted">Aufgabe</div>
+      <div className="text-caption text-sage-muted">Aufgabe</div>
       {files.map((f) => <FileView key={f.id} file={f} url={`/api/exams/${examId}/file/${f.id}`} />)}
     </div>
   );
@@ -33,7 +33,7 @@ export default function Pruefung() {
   const navigate = useNavigate();
   return (
     <AppLayout title="Prüfung">
-      <button onClick={() => navigate('/pruefungen')} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <button onClick={() => navigate('/pruefungen')} className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zu den Prüfungen
       </button>
       {MANAGER.includes(user.role) ? <ManagerExam /> : <StudentExam />}
@@ -119,7 +119,7 @@ function StudentExam() {
   if (attempt && attempt.status === 'released') {
     const solById = Object.fromEntries((attempt.solutions || []).map((s) => [s.id, s.correct]));
     return (
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader
           title={exam.title}
           subtitle={attempt.total != null ? `Ergebnis: ${attempt.total}${attempt.max ? '/' + attempt.max : ''} Punkte${typeof attempt.percent === 'number' ? ` (${attempt.percent}%)` : ''}` : 'Korrigiert'}
@@ -131,18 +131,18 @@ function StudentExam() {
           <ExamAttachments examId={id} files={exam.files} />
           {(attempt.responseFiles || []).length > 0 && (
             <div className="rounded-lg border border-line p-3 space-y-1">
-              <div className="text-[11px] text-sage-muted">Deine Abgabe</div>
+              <div className="text-caption text-sage-muted">Deine Abgabe</div>
               {attempt.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${attempt.id}/file/${f.id}`} />)}
             </div>
           )}
           {attempt.feedback && (
             <div className="rounded-lg border border-mint/30 bg-mint/[0.05] p-3 text-sm text-sage">
-              <span className="text-[11px] text-sage-muted block mb-1">Rückmeldung der Lehrkraft</span>{attempt.feedback}
+              <span className="text-caption text-sage-muted block mb-1">Rückmeldung der Lehrkraft</span>{attempt.feedback}
             </div>
           )}
           {attempt.correctedFile && (
             <div className="rounded-lg border border-line p-3">
-              <div className="text-[11px] text-sage-muted">Korrigierte Datei</div>
+              <div className="text-caption text-sage-muted">Korrigierte Datei</div>
               <FileView file={attempt.correctedFile} url={`/api/attempts/${attempt.id}/file/${attempt.correctedFile.id}`} />
             </div>
           )}
@@ -180,13 +180,13 @@ function StudentExam() {
   // Abgegeben, wartet auf Freigabe
   if (attempt && attempt.status === 'submitted') {
     return (
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} />
-        <div className="p-4 space-y-3">
+        <div className="space-y-3">
           <ExamAttachments examId={id} files={exam.files} />
           {(attempt.responseFiles || []).length > 0 && (
             <div className="rounded-lg border border-line p-3 space-y-1">
-              <div className="text-[11px] text-sage-muted">Deine Abgabe</div>
+              <div className="text-caption text-sage-muted">Deine Abgabe</div>
               {attempt.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${attempt.id}/file/${f.id}`} />)}
             </div>
           )}
@@ -227,9 +227,9 @@ function StudentExam() {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title={exam.title} subtitle={exam.description} icon={GraduationCap} action={exam.questions.length > 0 ? <Badge tone="neutral">Bestehen ab {passPercentage}%</Badge> : null} />
-      <div className="p-4 space-y-4">
+      <div className="space-y-4">
         <ExamAttachments examId={id} files={exam.files} />
         {(exam.files?.length > 0 || exam.questions.length === 0) && !exam.link && (
           <ResponseUploader examId={id} onDone={load} />
@@ -259,7 +259,7 @@ function StudentExam() {
                     </button>
                   );
                 })}
-                {q.type === 'multi' && <p className="text-[11px] text-sage-muted">Mehrere Antworten möglich</p>}
+                {q.type === 'multi' && <p className="text-caption text-sage-muted">Mehrere Antworten möglich</p>}
               </div>
             )}
           </div>
@@ -291,7 +291,7 @@ function ManagerExam() {
   if (!exam) return <Spinner />;
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader
           title={exam.title}
           subtitle={`${exam.questions.length} Fragen · Bestehen ab ${exam.passPercentage}%`}
@@ -339,7 +339,7 @@ function GradeCard({ exam, att, onDone }) {
       </div>
       {(att.responseFiles || []).length > 0 && (
         <div className="rounded-lg border border-mint/25 bg-mint/[0.04] p-3 space-y-1 mb-3">
-          <div className="text-[11px] text-sage-muted">Abgabe des Schülers</div>
+          <div className="text-caption text-sage-muted">Abgabe des Schülers</div>
           {att.responseFiles.map((f) => <FileView key={f.id} file={f} url={`/api/attempts/${att.id}/file/${f.id}`} />)}
         </div>
       )}
@@ -415,9 +415,9 @@ function ReturnForm({ att, onDone }) {
   return (
     <div className="rounded-lg border border-line p-3 space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <label className="block"><span className="text-[11px] text-sage-muted">Punkte</span>
+        <label className="block"><span className="text-caption text-sage-muted">Punkte</span>
           <input type="number" min={0} className="input py-1.5" value={f.points} onChange={(e) => setF({ ...f, points: e.target.value })} /></label>
-        <label className="block"><span className="text-[11px] text-sage-muted">von (max.)</span>
+        <label className="block"><span className="text-caption text-sage-muted">von (max.)</span>
           <input type="number" min={0} className="input py-1.5" value={f.maxPoints} onChange={(e) => setF({ ...f, maxPoints: e.target.value })} /></label>
       </div>
       <label className="block"><span className="text-sm text-sage">Rückmeldung / Kritik</span>

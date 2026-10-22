@@ -4,7 +4,7 @@ import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, Smile
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
@@ -69,12 +69,12 @@ export default function Nachrichten() {
                   <Avatar name={t.otherName} size={40} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-ivory truncate">{t.otherName}{t.inboxLabel && <span className="ml-2 text-[11px] text-sage-muted">{t.inboxLabel}</span>}</span>
-                      <span className="text-[11px] text-sage-muted shrink-0">{t.lastAt ? fmt(t.lastAt) : ''}</span>
+                      <span className="text-ivory truncate">{t.otherName}{t.inboxLabel && <span className="ml-2 text-caption text-sage-muted">{t.inboxLabel}</span>}</span>
+                      <span className="text-caption text-sage-muted shrink-0">{t.lastAt ? fmt(t.lastAt) : ''}</span>
                     </div>
                     <div className="text-sm text-sage-muted truncate">{t.lastBody}</div>
                   </div>
-                  {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-[11px] font-mono shrink-0">{t.unread}</span>}
+                  {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-caption font-mono shrink-0">{t.unread}</span>}
                 </ThreadRow>
               ))}
             </div>
@@ -298,11 +298,8 @@ function NewThread({ onCancel, onOpen, onBroadcast }) {
           )
         ) : (
           <>
-            <div className="flex gap-2 flex-wrap" role="tablist">
-              <Button size="sm" variant={mode === 'box' ? 'primary' : 'outline'} onClick={() => switchMode('box')}><Inbox size={15} /> Postfach</Button>
-              <Button size="sm" variant={mode === 'person' ? 'primary' : 'outline'} onClick={() => switchMode('person')}><Users size={15} /> Schüler / Eltern</Button>
-              {data.broadcasts.length > 0 && <Button size="sm" variant={mode === 'broadcast' ? 'primary' : 'outline'} onClick={() => switchMode('broadcast')}><Megaphone size={15} /> Rundnachricht</Button>}
-            </div>
+            <Segmented className="w-full" value={mode} onChange={switchMode}
+              options={[['box', 'Postfach'], ['person', 'Schüler / Eltern'], ...(data.broadcasts.length > 0 ? [['broadcast', 'Rundnachricht']] : [])]} />
             {data.sendAs.length > 1 && (
               <label className="block">
                 <span className="text-sm text-sage">Absender</span>
@@ -359,10 +356,10 @@ function BroadcastList({ onOpen }) {
               <button type="button" onClick={() => onOpen(b.id)} className="w-full text-left px-4 py-3 hover:bg-hover">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm text-ivory truncate">{b.targetLabel}</span>
-                  <span className="text-[11px] text-sage-muted shrink-0">{fmt(b.createdAt)}</span>
+                  <span className="text-caption text-sage-muted shrink-0">{fmt(b.createdAt)}</span>
                 </div>
                 <div className="text-xs text-sage-muted truncate">{b.body || '📎 Anhang'}</div>
-                <div className="text-[11px] text-mint mt-0.5">gelesen {b.read}/{b.total}{b.replies ? ` · ${b.replies} Antwort(en)` : ''}</div>
+                <div className="text-caption text-mint mt-0.5">gelesen {b.read}/{b.total}{b.replies ? ` · ${b.replies} Antwort(en)` : ''}</div>
               </button>
             </li>
           ))}
@@ -383,7 +380,7 @@ function BroadcastDetail({ id, onBack, onOpenThread }) {
         <button onClick={onBack} className="text-sage hover:text-ivory" aria-label="Zurück"><ArrowLeft size={20} /></button>
         <div className="min-w-0">
           <div className="text-ivory truncate">Rundnachricht: {b.targetLabel}</div>
-          <div className="text-[11px] text-sage-muted">als {b.fromLabel} · {fmt(b.createdAt)} · gelesen {b.read}/{b.total}</div>
+          <div className="text-caption text-sage-muted">als {b.fromLabel} · {fmt(b.createdAt)} · gelesen {b.read}/{b.total}</div>
         </div>
       </div>
       {b.body && <p data-noi18n className="p-4 text-sm text-sage whitespace-pre-line border-b border-line">{b.body}</p>}
@@ -393,12 +390,12 @@ function BroadcastDetail({ id, onBack, onOpenThread }) {
             <button type="button" disabled={!r.threadId} onClick={() => onOpenThread(r.threadId)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-hover">
               <Avatar name={r.name} size={30} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm text-ivory truncate">{r.name} <span className="text-[11px] text-sage-muted">{r.roleLabel}</span></div>
-                <div className="text-[11px] text-sage-muted">zuletzt online: {lastSeenLabel(r.lastSeenAt)}</div>
+                <div className="text-sm text-ivory truncate">{r.name} <span className="text-caption text-sage-muted">{r.roleLabel}</span></div>
+                <div className="text-caption text-sage-muted">zuletzt online: {lastSeenLabel(r.lastSeenAt)}</div>
               </div>
               {r.readAt
-                ? <span className="text-[11px] text-mint inline-flex items-center gap-1"><CheckCheck size={14} /> {fmt(r.readAt)}</span>
-                : <span className="text-[11px] text-sage-muted inline-flex items-center gap-1"><Check size={14} /> ungelesen</span>}
+                ? <span className="text-caption text-mint inline-flex items-center gap-1"><CheckCheck size={14} /> {fmt(r.readAt)}</span>
+                : <span className="text-caption text-sage-muted inline-flex items-center gap-1"><Check size={14} /> ungelesen</span>}
             </button>
           </li>
         ))}
@@ -473,13 +470,13 @@ function ThreadView({ id, onBack }) {
   const meId = data.meId;
 
   return (
-    <Card className="flex flex-col overflow-hidden" style={{ height: 'calc(100vh - 220px)', minHeight: 380 }}>
+    <Card className="flex flex-col overflow-hidden" style={{ height: 'calc(100dvh - var(--dbz-tabbar-h, 0px) - env(safe-area-inset-top) - 7.5rem)', minHeight: 380 }}>
       <div className="flex items-center gap-3 p-4 border-b border-line">
         <button onClick={onBack} className="text-sage hover:text-ivory" aria-label="Zurück zur Übersicht"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
         <div className="min-w-0">
           <div className="text-ivory truncate">{data.otherName}</div>
-          <div className="text-[11px] text-sage-muted truncate">
+          <div className="text-caption text-sage-muted truncate">
             {'lastSeenAt' in data ? `zuletzt online: ${lastSeenLabel(data.lastSeenAt)} · ` : ''}{data.subtitle}
           </div>
         </div>
@@ -495,22 +492,22 @@ function ThreadView({ id, onBack }) {
                 <div className="max-w-[85%] rounded-2xl px-3.5 py-2 bg-subtle border border-dashed border-line text-sage-muted italic text-sm flex items-center gap-2">
                   <Undo2 size={14} /> Diese Nachricht wurde zurückgerufen
                 </div>
-                <div className="text-[10px] mt-1 text-sage-muted">{fmt(m.createdAt)}</div>
+                <div className="text-[0.625rem] mt-1 text-sage-muted">{fmt(m.createdAt)}</div>
               </div>
             );
           }
           return (
             <div key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
               {!mine && data.group && (
-                <div className="text-[11px] text-sage-muted mb-0.5 px-1">{m.senderName}</div>
+                <div className="text-caption text-sage-muted mb-0.5 px-1">{m.senderName}</div>
               )}
-              {m.broadcast && <div className="text-[10px] text-sage-muted mb-0.5 px-1 inline-flex items-center gap-1"><Megaphone size={11} /> Rundnachricht</div>}
+              {m.broadcast && <div className="text-[0.625rem] text-sage-muted mb-0.5 px-1 inline-flex items-center gap-1"><Megaphone size={11} /> Rundnachricht</div>}
               <div className="group flex items-end gap-1.5 max-w-[85%]">
                 {mine && <ReactButton onClick={() => setPicker(picker === m.id ? null : m.id)} />}
-                <div className={['rounded-2xl px-3.5 py-2', mine ? 'bg-mint text-onaccent rounded-br-sm' : 'bg-card border border-line text-sage rounded-bl-sm'].join(' ')}>
-                  {m.body && <p data-noi18n className="text-sm whitespace-pre-line">{m.body}</p>}
+                <div className={['rounded-[1.2rem] px-3.5 py-2', mine ? 'bg-mint text-onaccent rounded-br-md' : 'bg-subtle text-ivory rounded-bl-md'].join(' ')}>
+                  {m.body && <p data-noi18n className="text-body leading-snug whitespace-pre-line">{m.body}</p>}
                   <Attachment threadId={id} m={m} />
-                  <div className={`text-[10px] mt-1 flex items-center gap-1 ${mine ? 'text-onaccent/70 justify-end' : 'text-sage-muted'}`}>
+                  <div className={`text-[0.625rem] mt-1 flex items-center gap-1 ${mine ? 'text-onaccent/70 justify-end' : 'text-sage-muted'}`}>
                     {fmt(m.createdAt)}
                     {/* Lesebestätigung: nur für Mitarbeitende (Server liefert sie Schülern/Eltern nicht). */}
                     {mine && m.read && (m.read.seen
@@ -522,7 +519,7 @@ function ThreadView({ id, onBack }) {
               </div>
 
               {mine && canRecall && (
-                <button onClick={() => recall(m.id)} className="mt-1 text-[11px] text-sage-muted hover:text-status-absent inline-flex items-center gap-1">
+                <button onClick={() => recall(m.id)} className="mt-1 text-caption text-sage-muted hover:text-status-absent inline-flex items-center gap-1">
                   <Undo2 size={12} /> Zurückrufen
                 </button>
               )}

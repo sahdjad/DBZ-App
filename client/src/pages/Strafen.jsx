@@ -86,7 +86,7 @@ function PenaltyRow({ p, actions }) {
           <span className={`font-mono text-sm ${p.type === 'money' ? 'text-mint-light' : 'text-sage'}`}>{penText(p)}</span>
           <Badge tone={st.tone}>{st.label}</Badge>
           {p.overdue && <Badge tone="absent">überfällig</Badge>}
-          {p.surcharge > 0 && <span className="text-[11px] text-status-absent">inkl. {p.surcharge}{p.type === 'money' ? ' €' : ' Seiten'} Zuschlag</span>}
+          {p.surcharge > 0 && <span className="text-caption text-status-absent">inkl. {p.surcharge}{p.type === 'money' ? ' €' : ' Seiten'} Zuschlag</span>}
         </div>
         <div className="text-xs text-sage-muted mt-0.5">
           Grund: {p.reason} · {fmt(p.createdAt)}
@@ -223,9 +223,9 @@ function RecordForm({ onCreated }) {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Neue Strafe erfassen" subtitle="Seiten schreiben oder Geldstrafe" icon={Scale} />
-      <form onSubmit={save} className="p-4 space-y-3">
+      <form onSubmit={save} className="space-y-3">
         {/* Direkt aus dem Strafenkatalog wählen – füllt Grund/Art/Höhe vor (frei änderbar). */}
         {catalog.length > 0 && (
           <label className="block">
@@ -352,7 +352,7 @@ function ManagerView() {
       <TotalsBar list={list} />
 
       {pending.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Zu genehmigen" subtitle={`${pending.length} vom Klassensprecher erfasst`} />
           <div className="divide-y divide-line">
             {pending.map((p) => (
@@ -373,7 +373,7 @@ function ManagerView() {
       )}
 
       {payReq.length > 0 && (
-        <Card className="p-5 border-mint/30">
+        <Card className="p-4 sm:p-5 border-mint/30">
           <CardHeader title="Zahlungsanfragen" subtitle={`${payReq.length} Schüler melden eine Zahlung/Erledigung`} icon={HandCoins} />
           <div className="divide-y divide-line">
             {payReq.map((p) => (
@@ -393,7 +393,7 @@ function ManagerView() {
       )}
 
       {debts.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Offene Schulden je Schüler" subtitle="Zum Einzug durch die Leitung" icon={HandCoins} />
           <div className="divide-y divide-line">
             {debts.map((d) => (
@@ -411,7 +411,7 @@ function ManagerView() {
         </Card>
       )}
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Offene Strafen" subtitle="Genehmigt – als erledigt verbuchen, wenn bezahlt / abgegeben" />
         <div className="divide-y divide-line">
           {open.length === 0 ? (
@@ -435,7 +435,7 @@ function ManagerView() {
       </Card>
 
       {done.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Verlauf" subtitle="Erledigt & abgelehnt" />
           <div className="divide-y divide-line">
             {done.map((p) => <PenaltyRow key={p.id} p={p} />)}
@@ -469,7 +469,7 @@ function SprecherView() {
   return (
     <div className="space-y-4">
       <RecordForm onCreated={load} />
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Strafen der Klasse" subtitle="Vom Lehrer noch zu genehmigen bzw. bereits entschieden" />
         <div className="divide-y divide-line">
           {list.length === 0 ? (
@@ -543,7 +543,7 @@ function ReadView({ role }) {
 
       {/* Detailübersicht: wann, Grund, welche Strafe, erledigt? */}
       {showDetails && list && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Detailübersicht" subtitle="Alle Strafen mit Grund, Datum und Status" icon={Scale} />
           <div className="divide-y divide-line">
             {list.length === 0 ? <p className="p-4 text-sage-muted text-sm">Keine Einträge.</p> : list.map((p) => <PenaltyRow key={p.id} p={p} />)}
@@ -551,7 +551,7 @@ function ReadView({ role }) {
         </Card>
       )}
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title={role === 'eltern' ? 'Offene Strafen' : 'Meine offenen Strafen'} icon={Scale} />
         {!list ? (
           <Spinner />
@@ -577,7 +577,7 @@ function ReadView({ role }) {
       </Card>
 
       {done.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Erledigt" />
           <div className="divide-y divide-line">{done.map((p) => <PenaltyRow key={p.id} p={p} />)}</div>
         </Card>

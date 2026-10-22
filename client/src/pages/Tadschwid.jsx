@@ -36,13 +36,13 @@ export default function Tadschwid() {
   const navigate = useNavigate();
   return (
     <AppLayout title="Tadschwid-Regeln">
-      <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <button onClick={() => navigate(-1)} className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zurück
       </button>
 
-      <Card className="p-5 mb-4">
+      <Card className="p-4 sm:p-5 mb-4">
         <CardHeader title="Farb-Legende" subtitle="So sind die Regeln in vielen Tadschwid-Mushafs eingefärbt" icon={Palette} />
-        <div className="p-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {[
             ['#16A34A', 'Idghām / Qalqalah'],
             ['#DC2626', 'Ikhfāʾ'],
@@ -78,7 +78,7 @@ export default function Tadschwid() {
         </Card>
       ))}
 
-      <p className="text-[11px] text-sage-muted">
+      <p className="text-caption text-sage-muted">
         Kurzreferenz zum Lernen. Tafsīr pro Ayah (as-Saʿdī arabisch, Ibn Kathīr englisch) findest du
         im Reader über das Tafsir-Symbol. Die automatische Farb-Einfärbung direkt im Text folgt später,
         sobald eine geprüfte Datenquelle feststeht.

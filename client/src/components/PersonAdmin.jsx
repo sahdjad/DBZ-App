@@ -80,7 +80,7 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
           </div>
         )}
         <Button onClick={promote} disabled={!changed || busy}>{role !== user.role ? `Zu ${roleLabel(role)} befördern` : 'Klassen speichern'}</Button>
-        <p className="text-[11px] text-sage-muted">Die bisherige Rolle wird ersetzt. Soll sie bleiben, unten „Zusätzliche Rolle“ nutzen.</p>
+        <p className="text-caption text-sage-muted">Die bisherige Rolle wird ersetzt. Soll sie bleiben, unten „Zusätzliche Rolle“ nutzen.</p>
       </div>
     </div>
   );
@@ -167,7 +167,7 @@ function Row({ icon: Icon, label, children }) {
     <div className="flex items-start gap-3 py-2">
       <Icon size={16} className="mt-0.5 text-sage-muted shrink-0" />
       <div className="min-w-0">
-        <div className="text-[11px] text-sage-muted">{label}</div>
+        <div className="text-caption text-sage-muted">{label}</div>
         <div className="text-sm text-ivory break-words">{children}</div>
       </div>
     </div>
@@ -213,7 +213,7 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
   const address = [p.street && `${p.street} ${p.houseNumber || ''}`.trim(), [p.zip, p.city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Steckbrief" subtitle={`${u.roleLabel}${u.classNames?.length ? ` · ${u.classNames.join(', ')}` : ''}`} icon={IdCard}
           action={u.status !== 'active' ? <Badge tone="late">{u.status === 'pending' ? 'wartet auf Freischaltung' : 'deaktiviert'}</Badge> : null} />
         <div className="grid gap-x-6 px-4 pb-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -229,17 +229,17 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Rollenbearbeitung" subtitle="Aktuelle Position und Beförderung auf einen Blick" icon={ShieldCheck} />
-        <div className="p-4 space-y-4">
+        <div className="space-y-4">
           <RoleEditor user={u} classes={classes} isSuperAdmin={viewer?.role === 'super_admin'} onChanged={changed} />
           <PersonRolesCard userId={u.id} classes={classes} onChanged={changed} />
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Konto" icon={KeyRound} />
-        <div className="p-4 grid gap-3 sm:grid-cols-2 items-end">
+        <div className="grid gap-3 sm:grid-cols-2 items-end">
           <div className={u.role === 'eltern' ? 'sm:col-span-2 space-y-2' : 'sm:col-span-2'}>
             <div className="text-sm text-sage mb-1">Name</div>
             <div className="flex gap-2">

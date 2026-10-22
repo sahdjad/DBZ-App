@@ -93,7 +93,7 @@ function NotificationRow({ n, selection, onOpen }) {
       <div className="min-w-0 flex-1">
         <div className="text-ivory">{n.title}</div>
         <div className="text-sm text-sage">{n.body}</div>
-        <div className="text-[11px] text-sage-muted mt-1">{fmt(n.createdAt)}</div>
+        <div className="text-caption text-sage-muted mt-1">{fmt(n.createdAt)}</div>
       </div>
       {!selection.active && <ChevronRight size={18} className="text-sage-muted shrink-0 mt-1" aria-hidden="true" />}
     </Card>

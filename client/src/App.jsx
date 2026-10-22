@@ -49,6 +49,7 @@ const DbzOnline = lazy(() => import('./pages/DbzOnline.jsx'));
 const Konto = lazy(() => import('./pages/Konto.jsx'));
 const Hilfe = lazy(() => import('./pages/Hilfe.jsx'));
 const Admin = lazy(() => import('./pages/Admin.jsx'));
+const Mehr = lazy(() => import('./pages/Mehr.jsx'));
 
 const MANAGERS = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMINS = ['super_admin', 'leitung'];
@@ -153,6 +154,7 @@ export default function App() {
         <Route path="/nachrichten" element={<Protected><Nachrichten /></Protected>} />
         <Route path="/nachrichten/:threadId" element={<Protected><Nachrichten /></Protected>} />
         <Route path="/benachrichtigungen" element={<Protected><Benachrichtigungen /></Protected>} />
+        <Route path="/mehr" element={<Protected><Mehr /></Protected>} />
         <Route path="/dbz-online" element={<Protected><DbzOnline /></Protected>} />
         <Route path="/konto" element={<Protected><Konto /></Protected>} />
         <Route path="/hilfe" element={<Protected><Hilfe /></Protected>} />

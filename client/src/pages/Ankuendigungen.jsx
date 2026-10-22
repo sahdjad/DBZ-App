@@ -135,11 +135,11 @@ function ReadersSheet({ a, onClose }) {
           <div className="space-y-4">
             <section>
               <div className="text-xs uppercase tracking-wide text-sage-muted mb-1">Noch nicht gelesen ({unread.length})</div>
-              <ul className="divide-y divide-line">{unread.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} <span className="text-[11px] text-sage-muted">{r.roleLabel}</span></span><span className="text-[11px] text-sage-muted shrink-0">online {lastSeenLabel(r.lastSeenAt)}</span></li>)}</ul>
+              <ul className="divide-y divide-line">{unread.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} <span className="text-caption text-sage-muted">{r.roleLabel}</span></span><span className="text-caption text-sage-muted shrink-0">online {lastSeenLabel(r.lastSeenAt)}</span></li>)}</ul>
             </section>
             <section>
               <div className="text-xs uppercase tracking-wide text-sage-muted mb-1">Gelesen ({read.length})</div>
-              <ul className="divide-y divide-line">{read.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} {r.reaction}</span><span className="text-[11px] text-sage-muted shrink-0">{fmt(r.readAt)}</span></li>)}</ul>
+              <ul className="divide-y divide-line">{read.map((r) => <li key={r.id} className="py-1.5 text-sm flex justify-between gap-2"><span className="text-ivory truncate">{r.name} {r.reaction}</span><span className="text-caption text-sage-muted shrink-0">{fmt(r.readAt)}</span></li>)}</ul>
             </section>
           </div>
         )}
@@ -182,9 +182,9 @@ function NewForm({ user, onDone, onCancel }) {
   };
 
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader title="Neue Ankündigung" icon={Megaphone} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <label className="block">
           <span className="text-sm text-sage">Titel</span>
           <input className="input mt-1" value={f.title} onChange={(e) => setF({ ...f, title: e.target.value })} />

@@ -63,7 +63,7 @@ export default function Login() {
       />
       <div className="absolute inset-0 bg-gradient-to-b from-[#0B1F14]/75 via-[#0B1F14]/72 to-[#0B1F14]/90" />
 
-      <div className="absolute top-3 right-3 z-20 bg-[#0B1F14]/60 rounded-xl" style={{ top: 'max(env(safe-area-inset-top), 0.75rem)' }}>
+      <div className="absolute right-4 z-20" style={{ top: 'max(env(safe-area-inset-top), 0.75rem)' }}>
         <LanguageSwitch compact saveToAccount={false} />
       </div>
       <div className="relative z-10 min-h-[100dvh] flex flex-col items-center justify-center px-4 py-10">
@@ -74,42 +74,42 @@ export default function Login() {
               <img
                 src="/logo.png"
                 alt="DEEN Bildungszentrum"
-                className="h-36 w-auto max-w-[80%] mx-auto rounded-2xl object-contain bg-white p-3 shadow-xl"
+                className="h-28 w-28 mx-auto rounded-[1.75rem] object-contain bg-white p-2.5 shadow-float"
                 onError={() => setLogoOk(false)}
               />
             ) : (
               <span className="grid place-items-center h-24 w-24 mx-auto rounded-2xl bg-white/15 border border-white/25 text-white font-display text-3xl">د</span>
             )}
-            <h1 className="font-display text-2xl text-white mt-4">Deen Bildungszentrum</h1>
-            <p className="font-arabic text-xl text-white/90 mt-1" dir="rtl">بسم الله الرحمن الرحيم</p>
+            <h1 className="text-title1 font-bold text-white mt-5">Deen Bildungszentrum</h1>
+            <p className="font-arabic-ui text-title3 text-[#e7d9ae] mt-1.5" lang="ar" dir="rtl">بسم الله الرحمن الرحيم</p>
           </div>
 
           {/* Anmeldekarte */}
-          <Card className="p-6">
-            <h2 className="font-display text-xl text-ivory mb-1">Anmelden</h2>
-            <p className="text-sm text-sage-muted mb-5">Melde dich mit deinem DBZ-Konto an.</p>
+          <Card className="p-6 rounded-3xl shadow-float">
+            <h2 className="text-title2 font-bold text-ivory">Anmelden</h2>
+            <p className="text-subhead text-sage-muted mt-0.5 mb-5">Melde dich mit deinem DBZ-Konto an.</p>
 
             <form onSubmit={submit} className="space-y-4">
               <label className="block">
-                <span className="text-sm text-sage">E-Mail</span>
+                <span className="text-footnote font-medium text-sage-muted">E-Mail</span>
                 <input
                   type="email"
                   autoComplete="username"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="mt-1 w-full rounded-lg bg-card border border-line px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
+                  className="input mt-1"
                   placeholder="name@dbz.de"
                   required
                 />
               </label>
               <label className="block">
-                <span className="text-sm text-sage">Passwort</span>
+                <span className="text-footnote font-medium text-sage-muted">Passwort</span>
                 <input
                   type="password"
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="mt-1 w-full rounded-lg bg-card border border-line px-3 py-2.5 text-ivory placeholder:text-sage-muted focus:border-mint/40"
+                  className="input mt-1"
                   placeholder="••••••••"
                   required
                 />
@@ -125,7 +125,7 @@ export default function Login() {
               </Button>
             )}
 
-            <p className="text-sm text-sage-muted mt-4 text-center">
+            <p className="text-subhead text-sage-muted mt-5 text-center">
               <Link to="/passwort-vergessen" className="text-mint-light hover:underline">Passwort vergessen?</Link>
               <span className="mx-2 text-sage-muted">·</span>
               Einladung? <Link to="/registrieren" className="text-mint-light hover:underline">Konto erstellen</Link>
@@ -133,7 +133,7 @@ export default function Login() {
 
           </Card>
 
-          <p className="text-center text-xs text-white/60 mt-5">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
+          <p className="text-center text-footnote text-white/60 mt-6">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
         </div>
       </div>
     </div>

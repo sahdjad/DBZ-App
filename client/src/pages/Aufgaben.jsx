@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal, Pencil, ChevronDown, Archive } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog, Segmented } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { DuePresets, toLocalInput, AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
 import { groupByWeek, weekInfo } from '../lib/weeks.js';
@@ -54,7 +54,7 @@ function StudentView() {
   return (
     <div className="space-y-5">
       {current.length === 0 ? (
-        <Card className="p-5 text-sage-muted text-sm">Alles erledigt – gerade ist keine Hausaufgabe offen.</Card>
+        <Card className="p-4 sm:p-5 text-sage-muted text-sm">Alles erledigt – gerade ist keine Hausaufgabe offen.</Card>
       ) : current.map((w) => {
         const info = w.key ? weekInfo(w.key) : null;
         return (
@@ -100,7 +100,7 @@ function StudentView() {
 function WeekBadge({ kw }) {
   return (
     <span className="grid place-items-center shrink-0 h-11 w-11 rounded-xl bg-mint/15 text-mint leading-none">
-      {kw ? (<><span className="text-[9px] font-bold tracking-wider">KW</span><span className="text-base font-semibold">{kw}</span></>) : <span className="text-xs">–</span>}
+      {kw ? (<><span className="text-[0.5625rem] font-bold tracking-wider">KW</span><span className="text-base font-semibold">{kw}</span></>) : <span className="text-xs">–</span>}
     </span>
   );
 }
@@ -427,7 +427,7 @@ function ManagerView() {
       <div className="text-sm text-ivory font-medium mb-3 flex items-center gap-2"><Pencil size={15} /> Hausaufgabe bearbeiten</div>
       <AssignmentEditForm assignment={a} klass={classes.find((c) => c.id === a.classId)} subjects={subjects}
         onSubmit={(edits) => saveEdit(a, edits)} onCancel={() => setEditId(null)} />
-      <p className="text-[11px] text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
+      <p className="text-caption text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
     </Card>
   ) : (
     <AssignmentRow key={a.id} a={a} selection={selection} archived={isHidden}
@@ -440,12 +440,7 @@ function ManagerView() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="inline-flex rounded-xl border border-line p-1" role="tablist">
-          {[[false, 'Aktuell'], [true, 'Archiv']].map(([v, l]) => (
-            <button key={l} role="tab" aria-selected={archived === v} onClick={() => setArchived(v)}
-              className={`px-3 py-1.5 rounded-lg text-sm ${archived === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
-          ))}
-        </div>
+        <Segmented options={[[false, 'Aktuell'], [true, 'Archiv']]} value={archived} onChange={setArchived} />
         <div className="flex gap-2">
           {allIds.length > 0 && !selection.active && (
             <Button variant="outline" onClick={() => selection.start()}><ListChecks size={18} /> Auswählen</Button>
@@ -463,9 +458,9 @@ function ManagerView() {
       )}
 
       {showForm && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Neue Hausaufgabe" icon={BookOpen} />
-          <form onSubmit={create} className="p-4 space-y-3">
+          <form onSubmit={create} className="space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Field label="Klasse">
                 <select className="input" value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>

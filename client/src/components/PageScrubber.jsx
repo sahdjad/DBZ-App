@@ -59,7 +59,7 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
         </span>
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-[11px] text-sage-muted tabular-nums w-6 shrink-0">{max}</span>
+        <span className="text-caption text-sage-muted tabular-nums w-6 shrink-0">{max}</span>
         <input
           type="range"
           min={1}
@@ -75,7 +75,7 @@ export default function PageScrubber({ page, onNavigate, max = 604 }) {
           aria-label="Seite wählen (1 bis 604), Seite 1 rechts wie im gedruckten Mushaf"
           aria-valuetext={`Seite ${value}`}
         />
-        <span className="text-[11px] text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
+        <span className="text-caption text-sage-muted tabular-nums w-6 text-right shrink-0">1</span>
       </div>
     </div>
   );

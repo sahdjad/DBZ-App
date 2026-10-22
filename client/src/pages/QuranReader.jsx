@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut, LayoutGrid, List as ListIcon, BookOpen } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Spinner, useToast, Segmented } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
 import { ensurePageFont, isPageFontLoaded, useMushafAutoFit, loadMushafLayout, MUSHAF_LAYOUT_KEY } from '../lib/mushafFont.js';
 import PageScrubber from '../components/PageScrubber.jsx';
@@ -59,11 +59,11 @@ function TafsirPanel({ data, edition, onEdition }) {
         <span className="text-xs text-sage-muted mr-1 inline-flex items-center gap-1"><FileText size={13} /> Tafsir</span>
         {EDS.map(([k, l]) => (
           <button key={k} onClick={() => onEdition(k)}
-            className={['text-[11px] px-2 py-0.5 rounded-md border', edition === k ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{l}</button>
+            className={['text-caption px-2 py-0.5 rounded-md border', edition === k ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{l}</button>
         ))}
       </div>
       {isTrans && (
-        <p className="text-[11px] text-sage-muted mb-2 italic">
+        <p className="text-caption text-sage-muted mb-2 italic">
           Deutsche Sinn-Übersetzung (Bubenheim) – Wiedergabe der Bedeutung, kein wörtlicher Tafsir.
         </p>
       )}
@@ -110,13 +110,7 @@ export default function QuranReader() {
 
   return (
     <AppLayout title="Qur'an">
-      <div className="flex items-center gap-2 mb-4 flex-wrap" role="tablist" aria-label="Qur'an-Bereich">
-        {QURAN_TABS.map(([k, label]) => (
-          <Button key={k} role="tab" aria-selected={tab === k} variant={tab === k ? 'primary' : 'outline'} size="sm" onClick={() => setTab(k)}>
-            {label}
-          </Button>
-        ))}
-      </div>
+      <Segmented className="w-full sm:w-auto mb-5" options={QURAN_TABS.map(([k, label]) => [k, label])} value={tab} onChange={setTab} />
 
       {tab === 'lesen' && (
         pageView ? (
@@ -174,7 +168,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
       )}
 
       {marks?.bookmarks?.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Lesezeichen" icon={Bookmark} />
           <div className="divide-y divide-line">
             {marks.bookmarks.map((b) => (
@@ -208,19 +202,21 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
         </div>
       </div>
       {filtered.length === 0 && <p className="text-sm text-sage-muted px-1">Keine Sure gefunden.</p>}
-      <div className={view === 'grid' ? 'grid grid-cols-1 sm:grid-cols-2 gap-2.5' : 'rounded-2xl border border-line bg-card divide-y divide-line overflow-hidden'}>
+      <div className={view === 'grid'
+        ? 'rounded-2xl border border-line/70 bg-card shadow-card divide-y divide-line/70 overflow-hidden sm:rounded-none sm:border-0 sm:bg-transparent sm:shadow-none sm:divide-y-0 sm:overflow-visible sm:grid sm:grid-cols-2 sm:gap-2.5'
+        : 'rounded-2xl border border-line/70 bg-card shadow-card divide-y divide-line/70 overflow-hidden'}>
         {filtered.map((s) => (
           <button key={s.n} onClick={() => onSelect(s.n)}
             className={view === 'grid'
-              ? 'group flex items-center gap-3 rounded-2xl border border-line bg-card px-4 py-3 shadow-sm hover:border-mint/40 hover:shadow-md transition text-left'
-              : 'group w-full flex items-center gap-3 px-4 py-2.5 hover:bg-hover transition text-left'}>
-            <span className="grid place-items-center h-9 w-9 rounded-xl bg-subtle text-sage font-mono text-sm shrink-0 group-hover:bg-mint/15 group-hover:text-mint transition">{s.n}</span>
+              ? 'group w-full flex items-center gap-3 px-4 py-3 active:bg-hover hover:bg-hover/60 transition text-left sm:rounded-2xl sm:border sm:border-line/70 sm:bg-card sm:shadow-card'
+              : 'group w-full flex items-center gap-3 px-4 py-2.5 active:bg-hover hover:bg-hover/60 transition text-left'}>
+            <span className="grid place-items-center h-9 w-9 rounded-full bg-subtle text-sage-muted font-mono text-footnote font-semibold shrink-0 group-hover:bg-mint/10 group-hover:text-mint-light transition">{s.n}</span>
             <div className="min-w-0 flex-1">
-              <div className="text-ivory font-medium truncate">{s.name}</div>
-              <div className="text-xs text-sage-muted">{s.ayat} Ayat</div>
+              <div className="text-body text-ivory font-medium truncate">{s.name}</div>
+              <div className="text-footnote text-sage-muted">{s.ayat} Ayat</div>
             </div>
             {s.ar && <span dir="rtl" lang="ar" className="font-arabic text-xl text-ivory/90 shrink-0 leading-none">سورة {s.ar}</span>}
-            <ChevronRight size={18} className="text-sage-muted shrink-0 transition group-hover:translate-x-0.5 group-hover:text-mint" />
+            <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />
           </button>
         ))}
       </div>
@@ -498,7 +494,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
         <Spinner label="Sure wird geladen …" />
       ) : (
         <>
-          <Card className="p-5 mb-4 text-center">
+          <Card className="p-4 sm:p-5 mb-4 text-center">
             {/* Sure-Navigation: vorherige / nächste + Auswahl */}
             <div className="flex items-center justify-center gap-3">
               <button onClick={goPrevSurah} disabled={Number(n) <= 1} aria-label="Vorherige Sure"
@@ -542,11 +538,11 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                 </button>
               </div>
               {audioErr ? (
-                <button onClick={() => loadAudio(reciter)} className="text-[11px] text-status-absent inline-flex items-center gap-1">
+                <button onClick={() => loadAudio(reciter)} className="text-caption text-status-absent inline-flex items-center gap-1">
                   <RotateCcw size={12} /> Audio erneut laden
                 </button>
               ) : !audio ? (
-                <p className="text-[11px] text-sage-muted">Rezitation wird vorbereitet …</p>
+                <p className="text-caption text-sage-muted">Rezitation wird vorbereitet …</p>
               ) : null}
 
               {/* Eingeklapptes Menü: Rezitator, Modus, Wiederholung, Tempo, Bereich */}
@@ -604,7 +600,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                         onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
                     </div>
                   )}
-                  <p className="text-[11px] text-sage-muted max-w-xs text-center">
+                  <p className="text-caption text-sage-muted max-w-xs text-center">
                     {mode === 'continuous' && 'Standard: läuft ab der getippten Ayah automatisch weiter bis zum Ende der Sure.'}
                     {mode === 'single' && 'Spielt nur die getippte Ayah.'}
                     {mode === 'range' && 'Spielt den eingestellten Bereich in Schleife – ideal zum Auswendiglernen.'}
@@ -617,9 +613,9 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
           </Card>
 
           {readMode === 'tajweed' ? (
-            <Card className="p-5 sm:p-7">
+            <Card className="p-4 sm:p-5 sm:p-7">
               {/* Farb-Legende */}
-              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-5 text-[11px]">
+              <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-5 text-caption">
                 {TAJWEED_LEGEND.map(([c, l]) => (
                   <span key={l} className="inline-flex items-center gap-1 text-sage-muted">
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}
@@ -649,14 +645,14 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                       />
                     ))}
                   </p>
-                  <p className="text-[11px] text-sage-muted mt-4 text-center">
+                  <p className="text-caption text-sage-muted mt-4 text-center">
                     Farben zeigen die Tadschwid-Regeln. Tippe auf eine Ayah zum Abspielen · <Link to="/tadschwid" className="text-mint-light hover:underline">Regeln erklärt</Link>
                   </p>
                 </>
               )}
             </Card>
           ) : readMode === 'mushaf' ? (
-            <Card className="p-5 sm:p-7">
+            <Card className="p-4 sm:p-5 sm:p-7">
               {data.bismillah && (
                 <p dir="rtl" className="font-arabic text-2xl text-center text-sage mb-4">بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</p>
               )}
@@ -673,7 +669,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
                   </span>
                 ))}
               </p>
-              <p className="text-[11px] text-sage-muted mt-4 text-center">Tippe auf eine Ayah, um sie abzuspielen. Für Übersetzung, Lesezeichen &amp; Notizen die Ansicht „Studieren" wählen.</p>
+              <p className="text-caption text-sage-muted mt-4 text-center">Tippe auf eine Ayah, um sie abzuspielen. Für Übersetzung, Lesezeichen &amp; Notizen die Ansicht „Studieren" wählen.</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -1131,7 +1127,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
           <Button size="sm" variant="outline" onClick={() => goto(page - 1)} disabled={!page || page <= 1}><ChevronRight size={16} /> Zurück</Button>
           <div className="text-center">
             <div className="text-ivory text-sm font-medium">Seite {page || '…'}<span className="text-sage-muted"> / 604</span></div>
-            {data?.juz && <div className="text-[11px] text-sage-muted">Juzʼ {data.juz}</div>}
+            {data?.juz && <div className="text-caption text-sage-muted">Juzʼ {data.juz}</div>}
           </div>
           <Button size="sm" variant="outline" onClick={() => goto(page + 1)} disabled={!page || page >= 604}>Weiter <ChevronLeft size={16} /></Button>
         </div>
@@ -1154,12 +1150,12 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
             <Button size="sm" variant="ghost" onClick={doJump}>Los</Button>
           </div>
           {data?.font === 'v1' && (<>
-            <button onClick={toggleLayout} className="text-[11px] px-2 py-1 rounded-lg border border-line text-sage hover:bg-hover" title="Ganze Seite auf einen Blick oder große Schrift für Anfänger" aria-pressed={layout === 'wide'}>
+            <button onClick={toggleLayout} className="text-caption px-2 py-1 rounded-lg border border-line text-sage hover:bg-hover" title="Ganze Seite auf einen Blick oder große Schrift für Anfänger" aria-pressed={layout === 'wide'}>
               {layout === 'wide' ? 'Große Schrift' : 'Ganze Seite'}
             </button>
             <div className="inline-flex items-center gap-1" title="Zoom">
               <button onClick={() => changeZoom(-0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom <= 0.7} aria-label="Kleiner"><ZoomOut size={15} /></button>
-              <button onClick={() => setZoom(1)} className="text-[11px] text-sage-muted tabular-nums w-11 text-center hover:text-ivory" title="Auf Bildschirmgröße zurücksetzen">{Math.round(zoom * 100)}%</button>
+              <button onClick={() => setZoom(1)} className="text-caption text-sage-muted tabular-nums w-11 text-center hover:text-ivory" title="Auf Bildschirmgröße zurücksetzen">{Math.round(zoom * 100)}%</button>
               <button onClick={() => changeZoom(0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom >= 3} aria-label="Größer"><ZoomIn size={15} /></button>
             </div>
           </>)}
@@ -1187,7 +1183,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       </Card>
 
       {tajweed && (
-        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-3 text-[11px]">
+        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-3 text-caption">
           {TAJWEED_LEGEND.map(([c, l]) => (
             <span key={l} className="inline-flex items-center gap-1 text-sage-muted">
               <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}
@@ -1242,7 +1238,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-sage-muted mt-4 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
+          <p className="text-caption text-sage-muted mt-4 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
         </div>
         </div>
       )}
