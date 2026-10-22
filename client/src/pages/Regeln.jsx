@@ -53,10 +53,10 @@ function RulesCard({ data, onReload, toast }) {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Klassenregeln" subtitle={data.className || 'Koran-Schule'} icon={BookText}
         action={canEdit && !edit ? <Button size="sm" variant="outline" onClick={start}><Pencil size={15} /> Bearbeiten</Button> : null} />
-      <div className="p-4">
+      <div>
         {edit ? (
           <div className="space-y-3">
             <ScopePicker data={data} scope={scope} setScope={setScope} />
@@ -112,10 +112,10 @@ function CatalogCard({ data, onReload, toast }) {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Strafenkatalog" subtitle="Was passiert bei welchem Verstoß" icon={Scale}
         action={canEdit && !edit ? <Button size="sm" variant="outline" onClick={start}><Pencil size={15} /> Anpassen</Button> : null} />
-      <div className="p-4 space-y-5">
+      <div className="space-y-5">
         {edit && <ScopePicker data={data} scope={scope} setScope={setScope} />}
         {data.catalog.map((cat) => (
           <div key={cat.id}>
@@ -135,7 +135,7 @@ function CatalogCard({ data, onReload, toast }) {
                 </div>
               ))}
             </div>
-            {cat.note && <p className="text-[11px] text-sage-muted mt-1">{cat.note}</p>}
+            {cat.note && <p className="text-caption text-sage-muted mt-1">{cat.note}</p>}
           </div>
         ))}
         {edit && (
@@ -153,7 +153,7 @@ function CatalogCard({ data, onReload, toast }) {
 function ScopePicker({ data, scope, setScope }) {
   if (!(data.canEditClass && data.canEditSchool)) {
     return (
-      <p className="text-[11px] text-sage-muted">
+      <p className="text-caption text-sage-muted">
         Änderungen gelten {data.canEditSchool ? 'für die ganze Koran-Schule' : `nur für die Klasse „${data.className}"`}.
       </p>
     );

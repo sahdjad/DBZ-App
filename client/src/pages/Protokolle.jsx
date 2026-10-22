@@ -82,7 +82,7 @@ export default function Protokolle() {
       {isLeadership && protocols && <ClassFolders groups={groups} selected={cls} onSelect={setCls} emptyText="Noch keine Protokolle." />}
       {(!isLeadership || cls) && (
         !shown ? <Spinner /> : shown.length === 0 ? (
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <CardHeader title="Protokolle" icon={ClipboardList} />
             <p className="p-4 text-sage-muted text-sm">Noch keine Protokolle.</p>
           </Card>
@@ -138,7 +138,7 @@ function ProtocolList({ protocols, isManager, isLeadership, onEdit, onRemove, on
 
       {pending.map((p) => (
         <Card key={p.id} className="p-4 border-gold/50">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-gold mb-2">Wartet auf deine Freigabe</div>
+          <div className="text-caption font-bold uppercase tracking-wider text-gold mb-2">Wartet auf deine Freigabe</div>
           <ProtocolBody p={p} {...actions} />
         </Card>
       ))}
@@ -146,7 +146,7 @@ function ProtocolList({ protocols, isManager, isLeadership, onEdit, onRemove, on
       {current && (
         <Card className="p-4 sm:p-5">
           <div className="flex items-center gap-2 mb-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-mint/10 text-mint text-[11px] font-bold uppercase tracking-wider px-2.5 py-1">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-mint/10 text-mint text-caption font-bold uppercase tracking-wider px-2.5 py-1">
               <ClipboardList size={13} /> Aktuelles Protokoll
             </span>
           </div>
@@ -174,7 +174,7 @@ function ProtocolList({ protocols, isManager, isLeadership, onEdit, onRemove, on
                   >
                     <span className="grid place-items-center shrink-0 w-12 h-12 rounded-xl bg-subtle border border-line leading-none">
                       <span className="text-lg font-semibold text-ivory">{d.getDate()}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-sage-muted">{d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '')}</span>
+                      <span className="text-[0.625rem] uppercase tracking-wide text-sage-muted">{d.toLocaleDateString('de-DE', { month: 'short' }).replace('.', '')}</span>
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
@@ -211,7 +211,7 @@ function ProtocolBody({ p, isManager, isLeadership, onEdit, onRemove, onDecide, 
           {!hideDate && <div className={`${large ? 'font-display text-xl' : 'text-sm font-medium'} text-ivory`}>{fmtDate(p.date)}</div>}
           <div className="text-xs text-sage-muted">{p.className}{p.createdByName ? ` · ${p.createdByName}` : ''}</div>
           {p.editedAfterApproval && (
-            <div className="text-[11px] text-gold mt-0.5">
+            <div className="text-caption text-gold mt-0.5">
               Aktualisiert {new Date(p.editedAfterApproval).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}{p.updatedByName ? ` von ${p.updatedByName}` : ''}
             </div>
           )}
@@ -267,9 +267,9 @@ function ProtocolForm({ form, setForm, classes, isRep, protocols, onDone }) {
   };
 
   return (
-    <Card className="p-5 mb-4">
+    <Card className="p-4 sm:p-5 mb-4">
       <CardHeader title={form.id ? 'Protokoll bearbeiten' : 'Protokoll schreiben'} subtitle="Auch für vergangene Tage möglich" icon={ClipboardList} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {classes.length > 1 && (
             <label className="block">
@@ -314,8 +314,8 @@ function Section({ label, text, accent = false }) {
   if (!text) return null;
   return (
     <div className={`rounded-xl border px-3 py-2.5 ${accent ? 'border-gold/40 bg-gold/[0.07]' : 'border-line bg-card'}`}>
-      <div className={`text-[11px] font-bold uppercase tracking-wider ${accent ? 'text-gold' : 'text-mint'}`}>{label}</div>
-      <p data-noi18n className="mt-1 text-[15px] leading-relaxed text-ivory whitespace-pre-line">{text}</p>
+      <div className={`text-caption font-bold uppercase tracking-wider ${accent ? 'text-gold' : 'text-mint'}`}>{label}</div>
+      <p data-noi18n className="mt-1 text-subhead leading-relaxed text-ivory whitespace-pre-line">{text}</p>
     </div>
   );
 }
@@ -323,9 +323,9 @@ function Section({ label, text, accent = false }) {
 function Field({ label, hint, value, onChange }) {
   return (
     <label className="block">
-      <span className="text-[11px] font-bold uppercase tracking-wider text-mint">{label}</span>
-      {hint && <span className="block text-[11px] text-sage-muted">{hint}</span>}
-      <textarea className="input mt-1.5 text-[15px] leading-relaxed" rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Hier schreiben …" />
+      <span className="text-caption font-bold uppercase tracking-wider text-mint">{label}</span>
+      {hint && <span className="block text-caption text-sage-muted">{hint}</span>}
+      <textarea className="input mt-1.5 text-subhead leading-relaxed" rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Hier schreiben …" />
     </label>
   );
 }

@@ -35,7 +35,7 @@ function CommentThread({ request, onSent }) {
       {(request.comments || []).map((c) => (
         <div key={c.id} className={`text-sm ${c.isManager ? '' : 'text-mint-light'}`}>
           <span className="text-ivory">{c.authorName}</span>
-          <span className="text-[11px] text-sage-muted"> · {fmtTime(c.createdAt)}</span>
+          <span className="text-caption text-sage-muted"> · {fmtTime(c.createdAt)}</span>
           <div className="text-sage">{c.body}</div>
         </div>
       ))}
@@ -65,13 +65,13 @@ function RequestRow({ r, decide, onCommentSent, defaultOpen, onShow }) {
           <div className="text-ivory flex items-center gap-2 flex-wrap">
             {r.studentName} · {TYPE_LABEL[r.requestType]}
             {r.studentAbsences > 0 && (
-              <span className={`text-[11px] px-2 py-0.5 rounded-full ${r.studentAbsences >= 2 ? 'bg-status-late/15 text-status-late' : 'bg-subtle text-sage-muted'}`}>
+              <span className={`text-caption px-2 py-0.5 rounded-full ${r.studentAbsences >= 2 ? 'bg-status-late/15 text-status-late' : 'bg-subtle text-sage-muted'}`}>
                 schon {r.studentAbsences}× abwesend
               </span>
             )}
           </div>
           <div className="text-xs text-sage-muted line-clamp-2">Grund: {r.reasonCategory}{r.comment ? ` · ${r.comment}` : ''} · {r.sessionDate ? fmt(r.sessionDate) : fmt(r.createdAt)}</div>
-          <div className="text-[11px] text-mint mt-0.5 inline-flex items-center gap-0.5">Ganze Nachricht ansehen <ChevronRight size={12} /></div>
+          <div className="text-caption text-mint mt-0.5 inline-flex items-center gap-0.5">Ganze Nachricht ansehen <ChevronRight size={12} /></div>
         </button>
         <div className="flex gap-2 items-center">
           <button onClick={() => setOpen((o) => !o)} className="text-xs text-sage-muted inline-flex items-center gap-1 hover:text-ivory">
@@ -119,7 +119,7 @@ export default function Entschuldigungen() {
 
   return (
     <AppLayout title="Entschuldigungen">
-      <Card className="p-5 mb-4">
+      <Card className="p-4 sm:p-5 mb-4">
         <CardHeader title="Offene Anträge" subtitle={`${pending.length} warten auf Entscheidung`} icon={ClipboardCheck} />
         <div className="divide-y divide-line px-1">
           {pending.length === 0 ? <p className="p-4 text-sage-muted text-sm">Keine offenen Anträge.</p> : pending.map((r) => (
@@ -129,7 +129,7 @@ export default function Entschuldigungen() {
       </Card>
 
       {needsInfo.length > 0 && (
-        <Card className="p-5 mb-4 border-status-late/30">
+        <Card className="p-4 sm:p-5 mb-4 border-status-late/30">
           <CardHeader title="Rückfrage offen" subtitle="Wartet auf Antwort von Schüler/Eltern" icon={MessageCircle} />
           <div className="divide-y divide-line px-1">
             {needsInfo.map((r) => (
@@ -140,7 +140,7 @@ export default function Entschuldigungen() {
       )}
 
       {decided.length > 0 && (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Bearbeitet" />
           <div className="grid gap-2 lg:grid-cols-2 items-start">
             {decided.map((r) => (
@@ -228,13 +228,13 @@ function RequestSheet({ r, decide, onCommentSent, onClose }) {
           {r.studentAbsences > 0 && <span className="text-xs px-2 py-0.5 rounded-full bg-status-late/15 text-status-late">schon {r.studentAbsences}× abwesend</span>}
         </div>
         <div className="rounded-xl border border-line bg-subtle/40 p-4">
-          <div className="text-[11px] uppercase tracking-wide text-sage-muted mb-1">Nachricht</div>
+          <div className="text-caption uppercase tracking-wide text-sage-muted mb-1">Nachricht</div>
           <p className="text-base text-ivory leading-relaxed whitespace-pre-wrap break-words">{r.comment || '– keine Nachricht –'}</p>
-          <div className="text-[11px] text-sage-muted mt-2">Gesendet {fmtTime(r.createdAt)}</div>
+          <div className="text-caption text-sage-muted mt-2">Gesendet {fmtTime(r.createdAt)}</div>
         </div>
         {(r.comments?.length > 0 || decide || r.status === 'needs_info') && (
           <div className="mt-3">
-            <div className="text-[11px] uppercase tracking-wide text-sage-muted mb-1">Rückfragen</div>
+            <div className="text-caption uppercase tracking-wide text-sage-muted mb-1">Rückfragen</div>
             <CommentThread request={r} onSent={onCommentSent} />
           </div>
         )}

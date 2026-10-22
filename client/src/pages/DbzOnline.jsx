@@ -25,7 +25,7 @@ export default function DbzOnline() {
               if (!url) return null;
               return (
                 <a key={key} href={url} target="_blank" rel="noreferrer">
-                  <Card className="p-5 hover:bg-hover transition flex flex-col items-center gap-3 text-center">
+                  <Card className="p-4 sm:p-5 hover:bg-hover transition flex flex-col items-center gap-3 text-center">
                     <Icon size={32} className={color} />
                     <div className="text-ivory">{label}</div>
                     <span className="text-xs text-sage-muted inline-flex items-center gap-1">Öffnen <ExternalLink size={12} /></span>

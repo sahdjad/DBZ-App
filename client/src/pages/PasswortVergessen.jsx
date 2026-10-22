@@ -30,7 +30,7 @@ export default function PasswortVergessen() {
           <div className="font-display text-lg text-ivory">Passwort vergessen</div>
         </div>
         {sent ? (
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <p className="text-sage text-sm">
               Falls ein Konto mit dieser E-Mail existiert, wurde ein Link zum Zurücksetzen gesendet
               (1 Stunde gültig). Ohne E-Mail-Anbindung wende dich bitte an die DBZ-Leitung.

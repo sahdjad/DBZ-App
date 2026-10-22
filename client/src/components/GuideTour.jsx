@@ -38,13 +38,13 @@ export function GuideTour({ guideKey, onClose }) {
     <div className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center p-3 bg-black/55 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Einführung">
       <div className="w-full max-w-md rounded-2xl bg-card border border-line shadow-2xl p-5 animate-[dbz-rise_.35s_ease-out]">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-[11px] font-mono uppercase tracking-wider text-sage-muted">Anleitung · {guide.label} · {i + 1}/{guide.steps.length}</span>
+          <span className="text-caption font-mono uppercase tracking-wider text-sage-muted">Anleitung · {guide.label} · {i + 1}/{guide.steps.length}</span>
           <button type="button" onClick={onClose} className="p-1.5 -m-1.5 rounded-lg text-sage-muted hover:text-ivory hover:bg-hover" aria-label="Anleitung schließen"><X size={18} /></button>
         </div>
         <div key={i} className="animate-[dbz-rise_.25s_ease-out]">
           <span className="grid place-items-center h-14 w-14 rounded-2xl bg-mint/15 text-mint mb-3"><Icon size={28} strokeWidth={1.75} /></span>
           <h2 className="font-display text-xl text-ivory">{step.title}</h2>
-          <p className="text-[15px] leading-relaxed text-sage mt-2">{step.text}</p>
+          <p className="text-subhead leading-relaxed text-sage mt-2">{step.text}</p>
           {step.to && (
             <button type="button" onClick={() => { onClose(); navigate(step.to); }} className="mt-2 text-sm text-mint hover:underline">
               Gleich dorthin →

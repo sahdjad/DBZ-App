@@ -6,7 +6,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
 import HomeworkOverview from '../components/HomeworkOverview.jsx';
 import { api } from '../lib/api.js';
-import { Card, StatusBadge, Spinner, FileAttachment, ClassFolders } from '../components/ui.jsx';
+import { Card, StatusBadge, Spinner, FileAttachment, ClassFolders, Segmented } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
 
@@ -63,12 +63,7 @@ export default function Abgaben() {
   return (
     <AppLayout title="Abgaben">
       <p className="text-sm text-sage-muted mb-3">Alle abgegebenen Hausaufgaben. Bewerten tut die Lehrkraft der Klasse – hier nur zum Ansehen.</p>
-      <div className="inline-flex rounded-xl border border-line p-1 mb-4" role="tablist">
-        {[['students', 'Nach Schülern'], ['assignments', 'Nach Aufgaben']].map(([v, l]) => (
-          <button key={v} role="tab" aria-selected={view === v} onClick={() => setView(v)}
-            className={`px-3 py-1.5 rounded-lg text-sm ${view === v ? 'bg-mint text-onaccent' : 'text-sage hover:bg-hover'}`}>{l}</button>
-        ))}
-      </div>
+      <Segmented className="mb-5 w-full sm:w-auto" options={[['students', 'Nach Schülern'], ['assignments', 'Nach Aufgaben']]} value={view} onChange={setView} />
       {view === 'students' ? <HomeworkOverview renderSubmission={(sub) => <ReadOnlySubmission s={sub} />} /> : <ByAssignment />}
     </AppLayout>
   );

@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2, Languages } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Avatar, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, Segmented, Switch, useToast } from '../components/ui.jsx';
+import { TEXT_SIZES, FONTS, getTextSize, getFont, setTextSize, setFont } from '../lib/display.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import LanguageSwitch from '../components/LanguageSwitch.jsx';
 import { getLang } from '../i18n/index.js';
@@ -15,9 +16,9 @@ const LINKABLE = ['schueler', 'klassensprecher'];
 
 function LanguageCard() {
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Sprache / Language" subtitle="Deutsch · English · Français" icon={Languages} />
-      <div className="p-4"><LanguageSwitch /></div>
+      <div><LanguageSwitch /></div>
     </Card>
   );
 }
@@ -42,28 +43,25 @@ export default function Konto() {
   };
 
   return (
-    <AppLayout title="Konto">
+    <AppLayout title="Konto & Einstellungen">
       {/* Handy: eine Spalte (kompakt, untereinander). Tablet/Desktop: zwei
           Spalten, damit die Breite genutzt wird und keine überlange Seite entsteht. */}
-      <div className="max-w-4xl grid gap-4 sm:grid-cols-2 items-start">
+      <div className="max-w-4xl mx-auto grid gap-4 sm:grid-cols-2 items-start">
         <Card className="p-5 sm:col-span-2">
-          <CardHeader title="Mein Konto" icon={UserCog} />
-          <div className="p-4">
-            <div className="flex items-center gap-4 mb-5">
-              <Avatar name={user.name} size={56} />
-              <div>
-                <div className="text-ivory">{user.roleLabel}</div>
-                <div className="text-sm text-sage-muted">{user.email}</div>
-              </div>
+          <div className="flex flex-col sm:flex-row items-center sm:items-center gap-4 text-center sm:text-left">
+            <Avatar name={user.name} size={72} />
+            <div className="min-w-0 flex-1">
+              <div className="text-title2 font-bold text-ivory truncate" data-noi18n>{user.name}</div>
+              <div className="text-subhead text-sage-muted">{user.roleLabel} · {user.email}</div>
             </div>
-            <form onSubmit={save} className="space-y-3">
-              <label className="block">
-                <span className="text-sm text-sage">Anzeigename</span>
-                <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} required />
-              </label>
-              <Button type="submit" disabled={busy}><Save size={18} /> Speichern</Button>
-            </form>
           </div>
+          <form onSubmit={save} className="mt-5 flex flex-col sm:flex-row gap-2 sm:items-end">
+            <label className="block flex-1">
+              <span className="text-footnote font-medium text-sage-muted">Anzeigename</span>
+              <input className="input mt-1" value={name} onChange={(e) => setName(e.target.value)} required />
+            </label>
+            <Button type="submit" disabled={busy || name.trim() === user.name}><Save size={17} /> Speichern</Button>
+          </form>
         </Card>
 
         <LanguageCard />
@@ -120,9 +118,9 @@ function ParentChildrenCard() {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Meine Kinder" subtitle="Mit dem Familien-Code des Kindes verknüpfen" icon={Users} />
-      <div className="p-4 space-y-4">
+      <div className="space-y-4">
         {!children ? (
           <Spinner />
         ) : children.length === 0 ? (
@@ -193,9 +191,9 @@ function FamilyCodeCard() {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Familien-Code" subtitle="Gib diesen Code deinen Eltern, damit sie dich verknüpfen können" icon={Users} />
-      <div className="p-4">
+      <div>
         {!code ? (
           <Spinner />
         ) : (
@@ -205,45 +203,65 @@ function FamilyCodeCard() {
             <Button size="sm" variant="ghost" onClick={rotate}><RefreshCw size={16} /> Neu</Button>
           </div>
         )}
-        <p className="text-[11px] text-sage-muted mt-3">Nur an deine eigenen Eltern weitergeben. Bei Missbrauch einfach „Neu" drücken – der alte Code wird ungültig.</p>
+        <p className="text-caption text-sage-muted mt-3">Nur an deine eigenen Eltern weitergeben. Bei Missbrauch einfach „Neu" drücken – der alte Code wird ungültig.</p>
       </div>
     </Card>
   );
 }
 
-// Darstellung: System / Hell / Dunkel
+// Darstellung: Hell/Dunkel, Textgröße, Schriftart, Haptik (pro Gerät).
 function ThemeCard() {
   const [pref, setPref] = useState(getThemePref());
   const [haptics, setHaptics] = useState(hapticsEnabled());
-  const OPTIONS = [
-    { key: 'system', label: 'System', icon: Monitor },
-    { key: 'light', label: 'Hell', icon: Sun },
-    { key: 'dark', label: 'Dunkel', icon: Moon },
-  ];
+  const [text, setText] = useState(getTextSize());
+  const [font, setFontState] = useState(getFont());
   const choose = (k) => { setPref(k); setThemePref(k); };
   return (
-    <Card className="p-5">
-      <CardHeader title="Darstellung" subtitle="Hell, Dunkel oder automatisch (System)" icon={Sun} />
-      <div className="p-4">
-        <div className="grid grid-cols-3 gap-2">
-          {OPTIONS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => choose(key)}
-              className={[
-                'flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-sm transition',
-                pref === key ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage hover:bg-hover',
-              ].join(' ')}
-            >
-              <Icon size={20} />
-              {label}
-            </button>
-          ))}
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Darstellung" subtitle="Gilt für dieses Gerät" icon={Sun} />
+      <div className="space-y-5">
+        <div>
+          <div className="text-footnote font-medium text-sage-muted mb-2">Erscheinungsbild</div>
+          <Segmented className="w-full" options={[['system', 'System'], ['light', 'Hell'], ['dark', 'Dunkel']]} value={pref} onChange={choose} />
         </div>
-        <p className="text-[11px] text-sage-muted mt-3">„Dunkel" ist ein warmes, augenschonendes Grün. „System" folgt automatisch der Einstellung deines Geräts.</p>
-        <label className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-line px-3 py-2.5 text-sm text-ivory">
-          <span>Haptisches Feedback beim Tippen <span className="block text-[11px] text-sage-muted">Kurzes Ticken (Android; iPhone ab iOS 18)</span></span>
-          <input type="checkbox" className="h-5 w-5 accent-mint" checked={haptics} onChange={(e) => { setHapticsEnabled(e.target.checked); setHaptics(e.target.checked); if (e.target.checked) haptic(); }} />
+
+        <div>
+          <div className="text-footnote font-medium text-sage-muted mb-2">Textgröße</div>
+          <div className="flex items-end gap-3">
+            <span className="text-footnote text-sage-muted pb-2">A</span>
+            <Segmented className="flex-1" options={TEXT_SIZES.map((t) => [t.id, t.label])} value={text} onChange={(v) => { setText(v); setTextSize(v); }} size="sm" />
+            <span className="text-title3 text-sage-muted pb-1">A</span>
+          </div>
+        </div>
+
+        <div>
+          <div className="text-footnote font-medium text-sage-muted mb-2">Schriftart</div>
+          <div className="grid grid-cols-3 gap-2">
+            {FONTS.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => { setFontState(f.id); setFont(f.id); }}
+                aria-pressed={font === f.id}
+                className={['rounded-2xl px-2 py-3 text-center transition border',
+                  font === f.id ? 'border-mint bg-mint/[0.06]' : 'border-line/70 bg-subtle/60 hover:bg-hover'].join(' ')}
+              >
+                <span className="block text-title2 text-ivory" style={{ fontFamily: f.css }}>{f.sample}</span>
+                <span className="block text-footnote text-sage-muted mt-0.5">{f.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-2xl bg-subtle/70 border border-line/60 p-4">
+          <div className="text-caption font-semibold text-sage-muted mb-1">Vorschau</div>
+          <p className="text-body text-ivory font-semibold">Hausaufgabe: Sure al-Mulk 1–5</p>
+          <p className="text-subhead text-sage">Bis Samstag, 12:00 · Audio aufnehmen und abgeben.</p>
+        </div>
+
+        <label className="flex items-center justify-between gap-3 text-body text-ivory">
+          <span>Haptisches Feedback<span className="block text-footnote text-sage-muted">Kurzes Ticken beim Tippen (Android; iPhone ab iOS 18)</span></span>
+          <Switch checked={haptics} onChange={(v) => { setHapticsEnabled(v); setHaptics(v); if (v) haptic(); }} />
         </label>
       </div>
     </Card>
@@ -300,9 +318,9 @@ function NotificationsCard() {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Benachrichtigungen" subtitle="Neue Nachrichten, Ankündigungen, Hausaufgaben & Termine" icon={Bell} />
-      <div className="p-4">
+      <div>
         {!state ? (
           <p className="text-sm text-sage-muted">Wird geprüft …</p>
         ) : !state.supported ? (
@@ -384,9 +402,9 @@ function LinkedAccountsCard() {
   };
 
   return (
-    <Card className="p-5 sm:col-span-2">
+    <Card className="p-4 sm:p-5 sm:col-span-2">
       <CardHeader title="Verknüpfte Konten" subtitle="Mehrere eigene Konten (z. B. als Lehrkraft und als Schüler) zusammenführen" icon={Users} />
-      <div className="p-4 space-y-4">
+      <div className="space-y-4">
         {!accounts ? (
           <Spinner />
         ) : accounts.length === 0 ? (
@@ -425,14 +443,14 @@ function LinkedAccountsCard() {
               </label>
             </div>
             <Button type="submit" disabled={busy}><Link2 size={18} /> Konto verknüpfen</Button>
-            <p className="text-[11px] text-sage-muted">
+            <p className="text-caption text-sage-muted">
               Das verknüpft <strong>dein aktuelles</strong> Konto mit dem oben angegebenen (du musst dessen Passwort kennen).
               Um zwei <strong>fremde</strong> Konten miteinander zu verknüpfen – ohne deren Passwort zu kennen –, nutze
               stattdessen „Verwaltung → Nutzer → Konten verknüpfen".
             </p>
           </form>
         ) : (
-          <p className="text-[11px] text-sage-muted">Nur Administrator/Leitung können Konten verknüpfen. Wende dich an sie, wenn du mehrere Rollen (z. B. Schüler- und Lehrerkonto) zusammenführen möchtest.</p>
+          <p className="text-caption text-sage-muted">Nur Administrator/Leitung können Konten verknüpfen. Wende dich an sie, wenn du mehrere Rollen (z. B. Schüler- und Lehrerkonto) zusammenführen möchtest.</p>
         )}
       </div>
     </Card>
@@ -461,9 +479,9 @@ function PasswordCard() {
   };
 
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Passwort ändern" icon={KeyRound} />
-      <form onSubmit={change} className="p-4 space-y-3">
+      <form onSubmit={change} className="space-y-3">
         <label className="block">
           <span className="text-sm text-sage">Aktuelles Passwort</span>
           <input type="password" autoComplete="current-password" className="input mt-1" value={current} onChange={(e) => setCurrent(e.target.value)} required />
@@ -505,9 +523,9 @@ function DeleteAccountCard() {
   };
 
   return (
-    <Card className="p-5 border-status-absent/40">
+    <Card className="p-4 sm:p-5 border-status-absent/40">
       <CardHeader title="Konto löschen" subtitle="Endgültig – kann nicht rückgängig gemacht werden" icon={Trash2} />
-      <div className="p-4 space-y-3">
+      <div className="space-y-3">
         {!open ? (
           <Button variant="outline" onClick={() => setOpen(true)} className="text-status-absent border-status-absent/50">
             <Trash2 size={18} /> Mein Konto löschen …
@@ -552,9 +570,9 @@ function AppVersionCard() {
     toast.push(latest ? 'Du hast bereits die neueste Version.' : 'Gerade keine Verbindung zum Server.', latest ? 'success' : 'error');
   };
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="App-Version" subtitle="Die App aktualisiert sich beim Öffnen automatisch" icon={RefreshCw} />
-      <div className="p-4 flex items-center justify-between gap-3 flex-wrap">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="text-sm text-sage">Stand: <span className="text-ivory">{buildLabel()}</span></div>
         <Button size="sm" variant="outline" onClick={check} loading={busy}><RefreshCw size={16} /> Nach Updates suchen</Button>
       </div>

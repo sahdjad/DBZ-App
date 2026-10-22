@@ -431,7 +431,7 @@ export default function PdfViewer({ url, name, onClose, notesPath = null, canAnn
         </div>
       )}
       {canAnnotate && drawMode && (
-        <div className="bg-black/30 px-3 py-1 text-center text-[11px] text-white/60">
+        <div className="bg-black/30 px-3 py-1 text-center text-caption text-white/60">
           {penOnly ? 'Stift schreibt, Finger scrollt' : 'Ein Finger schreibt · zwei Finger scrollen'} · Schüler sehen es sofort, das Original bleibt unverändert
         </div>
       )}
@@ -687,7 +687,7 @@ function ShareSheet({ fileName, bytes, strokes, onClose }) {
             </button>
           )}
         </div>
-        {canShare && <p className="mt-3 text-center text-[11px] text-sage-muted">Im Teilen-Menü: „In Dateien sichern“ oder eine andere App wählen.</p>}
+        {canShare && <p className="mt-3 text-center text-caption text-sage-muted">Im Teilen-Menü: „In Dateien sichern“ oder eine andere App wählen.</p>}
       </div>
     </div>
   );

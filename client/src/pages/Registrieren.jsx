@@ -252,11 +252,11 @@ export default function Registrieren() {
           <span className="grid place-items-center h-11 w-11 rounded-lg bg-mint/15 border border-mint/25 text-mint"><BookMarked size={24} /></span>
           <div className="leading-tight">
             <div className="font-display text-xl text-ivory">Deen Bildungszentrum</div>
-            <div className="text-[11px] font-mono uppercase tracking-widest text-sage-muted">DBZ-App</div>
+            <div className="text-caption font-mono uppercase tracking-widest text-sage-muted">DBZ-App</div>
           </div>
         </div>
         <div className="max-w-md">
-          <p className="font-arabic text-3xl text-mint-light mb-4" dir="rtl">أهلاً وسهلاً</p>
+          <p className="font-arabic-ui text-3xl text-mint-light mb-4" dir="rtl">أهلاً وسهلاً</p>
           <h2 className="font-display text-3xl text-ivory leading-tight mb-3">Willkommen im DBZ</h2>
           <p className="text-sage">Erstelle dein Konto mit dem Einladungslink deiner Klasse – oder melde dich neu an, wenn du noch keiner Klasse zugeteilt bist.</p>
         </div>
@@ -266,7 +266,7 @@ export default function Registrieren() {
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-sm">
           {openDone ? (
-            <Card className="p-5 border-mint/30 text-center">
+            <Card className="p-4 sm:p-5 border-mint/30 text-center">
               <CheckCircle2 size={32} className="mx-auto mb-3 text-mint" />
               <h1 className="font-display text-xl text-ivory mb-2">Anmeldung eingegangen</h1>
               <p className="text-sm text-sage">

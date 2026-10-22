@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw } from 'lucide-react';
+import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw, ChevronDown } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Section, ListGroup, Segmented, EmptyState, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { QrStage, printQrCode } from '../components/QrCode.jsx';
 import { ClassSettingsCard, SessionHistoryCard, SchoolDaysCard, SchoolTodayCard, SchoolDayBanner } from './UnterrichtParts.jsx';
 
@@ -24,6 +24,15 @@ const ROW_TINT = {
   unexcused: 'border-status-absent bg-status-absent/[0.07]',
 };
 const rowTint = (status) => ROW_TINT[status] || 'border-status-absent bg-status-absent/[0.05]';
+const DOT = { present: 'bg-status-present', late: 'bg-status-late', left_early: 'bg-status-late', excused: 'bg-status-excused', unexcused: 'bg-status-absent' };
+const SHORT = { present: 'Da', late: 'Spät', excused: 'Entsch.', unexcused: 'Fehlt', left_early: 'Früher' };
+const CHIP_ON = {
+  present: 'bg-status-present text-white',
+  late: 'bg-status-late text-white',
+  left_early: 'bg-status-late text-white',
+  excused: 'bg-status-excused text-white',
+  unexcused: 'bg-status-absent text-white',
+};
 
 export default function Unterricht() {
   const { user } = useAuth();
@@ -47,6 +56,7 @@ function TeacherUnterricht() {
   const [session, setSession] = useState(null);
   const [qr, setQr] = useState(null);
   const [door, setDoor] = useState(null); // fester Tür-QR der Klasse
+  const [doorOpen, setDoorOpen] = useState(false);
 
   useEffect(() => {
     api.get('/sessions/today').then((d) => {
@@ -141,125 +151,154 @@ function TeacherUnterricht() {
   };
 
   if (!sessions) return <AppLayout title="Unterricht"><Spinner /></AppLayout>;
-  if (!sessions.length) return <AppLayout title="Unterricht"><Card className="p-6 text-sage-muted">Heute ist keine Sitzung für deine Klassen geplant.</Card></AppLayout>;
+  if (!sessions.length) return <AppLayout title="Unterricht"><Card><EmptyState icon={Users2} title="Heute kein Unterricht" text="Heute ist keine Sitzung für deine Klassen geplant." /></Card></AppLayout>;
+
+  const counts = (attendance || []).reduce((m, r) => { const k = ['present', 'late', 'excused'].includes(r.status) ? r.status : 'absent'; m[k] = (m[k] || 0) + 1; return m; }, {});
+  const statusLabel = session?.status === 'active' ? 'Läuft' : session?.status === 'ended' ? 'Beendet' : 'Geplant';
 
   return (
     <AppLayout title="Unterricht">
       <SchoolDayBanner />
       {sessions.length > 1 && (
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {sessions.map((s) => (
-            <Button key={s.id} variant={active === s.id ? 'primary' : 'outline'} size="sm" onClick={() => { setActive(s.id); setQr(null); }}>
-              {s.className}
-            </Button>
-          ))}
-        </div>
+        <Segmented className="w-full mb-4" options={sessions.map((s) => [s.id, s.className])} value={active} onChange={(id) => { setActive(id); setQr(null); }} />
       )}
 
-      <Card className="p-5 mb-4">
-        <CardHeader
-          title={session?.className || 'Sitzung'}
-          subtitle={session ? `${new Date(session.scheduledStart).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}
-          icon={Users2}
-          action={<Badge tone={session?.status === 'active' ? 'present' : 'neutral'}>{session?.status === 'active' ? 'Aktiv' : session?.status === 'ended' ? 'Beendet' : 'Geplant'}</Badge>}
-        />
-        <div className="p-4 flex flex-wrap gap-2">
+      {/* Sitzung */}
+      <Card className="p-5 mb-6">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-title2 font-bold text-ivory truncate" data-noi18n>{session?.className || 'Sitzung'}</h2>
+            {session && <p className="text-subhead text-sage-muted mt-0.5">{new Date(session.scheduledStart).toLocaleString('de-DE', { weekday: 'long', hour: '2-digit', minute: '2-digit' })} Uhr</p>}
+          </div>
+          <Badge tone={session?.status === 'active' ? 'present' : 'neutral'}>{statusLabel}</Badge>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
           {session?.status !== 'active' && session?.status !== 'ended' && (
-            <Button onClick={start}><Play size={18} /> Unterricht starten</Button>
+            <Button size="lg" className="flex-1 sm:flex-none" onClick={start}><Play size={18} /> Unterricht starten</Button>
           )}
           {session?.status === 'active' && (
             <>
-              <Button onClick={genQr}><QrCode size={18} /> Check-in-Code anzeigen</Button>
-              <Button variant="danger" onClick={end}><Square size={18} /> Beenden</Button>
+              <Button className="flex-1 sm:flex-none" onClick={genQr}><QrCode size={18} /> Check-in-Code</Button>
+              <Button variant="danger" className="flex-1 sm:flex-none" onClick={end}><Square size={16} /> Beenden</Button>
             </>
           )}
           {(session?.status && session.status !== 'scheduled') || attendance?.some(hasEntry) ? (
-            <Button variant="ghost" onClick={resetSession}><RotateCcw size={18} /> Sitzung zurücksetzen</Button>
+            <Button variant="ghost" size="sm" onClick={resetSession}><RotateCcw size={15} /> Zurücksetzen</Button>
           ) : null}
         </div>
 
         {qr && (
-          <div className="mx-4 mb-4">
+          <div className="mt-4">
             <QrStage value={qr.token} title={session?.className} subtitle="Jetzt einchecken" size={230}>
-              <div className="font-mono text-2xl sm:text-3xl tracking-[0.15em] sm:tracking-[0.3em] uppercase break-all leading-snug">{qr.token}</div>
+              <div className="font-code text-2xl sm:text-3xl tracking-[0.15em] sm:tracking-[0.3em] uppercase break-all leading-snug">{qr.token}</div>
               <div className="text-xs opacity-80">Gültig bis {new Date(qr.expiresAt).toLocaleTimeString('de-DE')}</div>
             </QrStage>
           </div>
         )}
       </Card>
 
-      {door && (
-        <Card className="p-5 mb-4">
-          <CardHeader
-            title="Tür-QR-Code (zum Aufhängen)"
-            subtitle="Nur für diese Klasse gültig – Schüler anderer Klassen können damit nicht einchecken"
-            icon={DoorOpen}
-          />
-          <div className="p-4 max-w-md mx-auto w-full">
-            <QrStage value={door.code} title={session?.className} subtitle="Deen Bildungszentrum" caption="Beim Ankommen scannen" size={200}>
-              <span className={`inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full ${door.window?.open ? 'bg-status-present/25 text-white' : 'bg-black/25 text-white/90'}`}>
-                <Clock size={14} /> {door.window?.open ? `Check-in offen${door.checkinOpenUntil ? ` bis ${new Date(door.checkinOpenUntil).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Check-in gerade geschlossen'}
-              </span>
-            </QrStage>
-            <div className="flex gap-2 justify-center flex-wrap mt-4">
-              <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', 'Beim Ankommen scannen')}><Printer size={16} /> QR drucken</Button>
-              {!door.window?.open && <Button size="sm" onClick={openCheckin}><DoorOpen size={16} /> Check-in öffnen</Button>}
-              <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={16} /> Neuen Code erzeugen</Button>
-            </div>
-            <p className="text-sm text-sage mt-4 text-center">
-              Der Code bleibt <b>immer gleich</b> – einmal aufhängen genügt. Er öffnet automatisch kurz vor eurem Unterrichtsbeginn;
-              wer nach eurer Toleranz scannt, wird als <b>verspätet</b> geführt. Schluss ist um {door.autoClose} Uhr – oder wenn du „Beenden" drückst.
-            </p>
+      {/* Anwesenheit – ein Tipp je Schüler */}
+      <Section
+        title="Anwesenheit"
+        action={(
+          <div className="flex items-center gap-1">
+            {attendance?.some(hasEntry) && !selection.active && (
+              <Button variant="ghost" size="sm" onClick={() => selection.start()}><ListChecks size={15} /> Auswählen</Button>
+            )}
+            <Button variant="ghost" size="sm" onClick={() => loadAttendance(active)} aria-label="Aktualisieren"><RefreshCw size={15} /></Button>
           </div>
-        </Card>
+        )}
+        footer="Automatisch per Check-in – tippe einen Status an, um ihn zu korrigieren."
+      >
+        {attendance && (
+          <Card className="grid grid-cols-4 divide-x divide-line/70 mb-3">
+            {[['present', 'Da', 'text-status-present'], ['late', 'Spät', 'text-status-late'], ['excused', 'Entsch.', 'text-status-excused'], ['absent', 'Fehlt', 'text-status-absent']].map(([k, l, c]) => (
+              <div key={k} className="py-3 text-center">
+                <div className={`text-title2 font-semibold font-mono leading-none ${c}`}>{counts[k] || 0}</div>
+                <div className="text-caption text-sage-muted mt-1">{l}</div>
+              </div>
+            ))}
+          </Card>
+        )}
+        {!attendance ? <Spinner /> : (
+          <ListGroup>
+            {attendance.map((r) => (
+              <div key={r.studentId}
+                onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
+                className={`px-4 py-3 ${selection.active && hasEntry(r) ? 'cursor-pointer active:bg-hover' : ''} ${selection.has(r.studentId) ? 'bg-mint/[0.06]' : ''}`}>
+                <div className="flex items-center gap-3">
+                  {selection.active && (hasEntry(r) ? <SelectCheck checked={selection.has(r.studentId)} /> : <span className="w-5" />)}
+                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${DOT[r.status] || 'bg-sage-muted/30'}`} aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-body font-medium text-ivory truncate" data-noi18n>{r.name}</div>
+                    <div className="text-footnote text-sage-muted">
+                      {r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Kein Check-in'}
+                      {r.minutesLate ? ` · ${r.minutesLate} Min verspätet${r.lateUnexcused ? ' (unentschuldigt)' : ''}` : ''}
+                      {r.source ? ` · ${r.source === 'qr' ? 'QR' : 'manuell'}` : ''}
+                    </div>
+                  </div>
+                  {!selection.active && hasEntry(r) && (
+                    <button onClick={() => deleteEntries([r.studentId])} title="Eintrag löschen" aria-label={`Eintrag von ${r.name} löschen`}
+                      className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-status-absent hover:bg-status-absent/10"><Trash2 size={16} /></button>
+                  )}
+                </div>
+                {!selection.active && (
+                  <div className="mt-2.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={`Status von ${r.name}`}>
+                    {STATUSES.map(([v, l]) => {
+                      const on = r.status === v;
+                      return (
+                        <button key={v} type="button" role="radio" aria-checked={on} onClick={() => !on && setStatus(r.studentId, v)}
+                          className={`min-h-[2rem] flex-1 min-w-[3.25rem] rounded-lg text-caption font-semibold px-2 transition-colors ${on ? CHIP_ON[v] : 'bg-subtle text-sage-muted hover:text-ivory'}`}>
+                          {SHORT[v] || l}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </ListGroup>
+        )}
+      </Section>
+
+      {/* Tür-QR-Code: eingeklappt, wird selten gebraucht */}
+      {door && (
+        <Section title="Tür-QR-Code">
+          <Card className="overflow-hidden">
+            <button type="button" onClick={() => setDoorOpen((v) => !v)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-hover">
+              <span className="grid place-items-center h-8 w-8 rounded-[0.6rem] bg-mint/10 text-mint-light dark:text-mint shrink-0"><DoorOpen size={17} /></span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body text-ivory">{door.window?.open ? `Check-in offen${door.checkinOpenUntil ? ` bis ${new Date(door.checkinOpenUntil).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}` : 'Check-in gerade geschlossen'}</span>
+                <span className="block text-footnote text-sage-muted">Fester Code zum Aufhängen – nur für diese Klasse</span>
+              </span>
+              <ChevronDown size={18} className={`text-sage-muted transition-transform ${doorOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {doorOpen && (
+              <div className="px-4 pb-5 border-t border-line/70 pt-4">
+                <div className="max-w-sm mx-auto">
+                  <QrStage value={door.code} title={session?.className} subtitle="Deen Bildungszentrum" caption="Beim Ankommen scannen" size={200}>
+                    <span className="inline-flex items-center gap-1.5 text-sm px-3 py-1 rounded-full bg-black/25 text-white/90">
+                      <Clock size={14} /> {door.window?.open ? 'Check-in offen' : 'Check-in gerade geschlossen'}
+                    </span>
+                  </QrStage>
+                </div>
+                <div className="flex gap-2 justify-center flex-wrap mt-4">
+                  <Button variant="outline" size="sm" onClick={() => printQrCode(door.code, session?.className || 'Check-in', 'Beim Ankommen scannen')}><Printer size={15} /> Drucken</Button>
+                  {!door.window?.open && <Button size="sm" onClick={openCheckin}><DoorOpen size={15} /> Check-in öffnen</Button>}
+                  <Button variant="ghost" size="sm" onClick={rotateDoorCode}><RefreshCw size={15} /> Neuer Code</Button>
+                </div>
+                <p className="text-footnote text-sage-muted mt-4 text-center">
+                  Der Code bleibt immer gleich – einmal aufhängen genügt. Er öffnet automatisch kurz vor eurem Unterrichtsbeginn;
+                  wer nach eurer Toleranz scannt, wird als verspätet geführt. Schluss ist um {door.autoClose} Uhr – oder wenn du „Beenden" drückst.
+                </p>
+              </div>
+            )}
+          </Card>
+        </Section>
       )}
 
-      <Card className="p-5">
-        <CardHeader
-          title="Anwesenheit"
-          subtitle="Automatisch per Check-in, manuell korrigierbar"
-          action={(
-            <div className="flex gap-1">
-              {attendance?.some(hasEntry) && !selection.active && (
-                <Button variant="ghost" size="sm" onClick={() => selection.start()}><ListChecks size={16} /> Auswählen</Button>
-              )}
-              <Button variant="ghost" size="sm" onClick={() => loadAttendance(active)}><RefreshCw size={16} /> Aktualisieren</Button>
-            </div>
-          )}
-        />
-        <div className="space-y-2 mt-2">
-          {!attendance ? <Spinner /> : attendance.map((r) => (
-            <div key={r.studentId}
-              onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
-              className={`rounded-lg border-l-4 pl-3 pr-3 py-2.5 flex items-center justify-between gap-3 flex-wrap ${rowTint(r.status)} ${selection.active && hasEntry(r) ? 'cursor-pointer' : ''} ${selection.has(r.studentId) ? 'ring-2 ring-mint/60' : ''}`}>
-              {selection.active && (hasEntry(r) ? <SelectCheck checked={selection.has(r.studentId)} /> : <span className="w-5" />)}
-              <div className="min-w-0 flex-1">
-                <div className="text-ivory">{r.name}</div>
-                <div className="text-xs text-sage-muted">
-                  {r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE')}` : 'Kein Check-in'}
-                  {r.minutesLate ? ` · ${r.minutesLate} Min verspätet${r.lateUnexcused ? ' (unentschuldigt)' : ''}` : ''}
-                  {r.source ? ` · ${r.source === 'qr' ? 'QR' : 'manuell'}` : ''}
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <StatusBadge status={r.status} />
-                {!selection.active && (
-                  <select className="input py-1.5 w-auto text-sm" value={['present','late','excused','unexcused','left_early'].includes(r.status) ? r.status : ''} onChange={(e) => setStatus(r.studentId, e.target.value)}>
-                    <option value="" disabled>korrigieren …</option>
-                    {STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </select>
-                )}
-                {!selection.active && hasEntry(r) && (
-                  <button onClick={() => deleteEntries([r.studentId])} title="Eintrag löschen" aria-label={`Eintrag von ${r.name} löschen`}
-                    className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10"><Trash2 size={16} /></button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
       {session?.classId && (
-        <div className="grid gap-4 lg:grid-cols-2 items-start mt-4">
+        <div className="grid gap-4 lg:grid-cols-2 items-start mt-7">
           <SessionHistoryCard classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
           <ClassSettingsCard classId={session.classId} onSaved={() => loadAttendance(active)} />
         </div>

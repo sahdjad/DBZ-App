@@ -130,9 +130,9 @@ function CreateExam({ onDone, onCancel }) {
 
   return (
     <div className="space-y-4">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Neue Prüfung" icon={GraduationCap} />
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Field label="Titel"><input className="input" value={meta.title} onChange={(e) => setMeta({ ...meta, title: e.target.value })} /></Field>
           <Field label="Bestehensgrenze (%)"><input type="number" className="input" value={meta.passPercentage} onChange={(e) => setMeta({ ...meta, passPercentage: e.target.value })} /></Field>
           <Field label="Klasse">
@@ -151,14 +151,14 @@ function CreateExam({ onDone, onCancel }) {
             <Field label="Externer Link (optional – z. B. Kahoot, Formular, PDF-Link)">
               <input className="input" placeholder="https://…" value={meta.link} onChange={(e) => setMeta({ ...meta, link: e.target.value })} />
             </Field>
-            <p className="text-[11px] text-sage-muted mt-1">Mit Link darf die Prüfung auch ganz ohne Fragen sein – die Schüler öffnen dann einfach den Link.</p>
+            <p className="text-caption text-sage-muted mt-1">Mit Link darf die Prüfung auch ganz ohne Fragen sein – die Schüler öffnen dann einfach den Link.</p>
           </div>
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Zuweisen an" subtitle="Nichts auswählen = ganze Klasse. Einzelne wählen = nur diese Schüler." />
-        <div className="p-4 flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           {students.length === 0 ? <p className="text-sm text-sage-muted">Keine Schüler in dieser Klasse.</p> : students.map((s) => (
             <button
               key={s.id}
@@ -173,9 +173,9 @@ function CreateExam({ onDone, onCancel }) {
         {targetIds.length > 0 && <p className="px-4 pb-4 text-xs text-sage-muted">Nur {targetIds.length} ausgewählte{targetIds.length === 1 ? 'r Schüler' : ' Schüler'} bekommt/bekommen diese Prüfung.</p>}
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Aufgabe als Audio oder PDF (optional)" subtitle="Aufgabe einsprechen oder eine PDF-Klausur anhängen – auch ganz ohne Fragen möglich." icon={Mic} />
-        <div className="p-4 space-y-3">
+        <div className="space-y-3">
           {rec.recording ? (
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-2 text-status-absent text-sm"><span className="w-2.5 h-2.5 rounded-full bg-status-absent animate-pulse" /> Aufnahme … {mmss(rec.seconds)}</span>

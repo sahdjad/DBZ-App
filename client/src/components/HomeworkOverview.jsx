@@ -101,10 +101,10 @@ export default function HomeworkOverview({ renderSubmission }) {
                           className={`h-2 w-5 rounded-sm ${it.state === 'done' ? 'bg-mint' : it.state === 'missed' ? 'bg-status-absent' : it.state === 'revision' ? 'bg-gold' : 'bg-line'}`} />
                       ))}
                     </span>
-                    {red && <span className="block text-[11px] text-status-absent mt-0.5">fehlt: {st.items.filter((i) => i.state === 'missed' || i.state === 'revision').map((i) => titles[i.assignmentId]).join(', ')}</span>}
+                    {red && <span className="block text-caption text-status-absent mt-0.5">fehlt: {st.items.filter((i) => i.state === 'missed' || i.state === 'revision').map((i) => titles[i.assignmentId]).join(', ')}</span>}
                   </span>
                   {st.sameDay && <AlertTriangle size={15} className="text-status-absent shrink-0" aria-label="Mehrere Hausaufgaben am selben Tag" />}
-                  {st.toReview > 0 && <span className="text-[11px] rounded-full bg-gold/15 text-gold px-2 py-0.5 shrink-0">{st.toReview} zu bewerten</span>}
+                  {st.toReview > 0 && <span className="text-caption rounded-full bg-gold/15 text-gold px-2 py-0.5 shrink-0">{st.toReview} zu bewerten</span>}
                   <span className={`text-sm font-semibold tabular-nums shrink-0 ${red ? 'text-status-absent' : complete ? 'text-mint' : 'text-sage'}`}>
                     {st.done} von {st.total}
                   </span>
@@ -138,9 +138,9 @@ function Stat({ label, value, hint, tone }) {
   const color = tone === 'mint' ? 'text-mint' : tone === 'gold' ? 'text-gold' : tone === 'red' ? 'text-status-absent' : 'text-ivory';
   return (
     <div className="rounded-xl border border-line bg-subtle/40 px-3 py-2">
-      <div className="text-[11px] text-sage-muted">{label}</div>
+      <div className="text-caption text-sage-muted">{label}</div>
       <div className={`text-lg font-semibold tabular-nums ${color}`}>{value}</div>
-      <div className="text-[10px] text-sage-muted leading-tight">{hint}</div>
+      <div className="text-[0.625rem] text-sage-muted leading-tight">{hint}</div>
     </div>
   );
 }

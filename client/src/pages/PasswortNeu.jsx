@@ -45,13 +45,13 @@ export default function PasswortNeu() {
 
         {state === 'checking' && <Spinner label="Link wird geprüft …" />}
         {state === 'invalid' && (
-          <Card className="p-5">
+          <Card className="p-4 sm:p-5">
             <p className="text-status-absent text-sm mb-3">Dieser Link ist ungültig oder abgelaufen.</p>
             <Link to="/passwort-vergessen" className="text-mint-light hover:underline text-sm">Neuen Link anfordern</Link>
           </Card>
         )}
         {state === 'done' && (
-          <Card className="p-5"><p className="text-status-present text-sm">Passwort geändert. Du wirst zur Anmeldung weitergeleitet …</p></Card>
+          <Card className="p-4 sm:p-5"><p className="text-status-present text-sm">Passwort geändert. Du wirst zur Anmeldung weitergeleitet …</p></Card>
         )}
         {state === 'valid' && (
           <form onSubmit={submit} className="space-y-4">

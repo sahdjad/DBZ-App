@@ -157,11 +157,11 @@ export default function AufgabeDetail() {
 
   return (
     <AppLayout title="Aufgabe">
-      <Link to="/aufgaben" className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <Link to="/aufgaben" className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zurück zu den Aufgaben
       </Link>
 
-      <Card className="p-5 mb-4">
+      <Card className="p-4 sm:p-5 mb-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="font-display text-xl text-ivory">{a.title}</h2>
@@ -194,13 +194,13 @@ export default function AufgabeDetail() {
       </Card>
 
       {sub && (
-        <Card className="p-5 mb-4">
+        <Card className="p-4 sm:p-5 mb-4">
           <CardHeader title="Deine Abgabe" subtitle={`Abgegeben ${fmt(sub.submittedAt)}`} />
-          <div className="p-4 space-y-3">
+          <div className="space-y-3">
             {sub.text && <p data-noi18n className="text-sage whitespace-pre-line">{sub.text}</p>}
             {fileDays.map((g) => (
               <div key={g.day} className="space-y-2">
-                {fileDays.length > 1 && <div className="text-[11px] font-bold uppercase tracking-wider text-mint">{fmtDay(g.day)}</div>}
+                {fileDays.length > 1 && <div className="text-caption font-bold uppercase tracking-wider text-mint">{fmtDay(g.day)}</div>}
                 {g.files.map((f) => (
                   <div key={f.id}><FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
                 ))}
@@ -226,9 +226,9 @@ export default function AufgabeDetail() {
       )}
 
       {canSubmit ? (
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title={sub ? 'Erneut abgeben / überarbeiten' : 'Abgabe'} icon={Upload} />
-          <div className="p-4 space-y-4">
+          <div className="space-y-4">
             {isAudioType && a.audioToday && (
               <div className="flex items-start gap-2 rounded-lg border border-mint/40 bg-mint/10 p-3 text-sm text-sage">
                 <Info size={16} className="shrink-0 mt-0.5 text-mint" />
@@ -266,7 +266,7 @@ export default function AufgabeDetail() {
                     </div>
                     <input ref={audioInputRef} type="file" multiple accept={AUDIO_ACCEPT} className="hidden"
                            onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
-                    <p className="text-[11px] text-sage-muted leading-snug">
+                    <p className="text-caption text-sage-muted leading-snug">
                       Schon aufgenommen? Wähle die Datei aus der Dateien-App oder den Sprachmemos. Sprachnachricht aus WhatsApp:
                       Nachricht lange drücken → Teilen → „In Dateien sichern“ und dann hier auswählen.
                     </p>
@@ -288,7 +288,7 @@ export default function AufgabeDetail() {
                       <Button onClick={() => stopRec(false)} variant="outline" className="!px-1.5 !gap-1.5" aria-label="Stopp"><Square size={16} className="shrink-0" /> Stopp</Button>
                       <Button onClick={stopAndSend} disabled={busy} className="!px-1.5 !gap-1.5" aria-label="Senden"><Send size={16} className="shrink-0" /> Senden</Button>
                     </div>
-                    <p className="text-[11px] text-sage-muted">Stopp = erst anhören, dann abgeben · Senden = sofort abgeben</p>
+                    <p className="text-caption text-sage-muted">Stopp = erst anhören, dann abgeben · Senden = sofort abgeben</p>
                   </div>
                 )}
               </div>
@@ -338,7 +338,7 @@ export default function AufgabeDetail() {
           </div>
         </Card>
       ) : (
-        <Card className="p-5 text-sage-muted">
+        <Card className="p-4 sm:p-5 text-sage-muted">
           {a.locked
             ? 'Deine Abgabe wurde gesendet und ist jetzt gesperrt. Für Korrekturen wende dich an deine Lehrkraft – sie kann die Abgabe zurücksetzen oder die Frist verlängern.'
             : 'Die Abgabefrist ist abgelaufen. Wende dich an deine Lehrkraft für eine Verlängerung.'}

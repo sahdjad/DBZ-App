@@ -67,7 +67,7 @@ function StartPicker({ surahs, onOpenSurah, onOpenPage, busy, error }) {
   const [surah, setSurah] = useState(surahs?.[0]?.n || 1);
   const [pageInput, setPageInput] = useState('');
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <div className="p-1 mb-3">
         <div className="text-ivory font-medium">Seite wählen</div>
         <div className="text-xs text-sage-muted mt-0.5">Sure wählen -- die Seite öffnet sich sofort. Dann auf „Los" drücken.</div>
@@ -365,7 +365,7 @@ export default function HifzRecitationMode({ surahs }) {
         </Button>
         <div className="text-center">
           <div className="text-ivory text-sm font-medium">Seite {page} <span className="text-sage-muted">/ 604</span></div>
-          {pageData.juz && <div className="text-[11px] text-sage-muted">Juzʼ {pageData.juz}</div>}
+          {pageData.juz && <div className="text-caption text-sage-muted">Juzʼ {pageData.juz}</div>}
         </div>
         {started ? (
           <Button size="sm" variant={readMode ? 'primary' : 'outline'} onClick={toggleReadMode} aria-pressed={readMode}>
@@ -468,7 +468,7 @@ export default function HifzRecitationMode({ surahs }) {
             <span className={capture === 'error' ? 'text-status-absent' : 'text-sage'}>{statusLine}</span>
           </div>
           {capture === 'listening' && interim && (
-            <p dir="rtl" className="text-xs text-sage-muted font-arabic" aria-live="off">Gehört: {interim}</p>
+            <p dir="rtl" className="text-xs text-sage-muted font-arabic-ui" aria-live="off">Gehört: {interim}</p>
           )}
           {slowDevice && capture === 'listening' && (
             <p className="text-xs text-status-late flex items-start gap-1.5">

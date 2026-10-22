@@ -147,7 +147,7 @@ function ClassResetCard({ classId, className, onDone }) {
             {RESET_SCOPES.map(([k, l, d]) => (
               <label key={k} className={`flex items-start gap-2 rounded-lg border p-2.5 cursor-pointer ${scopes.includes(k) ? 'border-status-absent/50 bg-status-absent/5' : 'border-line'}`}>
                 <input type="checkbox" className="mt-1" checked={scopes.includes(k)} onChange={() => toggle(k)} />
-                <span><span className="block text-sm text-ivory">{l}</span><span className="block text-[11px] text-sage-muted">{d}</span></span>
+                <span><span className="block text-sm text-ivory">{l}</span><span className="block text-caption text-sage-muted">{d}</span></span>
               </label>
             ))}
           </div>
@@ -370,7 +370,7 @@ export default function Klassenliste() {
           <Card className="p-6 text-sage-muted text-sm">Keine Schüler gefunden.</Card>
         ) : (
           <Card className="overflow-hidden">
-            <p className="sm:hidden px-4 pt-3 text-[11px] text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
+            <p className="sm:hidden px-4 pt-3 text-caption text-sage-muted">Tabelle lässt sich seitlich scrollen →</p>
             <div className="overflow-x-auto" role="region" aria-label="Klassenliste, seitlich scrollbar" tabIndex={0}>
               <table className="w-full text-sm">
                 <thead>
@@ -475,7 +475,7 @@ export default function Klassenliste() {
             }}
           />
         )}
-        <p className="text-[11px] text-sage-muted">Tipp: Name antippen oder Zeile anklicken öffnet das Schülerprofil. Spalte „Offen" zeigt offene Aufgaben, die Zahl in Klammern die davon überfälligen. Abkürzungen in den Spaltenüberschriften zeigen beim Antippen/Hovern die volle Bezeichnung.</p>
+        <p className="text-caption text-sage-muted">Tipp: Name antippen oder Zeile anklicken öffnet das Schülerprofil. Spalte „Offen" zeigt offene Aufgaben, die Zahl in Klammern die davon überfälligen. Abkürzungen in den Spaltenüberschriften zeigen beim Antippen/Hovern die volle Bezeichnung.</p>
       </div>
     </AppLayout>
   );

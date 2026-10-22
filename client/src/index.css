@@ -19,73 +19,102 @@
   src: url('/fonts/UthmanicHafs.woff2') format('woff2');
 }
 
-/* --- Farb-Themes (als RGB-Kanäle für Tailwind-Alpha) --------------------------
-   Hell = weiß mit Dunkelgrün. Dunkel = warmes, augenschonendes Dunkelgrün
-   (gedämpfte Kontraste, cremeweiße statt greller Schrift). */
+/* =============================================================================
+   DBZ DESIGN-SYSTEM – Tokens
+   Farben als RGB-Kanäle (für Tailwind-Alpha). Die Token-NAMEN sind historisch
+   (mint = Primärgrün, ivory = Primärtext, sage = Fließtext, sage-muted =
+   Sekundärtext, card = Fläche, subtle = Sekundärfläche, line = Trenner).
+   ============================================================================= */
 :root {
-  /* DEEN – Hell: warmes Elfenbein/Creme mit dunklem Waldgrün-Text, grünen
-     Akzenten und dezentem Champagner-Gold. */
-  --c-bg: 246 242 228; /* #F6F2E4 warmes Elfenbein */
-  --c-sidebar: 6 45 31; /* #062D1F tiefes Waldgrün (Navigation) */
-  --c-card: 255 253 246; /* #FFFDF6 cremeweiße Karten */
-  --c-moss: 228 222 200; /* weiche Creme-Fläche */
-  --c-hover: 237 232 213; /* sanftes Überfahren */
-  --c-line: 223 216 193; /* dezente, warme Rahmen */
-  --c-subtle: 240 235 219; /* stille Füllflächen */
-  --c-onaccent: 246 242 228; /* Text auf Grün (Elfenbein) */
-  --c-mint: 23 77 53; /* #174D35 Primärgrün */
-  --c-mint-light: 30 104 68; /* lesbarer Akzent/Link auf Hell */
-  --c-gold: 158 138 70; /* #9E8A46 Champagner-Gold (kontraststark auf Hell) */
-  --c-ivory: 8 40 28; /* Überschriften – tiefes Waldgrün */
-  --c-sage: 42 60 48; /* Fließtext dunkelgrün */
-  --c-sage-muted: 108 122 100; /* gedämpftes Olivgrau */
-  --c-present: 32 132 84;
-  --c-late: 168 124 32;
-  --c-excused: 58 104 156;
-  --c-absent: 184 78 54;
+  /* Hell – ruhiges, warmes Off-White mit tiefem Waldgrün */
+  --c-bg: 247 246 242;        /* #F7F6F2 Seitenhintergrund */
+  --c-sidebar: 7 56 46;       /* #07382E Kopfzeile / Marke */
+  --c-card: 255 255 255;      /* Flächen (Listen, Karten) */
+  --c-moss: 233 235 229;      /* gedämpfte Füllung (Avatare) */
+  --c-hover: 241 242 237;     /* Druck-/Hover-Zustand */
+  --c-line: 226 227 220;      /* Haarlinien */
+  --c-subtle: 240 241 236;    /* Sekundärfläche (Segment, Felder) */
+  --c-onaccent: 255 255 255;  /* Text auf Primärgrün */
+  --c-mint: 7 56 46;          /* #07382E Primär */
+  --c-mint-light: 36 101 80;  /* #246550 Links / Akzent auf Hell */
+  --c-gold: 132 112 70;       /* #847046 Gold (Text-tauglich) */
+  --c-ivory: 23 35 30;        /* #17231E Primärtext / Titel */
+  --c-sage: 52 64 58;         /* #34403A Fließtext */
+  --c-sage-muted: 104 115 109;/* #68736D Sekundärtext */
+  --c-present: 30 128 80;
+  --c-late: 168 112 14;
+  --c-excused: 44 98 156;
+  --c-absent: 192 60 44;
+  --shadow-card: 0 1px 2px rgb(23 35 30 / 0.04), 0 1px 1px rgb(23 35 30 / 0.02);
+  --shadow-float: 0 12px 32px -8px rgb(23 35 30 / 0.18), 0 2px 6px rgb(23 35 30 / 0.06);
+  --header-bg: 7 56 46;
+  --tabbar-bg: 250 250 247;
   color-scheme: light;
 }
 
 .dark {
-  /* DEEN – Dunkel: tiefes Smaragd/Emerald mit elfenbeinfarbenem Text und
-     gedämpftem Oliv-/Gold-Akzent. Hoher Kontrast, augenschonend. */
-  --c-bg: 4 26 19; /* #041A13 tiefes Emerald-Schwarz */
-  --c-sidebar: 6 40 28; /* #06281C */
-  --c-card: 9 44 31; /* #092C1F – klar abgehoben */
-  --c-moss: 40 66 52;
-  --c-hover: 15 50 36;
-  --c-line: 40 72 55; /* ruhige Rahmen */
-  --c-subtle: 9 42 30;
-  --c-onaccent: 247 244 232;
-  --c-mint: 84 178 124; /* klares Grün als Akzent */
-  --c-mint-light: 132 210 164;
-  --c-gold: 201 197 142; /* #C9C58E blasses Champagner-Gold */
-  --c-ivory: 247 244 232; /* #F7F4E8 Überschriften */
-  --c-sage: 216 224 206; /* heller, klarer Fließtext */
-  --c-sage-muted: 184 190 173; /* #B8BEAD Sekundärtext */
-  --c-present: 90 200 140;
-  --c-late: 224 178 92;
-  --c-excused: 132 178 226;
-  --c-absent: 232 138 112;
+  /* Dunkel – tiefes Grün-Schwarz, ruhige Kontraste */
+  --c-bg: 9 16 13;            /* #09100D */
+  --c-sidebar: 10 31 24;      /* #0A1F18 */
+  --c-card: 19 29 25;         /* #131D19 */
+  --c-moss: 34 47 41;
+  --c-hover: 27 39 34;
+  --c-line: 37 50 44;
+  --c-subtle: 25 36 31;
+  --c-onaccent: 6 26 19;      /* dunkler Text auf hellem Grün */
+  --c-mint: 104 192 150;      /* #68C096 */
+  --c-mint-light: 140 212 176;
+  --c-gold: 206 188 146;
+  --c-ivory: 237 241 237;
+  --c-sage: 205 213 207;
+  --c-sage-muted: 146 158 151;
+  --c-present: 96 198 140;
+  --c-late: 228 178 86;
+  --c-excused: 130 174 228;
+  --c-absent: 240 132 112;
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
+  --shadow-float: 0 16px 40px -8px rgb(0 0 0 / 0.6);
+  --header-bg: 10 31 24;
+  --tabbar-bg: 15 24 20;
   color-scheme: dark;
 }
 
-/* Navigationsflächen (Seitenleiste, Kopfzeile, mobile Leiste) sind IMMER tiefes
-   Waldgrün mit hellem Text – unabhängig vom Hell/Dunkel-Modus. Dazu werden die
-   Texttokens lokal auf „hell auf dunkel" gesetzt, damit alles darin automatisch
-   passt (App-Gefühl, klare Orientierung). */
+/* --- Typografie --------------------------------------------------------------
+   Eine Schriftfamilie für die ganze Oberfläche (Apple-Systemschrift).
+   Nutzer können unter Konto → Darstellung wählen: System / Serif / Rund und
+   die Textgröße. Die Größe wirkt über die Root-Schriftgröße (alles in rem),
+   dadurch fließt das Layout echt um – kein Zoom/Transform. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-arabic-ui: 'Geeza Pro', 'Noto Naskh Arabic', 'Amiri', 'Uthmanic Hafs', serif;
+  --text-scale: 1.0625; /* 17 px – iOS-Standard für Fließtext */
+}
+html[data-font='serif'] { --font-ui: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif; }
+html[data-font='rounded'] { --font-ui: ui-rounded, 'SF Pro Rounded', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+html[data-text='s'] { --text-scale: 0.9375; }
+html[data-text='l'] { --text-scale: 1.1875; }
+html[data-text='xl'] { --text-scale: 1.3125; }
+html {
+  font-size: calc(var(--text-scale) * 100%);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Kopfzeile, Seitenleiste: immer tiefes Waldgrün mit hellem Text – geht
+   nahtlos unter die iPhone-Statusleiste (Uhrzeit/Akku sind dort weiß). */
 .nav-surface {
-  background-color: rgb(var(--c-sidebar));
-  --c-ivory: 247 244 232;
-  --c-sage: 214 223 205;
-  --c-sage-muted: 158 176 150;
-  --c-line: 60 92 74;
-  --c-hover: 18 58 42;
-  --c-subtle: 13 52 37;
-  --c-card: 12 50 36;
-  --c-mint: 120 202 156;
-  --c-mint-light: 150 216 178;
-  --c-gold: 216 195 138;
+  background-color: rgb(var(--header-bg));
+  --c-ivory: 247 246 240;
+  --c-sage: 222 230 224;
+  --c-sage-muted: 168 186 176;
+  --c-line: 44 90 76;
+  --c-hover: 22 74 60;
+  --c-subtle: 17 66 54;
+  --c-card: 14 62 50;
+  --c-mint: 168 222 192;
+  --c-mint-light: 190 232 208;
+  --c-gold: 222 204 156;
+  --c-onaccent: 7 56 46;
 }
 
 @layer base {
@@ -96,14 +125,28 @@
   body {
     @apply bg-bg text-sage font-sans antialiased;
     margin: 0;
+    line-height: 1.45;
+    font-feature-settings: 'kern';
   }
 
   h1,
   h2,
   h3,
   h4 {
-    @apply font-display text-ivory;
+    @apply font-sans text-ivory font-semibold;
+    letter-spacing: -0.012em;
   }
+
+  /* Zahlen in Statistiken/Zählern immer gleich breit */
+  .font-mono { font-variant-numeric: tabular-nums; letter-spacing: 0; }
+
+  /* Arabischer Text (außerhalb des Mushaf): eigene Schrift, Platz für Harakat */
+  [lang='ar'], .font-arabic { line-height: 1.9; }
+
+  button, a, [role='button'] { -webkit-tap-highlight-color: transparent; }
+
+  /* Raster-Kinder dürfen schrumpfen – verhindert seitliches Überlaufen. */
+  .grid > * { min-width: 0; }
 
   /* Sichtbarer, kontraststarker Fokusring (WCAG) */
   :focus-visible {
@@ -111,15 +154,26 @@
   }
 
   ::selection {
-    background: #15653f;
-    color: #ffffff;
+    background: rgb(var(--c-mint) / 0.22);
   }
 }
 
 @layer components {
   /* Einheitliches Formularfeld (Inputs, Selects, Textareas) */
   .input {
-    @apply w-full rounded-xl bg-card border border-line px-3.5 py-2.5 text-ivory placeholder:text-sage-muted transition-all duration-200;
+    @apply w-full rounded-xl bg-subtle border border-line/60 px-3.5 py-2.5 text-ivory placeholder:text-sage-muted/80 transition-[background-color,border-color,box-shadow] duration-150;
+    min-height: 2.875rem;
+    /* nie unter 16 px – sonst zoomt iOS beim Antippen ins Feld */
+    font-size: max(16px, 1rem);
+  }
+  textarea.input { min-height: 0; line-height: 1.45; }
+  select.input {
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 2.25rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2368736D' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.85rem center;
   }
   /* Datum/Uhrzeit (v. a. iPad/iPhone): Safari gibt diesen Feldern eine eigene
      Mindestbreite und Höhe -- sie ragten in Nachbarfelder und waren niedriger
@@ -141,7 +195,7 @@
     margin: 0;
   }
   .input:focus {
-    @apply outline-none border-mint/60 ring-2 ring-mint/20;
+    @apply outline-none bg-card border-mint/50 ring-4 ring-mint/10;
   }
 
   /* Fallback-Atmosphäre, falls kein Hero-Bild gesetzt ist (helle Variante) */
@@ -318,7 +372,7 @@
 /* Markenstart (Splash): exakt wie der HTML-Start-Bildschirm (index.html), damit
    beim Übergang nichts springt oder verrutscht. Logo auf hellem Feld (das Logo
    selbst ist grün und wäre auf dem dunklen Grün kaum zu sehen). */
-.app-splash { background: #062d1f; color: #f7f4e8; }
+.app-splash { background: #07382e; color: #f7f4e8; }
 .app-splash .splash-mark { animation: none; }
 .app-splash .splash-mark::before { content: ''; position: absolute; inset: 2.5px; border-radius: 9999px; border: 3px solid rgba(216, 195, 138, 0.18); }
 .app-splash .splash-logo {
@@ -374,18 +428,16 @@
 .app-h {
   height: 100vh;
   height: 100dvh;
-  /* Dezente islamische Geometrie („flower of life") – nahezu subliminal (~4 %),
-     nur als feine Textur auf dem Seitenhintergrund, nie über Karten/Text. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23335c44' stroke-opacity='0.05' stroke-width='1'%3E%3Ccircle cx='0' cy='0' r='42'/%3E%3Ccircle cx='84' cy='0' r='42'/%3E%3Ccircle cx='0' cy='84' r='42'/%3E%3Ccircle cx='84' cy='84' r='42'/%3E%3Ccircle cx='42' cy='42' r='42'/%3E%3C/g%3E%3C/svg%3E");
-  background-size: 84px 84px;
 }
-.dark .app-h {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='84' height='84' viewBox='0 0 84 84'%3E%3Cg fill='none' stroke='%23bfe6cf' stroke-opacity='0.04' stroke-width='1'%3E%3Ccircle cx='0' cy='0' r='42'/%3E%3Ccircle cx='84' cy='0' r='42'/%3E%3Ccircle cx='0' cy='84' r='42'/%3E%3Ccircle cx='84' cy='84' r='42'/%3E%3Ccircle cx='42' cy='42' r='42'/%3E%3C/g%3E%3C/svg%3E");
+/* Islamische Geometrie – nur noch gezielt (Startseiten-Kopf, Marke), nie
+   hinter Listen/Formularen. */
+.pattern-geo {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.07' stroke-width='0.8'%3E%3Ccircle cx='0' cy='0' r='28'/%3E%3Ccircle cx='56' cy='0' r='28'/%3E%3Ccircle cx='0' cy='56' r='28'/%3E%3Ccircle cx='56' cy='56' r='28'/%3E%3Ccircle cx='28' cy='28' r='28'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 56px 56px;
 }
-
 html {
   scrollbar-width: thin; /* Firefox */
-  scrollbar-color: rgba(21, 101, 63, 0.32) transparent;
+  scrollbar-color: rgb(var(--c-sage-muted) / 0.35) transparent;
 }
 html,
 body {
@@ -522,7 +574,7 @@ body {
 @keyframes dbzSlide { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* Update-Bildschirm (lib/update.js) */
-#dbz-updating { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: #062d1f; color: #f4efe2; animation: splashFade 0.25s ease both; }
+#dbz-updating { position: fixed; inset: 0; z-index: 9999; display: grid; place-items: center; background: #07382e; color: #f4efe2; animation: splashFade 0.25s ease both; }
 #dbz-updating .dbz-upd-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
 #dbz-updating .dbz-upd-mark { position: relative; width: 112px; height: 112px; display: grid; place-items: center; margin-bottom: 10px; }
 #dbz-updating .dbz-upd-mark::before { content: ''; position: absolute; inset: 2.5px; border-radius: 9999px; border: 3px solid rgba(216, 195, 138, 0.18); }
@@ -531,3 +583,16 @@ body {
 #dbz-updating img { position: relative; width: 76px; height: 76px; box-sizing: border-box; padding: 8px; object-fit: contain; background: #fbf8ee; border-radius: 20px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 #dbz-updating b { font-size: 18px; font-weight: 600; }
 #dbz-updating span { font-size: 12px; color: #9fb8a8; }
+
+/* --- Bewegung: kurz, natürlich, respektiert reduzierte Bewegung ----------- */
+@keyframes dbzSheetIn { from { transform: translateY(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dbzBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dbzToastIn { from { transform: translateY(-12px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dbzPageIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.dbz-sheet { animation: dbzSheetIn 0.32s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.dbz-backdrop { animation: dbzBackdropIn 0.24s ease both; }
+.dbz-toast { animation: dbzToastIn 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.dbz-page { animation: dbzPageIn 0.26s ease-out both; }
+
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

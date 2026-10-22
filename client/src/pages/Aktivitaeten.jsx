@@ -22,7 +22,7 @@ function ActivityRow({ a, onDelete }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-ivory">{a.title}</span>
           <Badge tone="neutral">{catLabel(a.category)}</Badge>
-          {a.countsForGrade === false && <span className="text-[11px] text-sage-muted">zählt nicht zur Note</span>}
+          {a.countsForGrade === false && <span className="text-caption text-sage-muted">zählt nicht zur Note</span>}
         </div>
         <div className="text-xs text-sage-muted mt-0.5">
           {fmt(a.createdAt)}{a.createdByName ? ` · ${a.createdByName}` : ''}{a.note ? ` · ${a.note}` : ''}
@@ -69,9 +69,9 @@ function ManagerView() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-2 items-start">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Aktivität erfassen" subtitle="Spiele, Aktivitäten & Abgaben – fließen in den Leistungsstand ein" icon={Gamepad2} />
-        <div className="p-4 space-y-3">
+        <div className="space-y-3">
           <div className="flex gap-2 flex-wrap items-end">
             {classes.length > 1 && (
               <div>
@@ -118,15 +118,15 @@ function ManagerView() {
               <input type="checkbox" checked={form.countsForGrade} onChange={(e) => setForm({ ...form, countsForGrade: e.target.checked })} />
               Zählt zur Note (abwählen, z. B. für Freizeit/nicht Unterrichtsrelevantes)
             </label>
-            <p className="text-[11px] text-sage-muted">Nur mit Punkten &amp; Maximum fließt eine Aktivität in den Notenvorschlag ein. Ohne Punkte gilt sie als reine Teilnahme.</p>
+            <p className="text-caption text-sage-muted">Nur mit Punkten &amp; Maximum fließt eine Aktivität in den Notenvorschlag ein. Ohne Punkte gilt sie als reine Teilnahme.</p>
             <Button type="submit" disabled={busy || !studentId}><Plus size={18} /> Hinzufügen</Button>
           </form>
         </div>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Erfasste Aktivitäten" icon={Star} />
-        <div className="p-4">
+        <div>
           {!items ? <Spinner /> : items.length === 0 ? (
             <p className="text-sage-muted text-sm">Noch keine Aktivitäten für diesen Schüler.</p>
           ) : (
@@ -144,9 +144,9 @@ function ReadView() {
   if (!items) return <Spinner />;
   if (!items.length) return <Card className="p-6 text-sage-muted text-sm">Noch keine Aktivitäten erfasst.</Card>;
   return (
-    <Card className="p-5">
+    <Card className="p-4 sm:p-5">
       <CardHeader title="Meine Aktivitäten" subtitle="Spiele, Aktivitäten & Abgaben" icon={Gamepad2} />
-      <div className="p-4 divide-y divide-line">{items.map((a) => <ActivityRow key={a.id} a={a} />)}</div>
+      <div className="divide-y divide-line">{items.map((a) => <ActivityRow key={a.id} a={a} />)}</div>
     </Card>
   );
 }

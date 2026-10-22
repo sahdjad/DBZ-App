@@ -1,13 +1,16 @@
 // Wiederverwendbare, token-basierte UI-Komponenten.
 import { createContext, useContext, useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
-import { X, CheckCircle2, AlertTriangle, Info, ArrowLeft, Download, Paperclip } from 'lucide-react';
+import { Link as RouterLink } from 'react-router-dom';
+import { X, CheckCircle2, AlertTriangle, Info, ArrowLeft, Download, Paperclip, ChevronRight, ChevronLeft } from 'lucide-react';
 
 const cx = (...c) => c.filter(Boolean).join(' ');
 
 // --- Button ------------------------------------------------------------------
 // loading=true zeigt einen Spinner, setzt aria-busy und deaktiviert den Button
 // automatisch (verhindert doppelte Übermittlung bei Formularen).
+// Varianten: primary (gefüllt), outline (getönt, sekundär), ghost (nur Text),
+// gold (Besonderes), danger (zerstörerisch).
 export function Button({
   as: Tag = 'button',
   variant = 'primary',
@@ -19,21 +22,18 @@ export function Button({
   ...props
 }) {
   const base =
-    'inline-flex items-center justify-center gap-2 font-medium rounded-xl transition-all duration-200 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-50 disabled:pointer-events-none';
+    'inline-flex items-center justify-center gap-1.5 font-semibold rounded-xl select-none transition-[background-color,opacity,transform] duration-150 active:scale-[0.97] active:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/50 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:opacity-40 disabled:pointer-events-none';
   const sizes = {
-    sm: 'text-sm px-3 py-1.5',
-    md: 'text-sm px-4 py-2.5 min-h-[46px]',
-    lg: 'text-base px-6 py-3 min-h-[48px]',
+    sm: 'text-footnote px-3 min-h-[2rem]',
+    md: 'text-subhead px-4 min-h-[2.75rem]',
+    lg: 'text-body px-5 min-h-[3.125rem]',
   };
   const variants = {
-    // Primär: tiefes Waldgrün, elfenbeinfarbene Schrift, weiche Tiefe.
-    primary: 'bg-mint text-onaccent shadow-sm hover:bg-mint-light',
-    // Sekundär: helle Fläche, feiner grüner Rand, dunkelgrüne Schrift.
-    outline: 'bg-card border border-mint/30 text-mint hover:bg-hover',
-    ghost: 'text-sage hover:text-ivory hover:bg-subtle',
-    // Besondere Aktionen: dezenter Gold-Akzent mit dunkelgrüner Schrift.
-    gold: 'bg-gold text-sidebar shadow-sm hover:brightness-[1.06]',
-    danger: 'border border-status-absent/40 text-status-absent hover:bg-status-absent/10',
+    primary: 'bg-mint text-onaccent hover:opacity-90',
+    outline: 'bg-mint/[0.09] text-mint-light hover:bg-mint/[0.14] dark:text-mint',
+    ghost: 'text-mint-light hover:bg-hover dark:text-mint',
+    gold: 'bg-gold text-white hover:opacity-90 dark:text-sidebar',
+    danger: 'bg-status-absent/10 text-status-absent hover:bg-status-absent/15',
   };
   return (
     <Tag
@@ -49,13 +49,11 @@ export function Button({
 }
 
 // --- Card ---------------------------------------------------------------------
+// Eine ruhige Fläche: weiß auf Off-White, Haarlinie statt Schatten-Wolke.
 export function Card({ className = '', children, ...props }) {
   return (
     <div
-      className={cx(
-        'bg-card border border-line rounded-2xl shadow-[0_1px_2px_rgb(6_45_31/0.04),0_8px_24px_-16px_rgb(6_45_31/0.12)] transition-all duration-300',
-        className,
-      )}
+      className={cx('bg-card border border-line/70 rounded-2xl shadow-card', className)}
       {...props}
     >
       {children}
@@ -63,41 +61,190 @@ export function Card({ className = '', children, ...props }) {
   );
 }
 
+// Kopf einer Karte: Titel (+ Untertitel), optional Symbol und Aktion rechts.
+// Kein eigener Innenabstand – die Karte bestimmt den Rand.
 export function CardHeader({ title, subtitle, icon: Icon, action }) {
   return (
-    <div className="flex items-start justify-between gap-4 p-5 border-b border-line">
-      <div className="flex items-start gap-3">
+    <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="flex items-start gap-2.5 min-w-0">
         {Icon && (
-          <span className="mt-0.5 text-mint">
-            <Icon size={20} strokeWidth={1.75} aria-hidden="true" />
+          <span className="mt-[0.15rem] text-mint-light dark:text-mint shrink-0">
+            <Icon size={18} strokeWidth={2} aria-hidden="true" />
           </span>
         )}
-        <div>
-          <h3 className="text-lg leading-tight">{title}</h3>
-          {subtitle && <p className="text-sm text-sage-muted mt-1">{subtitle}</p>}
+        <div className="min-w-0">
+          <h3 className="text-body font-semibold leading-snug text-ivory">{title}</h3>
+          {subtitle && <p className="text-footnote text-sage-muted mt-0.5">{subtitle}</p>}
         </div>
       </div>
-      {action}
+      {action && <div className="shrink-0">{action}</div>}
+    </div>
+  );
+}
+
+// --- Section: Überschrift über einer Gruppe (wie iOS „Grouped“-Listen) -------
+export function Section({ title, action, children, className = '', footer }) {
+  return (
+    <section className={cx('mt-7 first:mt-0', className)}>
+      {(title || action) && (
+        <div className="flex items-end justify-between gap-3 mb-2 px-1">
+          {title && <h2 className="text-title3 font-semibold text-ivory">{title}</h2>}
+          {action}
+        </div>
+      )}
+      {children}
+      {footer && <p className="text-footnote text-sage-muted mt-2 px-1">{footer}</p>}
+    </section>
+  );
+}
+
+// --- Gruppierte Liste (iOS inset grouped) -----------------------------------
+export function ListGroup({ children, className = '' }) {
+  return (
+    <div className={cx('bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70', className)}>
+      {children}
+    </div>
+  );
+}
+
+// Eine Zeile: Symbol (getöntes Quadrat), Titel, Untertitel, Wert rechts,
+// Chevron bei Navigation. `to` (Link) oder `onClick`.
+export function ListRow({ as: Tag, to, onClick, icon: Icon, iconTone = 'mint', title, subtitle, value, badge, chevron, danger, className = '', children, ...props }) {
+  const tones = {
+    mint: 'bg-mint/10 text-mint-light dark:text-mint',
+    gold: 'bg-gold/15 text-gold',
+    late: 'bg-status-late/12 text-status-late',
+    absent: 'bg-status-absent/10 text-status-absent',
+    excused: 'bg-status-excused/12 text-status-excused',
+    present: 'bg-status-present/12 text-status-present',
+    neutral: 'bg-subtle text-sage-muted',
+  };
+  const interactive = Boolean(to || onClick || Tag);
+  const Comp = Tag || (to ? LinkProxy : onClick ? 'button' : 'div');
+  return (
+    <Comp
+      to={to}
+      onClick={onClick}
+      type={Comp === 'button' ? 'button' : undefined}
+      className={cx('w-full flex items-center gap-3 px-4 py-3 min-h-[3rem] text-left', interactive && 'transition-colors active:bg-hover hover:bg-hover/60', className)}
+      {...props}
+    >
+      {Icon && (
+        <span className={cx('grid place-items-center h-8 w-8 rounded-[0.6rem] shrink-0', tones[iconTone] || tones.mint)}>
+          <Icon size={17} strokeWidth={2} aria-hidden="true" />
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className={cx('block text-body leading-snug', danger ? 'text-status-absent' : 'text-ivory')}>{title}</span>
+        {subtitle && <span className="block text-footnote text-sage-muted mt-0.5">{subtitle}</span>}
+        {children}
+      </span>
+      {value != null && <span className="shrink-0 text-subhead text-sage-muted font-mono">{value}</span>}
+      {badge > 0 && <CountBadge n={badge} />}
+      {(chevron ?? Boolean(to)) && <ChevronRight size={18} className="shrink-0 text-sage-muted/60" aria-hidden="true" />}
+    </Comp>
+  );
+}
+
+function LinkProxy(props) { return <RouterLink {...props} />; }
+
+export function CountBadge({ n, className = '' }) {
+  if (!n) return null;
+  return (
+    <span className={cx('min-w-[1.375rem] h-[1.375rem] px-1.5 grid place-items-center rounded-full bg-status-absent text-white text-caption font-semibold font-mono', className)}>
+      {n > 99 ? '99+' : n}
+    </span>
+  );
+}
+
+// --- Segmented Control (iOS) -----------------------------------------------
+// options: [[value, label, count?]]
+export function Segmented({ options, value, onChange, className = '', size = 'md' }) {
+  return (
+    <div className={cx('inline-grid grid-flow-col auto-cols-fr max-w-full rounded-[0.7rem] bg-subtle p-0.5 border border-line/60', className)} role="tablist">
+      {options.map(([v, label, count]) => {
+        const on = v === value;
+        return (
+          <button
+            key={String(v)}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(v)}
+            className={cx(
+              'relative min-w-0 rounded-[0.55rem] px-2.5 font-medium leading-tight transition-all duration-200',
+              size === 'sm' ? 'py-1.5 text-footnote' : 'py-[0.4rem] text-subhead',
+              on ? 'bg-card text-ivory shadow-[0_1px_3px_rgb(0_0_0/0.12),0_0_0_0.5px_rgb(0_0_0/0.04)] dark:bg-moss' : 'text-sage-muted hover:text-ivory',
+            )}
+          >
+            {label}{count ? <span className="ml-1 text-status-absent font-mono">{count}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// --- Schalter (iOS) -----------------------------------------------------------
+export function Switch({ checked, onChange, label, disabled }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={cx('relative inline-flex h-[1.9rem] w-[3.1rem] shrink-0 rounded-full transition-colors duration-200 disabled:opacity-40',
+        checked ? 'bg-status-present' : 'bg-sage-muted/30')}
+    >
+      <span className={cx('absolute top-[0.125rem] h-[1.65rem] w-[1.65rem] rounded-full bg-white shadow-[0_2px_6px_rgb(0_0_0/0.2)] transition-transform duration-200',
+        checked ? 'translate-x-[1.325rem]' : 'translate-x-[0.125rem]')} />
+    </button>
+  );
+}
+
+// --- Leerer Zustand ---------------------------------------------------------
+export function EmptyState({ icon: Icon, title, text, action, className = '' }) {
+  return (
+    <div className={cx('flex flex-col items-center text-center px-6 py-10', className)}>
+      {Icon && <span className="grid place-items-center h-12 w-12 rounded-full bg-subtle text-sage-muted mb-3"><Icon size={22} aria-hidden="true" /></span>}
+      {title && <p className="text-body font-semibold text-ivory">{title}</p>}
+      {text && <p className="text-subhead text-sage-muted mt-1 max-w-sm">{text}</p>}
+      {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+// --- Kennzahl ----------------------------------------------------------------
+export function Stat({ label, value, tone, hint }) {
+  const tones = { present: 'text-status-present', late: 'text-status-late', absent: 'text-status-absent', excused: 'text-status-excused' };
+  return (
+    <div className="min-w-0">
+      <div className={cx('text-title1 font-semibold font-mono leading-none', tones[tone] || 'text-ivory')}>{value}</div>
+      <div className="text-footnote text-sage-muted mt-1.5 leading-snug">{label}</div>
+      {hint && <div className="text-caption text-sage-muted/80">{hint}</div>}
     </div>
   );
 }
 
 // --- Badge --------------------------------------------------------------------
+// Ruhige Status-Pille: Satzschreibung, keine Großbuchstaben-Schreibmaschine.
 export function Badge({ tone = 'mint', children, className = '' }) {
   const tones = {
-    mint: 'bg-mint/15 text-mint-light border-mint/25',
-    present: 'bg-status-present/15 text-status-present border-status-present/30',
-    late: 'bg-status-late/15 text-status-late border-status-late/30',
-    incomplete: 'bg-status-incomplete/15 text-status-incomplete border-status-incomplete/30',
-    excused: 'bg-status-excused/15 text-status-excused border-status-excused/30',
-    absent: 'bg-status-absent/15 text-status-absent border-status-absent/30',
-    neutral: 'bg-subtle text-sage border-line',
+    mint: 'bg-mint/10 text-mint-light dark:text-mint',
+    present: 'bg-status-present/12 text-status-present',
+    late: 'bg-status-late/12 text-status-late',
+    incomplete: 'bg-status-incomplete/12 text-status-incomplete',
+    excused: 'bg-status-excused/12 text-status-excused',
+    absent: 'bg-status-absent/10 text-status-absent',
+    neutral: 'bg-subtle text-sage-muted',
   };
   return (
     <span
       className={cx(
-        'inline-flex items-center gap-1.5 text-xs font-mono uppercase tracking-wide px-2.5 py-1 rounded-md border',
-        tones[tone],
+        'inline-flex items-center gap-1 whitespace-nowrap text-caption font-semibold px-2 py-[0.2rem] rounded-full',
+        tones[tone] || tones.mint,
         className,
       )}
     >
@@ -110,14 +257,14 @@ export function Badge({ tone = 'mint', children, className = '' }) {
 export function Progress({ value = 0, className = '' }) {
   return (
     <div
-      className={cx('h-2 rounded-full bg-subtle overflow-hidden', className)}
+      className={cx('h-1.5 rounded-full bg-subtle overflow-hidden', className)}
       role="progressbar"
       aria-valuenow={value}
       aria-valuemin={0}
       aria-valuemax={100}
     >
       <div
-        className="h-full rounded-full bg-gradient-to-r from-mint to-mint-light transition-all duration-700"
+        className="h-full rounded-full bg-mint transition-all duration-700"
         style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
       />
     </div>
@@ -130,15 +277,15 @@ export function Ring({ value = 0, size = 64, stroke = 6, label, sublabel }) {
   const circ = 2 * Math.PI * r;
   const offset = circ - (Math.min(100, Math.max(0, value)) / 100) * circ;
   return (
-    <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
+    <div className="relative inline-flex items-center justify-center shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgb(var(--c-subtle))" strokeWidth={stroke} />
         <circle
           cx={size / 2}
           cy={size / 2}
           r={r}
           fill="none"
-          stroke="#5DBA8C"
+          stroke="rgb(var(--c-present))"
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={circ}
@@ -147,15 +294,15 @@ export function Ring({ value = 0, size = 64, stroke = 6, label, sublabel }) {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="font-mono text-ivory text-sm font-semibold">{label ?? `${value}%`}</span>
-        {sublabel && <span className="text-[10px] text-sage-muted">{sublabel}</span>}
+        <span className="font-mono text-ivory text-subhead font-semibold">{label ?? `${value}%`}</span>
+        {sublabel && <span className="text-[0.625rem] text-sage-muted">{sublabel}</span>}
       </div>
     </div>
   );
 }
 
 // --- Avatar -------------------------------------------------------------------
-export function Avatar({ name = '', size = 40 }) {
+export function Avatar({ name = '', size = 40, light = false }) {
   const initials = name
     .split(' ')
     .map((p) => p[0])
@@ -165,8 +312,8 @@ export function Avatar({ name = '', size = 40 }) {
     .toUpperCase();
   return (
     <div
-      className="rounded-full bg-moss border border-line text-mint-light font-mono font-semibold flex items-center justify-center shrink-0"
-      style={{ width: size, height: size, fontSize: size * 0.36 }}
+      className={cx('rounded-full font-semibold flex items-center justify-center shrink-0 select-none', light ? 'bg-[#f3efe2] text-[#07382E]' : 'bg-gradient-to-b from-[#3d7a64] to-[#1f5443] text-white')}
+      style={{ width: size, height: size, fontSize: size * 0.38, letterSpacing: '0.02em' }}
       aria-hidden="true"
     >
       {initials || '·'}
@@ -191,7 +338,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={{ push }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-[min(360px,calc(100vw-2rem))]">
+      <div className="fixed left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 w-[min(24rem,calc(100vw-2rem))] pointer-events-none" style={{ top: 'calc(env(safe-area-inset-top) + 0.75rem)' }}>
         {toasts.map((t) => {
           const Icon = t.tone === 'error' ? AlertTriangle : t.tone === 'info' ? Info : CheckCircle2;
           const color =
@@ -200,10 +347,10 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               role="status"
-              className="animate-fade-up bg-card border border-line rounded-lg p-3.5 flex items-start gap-3 shadow-lg"
+              className="dbz-toast pointer-events-auto bg-card/95 backdrop-blur-xl border border-line/70 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-float"
             >
               <Icon size={18} className={cx('mt-0.5 shrink-0', color)} aria-hidden="true" />
-              <p className="text-sm text-sage flex-1">{t.message}</p>
+              <p className="text-subhead text-ivory flex-1">{t.message}</p>
               <button onClick={() => remove(t.id)} className="text-sage-muted hover:text-ivory" aria-label="Schließen">
                 <X size={16} />
               </button>
@@ -288,9 +435,9 @@ export function Spinner({ label }) {
   }, [label]);
   const text = label !== undefined ? label : LOAD_LINES[i];
   return (
-    <div className="flex flex-col items-center justify-center gap-3 py-14 text-sage-muted" role="status" aria-live="polite">
+    <div className="flex flex-col items-center justify-center gap-3 py-16 text-sage-muted" role="status" aria-live="polite">
       <span className="dbz-loader" aria-hidden="true"><img src="/logo.png" alt="" /></span>
-      {text && <span key={text} className="text-sm dbz-fade-in">{text}</span>}
+      {text && <span key={text} className="text-footnote dbz-fade-in">{text}</span>}
     </div>
   );
 }
@@ -496,9 +643,9 @@ export function SelectionBar({ selection, allIds, actions }) {
     <>
     {/* Platzhalter: so lassen sich auch die letzten Einträge über die feste Leiste scrollen. */}
     <div className="h-28" aria-hidden="true" />
-    <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] lg:bottom-4 lg:left-64">
-      <div className="mx-auto max-w-3xl rounded-2xl border border-line bg-card shadow-lg p-2 flex flex-wrap items-center gap-2">
-        <span className="px-2 text-sm text-ivory">{selection.count} ausgewählt</span>
+    <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(var(--dbz-tabbar-h,0px)+0.5rem)] lg:bottom-4 lg:left-72">
+      <div className="mx-auto max-w-3xl rounded-2xl border border-line/70 bg-card/95 backdrop-blur-xl shadow-float p-2 flex flex-wrap items-center gap-2">
+        <span className="px-2 text-subhead font-semibold text-ivory">{selection.count} ausgewählt</span>
         <Button size="sm" variant="ghost" onClick={() => (allSelected ? selection.setAll([]) : selection.setAll(allIds))}>
           {allSelected ? 'Keine' : 'Alle'}
         </Button>
@@ -523,20 +670,20 @@ export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
   useBackToClose(true, onClose);
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
-        <h3 className="text-lg text-ivory">{title}</h3>
-        {message && <p className="mt-1 text-sm text-sage">{message}</p>}
+      <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="dbz-sheet relative w-full max-w-md rounded-3xl bg-card p-5 shadow-float" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
+        <h3 className="text-title3 text-ivory text-center">{title}</h3>
+        {message && <p className="mt-1 text-subhead text-sage-muted text-center">{message}</p>}
         <div className="mt-4 grid gap-2">
           {options.map((o) => (
             <button
               key={o.key}
               onClick={() => onChoose(o.key)}
-              className={cx('rounded-xl border p-3 text-left transition',
-                o.variant === 'danger' ? 'border-status-absent/40 hover:bg-status-absent/10' : 'border-line hover:bg-hover')}
+              className={cx('rounded-2xl p-3.5 text-left transition active:scale-[0.99]',
+                o.variant === 'danger' ? 'bg-status-absent/[0.07] hover:bg-status-absent/10' : 'bg-subtle hover:bg-hover')}
             >
-              <span className={cx('block font-medium', o.variant === 'danger' ? 'text-status-absent' : 'text-ivory')}>{o.label}</span>
-              {o.description && <span className="block text-xs text-sage-muted mt-0.5">{o.description}</span>}
+              <span className={cx('block font-semibold text-body', o.variant === 'danger' ? 'text-status-absent' : 'text-ivory')}>{o.label}</span>
+              {o.description && <span className="block text-footnote text-sage-muted mt-0.5">{o.description}</span>}
             </button>
           ))}
           <Button variant="ghost" onClick={onClose}>Abbrechen</Button>
@@ -555,32 +702,29 @@ export function ClassFolders({ groups, selected, onSelect, emptyText = 'Noch kei
   if (current) {
     return (
       <div className="flex items-center gap-2 mb-4">
-        <Button variant="outline" size="sm" onClick={() => onSelect(null)}><ArrowLeft size={16} /> Alle Klassen</Button>
-        <h2 className="text-lg text-ivory truncate">{current.name}</h2>
-        {current.hint && <span className="text-xs text-sage-muted">{current.hint}</span>}
+        <button type="button" onClick={() => onSelect(null)} className="inline-flex items-center gap-0.5 -ml-1.5 pr-2 py-1 text-body text-mint-light dark:text-mint active:opacity-60"><ChevronLeft size={22} /> Klassen</button>
+        <h2 className="text-title3 text-ivory truncate">{current.name}</h2>
+        {current.hint && <span className="text-footnote text-sage-muted">{current.hint}</span>}
       </div>
     );
   }
   if (!groups.length && !extra) return <Card className="p-8 text-center text-sage-muted">{emptyText}</Card>;
   return (
-    <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 mb-4">
+    <div className="mb-5 space-y-3">
       {extra}
-      {groups.map((g) => (
-        <button
-          key={g.id}
-          type="button"
-          onClick={() => onSelect(g.id)}
-          className="group text-left rounded-2xl border border-line bg-card p-4 hover:border-mint/40 hover:bg-hover transition-all duration-200 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint/60"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-ivory font-medium truncate">{g.name}</span>
-            {g.count != null && (
-              <span className={cx('text-xs font-mono px-2 py-0.5 rounded-full', g.tone === 'warn' ? 'bg-status-late/15 text-status-late' : 'bg-mint/10 text-mint')}>{g.count}</span>
-            )}
-          </div>
-          {g.hint && <div className="text-xs text-sage-muted mt-1 truncate">{g.hint}</div>}
-        </button>
-      ))}
+      <ListGroup>
+        {groups.map((g) => (
+          <ListRow
+            key={g.id}
+            onClick={() => onSelect(g.id)}
+            title={g.name}
+            subtitle={g.hint}
+            value={g.count != null && g.tone !== 'warn' ? g.count : undefined}
+            badge={g.tone === 'warn' ? g.count : undefined}
+            chevron
+          />
+        ))}
+      </ListGroup>
     </div>
   );
 }

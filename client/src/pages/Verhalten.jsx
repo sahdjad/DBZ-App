@@ -117,9 +117,9 @@ function ManagerView() {
         </select>
       )}
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Neuer Vermerk" subtitle="Positive oder verbesserungswürdige Beobachtung" icon={Sparkles} />
-        <form onSubmit={save} className="p-4 space-y-3">
+        <form onSubmit={save} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="text-sm text-sage">Schüler</span>
@@ -162,7 +162,7 @@ function ManagerView() {
           ) : (
             <Button type="button" size="sm" variant="outline" onClick={rec.start}><Mic size={15} /> Audio-Rückmeldung aufnehmen</Button>
           )}
-          <p className="text-[11px] text-sage-muted -mt-2">Eine kurze gesprochene Rückmeldung wirkt oft persönlicher, gerade wenn Eltern sie abends anhören.</p>
+          <p className="text-caption text-sage-muted -mt-2">Eine kurze gesprochene Rückmeldung wirkt oft persönlicher, gerade wenn Eltern sie abends anhören.</p>
 
           <div className="flex flex-wrap gap-4 text-sm text-sage">
             <label className="flex items-center gap-2">
@@ -172,12 +172,12 @@ function ManagerView() {
               <input type="checkbox" checked={form.visibleToParent} onChange={(e) => setForm({ ...form, visibleToParent: e.target.checked })} /> Für Eltern sichtbar
             </label>
           </div>
-          <p className="text-[11px] text-sage-muted">Standard: nur Eltern sehen den Vermerk. Schüler sehen Verhalten normalerweise erst im Zeugnis – „Für Schüler sichtbar" nur bei Bedarf aktivieren.</p>
+          <p className="text-caption text-sage-muted">Standard: nur Eltern sehen den Vermerk. Schüler sehen Verhalten normalerweise erst im Zeugnis – „Für Schüler sichtbar" nur bei Bedarf aktivieren.</p>
           <Button type="submit"><Plus size={18} /> Speichern</Button>
         </form>
       </Card>
 
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Vermerke der Klasse" />
         <RecordList records={records} showStudent />
       </Card>
@@ -218,7 +218,7 @@ function ReadView({ role }) {
           {children.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Rückmeldungen & Tarbiyah" subtitle="Beobachtungen der Lehrkraft" icon={Sparkles} />
         <RecordList records={records} />
       </Card>

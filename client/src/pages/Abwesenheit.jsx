@@ -34,7 +34,7 @@ function ReplyThread({ request, onSent }) {
       {(request.comments || []).map((c) => (
         <div key={c.id} className="text-sm">
           <span className="text-ivory">{c.authorName}</span>
-          <span className="text-[11px] text-sage-muted"> · {fmtTime(c.createdAt)}</span>
+          <span className="text-caption text-sage-muted"> · {fmtTime(c.createdAt)}</span>
           <div className="text-sage">{c.body}</div>
         </div>
       ))}
@@ -108,9 +108,9 @@ export default function Abwesenheit() {
   return (
     <AppLayout title="Abwesenheit melden">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Neue Meldung" subtitle="Die Lehrkraft entscheidet über die Entschuldigung" icon={CalendarX} />
-          <form onSubmit={submit} className="p-4 space-y-3">
+          <form onSubmit={submit} className="space-y-3">
             {user.role === 'eltern' && (
               <label className="block">
                 <span className="text-sm text-sage">Kind</span>
@@ -149,7 +149,7 @@ export default function Abwesenheit() {
               {/* Der Zähler wird NICHT dauerhaft angezeigt. Erst wenn schon etwas
                   (zu kurz) geschrieben wurde bzw. beim Absenden, kommt der Hinweis. */}
               {showShort && (
-                <p className="text-[11px] text-status-absent mt-1">
+                <p className="text-caption text-status-absent mt-1">
                   Bitte etwas ausführlicher – eine Grußformel allein reicht nicht, die Lehrkraft muss den Grund nachvollziehen können.
                 </p>
               )}
@@ -158,7 +158,7 @@ export default function Abwesenheit() {
           </form>
         </Card>
 
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Meine Meldungen" />
           <div className="divide-y divide-line">
             {!requests ? <Spinner /> : requests.length === 0 ? (

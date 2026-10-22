@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, CalendarCheck, BookOpen, Sparkles, ThumbsUp, AlertTriangle, Users, Scale } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Ring, StatusBadge, Badge, Spinner } from '../components/ui.jsx';
+import { Card, CardHeader, Ring, StatusBadge, Badge, Spinner, Segmented } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { PersonAdminPanel } from '../components/PersonAdmin.jsx';
 
@@ -17,9 +17,9 @@ function FamilyCodeCard({ studentId }) {
   }, [studentId]);
   if (hidden) return null;
   return (
-    <Card className="p-5 mt-4">
+    <Card className="p-4 sm:p-5 mt-4">
       <CardHeader title="Familien-Code" subtitle="Den Eltern geben, damit sie ihr Kind verknüpfen können" icon={Users} />
-      <div className="p-4">
+      <div>
         {!code ? <Spinner /> : <span className="font-mono text-2xl tracking-[0.3em] text-ivory bg-subtle rounded-lg px-4 py-2">{code}</span>}
       </div>
     </Card>
@@ -56,25 +56,20 @@ export default function StudentProfil() {
   const a = data.attendance;
   return (
     <AppLayout title={data.student.name}>
-      <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <button onClick={() => navigate(-1)} className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
         <ArrowLeft size={16} /> Zurück
       </button>
 
       {isAdmin && (
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {[['steckbrief', 'Steckbrief & Rollen'], ['lernstand', 'Anwesenheit, Aufgaben & Verhalten']].map(([k, l]) => (
-            <button key={k} onClick={() => setTab(k)}
-              className={`text-sm px-4 py-2 rounded-full border transition ${tab === k ? 'bg-mint text-onaccent border-mint' : 'border-line text-sage hover:bg-hover'}`}>{l}</button>
-          ))}
-        </div>
+        <Segmented className="w-full sm:w-auto mb-5" options={[['steckbrief', 'Steckbrief & Rollen'], ['lernstand', 'Lernstand']]} value={tab} onChange={setTab} />
       )}
       {isAdmin && tab === 'steckbrief' && <PersonAdminPanel userId={id} viewer={user} />}
       {(!isAdmin || tab === 'lernstand') && (<>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Anwesenheit */}
-        <Card className="p-5">
+        <Card className="p-4 sm:p-5">
           <CardHeader title="Anwesenheit" icon={CalendarCheck} />
-          <div className="p-4 flex items-center gap-4">
+          <div className="flex items-center gap-4">
             <Ring value={rate(a)} size={84} stroke={8} label={`${rate(a)}%`} sublabel="Anwesend" />
             <div className="text-sm space-y-1">
               <div>Anwesend: <span className="text-ivory">{a.present}</span></div>
@@ -115,14 +110,14 @@ export default function StudentProfil() {
 
       {/* Verspätungen & Fehlzeiten im Einzelnachweis (wann genau, wie viele Minuten) */}
       {(a.records || []).some((r) => r.status !== 'present') && (
-        <Card className="p-5 mt-4">
+        <Card className="p-4 sm:p-5 mt-4">
           <CardHeader title="Verspätungen & Fehlzeiten" subtitle="Wann genau und wie viele Minuten" icon={CalendarCheck} />
           <ul className="divide-y divide-line">
             {a.records.filter((r) => r.status !== 'present').map((r, i) => (
               <li key={i} className="py-2.5 flex items-center justify-between gap-3">
                 <div>
                   <div className="text-ivory text-sm">{fmtDay(r.date)}</div>
-                  {r.note && <div className="text-[11px] text-sage-muted">{r.note}</div>}
+                  {r.note && <div className="text-caption text-sage-muted">{r.note}</div>}
                 </div>
                 <div className="flex items-center gap-3">
                   {r.status === 'late' && r.minutesLate > 0 && (
@@ -139,7 +134,7 @@ export default function StudentProfil() {
       {MANAGER.includes(user.role) && <FamilyCodeCard studentId={id} />}
 
       {/* Verhalten */}
-      <Card className="p-5 mt-4">
+      <Card className="p-4 sm:p-5 mt-4">
         <CardHeader title="Verhalten & Tarbiyah" icon={Sparkles} />
         <div className="divide-y divide-line">
           {data.behavior.length === 0 ? (
@@ -185,15 +180,15 @@ function ProfilePenalties({ studentId }) {
     <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
       <div className="min-w-0">
         <div className="text-sm text-ivory">{p.type === 'money' ? `${p.effectiveAmount ?? p.amount} €` : `${p.effectiveAmount ?? p.amount} Seiten`}
-          {p.overdue && <span className="ml-2 text-[11px] text-status-absent">überfällig</span>}
+          {p.overdue && <span className="ml-2 text-caption text-status-absent">überfällig</span>}
         </div>
         <div className="text-xs text-sage-muted">Grund: {p.reason} · {fmt(p.createdAt)}{p.createdByName ? ` · von ${p.createdByName}` : ''}</div>
       </div>
-      <span className={`text-[11px] px-2 py-0.5 rounded-full ${p.status === 'settled' ? 'bg-status-present/15 text-status-present' : 'bg-status-late/15 text-status-late'}`}>{p.status === 'settled' ? 'erledigt' : 'offen'}</span>
+      <span className={`text-caption px-2 py-0.5 rounded-full ${p.status === 'settled' ? 'bg-status-present/15 text-status-present' : 'bg-status-late/15 text-status-late'}`}>{p.status === 'settled' ? 'erledigt' : 'offen'}</span>
     </div>
   );
   return (
-    <Card className="p-5 mt-4">
+    <Card className="p-4 sm:p-5 mt-4">
       <CardHeader title="Strafen" subtitle={`Offen: ${s.money} € · ${s.pages} Seiten`} icon={Scale} />
       <div className="divide-y divide-line">
         {open.length === 0 && done.length === 0 ? (

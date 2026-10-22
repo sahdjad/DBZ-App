@@ -23,9 +23,9 @@ export default function Hilfe() {
   return (
     <AppLayout title="Hilfe & Anleitung">
       {tour && <GuideTour guideKey={key} onClose={() => setTour(false)} />}
-      <Card className="p-5 mb-4">
+      <Card className="p-4 sm:p-5 mb-4">
         <CardHeader title="Anleitung" subtitle={`Schritt für Schritt · ${guide.label}`} icon={LifeBuoy} />
-        <div className="p-4 space-y-4">
+        <div className="space-y-4">
           {STAFF.includes(user.role) && (
             <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Anleitung für Rolle">
               {GUIDE_ROLES.map((r) => (
@@ -51,7 +51,7 @@ export default function Hilfe() {
           </ol>
         </div>
       </Card>
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <CardHeader title="Häufige Fragen" icon={LifeBuoy} />
         <div className="p-2 divide-y divide-line">
           {FAQ.map((f, i) => (
