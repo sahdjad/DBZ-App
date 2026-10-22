@@ -157,7 +157,7 @@ export default function AufgabeDetail() {
 
   return (
     <AppLayout title="Aufgabe">
-      <Link to="/aufgaben" className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <Link to="/aufgaben" className="hidden">
         <ArrowLeft size={16} /> Zurück zu den Aufgaben
       </Link>
 

@@ -72,35 +72,40 @@ export default function DayHero({ name, subtitle }) {
   ].filter(Boolean);
 
   return (
-    <section className="nav-surface pattern-geo -mx-4 sm:-mx-6 lg:mx-0 -mt-5 lg:mt-0 lg:rounded-3xl px-5 sm:px-7 pt-3 pb-6 lg:pt-7 rounded-b-[1.75rem] text-ivory">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-footnote text-sage-muted">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-          <h2 className="mt-1 text-title1 font-bold text-ivory leading-tight">
-            <span className="block text-title3 font-medium text-sage">As-salāmu ʿalaykum,</span>
-            <span data-noi18n>{name}</span>
-          </h2>
-          {subtitle && <p className="mt-1.5 text-footnote text-sage-muted">{subtitle}</p>}
+    <section className="nav-surface pattern-geo -mx-4 sm:-mx-6 md:mx-0 -mt-5 md:mt-0 md:rounded-3xl rounded-b-[1.5rem] px-5 sm:px-7 pt-2 pb-5 md:py-6 text-ivory md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:gap-8">
+      {/* Begrüßung */}
+      <div className="min-w-0">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-footnote text-sage-muted">{now.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+            <h2 className="mt-0.5 text-title2 md:text-title1 font-bold text-ivory leading-tight">
+              <span className="block text-subhead md:text-body font-medium text-sage">As-salāmu ʿalaykum,</span>
+              <span data-noi18n>{name}</span>
+            </h2>
+            {subtitle && <p className="mt-1 text-footnote text-sage-muted">{subtitle}</p>}
+          </div>
+          <p className="md:hidden font-arabic-ui text-body leading-none text-gold shrink-0 pt-5" lang="ar" dir="rtl">السلام عليكم</p>
         </div>
-        <p className="font-arabic-ui text-title3 leading-none text-gold shrink-0 pt-7" lang="ar" dir="rtl">السلام عليكم</p>
+        <p className="hidden md:block mt-3 font-arabic-ui text-title3 text-gold text-left" lang="ar" dir="rtl">السلام عليكم</p>
       </div>
 
-      <div className="mt-5 pt-4 border-t border-white/10">
+      {/* Islamischer Tag */}
+      <div className="mt-4 pt-3.5 border-t border-white/10 md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-8 min-w-0">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <div className="flex items-center gap-2 min-w-0">
-            <Moon size={16} className="text-gold shrink-0 self-center" aria-hidden="true" />
+            <Moon size={15} className="text-gold shrink-0 self-center" aria-hidden="true" />
             {h && <span className="text-subhead font-medium text-ivory">{h.day}. {HIJRI_MONTHS[h.month - 1]} {h.year} n. H.</span>}
           </div>
-          {arabic && <span className="font-arabic-ui text-subhead text-sage-muted" lang="ar" dir="rtl">{arabic}</span>}
+          {arabic && <span className="font-arabic-ui text-footnote text-sage-muted" lang="ar" dir="rtl">{arabic}</span>}
         </div>
         {chips.length > 0 && (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {chips.map((c) => <span key={c} className="rounded-full bg-white/[0.08] px-2.5 py-1 text-caption font-medium text-gold">{c}</span>)}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {chips.map((c) => <span key={c} className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-caption font-medium text-gold">{c}</span>)}
           </div>
         )}
-        <figure key={hi} className="dbz-fade-in mt-4">
-          <blockquote className="font-serif text-[1.0625rem] leading-relaxed text-ivory/95">„{hadith.t}“</blockquote>
-          <figcaption className="text-caption text-sage-muted mt-1.5">Hadith · {hadith.s}</figcaption>
+        <figure key={hi} className="dbz-fade-in mt-3">
+          <blockquote className="font-serif text-subhead md:text-body leading-relaxed text-ivory/95 line-clamp-3 md:line-clamp-none">„{hadith.t}“</blockquote>
+          <figcaption className="text-caption text-sage-muted mt-1">Hadith · {hadith.s}</figcaption>
         </figure>
       </div>
       <p className="sr-only">Datum nach Umm-al-Qura-Kalender, Abweichung von einem Tag möglich.</p>

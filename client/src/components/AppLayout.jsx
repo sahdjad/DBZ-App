@@ -43,6 +43,7 @@ import {
   Trophy,
   Presentation,
   BellOff,
+  PanelLeft,
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
@@ -186,25 +187,27 @@ export function groupNav(items) {
 const NavContext = createContext({ items: [], tabs: [], badges: {}, openAccounts: () => {} });
 export const useNav = () => useContext(NavContext);
 
-function Brand() {
+function Brand({ compact = false }) {
   const [logoOk, setLogoOk] = useState(true);
+  const logo = logoOk ? (
+    <img
+      src="/logo.png"
+      alt="DBZ"
+      className={`${compact ? 'h-10 w-10' : 'h-10 w-10'} shrink-0 rounded-xl object-contain bg-[#fbf8ee] p-1`}
+      onError={() => setLogoOk(false)}
+    />
+  ) : (
+    <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/10 text-white">
+      <BookMarked size={20} strokeWidth={1.75} aria-hidden="true" />
+    </span>
+  );
+  if (compact) return <div className="grid place-items-center pt-4 pb-3">{logo}</div>;
   return (
-    <div className="flex items-center gap-3 px-5 pt-6 pb-5">
-      {logoOk ? (
-        <img
-          src="/logo.png"
-          alt="DBZ"
-          className="h-11 w-11 shrink-0 rounded-xl object-contain bg-[#fbf8ee] p-1"
-          onError={() => setLogoOk(false)}
-        />
-      ) : (
-        <span className="grid place-items-center h-11 w-11 rounded-xl bg-white/10 text-white">
-          <BookMarked size={22} strokeWidth={1.75} aria-hidden="true" />
-        </span>
-      )}
-      <div className="leading-tight">
+    <div className="flex items-center gap-3 px-4 pt-5 pb-4">
+      {logo}
+      <div className="leading-tight min-w-0">
         <div className="text-[1.0625rem] font-semibold text-ivory">DBZ</div>
-        <div className="text-caption text-sage-muted">Deen Bildungszentrum</div>
+        <div className="text-caption text-sage-muted truncate">Deen Bildungszentrum</div>
       </div>
     </div>
   );
@@ -220,29 +223,31 @@ export function badgeFor(to, badges) {
   return badges.byRoute?.[to] || 0;
 }
 
-// Seitenleiste am Computer: gruppiert, ruhig, aktive Zeile hell hinterlegt.
-function SideNav({ items, badges }) {
+const SideCount = ({ n }) => (n > 0
+  ? <span className="min-w-[1.25rem] h-5 px-1.5 grid place-items-center rounded-full bg-white/90 text-[#07382E] text-caption font-semibold font-mono">{n > 99 ? '99+' : n}</span>
+  : null);
+
+// Volle Seitenleiste (iPad quer, Mac): gruppiert, ruhig, aktive Zeile hell.
+function SideNav({ items, badges, onNavigate }) {
   const groups = groupNav(items);
   const top = items.filter((i) => !NAV_GROUPS[i.to]);
-  const row = ({ to, label, icon: Icon }) => {
-    const count = badgeFor(to, badges);
-    return (
-      <NavLink
-        key={to}
-        to={to}
-        className={({ isActive }) =>
-          [
-            'flex items-center gap-3 px-3 h-9 rounded-lg text-subhead transition-colors duration-150',
-            isActive ? 'bg-white/[0.12] text-ivory font-semibold' : 'text-sage hover:text-ivory hover:bg-white/[0.06]',
-          ].join(' ')
-        }
-      >
-        <Icon size={18} strokeWidth={1.9} aria-hidden="true" className="shrink-0 opacity-90" />
-        <span className="flex-1 truncate">{label}</span>
-        {count > 0 && <span className="min-w-[1.25rem] h-5 px-1.5 grid place-items-center rounded-full bg-white/90 text-[#07382E] text-caption font-semibold font-mono">{count > 99 ? '99+' : count}</span>}
-      </NavLink>
-    );
-  };
+  const row = ({ to, label, icon: Icon }) => (
+    <NavLink
+      key={to}
+      to={to}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        [
+          'flex items-center gap-3 px-3 h-9 rounded-lg text-subhead transition-colors duration-150 focus-visible:ring-offset-0',
+          isActive ? 'bg-white/[0.13] text-ivory font-semibold' : 'text-sage hover:text-ivory hover:bg-white/[0.06]',
+        ].join(' ')
+      }
+    >
+      <Icon size={18} strokeWidth={1.9} aria-hidden="true" className="shrink-0 opacity-90" />
+      <span className="flex-1 truncate">{label}</span>
+      <SideCount n={badgeFor(to, badges)} />
+    </NavLink>
+  );
   return (
     <nav className="dbz-scroll flex-1 px-3 pb-6 overflow-y-auto overscroll-contain" aria-label="Hauptmenü">
       <div className="space-y-0.5">{top.map(row)}</div>
@@ -256,6 +261,39 @@ function SideNav({ items, badges }) {
   );
 }
 
+// Schmale Leiste (iPad hochkant, eingeklappte Seitenleiste am Mac): die
+// Hauptbereiche der Rolle untereinander mit Beschriftung, „Mehr“ öffnet die
+// vollständige Navigation.
+function Rail({ tabs, badges, pathname, onMore }) {
+  const section = `/${pathname.split('/')[1] || ''}`;
+  const inTabs = tabs.some((t) => t.to === section);
+  return (
+    <nav className="flex-1 flex flex-col items-stretch gap-1 px-2 overflow-y-auto" aria-label="Bereiche">
+      {tabs.map(({ to, label, icon: Icon }) => {
+        const isMore = to === '/mehr';
+        const active = isMore ? !inTabs : section === to;
+        const count = isMore ? badges.linkedTotal || 0 : badgeFor(to, badges);
+        const cls = [
+          'relative flex flex-col items-center gap-1 rounded-xl py-2.5 px-1 transition-colors duration-150 focus-visible:ring-offset-0',
+          active ? 'bg-white/[0.13] text-ivory' : 'text-sage hover:text-ivory hover:bg-white/[0.06]',
+        ].join(' ');
+        const inner = (
+          <>
+            <span className="relative">
+              <Icon size={22} strokeWidth={active ? 2.1 : 1.8} aria-hidden="true" />
+              {count > 0 && <span className="absolute -top-1.5 -right-2.5 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-[#E5484D] text-white text-[10px] font-semibold font-mono">{count > 99 ? '99+' : count}</span>}
+            </span>
+            <span className={`text-[11px] leading-tight text-center ${active ? 'font-semibold' : 'font-medium'}`}>{TAB_LABEL[to] || label}</span>
+          </>
+        );
+        return isMore
+          ? <button key={to} type="button" onClick={onMore} className={cls} aria-label="Alle Bereiche">{inner}</button>
+          : <NavLink key={to} to={to} className={cls} aria-current={active ? 'page' : undefined}>{inner}</NavLink>;
+      })}
+    </nav>
+  );
+}
+
 // App-Symbol-Badge (Home-Bildschirm) setzen/entfernen – best-effort.
 function setAppBadge(n) {
   try {
@@ -264,11 +302,17 @@ function setAppBadge(n) {
   } catch { /* nicht unterstützt */ }
 }
 
+// Seitenleiste am Mac/iPad quer ein-/ausklappbar (pro Gerät gemerkt).
+const readCollapsed = () => { try { return localStorage.getItem('dbz-sidebar') === 'rail'; } catch { return false; } };
+
 export default function AppLayout({ children, title, back, actions, wide = false }) {
   const { user, logout, refresh } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [drawer, setDrawer] = useState(false); // volle Navigation als Overlay (iPad hochkant)
+  const [collapsed, setCollapsedState] = useState(readCollapsed);
+  const setCollapsed = (v) => { setCollapsedState(v); try { localStorage.setItem('dbz-sidebar', v ? 'rail' : 'full'); } catch { /* egal */ } };
   const [badges, setBadges] = useState({ messages: 0, announcements: 0, total: 0 });
   const scrollRef = useRef(null);
 
@@ -308,12 +352,23 @@ export default function AppLayout({ children, title, back, actions, wide = false
   }, []);
   const unread = badges.total;
 
+  useEffect(() => {
+    if (!drawer) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setDrawer(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawer]);
+
   const items = navForRole(user?.role);
   const tabs = tabsForRole(user?.role);
   const section = `/${pathname.split('/')[1] || ''}`;
   const isTabRoot = tabs.some((t) => t.to === pathname) || pathname === '/mehr';
   // Unterseiten (alles, was nicht direkt ein Reiter ist) bekommen „Zurück“.
   const showBack = back !== false && (back || !isTabRoot);
+  // Ab iPad ist die Navigation immer sichtbar: „Zurück“ dort nur auf
+  // Detailseiten (z. B. /aufgaben/123) oder wenn die Seite es ausdrücklich will.
+  const deep = pathname.split('/').filter(Boolean).length > 1;
+  const backOnlyPhone = showBack && !deep && !back;
   const goBack = () => {
     if (typeof back === 'string') return navigate(back);
     if (window.history.state?.idx > 0) return navigate(-1);
@@ -326,57 +381,102 @@ export default function AppLayout({ children, title, back, actions, wide = false
     navigate('/login');
   };
 
-  const nav = { items, tabs, badges, openAccounts: () => setSwitcherOpen(true), logout: handleLogout };
+  const nav = { items, tabs, badges, openAccounts: () => setAccountOpen(true), logout: handleLogout };
+
+  const accountButton = (compact) => (
+    <button
+      type="button"
+      onClick={() => setAccountOpen((v) => !v)}
+      className={`w-full flex items-center gap-3 rounded-xl hover:bg-white/[0.06] transition-colors focus-visible:ring-offset-0 ${compact ? 'justify-center p-2' : 'px-2 py-2'}`}
+      aria-label="Konto und Rolle"
+      aria-expanded={accountOpen}
+    >
+      <span className="relative">
+        <Avatar name={user?.name} size={compact ? 38 : 36} light />
+        {badges.linkedTotal > 0 && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-[#E5484D] ring-2 ring-[rgb(var(--header-bg))]" />}
+      </span>
+      {!compact && (
+        <>
+          <div className="leading-tight min-w-0 flex-1 text-left">
+            <div className="text-subhead text-ivory font-medium truncate" data-noi18n>{user?.name}</div>
+            <div className="text-caption text-sage-muted truncate">{user?.roleLabel}</div>
+          </div>
+          <ChevronsUpDown size={16} className="text-sage-muted shrink-0" aria-hidden="true" />
+        </>
+      )}
+    </button>
+  );
 
   return (
     <NavContext.Provider value={nav}>
     <div className="app-h flex bg-bg overflow-hidden">
-      {/* Computer: feste Seitenleiste */}
-      <aside className="hidden lg:flex w-72 shrink-0 app-h">
-        <div className="nav-surface flex flex-col h-full w-full">
-          <Brand />
-          <SideNav items={items} badges={badges} />
-          <div className="shrink-0 p-3 border-t border-white/10">
-            <button
-              type="button"
-              onClick={() => setSwitcherOpen(true)}
-              className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-white/[0.06] transition-colors"
-              aria-label="Rolle wechseln"
-            >
-              <Avatar name={user?.name} size={36} />
-              <div className="leading-tight min-w-0 flex-1 text-left">
-                <div className="text-subhead text-ivory font-medium truncate">{user?.name}</div>
-                <div className="text-caption text-sage-muted truncate">{user?.roleLabel}</div>
-              </div>
-              <ChevronsUpDown size={16} className="text-sage-muted shrink-0" aria-hidden="true" />
-            </button>
-            <button type="button" onClick={handleLogout} className="mt-1 w-full flex items-center gap-2 px-3 h-9 rounded-lg text-subhead text-sage hover:text-ivory hover:bg-white/[0.06]">
-              <LogOut size={16} /> Abmelden
-            </button>
-          </div>
+      {/* iPad hochkant (md): schmale Leiste */}
+      <aside className="hidden md:flex lg:hidden w-[5.5rem] shrink-0 app-h">
+        <div className="nav-surface flex flex-col h-full w-full" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <Brand compact />
+          <Rail tabs={tabs} badges={badges} pathname={pathname} onMore={() => setDrawer(true)} />
+          <div className="shrink-0 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] border-t border-white/10">{accountButton(true)}</div>
         </div>
       </aside>
+
+      {/* iPad quer / Mac (lg): volle Seitenleiste, einklappbar zur Leiste */}
+      <aside className={`hidden lg:flex shrink-0 app-h transition-[width] duration-200 ${collapsed ? 'w-[5.5rem]' : 'w-[17rem]'}`}>
+        <div className="nav-surface flex flex-col h-full w-full" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          {collapsed ? (
+            <>
+              <Brand compact />
+              <Rail tabs={tabs} badges={badges} pathname={pathname} onMore={() => setDrawer(true)} />
+              <div className="shrink-0 p-2 border-t border-white/10">{accountButton(true)}</div>
+            </>
+          ) : (
+            <>
+              <Brand />
+              <SideNav items={items} badges={badges} />
+              <div className="shrink-0 p-2.5 border-t border-white/10">{accountButton(false)}</div>
+            </>
+          )}
+        </div>
+      </aside>
+
+      {/* Vollständige Navigation als Overlay (aus der schmalen Leiste) */}
+      {drawer && (
+        <div className="fixed inset-0 z-50 hidden md:block" role="dialog" aria-modal="true" aria-label="Alle Bereiche">
+          <div className="dbz-backdrop absolute inset-0 bg-black/35" onClick={() => setDrawer(false)} />
+          <div className="dbz-drawer absolute inset-y-0 left-0 w-[19rem] max-w-[85vw] shadow-float">
+            <div className="nav-surface flex flex-col h-full" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+              <div className="flex items-center justify-between pr-3">
+                <Brand />
+                <button type="button" onClick={() => setDrawer(false)} className="grid place-items-center h-9 w-9 rounded-full text-sage hover:bg-white/[0.08]" aria-label="Schließen"><X size={18} /></button>
+              </div>
+              <SideNav items={items} badges={badges} onNavigate={() => setDrawer(false)} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 min-w-0 flex flex-col app-h">
         {/* Kopfzeile: geht nahtlos unter die Statusleiste (Uhrzeit/Akku). */}
         <header className="nav-surface shrink-0 relative z-20" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <div className="flex items-center gap-1 h-[3.25rem] px-2 lg:px-6">
+          <div className="flex items-center gap-1 h-[3.25rem] px-2 md:px-4 lg:px-6">
+            <button type="button" onClick={() => setCollapsed(!collapsed)} className="hidden lg:grid place-items-center h-9 w-9 -ml-1 mr-1 rounded-lg text-sage hover:text-ivory hover:bg-white/[0.08]" aria-label={collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'} title={collapsed ? 'Seitenleiste ausklappen' : 'Seitenleiste einklappen'}>
+              <PanelLeft size={19} strokeWidth={1.9} />
+            </button>
             {showBack ? (
-              <button onClick={goBack} className="lg:hidden flex items-center h-11 pl-1 pr-2 -mr-1 text-ivory/95 active:opacity-50" aria-label="Zurück">
+              <button onClick={goBack} className={`${backOnlyPhone ? 'flex md:hidden' : 'flex'} items-center h-11 pl-1 pr-2 -mr-1 text-ivory/95 active:opacity-50 rounded-lg hover:bg-white/[0.06]`} aria-label="Zurück">
                 <ChevronLeft size={28} strokeWidth={2.2} />
               </button>
-            ) : <span className="w-2 lg:hidden" />}
-            <h1 className={`flex-1 min-w-0 truncate text-ivory font-semibold ${showBack ? 'text-[1.0625rem]' : 'text-[1.375rem] tracking-tight'} lg:text-[1.375rem] lg:tracking-tight`}>{title}</h1>
+            ) : <span className="w-2 md:hidden" />}
+            <h1 className={`flex-1 min-w-0 truncate text-ivory font-semibold ${showBack ? 'text-[1.0625rem] md:text-title3' : 'text-[1.375rem] tracking-tight md:text-title3'} ${backOnlyPhone ? 'md:pl-1' : ''}`}>{title}</h1>
             {actions}
-            <NavLink to="/benachrichtigungen" className="relative grid place-items-center h-11 w-11 rounded-full text-ivory/90 hover:bg-white/[0.08] active:opacity-60" aria-label="Benachrichtigungen">
+            <NavLink to="/benachrichtigungen" className="relative grid place-items-center h-11 w-11 rounded-full text-ivory/90 hover:bg-white/[0.08] active:opacity-60" aria-label="Benachrichtigungen" title="Benachrichtigungen">
               <Bell size={22} strokeWidth={1.9} />
               {unread > 0 && (
-                <span className="absolute top-1.5 right-1 min-w-[1.125rem] h-[1.125rem] px-1 grid place-items-center rounded-full bg-[#E5484D] text-white text-[0.625rem] font-semibold font-mono ring-2 ring-[rgb(var(--header-bg))]">
+                <span className="absolute top-1.5 right-1 min-w-[18px] h-[18px] px-1 grid place-items-center rounded-full bg-[#E5484D] text-white text-[10px] font-semibold font-mono ring-2 ring-[rgb(var(--header-bg))]">
                   {unread > 99 ? '99+' : unread}
                 </span>
               )}
             </NavLink>
-            <button type="button" onClick={() => setSwitcherOpen(true)} className="lg:hidden relative grid place-items-center h-11 w-11 rounded-full active:opacity-60" aria-label="Konto und Rolle">
+            <button type="button" onClick={() => setAccountOpen(true)} className="md:hidden relative grid place-items-center h-11 w-11 rounded-full active:opacity-60" aria-label="Konto und Rolle">
               <Avatar name={user?.name} size={30} light />
               {badges.linkedTotal > 0 && <span className="absolute top-1.5 right-1 h-2.5 w-2.5 rounded-full bg-[#E5484D] ring-2 ring-[rgb(var(--header-bg))]" />}
             </button>
@@ -395,23 +495,23 @@ export default function AppLayout({ children, title, back, actions, wide = false
         )}
         {/* Eigener Scroll-Container: scrollt unabhängig von der Navigation. */}
         <main ref={scrollRef} className="dbz-scroll flex-1 overflow-y-auto overscroll-contain">
-          <div key={pathname} className={`dbz-page px-4 sm:px-6 lg:px-10 pt-5 lg:pt-8 ${wide ? 'max-w-7xl' : 'max-w-5xl'} w-full mx-auto pb-[calc(var(--dbz-tabbar-h,0px)+2rem)] lg:pb-14`}>{children}</div>
+          <div key={pathname} className={`dbz-page px-4 sm:px-6 lg:px-8 xl:px-10 pt-5 md:pt-7 ${wide ? 'max-w-[90rem]' : 'max-w-6xl'} w-full mx-auto pb-[calc(var(--dbz-tabbar-h,0px)+2rem)] md:pb-14`}>{children}</div>
         </main>
       </div>
 
       <MobileTabBar tabs={tabs} badges={badges} pathname={pathname} />
 
-      <AccountSwitcherSheet open={switcherOpen} onClose={() => setSwitcherOpen(false)} currentUser={user} onLogout={handleLogout} />
+      <AccountSwitcher open={accountOpen} onClose={() => setAccountOpen(false)} currentUser={user} onLogout={handleLogout} collapsed={collapsed} />
     </div>
     </NavContext.Provider>
   );
 }
 
-// Untere Leiste (iOS-Tab-Bar): helles, leicht durchscheinendes Material.
+// Untere Leiste (iOS-Tab-Bar) – nur auf dem Handy.
 function MobileTabBar({ tabs, badges, pathname }) {
   // Tatsächliche Höhe der Leiste (je nach Gerät/Home-Indikator verschieden)
   // als CSS-Variable bereitstellen -- darauf sitzen z. B. die Seitenleiste im
-  // Qur'an ohne Lücke auf. Am Computer ist die Leiste ausgeblendet (Höhe 0).
+  // Qur'an ohne Lücke auf. Ab iPad ist die Leiste ausgeblendet (Höhe 0).
   const navRef = useRef(null);
   useEffect(() => {
     const el = navRef.current;
@@ -430,7 +530,7 @@ function MobileTabBar({ tabs, badges, pathname }) {
   return (
     <nav
       ref={navRef}
-      className="lg:hidden fixed bottom-0 inset-x-0 z-30 flex border-t border-line/80 backdrop-blur-xl backdrop-saturate-150"
+      className="md:hidden fixed bottom-0 inset-x-0 z-30 flex border-t border-line/80 backdrop-blur-xl backdrop-saturate-150"
       style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 0.375rem)', backgroundColor: 'rgb(var(--tabbar-bg) / 0.88)' }}
       aria-label="Bereiche"
     >
@@ -443,7 +543,7 @@ function MobileTabBar({ tabs, badges, pathname }) {
             to={to}
             aria-current={active ? 'page' : undefined}
             className={[
-              'relative flex-1 min-w-0 flex flex-col items-center gap-[0.2rem] pt-2 pb-0.5 transition-colors duration-150 active:opacity-60',
+              'relative flex-1 min-w-0 flex flex-col items-center gap-[3px] pt-2 pb-0.5 transition-colors duration-150 active:opacity-60',
               active ? 'text-mint-light dark:text-mint' : 'text-sage-muted',
             ].join(' ')}
           >
@@ -463,14 +563,16 @@ function MobileTabBar({ tabs, badges, pathname }) {
   );
 }
 
-// Konto & Rolle (wie der Kontowechsel in iOS-Apps): aktuelle Rolle oben klar
-// erkennbar, verknüpfte Rollen darunter, Wechsel ohne erneutes Passwort.
-function AccountSwitcherSheet({ open, onClose, currentUser, onLogout }) {
+// Konto & Rolle: Handy = Sheet von unten, iPad/Mac = Menü an der Seitenleiste.
+// Rollenwechsel ohne Neuladen der App: Sitzung wird serverseitig gewechselt,
+// danach werden alle Seiten neu aufgebaut (App.jsx: Routes mit key = Konto).
+function AccountSwitcher({ open, onClose, currentUser, onLogout, collapsed }) {
   const { switchAccount } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const panelRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
@@ -482,6 +584,7 @@ function AccountSwitcherSheet({ open, onClose, currentUser, onLogout }) {
     if (!open) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', onKey);
+    setTimeout(() => panelRef.current?.querySelector('button')?.focus({ preventScroll: true }), 30);
     return () => document.removeEventListener('keydown', onKey);
   }, [open, onClose]);
 
@@ -491,75 +594,89 @@ function AccountSwitcherSheet({ open, onClose, currentUser, onLogout }) {
     setBusyId(id);
     try {
       await switchAccount(id);
-      window.location.reload(); // sauberer Neustart mit dem neuen Konto
+      onClose();
+      setBusyId(null);
+      navigate('/dashboard');
     } catch (err) {
       toast.push(err.message, 'error');
       setBusyId(null);
     }
   };
 
+  const body = (
+    <>
+      <div className="rounded-2xl bg-card dark:bg-elevated border border-line/70 p-4 flex items-center gap-3.5">
+        <Avatar name={currentUser?.name} size={48} />
+        <div className="min-w-0 flex-1">
+          <div className="text-body font-semibold text-ivory truncate" data-noi18n>{currentUser?.name}</div>
+          <div className="text-footnote text-sage-muted truncate">{currentUser?.email}</div>
+          <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-mint/10 text-mint-light dark:text-mint px-2 py-0.5 text-caption font-semibold">
+            <Check size={12} strokeWidth={3} /> Aktiv: {currentUser?.roleLabel}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-5 mb-1.5 px-1 text-footnote font-medium text-sage-muted">Rolle wechseln</div>
+      {!accounts ? (
+        <div className="py-3 grid place-items-center"><span className="h-5 w-5 rounded-full border-2 border-line border-t-mint animate-spin" role="status" aria-label="Lädt" /></div>
+      ) : accounts.length === 0 ? (
+        <p className="text-footnote text-sage-muted px-1 py-1">
+          Du hast nur diese eine Rolle. Weitere Rollen (z. B. Lehrkraft und Schüler) vergibt die DBZ-Leitung.
+        </p>
+      ) : (
+        <div className="rounded-2xl bg-card dark:bg-elevated border border-line/70 overflow-hidden divide-y divide-line/70">
+          {accounts.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              disabled={busyId != null}
+              onClick={() => go(a.id)}
+              className="w-full flex items-center gap-3 px-4 py-3 active:bg-hover hover:bg-hover/70 transition-colors text-left disabled:opacity-50"
+            >
+              <Avatar name={a.name} size={34} />
+              <div className="min-w-0 flex-1">
+                <div className="text-body text-ivory truncate">{a.roleLabel}</div>
+                <div className="text-footnote text-sage-muted truncate">
+                  {[a.name !== currentUser?.name ? a.name : null, a.classNames?.join(', ') || null].filter(Boolean).join(' · ') || ' '}
+                </div>
+              </div>
+              {a.unread > 0 && <CountBadge n={a.unread} />}
+              {busyId === a.id
+                ? <span className="h-4 w-4 rounded-full border-2 border-line border-t-mint animate-spin shrink-0" role="status" aria-label="Wird gewechselt" />
+                : <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-5 rounded-2xl bg-card dark:bg-elevated border border-line/70 overflow-hidden divide-y divide-line/70">
+        <button type="button" onClick={() => { onClose(); navigate('/konto'); }} className="w-full flex items-center gap-3 px-4 h-12 text-left text-body text-ivory active:bg-hover hover:bg-hover/70">
+          <Settings size={19} className="text-sage-muted" /> <span className="flex-1">Konto & Einstellungen</span> <ChevronRight size={18} className="text-sage-muted/60" />
+        </button>
+        <button type="button" onClick={() => { onClose(); onLogout(); }} className="w-full flex items-center gap-3 px-4 h-12 text-left text-body text-status-absent active:bg-hover hover:bg-hover/70">
+          <LogOut size={19} /> Abmelden
+        </button>
+      </div>
+    </>
+  );
+
   return (
     <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Konto und Rolle">
-      <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="dbz-sheet absolute inset-x-0 bottom-0 lg:inset-0 lg:m-auto lg:h-fit lg:max-w-md lg:rounded-3xl rounded-t-[1.5rem] bg-bg px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto shadow-float">
-        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-sage-muted/30 lg:hidden" aria-hidden="true" />
+      <div className="dbz-backdrop absolute inset-0 bg-black/40 md:bg-black/10" onClick={onClose} />
+      {/* Handy: Sheet */}
+      <div ref={panelRef} className="md:hidden dbz-sheet absolute inset-x-0 bottom-0 rounded-t-[1.5rem] bg-bg dark:bg-card px-4 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85vh] overflow-y-auto shadow-float">
+        <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-sage-muted/30" aria-hidden="true" />
         <div className="flex items-center justify-between mb-4 px-1">
           <h2 className="text-title3 text-ivory">Konto</h2>
           <button onClick={onClose} aria-label="Schließen" className="grid place-items-center h-8 w-8 rounded-full bg-subtle text-sage-muted hover:text-ivory"><X size={16} strokeWidth={2.5} /></button>
         </div>
-
-        <div className="rounded-2xl bg-card border border-line/70 p-4 flex items-center gap-3.5">
-          <Avatar name={currentUser?.name} size={52} />
-          <div className="min-w-0 flex-1">
-            <div className="text-body font-semibold text-ivory truncate">{currentUser?.name}</div>
-            <div className="text-footnote text-sage-muted truncate">{currentUser?.email}</div>
-            <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-mint/10 text-mint-light dark:text-mint px-2 py-0.5 text-caption font-semibold">
-              <Check size={12} strokeWidth={3} /> {currentUser?.roleLabel} · aktiv
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-5 mb-1.5 px-1 text-footnote font-medium text-sage-muted">Rolle wechseln</div>
-        {!accounts ? (
-          <div className="py-4"><Spinner label="" /></div>
-        ) : accounts.length === 0 ? (
-          <p className="text-footnote text-sage-muted px-1 py-2">
-            Du hast nur diese eine Rolle. Weitere Rollen (z. B. Lehrkraft und Schüler) vergibt die DBZ-Leitung.
-          </p>
-        ) : (
-          <div className="rounded-2xl bg-card border border-line/70 overflow-hidden divide-y divide-line/70">
-            {accounts.map((a) => (
-              <button
-                key={a.id}
-                type="button"
-                disabled={busyId != null}
-                onClick={() => go(a.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 active:bg-hover hover:bg-hover/60 transition-colors text-left disabled:opacity-50"
-              >
-                <Avatar name={a.name} size={36} />
-                <div className="min-w-0 flex-1">
-                  <div className="text-body text-ivory truncate">{a.roleLabel}</div>
-                  <div className="text-footnote text-sage-muted truncate">
-                    {[a.name !== currentUser?.name ? a.name : null, a.classNames?.join(', ') || null].filter(Boolean).join(' · ') || ' '}
-                  </div>
-                </div>
-                {a.unread > 0 && <CountBadge n={a.unread} />}
-                {busyId === a.id
-                  ? <span className="h-4 w-4 rounded-full border-2 border-line border-t-mint animate-spin shrink-0" role="status" aria-label="Wird gewechselt" />
-                  : <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <div className="mt-5 rounded-2xl bg-card border border-line/70 overflow-hidden divide-y divide-line/70">
-          <button type="button" onClick={() => { onClose(); navigate('/konto'); }} className="w-full flex items-center gap-3 px-4 h-12 text-left text-body text-ivory active:bg-hover">
-            <Settings size={19} className="text-sage-muted" /> <span className="flex-1">Konto & Einstellungen</span> <ChevronRight size={18} className="text-sage-muted/60" />
-          </button>
-          <button type="button" onClick={() => { onClose(); onLogout(); }} className="w-full flex items-center gap-3 px-4 h-12 text-left text-body text-status-absent active:bg-hover">
-            <LogOut size={19} /> Abmelden
-          </button>
-        </div>
+        {body}
+      </div>
+      {/* iPad/Mac: Menü neben der Seitenleiste */}
+      <div
+        className={`hidden md:block dbz-pop absolute bottom-3 w-[22rem] max-h-[80vh] overflow-y-auto rounded-2xl bg-bg dark:bg-card border border-line/70 p-3 shadow-float left-[6rem] ${collapsed ? 'lg:left-[6rem]' : 'lg:left-[17.5rem]'}`}
+      >
+        {body}
       </div>
     </div>
   );
@@ -677,7 +794,7 @@ function RoleFromLink({ user }) {
     const clean = location.pathname;
     if (as === user.id) { navigate(clean, { replace: true }); return; }
     switchAccount(as)
-      .then(() => { window.location.hash = `#${clean}`; window.location.reload(); })
+      .then(() => navigate(clean, { replace: true }))
       .catch(() => navigate(clean, { replace: true }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search, user?.id]);

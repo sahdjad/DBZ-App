@@ -347,7 +347,7 @@ export function ToastProvider({ children }) {
             <div
               key={t.id}
               role="status"
-              className="dbz-toast pointer-events-auto bg-card/95 backdrop-blur-xl border border-line/70 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-float"
+              className="dbz-toast pointer-events-auto bg-card/95 dark:bg-elevated/95 backdrop-blur-xl border border-line/70 rounded-2xl px-4 py-3 flex items-start gap-3 shadow-float"
             >
               <Icon size={18} className={cx('mt-0.5 shrink-0', color)} aria-hidden="true" />
               <p className="text-subhead text-ivory flex-1">{t.message}</p>
@@ -643,7 +643,7 @@ export function SelectionBar({ selection, allIds, actions }) {
     <>
     {/* Platzhalter: so lassen sich auch die letzten Einträge über die feste Leiste scrollen. */}
     <div className="h-28" aria-hidden="true" />
-    <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(var(--dbz-tabbar-h,0px)+0.5rem)] lg:bottom-4 lg:left-72">
+    <div className="fixed inset-x-0 z-40 px-3 bottom-[calc(var(--dbz-tabbar-h,0px)+0.5rem)] md:bottom-4 md:left-[5.5rem] lg:left-[17rem]">
       <div className="mx-auto max-w-3xl rounded-2xl border border-line/70 bg-card/95 backdrop-blur-xl shadow-float p-2 flex flex-wrap items-center gap-2">
         <span className="px-2 text-subhead font-semibold text-ivory">{selection.count} ausgewählt</span>
         <Button size="sm" variant="ghost" onClick={() => (allSelected ? selection.setAll([]) : selection.setAll(allIds))}>
@@ -671,7 +671,7 @@ export function ChoiceDialog({ title, message, options, onChoose, onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
       <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="dbz-sheet relative w-full max-w-md rounded-3xl bg-card p-5 shadow-float" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="dbz-sheet relative w-full max-w-md rounded-3xl bg-card dark:bg-elevated p-5 shadow-float" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
         <h3 className="text-title3 text-ivory text-center">{title}</h3>
         {message && <p className="mt-1 text-subhead text-sage-muted text-center">{message}</p>}
         <div className="mt-4 grid gap-2">

@@ -13,7 +13,7 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: '
 export default function Korrektur() {
   const [view, setView] = useState('students');
   return (
-    <AppLayout title="Korrektur">
+    <AppLayout title="Korrektur" wide>
       <Segmented className="mb-5 w-full sm:w-auto" options={[['students', 'Nach Schülern'], ['list', 'Alle Abgaben']]} value={view} onChange={setView} />
       {view === 'students'
         ? <HomeworkOverview renderSubmission={(sub, reload) => <ReviewCard sub={sub} onDone={reload} compact />} />

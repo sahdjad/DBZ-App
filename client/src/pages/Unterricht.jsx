@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw, ChevronDown } from 'lucide-react';
+import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw, ChevronDown, MoreHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Section, ListGroup, Segmented, EmptyState, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
@@ -25,6 +25,32 @@ const ROW_TINT = {
 };
 const rowTint = (status) => ROW_TINT[status] || 'border-status-absent bg-status-absent/[0.05]';
 const DOT = { present: 'bg-status-present', late: 'bg-status-late', left_early: 'bg-status-late', excused: 'bg-status-excused', unexcused: 'bg-status-absent' };
+const checkInfo = (r) => [
+  r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Kein Check-in',
+  r.minutesLate ? `${r.minutesLate} Min verspätet${r.lateUnexcused ? ' (unentschuldigt)' : ''}` : null,
+  r.source ? (r.source === 'qr' ? 'QR' : 'manuell') : null,
+].filter(Boolean).join(' · ');
+
+// „…“-Menü je Schüler (Handy): seltene Aktionen, damit die Zeile ruhig bleibt.
+function RowMenu({ r, onEarly, onDelete }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={`Weitere Aktionen für ${r.name}`}
+        className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:bg-hover"><MoreHorizontal size={18} /></button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div className="dbz-pop absolute right-0 top-10 z-40 w-56 rounded-2xl bg-card dark:bg-elevated border border-line/70 shadow-float overflow-hidden divide-y divide-line/70" style={{ transformOrigin: 'top right' }}>
+            <button type="button" onClick={() => { setOpen(false); onEarly(); }} className="w-full text-left px-4 h-11 text-body text-ivory hover:bg-hover">Früher gegangen</button>
+            {onDelete && <button type="button" onClick={() => { setOpen(false); onDelete(); }} className="w-full text-left px-4 h-11 text-body text-status-absent hover:bg-hover">Eintrag löschen</button>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 const SHORT = { present: 'Da', late: 'Spät', excused: 'Entsch.', unexcused: 'Fehlt', left_early: 'Früher' };
 const CHIP_ON = {
   present: 'bg-status-present text-white',
@@ -221,43 +247,91 @@ function TeacherUnterricht() {
           </Card>
         )}
         {!attendance ? <Spinner /> : (
-          <ListGroup>
-            {attendance.map((r) => (
-              <div key={r.studentId}
-                onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
-                className={`px-4 py-3 ${selection.active && hasEntry(r) ? 'cursor-pointer active:bg-hover' : ''} ${selection.has(r.studentId) ? 'bg-mint/[0.06]' : ''}`}>
-                <div className="flex items-center gap-3">
-                  {selection.active && (hasEntry(r) ? <SelectCheck checked={selection.has(r.studentId)} /> : <span className="w-5" />)}
-                  <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${DOT[r.status] || 'bg-sage-muted/30'}`} aria-hidden="true" />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-body font-medium text-ivory truncate" data-noi18n>{r.name}</div>
-                    <div className="text-footnote text-sage-muted">
-                      {r.checkInAt ? `Check-in ${new Date(r.checkInAt).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : 'Kein Check-in'}
-                      {r.minutesLate ? ` · ${r.minutesLate} Min verspätet${r.lateUnexcused ? ' (unentschuldigt)' : ''}` : ''}
-                      {r.source ? ` · ${r.source === 'qr' ? 'QR' : 'manuell'}` : ''}
+          <>
+            {/* Handy: Zeile mit 4 Hauptzuständen, Seltenes im „…“-Menü */}
+            <ListGroup className="md:hidden">
+              {attendance.map((r) => (
+                <div key={r.studentId}
+                  onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
+                  className={`px-4 py-3 ${selection.active && hasEntry(r) ? 'cursor-pointer active:bg-hover' : ''} ${selection.has(r.studentId) ? 'bg-mint/[0.06]' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    {selection.active && (hasEntry(r) ? <SelectCheck checked={selection.has(r.studentId)} /> : <span className="w-5" />)}
+                    <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${DOT[r.status] || 'bg-sage-muted/30'}`} aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-body font-medium text-ivory truncate" data-noi18n>{r.name}</div>
+                      <div className="text-footnote text-sage-muted">{checkInfo(r)}</div>
                     </div>
+                    {!selection.active && <RowMenu r={r} onEarly={() => setStatus(r.studentId, 'left_early')} onDelete={hasEntry(r) ? () => deleteEntries([r.studentId]) : null} />}
                   </div>
-                  {!selection.active && hasEntry(r) && (
-                    <button onClick={() => deleteEntries([r.studentId])} title="Eintrag löschen" aria-label={`Eintrag von ${r.name} löschen`}
-                      className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-status-absent hover:bg-status-absent/10"><Trash2 size={16} /></button>
+                  {!selection.active && (
+                    <div className="mt-2.5 grid grid-cols-4 gap-1.5" role="radiogroup" aria-label={`Status von ${r.name}`}>
+                      {STATUSES.filter(([v]) => v !== 'left_early').map(([v, l]) => {
+                        const on = r.status === v;
+                        return (
+                          <button key={v} type="button" role="radio" aria-checked={on} onClick={() => !on && setStatus(r.studentId, v)}
+                            className={`min-h-[2.25rem] rounded-lg text-footnote font-semibold px-1 transition-colors active:scale-[0.97] ${on ? CHIP_ON[v] : 'bg-subtle text-sage hover:text-ivory'}`}>
+                            {SHORT[v] || l}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
+                  {r.status === 'left_early' && !selection.active && <div className="mt-1.5 text-footnote text-status-late">Früher gegangen</div>}
                 </div>
-                {!selection.active && (
-                  <div className="mt-2.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={`Status von ${r.name}`}>
-                    {STATUSES.map(([v, l]) => {
-                      const on = r.status === v;
-                      return (
-                        <button key={v} type="button" role="radio" aria-checked={on} onClick={() => !on && setStatus(r.studentId, v)}
-                          className={`min-h-[2rem] flex-1 min-w-[3.25rem] rounded-lg text-caption font-semibold px-2 transition-colors ${on ? CHIP_ON[v] : 'bg-subtle text-sage-muted hover:text-ivory'}`}>
-                          {SHORT[v] || l}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            ))}
-          </ListGroup>
+              ))}
+            </ListGroup>
+
+            {/* iPad & Mac: Tabelle, alle Zustände direkt anklickbar */}
+            <Card className="hidden md:block overflow-x-auto">
+              <table className="w-full text-subhead">
+                <thead>
+                  <tr className="text-left text-footnote text-sage-muted border-b border-line/70 bg-subtle/50">
+                    {selection.active && <th className="w-10" />}
+                    <th className="py-2.5 px-4 font-medium">Schüler</th>
+                    <th className="py-2.5 px-3 font-medium">Check-in</th>
+                    <th className="py-2.5 px-3 font-medium">Status</th>
+                    <th className="py-2.5 pr-3 w-12"><span className="sr-only">Aktionen</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendance.map((r) => (
+                    <tr key={r.studentId}
+                      onClick={() => { if (selection.active && hasEntry(r)) selection.toggle(r.studentId); }}
+                      className={`border-b border-line/60 last:border-0 ${selection.active && hasEntry(r) ? 'cursor-pointer hover:bg-hover/60' : ''} ${selection.has(r.studentId) ? 'bg-mint/[0.06]' : ''}`}>
+                      {selection.active && <td className="pl-4">{hasEntry(r) && <SelectCheck checked={selection.has(r.studentId)} />}</td>}
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-3">
+                          <span className={`h-2.5 w-2.5 rounded-full shrink-0 ${DOT[r.status] || 'bg-sage-muted/30'}`} aria-hidden="true" />
+                          <span className="font-medium text-ivory" data-noi18n>{r.name}</span>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{checkInfo(r)}</td>
+                      <td className="py-2 px-3">
+                        <div className="inline-flex flex-wrap gap-0.5 rounded-[0.7rem] bg-subtle p-0.5 border border-line/60" role="radiogroup" aria-label={`Status von ${r.name}`}>
+                          {STATUSES.map(([v, l]) => {
+                            const on = r.status === v;
+                            return (
+                              <button key={v} type="button" role="radio" aria-checked={on} disabled={selection.active}
+                                onClick={(e) => { e.stopPropagation(); if (!on) setStatus(r.studentId, v); }}
+                                className={`rounded-[0.55rem] px-2.5 lg:px-3 py-1.5 text-footnote font-semibold whitespace-nowrap transition-colors ${on ? CHIP_ON[v] + ' shadow-sm' : 'text-sage-muted hover:text-ivory'}`}>
+                                <span className="xl:hidden">{SHORT[v] || l}</span><span className="hidden xl:inline">{l}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        {!selection.active && hasEntry(r) && (
+                          <button onClick={() => deleteEntries([r.studentId])} title="Eintrag löschen" aria-label={`Eintrag von ${r.name} löschen`}
+                            className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-status-absent hover:bg-status-absent/10"><Trash2 size={16} /></button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </>
         )}
       </Section>
 

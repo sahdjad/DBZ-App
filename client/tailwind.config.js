@@ -1,5 +1,7 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  // Hover-Effekte nur auf Geräten mit Maus/Trackpad (nicht auf Touch hängen bleiben)
+  future: { hoverOnlyWhenSupported: true },
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -9,6 +11,8 @@ export default {
         bg: 'rgb(var(--c-bg) / <alpha-value>)', // Seitenhintergrund
         sidebar: 'rgb(var(--c-sidebar) / <alpha-value>)', // Navigations-/Panel-Fläche
         card: 'rgb(var(--c-card) / <alpha-value>)', // Karten & Eingabefelder
+        elevated: 'rgb(var(--c-elevated) / <alpha-value>)', // Sheets, Popover
+        info: 'rgb(var(--c-info) / <alpha-value>)',
         moss: 'rgb(var(--c-moss) / <alpha-value>)',
         hover: 'rgb(var(--c-hover) / <alpha-value>)', // sanftes Überfahren
         line: 'rgb(var(--c-line) / <alpha-value>)', // Rahmen & Trenner (themefähig)
@@ -58,7 +62,7 @@ export default {
       },
       fontSize: {
         // iOS-angelehnte Skala (rem -> wächst mit der Textgröße-Einstellung)
-        caption: ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.01em' }],
+        caption: ['0.75rem', { lineHeight: '1rem', letterSpacing: '0.005em' }],
         footnote: ['0.8125rem', { lineHeight: '1.125rem' }],
         subhead: ['0.9375rem', { lineHeight: '1.3rem' }],
         body: ['1rem', { lineHeight: '1.45rem' }],

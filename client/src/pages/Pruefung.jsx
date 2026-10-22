@@ -33,7 +33,7 @@ export default function Pruefung() {
   const navigate = useNavigate();
   return (
     <AppLayout title="Prüfung">
-      <button onClick={() => navigate('/pruefungen')} className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <button onClick={() => navigate('/pruefungen')} className="hidden">
         <ArrowLeft size={16} /> Zu den Prüfungen
       </button>
       {MANAGER.includes(user.role) ? <ManagerExam /> : <StudentExam />}

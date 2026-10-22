@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, Spinner, Avatar, ListGroup, EmptyState, useToast } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
 
 const TABS = [
@@ -23,7 +23,7 @@ export default function Admin() {
   const [tab, setTab] = useState(params.get('tab') || 'users');
   const isSuperAdmin = user?.role === 'super_admin';
   return (
-    <AppLayout title="Verwaltung">
+    <AppLayout title="Verwaltung" wide>
       <div className="no-scrollbar flex gap-2 mb-5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap" role="tablist">
         {TABS.map(([k, label, Icon]) => (
           <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
@@ -259,15 +259,6 @@ function PendingTab() {
 }
 
 // Rollen-Abschnitte der Nutzerliste (Reihenfolge = Hierarchie).
-const ROLE_SECTIONS = [
-  ['super_admin', 'Systembetreuung'],
-  ['leitung', 'DBZ-Leitung'],
-  ['klassenlehrer', 'Lehrkräfte'],
-  ['vertretung', 'Vertretungslehrkräfte'],
-  ['klassensprecher', 'Klassensprecher'],
-  ['schueler', 'Schüler'],
-  ['eltern', 'Eltern'],
-];
 
 function UsersTab() {
   const toast = useToast();
@@ -284,12 +275,8 @@ function UsersTab() {
   // Aus der Leitungs-Übersicht: gewünschte Gruppe direkt aufgeklappt (und ggf. nur ohne Klasse).
   const focusRole = params.get('rolle');
   const onlyUnassigned = params.get('ohneKlasse') === '1';
-  const [openSections, setOpenSections] = useState(() => new Set(focusRole ? (focusRole === 'klassenlehrer' ? ['klassenlehrer', 'vertretung'] : [focusRole]) : ['super_admin', 'leitung', 'klassenlehrer']));
-  useEffect(() => {
-    if (!focusRole) return;
-    const t = setTimeout(() => document.getElementById(`rolle-${focusRole}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 400);
-    return () => clearTimeout(t);
-  }, [focusRole]);
+  const [roleFilter, setRoleFilter] = useState(() => (focusRole === 'klassenlehrer' ? 'teachers' : focusRole || 'all'));
+  const [sort, setSort] = useState({ key: 'name', dir: 1 });
   const [showDisabled, setShowDisabled] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
@@ -309,7 +296,6 @@ function UsersTab() {
   };
 
   const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
-  const toggleSection = (key) => setOpenSections((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n; });
 
   const bulkDelete = async () => {
     if (!selected.length) return;
@@ -348,24 +334,19 @@ function UsersTab() {
           <a href="#/admin?tab=users" className="text-xs text-sage-muted underline shrink-0">Alle zeigen</a>
         </div>
       )}
+      {/* Werkzeugleiste */}
       <div className="flex gap-2 flex-wrap items-center">
-        <input className="input flex-1 min-w-[12rem]" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
+        <label className="relative flex-1 min-w-[12rem]">
+          <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted pointer-events-none" aria-hidden="true" />
+          <input className="input pl-10" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
         {selected.length > 0 && (
           <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
-            <XCircle size={18} /> {selected.length} löschen
+            <XCircle size={17} /> {selected.length} löschen
           </Button>
         )}
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
-      <details className="rounded-2xl border border-mint/30 bg-mint/5 text-sm">
-        <summary className="cursor-pointer px-4 py-3 text-ivory font-medium">So beförderst du jemanden (z. B. zum Klassenlehrer, zur Leitung oder zum Admin)</summary>
-        <ol className="list-decimal space-y-1.5 px-8 pb-4 text-sage">
-          <li>Hat sich die Person gerade erst registriert, steht sie oben im Reiter <b>„Neue Anmeldungen“</b>. Dort bei <b>„Freischalten als“</b> die Rolle wählen (bei Lehrkräften die Klassen antippen) und <b>Freischalten</b> drücken.</li>
-          <li>Ist die Person schon aktiv: unten in der Liste auf den <b>Namen</b> (oder „Öffnen“) tippen – es öffnet sich ihr Steckbrief.</li>
-          <li><b>Befördern</b> (z. B. Schüler → Klassenlehrer): unter <b>„Rollenbearbeitung“</b> steht links die aktuelle Position, rechts die neue Rolle wählen, Klassen antippen und <b>„Befördern“</b> drücken.</li>
-          <li><b>Zusätzliche Rolle</b> (bleibt z. B. Schüler UND wird Lehrkraft): im Kasten <b>„Zusätzliche Rollen“</b> die Rolle hinzufügen. Die Person wechselt dann im Konto-Menü zwischen ihren Rollen – ohne zweites Passwort.</li>
-        </ol>
-      </details>
       {show && (
         <Card className="p-4 sm:p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
@@ -374,68 +355,46 @@ function UsersTab() {
             <Input label="E-Mail" type="email" value={form.email} onChange={(v) => setForm({ ...form, email: v })} required />
             <Input label="Passwort" type="text" value={form.password} onChange={(v) => setForm({ ...form, password: v })} required />
             <label className="block">
-              <span className="text-sm text-sage">Rolle</span>
+              <span className="text-footnote font-medium text-sage-muted">Rolle</span>
               <select className="input mt-1" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
                 {ROLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </select>
             </label>
             <label className="block sm:col-span-2">
-              <span className="text-sm text-sage">Klasse (optional)</span>
+              <span className="text-footnote font-medium text-sage-muted">Klasse (optional)</span>
               <select className="input mt-1" value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>
                 <option value="">– keine –</option>
                 {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </label>
-            <div className="sm:col-span-2"><Button type="submit">Anlegen</Button></div>
+            <div className="sm:col-span-2 flex gap-2"><Button type="submit">Anlegen</Button><Button type="button" variant="ghost" onClick={() => setShow(false)}>Abbrechen</Button></div>
           </form>
         </Card>
       )}
 
-      {ROLE_SECTIONS.map(([role, title]) => {
-        const list = visible.filter((u) => u.role === role).sort(byName);
-        if (!list.length && needle) return null;
-        const open = Boolean(needle) || openSections.has(role);
-        return (
-          <Card key={role} id={`rolle-${role}`} className="p-0 overflow-hidden scroll-mt-4">
-            <button type="button" onClick={() => toggleSection(role)} aria-expanded={open}
-              className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-hover">
-              <span className="text-ivory font-medium">{title}</span>
-              <span className="flex items-center gap-2 text-sm text-sage-muted">
-                <span className="font-mono text-xs px-2 py-0.5 rounded-full bg-mint/10 text-mint">{list.length}</span>
-                <span aria-hidden="true">{open ? '▾' : '▸'}</span>
-              </span>
-            </button>
-            {open && (
-              list.length === 0 ? <p className="px-4 pb-4 text-sm text-sage-muted">Niemand in dieser Rolle.</p> : (
-                <ul className="divide-y divide-line border-t border-line">
-                  {list.map((u) => (
-                    <li key={u.id} className="flex items-center gap-3 px-4 py-2.5">
-                      {u.id !== me?.id ? (
-                        <input type="checkbox" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
-                      ) : <span className="w-[13px]" />}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-ivory truncate flex items-center gap-2">
-                          <button type="button" onClick={() => navigate(`/person/${u.id}`)} className="truncate hover:underline text-left">{u.name}</button>
-                          {u.status !== 'active' && <Badge tone="late">{u.status === 'pending' ? 'wartet' : 'inaktiv'}</Badge>}
-                        </div>
-                        <div className="text-xs text-sage-muted truncate">
-                          {[
-                            u.classNames?.length ? u.classNames.join(', ') : null,
-                            u.otherRoles?.length ? `auch: ${u.otherRoles.join(', ')}` : null,
-                            u.email || (u.loginEmail ? `Anmeldung über ${u.loginEmail}` : null),
-                          ].filter(Boolean).join(' · ')}
-                        </div>
-                      </div>
-                      <span className="hidden sm:block text-xs text-sage-muted whitespace-nowrap" title="Zuletzt online">{lastSeenLabel(u.lastSeenAt)}</span>
-                      <Button size="sm" variant="outline" onClick={() => navigate(`/person/${u.id}`)}>Öffnen</Button>
-                    </li>
-                  ))}
-                </ul>
-              )
-            )}
-          </Card>
-        );
-      })}
+      <UserDirectory
+        users={visible}
+        me={me}
+        roleFilter={roleFilter}
+        setRoleFilter={setRoleFilter}
+        sort={sort}
+        setSort={setSort}
+        selected={selected}
+        toggleOne={toggleOne}
+        setSelected={setSelected}
+        searching={Boolean(needle)}
+        onOpen={(u) => navigate(`/person/${u.id}`)}
+      />
+
+      <details className="rounded-2xl border border-line/70 bg-card text-subhead">
+        <summary className="cursor-pointer px-4 py-3 text-ivory font-medium">So beförderst du jemanden (z. B. zum Klassenlehrer, zur Leitung oder zum Admin)</summary>
+        <ol className="list-decimal space-y-1.5 px-8 pb-4 text-sage">
+          <li>Hat sich die Person gerade erst registriert, steht sie oben im Reiter <b>„Neue Anmeldungen“</b>. Dort bei <b>„Freischalten als“</b> die Rolle wählen (bei Lehrkräften die Klassen antippen) und <b>Freischalten</b> drücken.</li>
+          <li>Ist die Person schon aktiv: unten in der Liste auf den <b>Namen</b> (oder „Öffnen“) tippen – es öffnet sich ihr Steckbrief.</li>
+          <li><b>Befördern</b> (z. B. Schüler → Klassenlehrer): unter <b>„Rollenbearbeitung“</b> steht links die aktuelle Position, rechts die neue Rolle wählen, Klassen antippen und <b>„Befördern“</b> drücken.</li>
+          <li><b>Zusätzliche Rolle</b> (bleibt z. B. Schüler UND wird Lehrkraft): im Kasten <b>„Zusätzliche Rollen“</b> die Rolle hinzufügen. Die Person wechselt dann im Konto-Menü zwischen ihren Rollen – ohne zweites Passwort.</li>
+        </ol>
+      </details>
       {disabledCount > 0 && (
         <label className="flex items-center gap-2 text-sm text-sage-muted">
           <input type="checkbox" checked={showDisabled} onChange={(e) => setShowDisabled(e.target.checked)} />
@@ -446,6 +405,134 @@ function UsersTab() {
         <summary className="px-4 py-3 cursor-pointer text-sm text-sage">Erweitert: zwei bestehende Konten verknüpfen</summary>
         <div className="p-2"><LinkAccountsAdminCard /></div>
       </details>
+    </div>
+  );
+}
+
+const ROLE_LABEL = Object.fromEntries(ROLES);
+const FILTERS = [
+  ['all', 'Alle', () => true],
+  ['super_admin', 'Systembetreuung', (u) => u.role === 'super_admin'],
+  ['leitung', 'DBZ-Leitung', (u) => u.role === 'leitung'],
+  ['teachers', 'Lehrkräfte', (u) => u.role === 'klassenlehrer' || u.role === 'vertretung'],
+  ['klassensprecher', 'Klassensprecher', (u) => u.role === 'klassensprecher'],
+  ['schueler', 'Schüler', (u) => u.role === 'schueler'],
+  ['eltern', 'Eltern', (u) => u.role === 'eltern'],
+];
+const STATUS_LABEL = { pending: 'Wartet', disabled: 'Inaktiv' };
+
+// Personenverzeichnis: Handy/iPad = gruppierte Liste mit Filter-Pillen,
+// Mac/iPad quer = Filterspalte + sortierbare Tabelle.
+function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen }) {
+  const filter = FILTERS.find((f) => f[0] === roleFilter) || FILTERS[0];
+  const counts = Object.fromEntries(FILTERS.map(([k, , fn]) => [k, users.filter(fn).length]));
+  const list = users.filter(filter[2]).sort((a, b) => {
+    if (sort.key === 'seen') return sort.dir * String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || ''));
+    if (sort.key === 'role') return sort.dir * String(ROLE_LABEL[a.role] || '').localeCompare(String(ROLE_LABEL[b.role] || ''), 'de') || a.name.localeCompare(b.name, 'de');
+    return sort.dir * a.name.localeCompare(b.name, 'de');
+  });
+  const selectable = list.filter((u) => u.id !== me?.id).map((u) => u.id);
+  const allOn = selectable.length > 0 && selectable.every((id) => selected.includes(id));
+  const sub = (u) => [
+    u.classNames?.length ? u.classNames.join(', ') : null,
+    u.otherRoles?.length ? `auch: ${u.otherRoles.join(', ')}` : null,
+  ].filter(Boolean).join(' · ');
+  const th = (key, label, cls = '') => (
+    <th className={`py-2.5 px-3 font-medium ${cls}`} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))} className="inline-flex items-center gap-1 hover:text-ivory">
+        {label}{sort.key === key && <span aria-hidden="true">{sort.dir > 0 ? '↑' : '↓'}</span>}
+      </button>
+    </th>
+  );
+  return (
+    <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-6 items-start">
+      {/* Filter: Pillen (Handy/iPad hochkant), Spalte (iPad quer/Mac) */}
+      <div className="no-scrollbar flex lg:flex-col gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 lg:mb-0 lg:sticky lg:top-0" role="tablist" aria-label="Nach Rolle filtern">
+        {FILTERS.map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={roleFilter === k} onClick={() => setRoleFilter(k)}
+            className={`shrink-0 inline-flex items-center justify-between gap-2 rounded-full lg:rounded-lg px-3.5 lg:px-3 h-9 text-footnote lg:text-subhead font-semibold lg:font-medium transition-colors ${roleFilter === k ? 'bg-mint text-onaccent lg:bg-mint/10 lg:text-mint-light lg:dark:text-mint' : 'bg-card border border-line/70 lg:border-0 lg:bg-transparent text-sage hover:bg-hover'}`}>
+            <span>{label}</span>
+            <span className={`font-mono text-caption ${roleFilter === k ? 'opacity-80' : 'text-sage-muted'}`}>{counts[k]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="min-w-0">
+        {list.length === 0 ? (
+          <Card><EmptyState icon={Users2} title={searching ? 'Keine Treffer' : 'Niemand in dieser Rolle'} /></Card>
+        ) : (
+          <>
+            {/* Handy & iPad hochkant: kompakte Liste */}
+            <ListGroup className="lg:hidden">
+              {list.map((u) => (
+                <div key={u.id} className="flex items-center gap-3 pl-3 pr-2 py-2.5">
+                  {u.id !== me?.id
+                    ? <input type="checkbox" className="h-5 w-5 accent-[rgb(var(--c-mint))] shrink-0" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
+                    : <span className="w-5 shrink-0" />}
+                  <button type="button" onClick={() => onOpen(u)} className="min-w-0 flex-1 flex items-center gap-3 text-left active:opacity-60">
+                    <Avatar name={u.name} size={36} />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        <span className="text-body font-medium text-ivory truncate" data-noi18n>{u.name}</span>
+                        {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                      </span>
+                      <span className="block text-footnote text-sage-muted truncate"><span>{ROLE_LABEL[u.role]}</span>{sub(u) && <span data-noi18n>{` · ${sub(u)}`}</span>}</span>
+                    </span>
+                    <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />
+                  </button>
+                </div>
+              ))}
+            </ListGroup>
+
+            {/* iPad quer & Mac: Tabelle */}
+            <Card className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-subhead">
+                <thead>
+                  <tr className="text-left text-footnote text-sage-muted border-b border-line/70 bg-subtle/50">
+                    <th className="py-2.5 pl-4 pr-1 w-8">
+                      <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--c-mint))]" aria-label="Alle auswählen" checked={allOn}
+                        onChange={() => setSelected(allOn ? selected.filter((id) => !selectable.includes(id)) : [...new Set([...selected, ...selectable])])} />
+                    </th>
+                    {th('name', 'Name')}
+                    {th('role', 'Rolle')}
+                    <th className="py-2.5 px-3 font-medium">Klassen</th>
+                    {th('seen', 'Zuletzt online')}
+                    <th className="py-2.5 pr-4 w-10"><span className="sr-only">Öffnen</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {list.map((u) => (
+                    <tr key={u.id} className="group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer" onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
+                      <td className="py-2.5 pl-4 pr-1">
+                        {u.id !== me?.id && <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Avatar name={u.name} size={32} />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <button type="button" onClick={() => onOpen(u)} className="font-medium text-ivory truncate hover:underline text-left" data-noi18n>{u.name}</button>
+                              {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                            </div>
+                            <div className="text-footnote text-sage-muted truncate" data-noi18n>{u.email || u.loginEmail || ''}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-3 whitespace-nowrap">
+                        <span className="text-sage">{ROLE_LABEL[u.role] || u.role}</span>
+                        {u.otherRoles?.length > 0 && <div className="text-footnote text-sage-muted">auch: {u.otherRoles.join(', ')}</div>}
+                      </td>
+                      <td className="py-2.5 px-3 text-sage-muted">{u.classNames?.length ? u.classNames.join(', ') : '–'}</td>
+                      <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>
+                      <td className="py-2.5 pr-4 text-right"><ChevronRight size={18} className="inline text-sage-muted/50 group-hover:text-sage-muted" /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Card>
+          </>
+        )}
+      </div>
     </div>
   );
 }

@@ -56,7 +56,7 @@ export default function StudentProfil() {
   const a = data.attendance;
   return (
     <AppLayout title={data.student.name}>
-      <button onClick={() => navigate(-1)} className="hidden lg:inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
+      <button onClick={() => navigate(-1)} className="hidden">
         <ArrowLeft size={16} /> Zurück
       </button>
 

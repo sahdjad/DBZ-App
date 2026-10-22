@@ -322,7 +322,7 @@ export default function Klassenliste() {
   if (isLeadership && (!classId || classId === ALL)) {
     const groups = (classes || []).map((c) => ({ id: c.id, name: c.name, count: c.studentCount, hint: `${c.type === 'online' ? 'Online' : 'Präsenz'} · ${WEEKDAY_SHORT[c.weekday] || ''} ${c.startTime || ''}–${c.endTime || ''}` }));
     return (
-      <AppLayout title="Klassenliste">
+      <AppLayout title="Klassenliste" wide>
         {!classes ? <Spinner /> : classId === ALL ? (
           <SchoolRoster onBack={() => setClassId('')} />
         ) : (
@@ -344,7 +344,7 @@ export default function Klassenliste() {
   }
 
   return (
-    <AppLayout title="Klassenliste">
+    <AppLayout title="Klassenliste" wide>
       <div className="space-y-4">
         {isLeadership && <ClassFolders groups={(classes || []).map((c) => ({ id: c.id, name: c.name }))} selected={classId} onSelect={(id) => { setClassId(id || ''); setData(null); }} />}
         {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}

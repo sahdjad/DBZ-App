@@ -32,7 +32,9 @@
   --c-card: 255 255 255;      /* Flächen (Listen, Karten) */
   --c-moss: 233 235 229;      /* gedämpfte Füllung (Avatare) */
   --c-hover: 241 242 237;     /* Druck-/Hover-Zustand */
-  --c-line: 226 227 220;      /* Haarlinien */
+  --c-line: 222 223 215;      /* Haarlinien */
+  --c-elevated: 255 255 255;  /* Sheets, Popover, Menüs */
+  --c-info: 44 98 156;        /* Information (ruhiges Blau) */
   --c-subtle: 240 241 236;    /* Sekundärfläche (Segment, Felder) */
   --c-onaccent: 255 255 255;  /* Text auf Primärgrün */
   --c-mint: 7 56 46;          /* #07382E Primär */
@@ -40,9 +42,9 @@
   --c-gold: 132 112 70;       /* #847046 Gold (Text-tauglich) */
   --c-ivory: 23 35 30;        /* #17231E Primärtext / Titel */
   --c-sage: 52 64 58;         /* #34403A Fließtext */
-  --c-sage-muted: 104 115 109;/* #68736D Sekundärtext */
+  --c-sage-muted: 96 107 101;/* #606B65 Sekundärtext (≥ 4.5:1 auch auf Feldern) */
   --c-present: 30 128 80;
-  --c-late: 168 112 14;
+  --c-late: 150 98 8;
   --c-excused: 44 98 156;
   --c-absent: 192 60 44;
   --shadow-card: 0 1px 2px rgb(23 35 30 / 0.04), 0 1px 1px rgb(23 35 30 / 0.02);
@@ -53,29 +55,33 @@
 }
 
 .dark {
-  /* Dunkel – tiefes Grün-Schwarz, ruhige Kontraste */
-  --c-bg: 9 16 13;            /* #09100D */
-  --c-sidebar: 10 31 24;      /* #0A1F18 */
-  --c-card: 19 29 25;         /* #131D19 */
-  --c-moss: 34 47 41;
-  --c-hover: 27 39 34;
-  --c-line: 37 50 44;
-  --c-subtle: 25 36 31;
+  /* Dunkel – Grün-Schwarz mit klar gestaffelten Flächen:
+     Hintergrund < Fläche < erhöhte Fläche (Sheets/Popover). Texte warm-weiß,
+     Sekundärtext deutlich lesbar (≥ 7:1 auf Flächen). */
+  --c-bg: 10 17 14;           /* #0A110E Hintergrund */
+  --c-sidebar: 12 34 27;      /* #0C221B */
+  --c-card: 22 32 28;         /* #16201C Fläche */
+  --c-elevated: 30 42 37;     /* #1E2A25 Sheets, Popover, Menüs */
+  --c-moss: 40 54 47;
+  --c-hover: 34 47 41;
+  --c-line: 46 60 53;         /* sichtbare, ruhige Trenner */
+  --c-subtle: 29 40 35;       /* Felder, Segmente */
   --c-onaccent: 6 26 19;      /* dunkler Text auf hellem Grün */
-  --c-mint: 104 192 150;      /* #68C096 */
-  --c-mint-light: 140 212 176;
-  --c-gold: 206 188 146;
-  --c-ivory: 237 241 237;
-  --c-sage: 205 213 207;
-  --c-sage-muted: 146 158 151;
-  --c-present: 96 198 140;
-  --c-late: 228 178 86;
-  --c-excused: 130 174 228;
-  --c-absent: 240 132 112;
-  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.02);
-  --shadow-float: 0 16px 40px -8px rgb(0 0 0 / 0.6);
-  --header-bg: 10 31 24;
-  --tabbar-bg: 15 24 20;
+  --c-mint: 112 196 156;      /* #70C49C Primär auf Dunkel */
+  --c-mint-light: 146 214 181;
+  --c-gold: 214 194 148;
+  --c-ivory: 240 243 239;     /* Primärtext */
+  --c-sage: 214 221 216;      /* Fließtext */
+  --c-sage-muted: 160 173 166;/* #A0ADA6 Sekundärtext */
+  --c-present: 104 204 148;
+  --c-late: 232 184 96;
+  --c-excused: 138 182 236;
+  --c-absent: 244 140 120;
+  --c-info: 138 182 236;
+  --shadow-card: 0 0 0 1px rgb(255 255 255 / 0.015);
+  --shadow-float: 0 18px 44px -10px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
+  --header-bg: 12 34 27;
+  --tabbar-bg: 17 26 22;
   color-scheme: dark;
 }
 
@@ -596,3 +602,7 @@ body {
 
 .no-scrollbar { scrollbar-width: none; }
 .no-scrollbar::-webkit-scrollbar { display: none; }
+@keyframes dbzDrawerIn { from { transform: translateX(-24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes dbzPopIn { from { transform: translateY(6px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
+.dbz-drawer { animation: dbzDrawerIn 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
+.dbz-pop { animation: dbzPopIn 0.2s cubic-bezier(0.32, 0.72, 0, 1) both; transform-origin: bottom left; }

@@ -123,11 +123,13 @@ export default function Kalender() {
   };
 
   return (
-    <AppLayout title="Kalender">
+    <AppLayout title="Kalender" wide>
+      {/* iPad quer/Mac: Monat links, gewählter Tag rechts (Split-Ansicht) */}
+      <div className={view === 'month' ? 'lg:grid lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_26rem] lg:gap-6 items-start' : ''}>
       <Card className="p-4 sm:p-5">
         {/* Kopfzeile: Monat groß, Blättern + Heute rechts, darunter die Ansicht */}
         <div className="flex items-center gap-1 mb-3">
-          <h2 className="text-title2 font-bold text-ivory capitalize mr-auto truncate">{title}</h2>
+          <h2 className="text-title2 font-bold text-ivory capitalize mr-auto min-w-0 leading-tight">{title}</h2>
           <button onClick={goToday} className="text-subhead font-medium px-3 h-9 rounded-full text-mint-light dark:text-mint hover:bg-hover">Heute</button>
           <button onClick={() => move(-1)} className="grid place-items-center h-9 w-9 rounded-full text-mint-light dark:text-mint hover:bg-hover" aria-label="Zurück"><ChevronLeft size={22} /></button>
           <button onClick={() => move(1)} className="grid place-items-center h-9 w-9 rounded-full text-mint-light dark:text-mint hover:bg-hover" aria-label="Weiter"><ChevronRight size={22} /></button>
@@ -153,7 +155,7 @@ export default function Kalender() {
       </Card>
 
       {view === 'month' && events && (
-        <Card className="p-4 sm:p-5 mt-4">
+        <Card className="p-4 sm:p-5 mt-4 lg:mt-0 lg:sticky lg:top-0">
           <div className="flex items-center justify-between">
             <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
             <Button size="sm" variant="outline" onClick={() => openNew(selected)}><Plus size={16} /></Button>
@@ -161,6 +163,7 @@ export default function Kalender() {
           <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} onDecide={decide} />
         </Card>
       )}
+      </div>
 
       {editing && <EventModal init={editing} user={user} classes={classes} onClose={() => setEditing(null)} onSave={save} onDelete={remove} />}
     </AppLayout>
@@ -196,7 +199,7 @@ function MonthView({ cursor, today, selected, setSelected, byDate, onAdd }) {
         const isSel = sameDay(d, selected);
         return (
           <button key={key(d)} onDoubleClick={() => onAdd(d)} onClick={() => setSelected(new Date(d))}
-            className={['min-h-[3.25rem] flex flex-col items-center pt-1 gap-1 transition-colors rounded-xl active:bg-hover',
+            className={['min-h-[3.25rem] md:min-h-[4.5rem] flex flex-col items-center pt-1 gap-1 transition-colors rounded-xl active:bg-hover hover:bg-hover/60',
               inMonth ? 'text-ivory' : 'text-sage-muted/40'].join(' ')}>
             <span className={['h-8 w-8 grid place-items-center rounded-full text-[1.0625rem] font-mono',
               isSel ? (isToday ? 'bg-mint text-onaccent font-semibold' : 'bg-ivory text-bg font-semibold') : isToday ? 'text-mint-light dark:text-mint font-bold' : ''].join(' ')}>{d.getDate()}</span>

@@ -15,7 +15,7 @@ export default function Aufgaben() {
   const { user } = useAuth();
   const isManager = MANAGER.includes(user.role);
   return (
-    <AppLayout title="Aufgaben">
+    <AppLayout title="Aufgaben" wide>
       {isManager ? <ManagerView /> : (
         <div className="space-y-4">
           {user.role === 'klassensprecher' && <ProposalForm user={user} />}
@@ -44,7 +44,7 @@ function StudentView() {
     <Link key={a.id} to={`/aufgaben/${a.id}`} className="block">
       <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-ivory truncate">{a.title}</div>
+          <div className="text-ivory line-clamp-2">{a.title}</div>
           <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · Frist {fmt(a.dueAt)}</div>
         </div>
         <StatusBadge status={a.studentStatus} />
