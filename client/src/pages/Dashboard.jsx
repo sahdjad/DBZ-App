@@ -44,10 +44,10 @@ export default function Dashboard() {
   if (!data) return <AppLayout title="Start"><Spinner /></AppLayout>;
 
   return (
-    <AppLayout title="Start">
+    <AppLayout title="Start" wide>
       <DayHero name={data.user.name} subtitle={[data.user.roleLabel, data.org?.name].filter(Boolean).join(' · ')} />
 
-      <div className="mt-6 grid grid-cols-1 gap-x-8 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] items-start">
+      <div className="mt-6 md:mt-7 grid grid-cols-1 gap-x-8 md:grid-cols-[minmax(0,1fr)_minmax(0,20rem)] xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] items-start">
         <div>
           {data.unreadMessages > 0 && (
             <ListGroup className="mb-6">
@@ -67,7 +67,7 @@ export default function Dashboard() {
           {data.role === 'admin' && <AdminHome d={data} />}
         </div>
 
-        <aside className="mt-7 lg:mt-0">
+        <aside className="mt-7 md:mt-0">
           <LinkedAccountsHome />
           <Upcoming items={data.upcoming} />
           <Announcements items={data.announcements} />
@@ -297,6 +297,7 @@ function Announcements({ items }) {
 // mit schnellem Kontowechsel (ohne erneutes Passwort).
 function LinkedAccountsHome() {
   const { switchAccount } = useAuth();
+  const navigate = useNavigate();
   const toast = useToast();
   const [accounts, setAccounts] = useState(null);
   const [busy, setBusy] = useState(null);
@@ -308,8 +309,8 @@ function LinkedAccountsHome() {
     setBusy(id);
     try {
       await switchAccount(id);
-      // Sauberer Neustart: gesamte App lädt mit dem gewechselten Konto neu.
-      window.location.reload();
+      // Alle Seiten bauen sich mit dem neuen Konto frisch auf (kein Neuladen).
+      navigate('/dashboard');
     } catch (err) {
       toast.push(err.message, 'error');
       setBusy(null);

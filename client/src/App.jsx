@@ -112,9 +112,12 @@ if (typeof window !== 'undefined') {
 }
 
 export default function App() {
+  // Bei Rollenwechsel (anderes Konto) alle Seiten frisch aufbauen – keine
+  // Daten der vorherigen Rolle bleiben stehen, ohne die ganze App neu zu laden.
+  const { user } = useAuth();
   return (
     <Suspense fallback={<PageFallback />}>
-      <Routes>
+      <Routes key={user?.id || 'anon'}>
         <Route path="/login" element={<Login />} />
         <Route path="/registrieren" element={<Registrieren />} />
         <Route path="/passwort-vergessen" element={<PasswortVergessen />} />

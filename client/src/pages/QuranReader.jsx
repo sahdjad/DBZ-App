@@ -212,7 +212,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
               : 'group w-full flex items-center gap-3 px-4 py-2.5 active:bg-hover hover:bg-hover/60 transition text-left'}>
             <span className="grid place-items-center h-9 w-9 rounded-full bg-subtle text-sage-muted font-mono text-footnote font-semibold shrink-0 group-hover:bg-mint/10 group-hover:text-mint-light transition">{s.n}</span>
             <div className="min-w-0 flex-1">
-              <div className="text-body text-ivory font-medium truncate">{s.name}</div>
+              <div className="text-body text-ivory font-medium leading-snug break-words">{s.name}</div>
               <div className="text-footnote text-sage-muted">{s.ayat} Ayat</div>
             </div>
             {s.ar && <span dir="rtl" lang="ar" className="font-arabic text-xl text-ivory/90 shrink-0 leading-none">سورة {s.ar}</span>}

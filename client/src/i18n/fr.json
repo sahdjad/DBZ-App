@@ -1,6 +1,18 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Alle Bereiche": "Toutes les rubriques",
+"Inaktiv": "Inactif",
+"Keine Treffer": "Aucun résultat",
+"Nach Rolle filtern": "Filtrer par rôle",
+"Niemand in dieser Rolle": "Personne dans ce rôle",
+"Seitenleiste ausklappen": "Déplier la barre latérale",
+"Seitenleiste einklappen": "Replier la barre latérale",
+"Lädt": "Chargement",
+"Alle auswählen": "Tout sélectionner",
+"Status": "Statut",
+"Name": "Nom",
+"Check-in": "Check-in",
 "Abgaben korrigieren": "Corriger les rendus",
 "Alles erledigt": "Tout est fait",
 "Alles erledigt – nichts wartet auf dich.": "Tout est fait – rien ne t’attend.",
@@ -2091,6 +2103,9 @@
 "Audio": "Audio"
 },
 "patterns": [
+["Aktiv: {}", "Actif : {1}"],
+["Weitere Aktionen für {}", "Autres actions pour {1}"],
+["Status von {}", "Statut de {1}"],
 ["{} · Frist {}", "{1} · Date limite {2}"],
 ["{} · Rolle wechseln", "{1} · Changer de rôle"],
 ["· Rolle wechseln", "· Changer de rôle"],

@@ -18,8 +18,7 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
-  // Erst-Start: Marken-Splash mindestens ~3,5 s zeigen (wirkt hochwertiger),
-  // auch wenn die Sitzungsprüfung schneller fertig ist. Spätere refresh()-Aufrufe
+  // Erst-Start: Marken-Splash nur kurz (gegen Aufblitzen), keine künstliche Wartezeit. Spätere refresh()-Aufrufe
   // (z. B. Kontowechsel) sind davon nicht betroffen.
   useEffect(() => {
     const start = Date.now();
@@ -40,7 +39,7 @@ export function AuthProvider({ children }) {
         setUser(null);
       } finally {
         // Kurz, aber lang genug für die Logo-Animation (fühlt sich wie eine App an).
-        const wait = Math.max(0, 1400 - (Date.now() - start));
+        const wait = Math.max(0, 450 - (Date.now() - start));
         setTimeout(() => setLoading(false), wait);
       }
     })();

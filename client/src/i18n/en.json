@@ -1,6 +1,18 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Alle Bereiche": "All sections",
+"Inaktiv": "Inactive",
+"Keine Treffer": "No results",
+"Nach Rolle filtern": "Filter by role",
+"Niemand in dieser Rolle": "Nobody in this role",
+"Seitenleiste ausklappen": "Expand sidebar",
+"Seitenleiste einklappen": "Collapse sidebar",
+"Lädt": "Loading",
+"Alle auswählen": "Select all",
+"Status": "Status",
+"Name": "Name",
+"Check-in": "Check-in",
 "Abgaben korrigieren": "Mark submissions",
 "Alles erledigt": "All done",
 "Alles erledigt – nichts wartet auf dich.": "All done – nothing is waiting for you.",
@@ -2089,6 +2101,9 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["Aktiv: {}", "Active: {1}"],
+["Weitere Aktionen für {}", "More actions for {1}"],
+["Status von {}", "Status of {1}"],
 ["{} · Frist {}", "{1} · Deadline {2}"],
 ["{} · Rolle wechseln", "{1} · Switch role"],
 ["· Rolle wechseln", "· Switch role"],

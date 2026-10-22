@@ -18,12 +18,13 @@ export default function Leitung() {
 
   useEffect(() => { api.get('/leadership/overview').then(setD).catch(() => setD(null)); }, []);
 
-  if (!d) return <AppLayout title="Leitung"><Spinner /></AppLayout>;
+  if (!d) return <AppLayout title="Leitung" wide><Spinner /></AppLayout>;
   const { counts, penalties, classes } = d;
   const hasPending = counts.pendingUsers > 0 || penalties.pendingApprovals > 0;
 
   return (
-    <AppLayout title="Leitung">
+    <AppLayout title="Leitung" wide>
+      <div className="md:grid md:grid-cols-2 md:gap-x-8 items-start">
       {hasPending && (
         <Section title="Offene Vorgänge" className="mt-0">
           <ListGroup>
@@ -58,7 +59,7 @@ export default function Leitung() {
         )}
       </Section>
 
-      <Section title="Strafen" action={<button type="button" onClick={() => navigate('/strafen')} className="text-subhead text-mint-light dark:text-mint font-medium">Öffnen</button>}>
+      <Section title="Strafen" className="md:mt-0" action={<button type="button" onClick={() => navigate('/strafen')} className="text-subhead text-mint-light dark:text-mint font-medium">Öffnen</button>}>
         <Card className="p-5 grid grid-cols-3 gap-4">
           <Stat label="Geldstrafen offen" value={`${penalties.openMoney} €`} tone={penalties.openMoney ? 'late' : undefined} />
           <Stat label="Seiten offen" value={penalties.openPages} tone={penalties.openPages ? 'late' : undefined} />
@@ -66,9 +67,9 @@ export default function Leitung() {
         </Card>
       </Section>
 
-      <Section title="Je Klasse" footer="Anwesenheitsquote: grün ab 90 %, gelb ab 75 %.">
+      <Section title="Je Klasse" className="md:col-span-2" footer="Anwesenheitsquote: grün ab 90 %, gelb ab 75 %.">
         {/* Handy: Liste, Computer: Tabelle */}
-        <ListGroup className="sm:hidden">
+        <ListGroup className="md:hidden">
           {classes.map((c) => (
             <ListRow
               key={c.id}
@@ -80,7 +81,7 @@ export default function Leitung() {
             />
           ))}
         </ListGroup>
-        <Card className="hidden sm:block overflow-hidden">
+        <Card className="hidden md:block overflow-x-auto">
           <table className="w-full text-subhead">
             <thead>
               <tr className="text-left text-footnote text-sage-muted border-b border-line/70">
@@ -109,6 +110,7 @@ export default function Leitung() {
           </table>
         </Card>
       </Section>
+      </div>
     </AppLayout>
   );
 }

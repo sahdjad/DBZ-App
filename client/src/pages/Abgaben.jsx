@@ -61,7 +61,7 @@ function ReadOnlySubmission({ s }) {
 export default function Abgaben() {
   const [view, setView] = useState('students');
   return (
-    <AppLayout title="Abgaben">
+    <AppLayout title="Abgaben" wide>
       <p className="text-sm text-sage-muted mb-3">Alle abgegebenen Hausaufgaben. Bewerten tut die Lehrkraft der Klasse – hier nur zum Ansehen.</p>
       <Segmented className="mb-5 w-full sm:w-auto" options={[['students', 'Nach Schülern'], ['assignments', 'Nach Aufgaben']]} value={view} onChange={setView} />
       {view === 'students' ? <HomeworkOverview renderSubmission={(sub) => <ReadOnlySubmission s={sub} />} /> : <ByAssignment />}
