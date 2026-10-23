@@ -442,6 +442,26 @@ export function Spinner({ label }) {
   );
 }
 
+// Platzhalter-Zeilen, solange nur ein Teil einer Seite lädt (Liste,
+// Tagesübersicht): ruhiger als der Logo-Kringel, gleiche Höhe wie der
+// spätere Inhalt -- dadurch springt nichts, wenn die Daten ankommen.
+// `bare`: ohne eigenen Rahmen (innerhalb einer Karte).
+export function SkeletonRows({ rows = 3, bare = false, className = '' }) {
+  return (
+    <div className={cx('overflow-hidden divide-y divide-line/70', !bare && 'bg-card border border-line/70 rounded-2xl', className)} role="status" aria-busy="true" aria-label="Wird geladen">
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 px-4 py-3.5" aria-hidden="true">
+          <span className="skeleton h-2.5 w-2.5 rounded-full" />
+          <div className="flex-1 space-y-2">
+            <span className="skeleton block h-3 rounded" style={{ width: `${62 - (i % 3) * 14}%` }} />
+            <span className="skeleton block h-2.5 w-1/3 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Hardware-/Gesten-"Zurück" (Android-Zurücktaste, iOS-Wischgeste) soll eine
 // offene Vorschau schließen statt die ganze installierte App zu verlassen:
 // beim Öffnen einen eigenen Verlaufseintrag anlegen; "Zurück" entfernt genau

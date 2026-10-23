@@ -18,7 +18,7 @@ import {
   UserRoundCog,
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, Button, Badge, StatusBadge, Spinner, Ring, Section, ListGroup, ListRow, Stat, EmptyState, CountBadge, useToast } from '../components/ui.jsx';
 import { openNotification } from '../lib/notify.js';
@@ -28,7 +28,7 @@ const fmtDue = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { weekday: 
 const hm = (iso) => new Date(iso).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
 export default function Dashboard() {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => peek('/dashboard'));
   const [error, setError] = useState(null);
 
   useEffect(() => {

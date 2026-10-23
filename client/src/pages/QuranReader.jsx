@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, LayoutGrid, List as ListIcon, BookOpen, Highlighter, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Spinner, useToast, Segmented, Switch } from '../components/ui.jsx';
+import { api, peek } from '../lib/api.js';
+import { Card, CardHeader, Button, Spinner, SkeletonRows, useToast, Segmented, Switch } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
 import MushafShell, { Sheet } from '../components/mushaf/MushafShell.jsx';
 import { clampPage, lastPage, rememberPage, fetchPage, cachedPage, MARK_COLORS, markColor } from '../lib/mushafPages.js';
 import { loadQuranIndex } from '../lib/recitation/quranIndex.js';
-import HifzRecitationMode from './HifzRecitationMode.jsx';
+// KI-Rezitation (Erkennung, Qur'an-weite Suche) erst laden, wenn der Reiter
+// „Auswendig rezitieren" geöffnet wird -- „Lesen" bleibt dadurch schlank.
+const HifzRecitationMode = lazy(() => import('./HifzRecitationMode.jsx'));
 import { HifzContent } from './Hifz.jsx';
+import { scrollBehavior } from '../lib/scroll.js';
 
 // Tadschwid-Regel -> Farbe (Konvention wie quran.com). Die Regel-Namen kommen
 // ausgeschrieben aus der Datenquelle, daher sind die Farben eindeutig.
@@ -99,8 +102,8 @@ const QURAN_TABS = [
 
 export default function QuranReader() {
   const [tab, setTab] = useState('lesen');
-  const [surahs, setSurahs] = useState(null);
-  const [marks, setMarks] = useState(null);
+  const [surahs, setSurahs] = useState(() => peek('/quran/surahs')?.surahs ?? null);
+  const [marks, setMarks] = useState(() => peek('/quran/me'));
   const [selected, setSelected] = useState(null); // { n, ayah }
   const [pageView, setPageView] = useState(null); // { page } | { surah } -> Mushaf-Seitenansicht
 
@@ -127,7 +130,7 @@ export default function QuranReader() {
         )
       )}
 
-      {tab === 'auswendig' && <HifzRecitationMode surahs={surahs} />}
+      {tab === 'auswendig' && <Suspense fallback={<SkeletonRows rows={3} />}><HifzRecitationMode surahs={surahs} /></Suspense>}
       {tab === 'lernstand' && <HifzContent />}
     </AppLayout>
   );
@@ -138,7 +141,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
   const [q, setQ] = useState('');
   const [view, setViewState] = useState(() => { try { return localStorage.getItem(VIEW_KEY) || 'grid'; } catch { return 'grid'; } });
   const setView = (v) => { setViewState(v); try { localStorage.setItem(VIEW_KEY, v); } catch { /* egal */ } };
-  if (!surahs) return <Spinner />;
+  if (!surahs) return <SkeletonRows rows={6} />;
   const filtered = surahs.filter((s) => `${s.n} ${s.name} ${s.ar || ''}`.toLowerCase().includes(q.toLowerCase()));
 
   const delBookmark = async (id) => { await api.del(`/quran/bookmarks/${id}`); onMarksChanged(); };
@@ -147,7 +150,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
     <div className="space-y-4">
       {/* Klassische Mushaf-Seitenansicht (Medina-Layout) */}
       <button onClick={() => onOpenPages()}
-        className="group w-full flex items-center gap-4 rounded-2xl border border-line bg-card p-4 shadow-sm hover:border-mint/40 hover:shadow-md transition text-left">
+        className="group w-full flex items-center gap-4 rounded-2xl border border-line/70 bg-card p-4 shadow-card hover:border-mint/40 transition-colors text-left">
         <span className="grid place-items-center h-12 w-12 rounded-full bg-mint/10 text-mint shrink-0"><BookOpen size={22} /></span>
         <div className="min-w-0 flex-1">
           <div className="text-ivory font-medium">Mushaf-Ansicht</div>
@@ -209,8 +212,8 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
         {filtered.map((s) => (
           <button key={s.n} onClick={() => onSelect(s.n)}
             className={view === 'grid'
-              ? 'group w-full flex items-center gap-3 px-4 py-3 active:bg-hover hover:bg-hover/60 transition text-left sm:rounded-2xl sm:border sm:border-line/70 sm:bg-card sm:shadow-card'
-              : 'group w-full flex items-center gap-3 px-4 py-2.5 active:bg-hover hover:bg-hover/60 transition text-left'}>
+              ? 'cv-row group w-full flex items-center gap-3 px-4 py-3 active:bg-hover hover:bg-hover/60 transition text-left sm:rounded-2xl sm:border sm:border-line/70 sm:bg-card sm:shadow-card'
+              : 'cv-row group w-full flex items-center gap-3 px-4 py-2.5 active:bg-hover hover:bg-hover/60 transition text-left'}>
             <span className="grid place-items-center h-9 w-9 rounded-full bg-subtle text-sage-muted font-mono text-footnote font-semibold shrink-0 group-hover:bg-mint/10 group-hover:text-mint-light transition">{s.n}</span>
             <div className="min-w-0 flex-1">
               <div className="text-body text-ivory font-medium leading-snug break-words">{s.name}</div>
@@ -320,7 +323,7 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
   useEffect(() => {
     if (data && targetAyah) {
       const el = document.getElementById(`ayah-${targetAyah}`);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (el) el.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
     }
   }, [data, targetAyah]);
 

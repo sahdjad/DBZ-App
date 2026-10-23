@@ -647,13 +647,23 @@ body {
 @keyframes dbzBreath { 0%, 100% { transform: scale(0.92); opacity: 0.85; } 50% { transform: scale(1.05); opacity: 1; } }
 .dbz-fade-in { animation: splashFade 0.4s ease both; }
 
+/* Lange Listen (z. B. 114 Suren): Zeilen außerhalb des Bildschirms erst
+   zeichnen, wenn sie in die Nähe kommen -- spart beim Öffnen Rechenzeit
+   (v. a. das Setzen der arabischen Namen). Höhe als Schätzwert, damit die
+   Scrollleiste stimmt. */
+.cv-row { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+
+/* Platzhalter (SkeletonRows): dezentes Pulsieren, bei reduzierter Bewegung ruhig */
+.skeleton { background: rgb(var(--c-line, 220 220 210) / 0.55); animation: dbzPulse 1.4s ease-in-out infinite; }
+@keyframes dbzPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
 /* Laufender Balken oben beim Seitenwechsel */
 .page-progress { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 100; overflow: hidden; background: rgba(21, 101, 63, 0.12); }
 .page-progress::after { content: ''; position: absolute; top: 0; bottom: 0; width: 40%; background: linear-gradient(90deg, transparent, #d8c38a, #1d8a56, transparent); animation: dbzBar 1s ease-in-out infinite; }
 @keyframes dbzBar { 0% { left: -40%; } 100% { left: 100%; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-splash .splash-ring, .app-splash .splash-dots i, .dbz-loader::before, .dbz-loader img, .page-progress::after { animation: none; }
+  .app-splash .splash-ring, .app-splash .splash-dots i, .dbz-loader::before, .dbz-loader img, .page-progress::after, .skeleton { animation: none; }
 }
 
 /* Tageskarte auf der Startseite (DBZ-Grün mit Blumen-Muster) */
@@ -701,3 +711,15 @@ body {
 .person-compact [class*='sm:grid-cols-'],
 .person-compact [class*='md:grid-cols-'],
 .person-compact [class*='lg:grid-cols-'] { grid-template-columns: minmax(0, 1fr) !important; }
+
+/* „Bewegung reduzieren" (System-Einstellung): als Sicherheitsnetz alle
+   Animationen und Übergänge praktisch sofort beenden -- Zustände ändern sich
+   weiterhin, nur ohne Bewegung. Einzelne Stellen oben schalten zusätzlich gezielt ab. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

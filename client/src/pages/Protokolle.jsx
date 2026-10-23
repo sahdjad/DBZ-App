@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ClipboardList, Plus, Pencil, Trash2, ChevronDown, History } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ClassFolders } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
@@ -20,8 +20,8 @@ const EMPTY = { topics: '', homework: '', notes: '' };
 export default function Protokolle() {
   const { user } = useAuth();
   const toast = useToast();
-  const [protocols, setProtocols] = useState(null);
-  const [classes, setClasses] = useState([]);
+  const [protocols, setProtocols] = useState(() => peek('/protocols')?.protocols ?? null);
+  const [classes, setClasses] = useState(() => peek('/classes')?.classes ?? []);
   const [form, setForm] = useState(null); // { classId, date, content, id? }
 
   const isManager = MANAGER.includes(user.role);

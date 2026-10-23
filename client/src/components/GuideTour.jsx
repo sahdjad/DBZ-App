@@ -36,7 +36,7 @@ export function GuideTour({ guideKey, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[75] flex items-end sm:items-center justify-center p-3 bg-black/55 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Einführung">
-      <div className="w-full max-w-md rounded-2xl bg-card border border-line shadow-2xl p-5 animate-[dbz-rise_.35s_ease-out]">
+      <div className="w-full max-w-md rounded-2xl bg-card dark:bg-elevated border border-line/70 shadow-float p-5 animate-[dbz-rise_.35s_ease-out]">
         <div className="flex items-center justify-between mb-3">
           <span className="text-caption font-mono uppercase tracking-wider text-sage-muted">Anleitung · {guide.label} · {i + 1}/{guide.steps.length}</span>
           <button type="button" onClick={onClose} className="p-1.5 -m-1.5 rounded-lg text-sage-muted hover:text-ivory hover:bg-hover" aria-label="Anleitung schließen"><X size={18} /></button>

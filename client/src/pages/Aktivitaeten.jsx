@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Gamepad2, Plus, Trash2, Star } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
@@ -139,7 +139,7 @@ function ManagerView() {
 }
 
 function ReadView() {
-  const [items, setItems] = useState(null);
+  const [items, setItems] = useState(() => peek('/activities')?.activities ?? null);
   useEffect(() => { api.get('/activities').then((d) => setItems(d.activities)).catch(() => setItems([])); }, []);
   if (!items) return <Spinner />;
   if (!items.length) return <Card className="p-6 text-sage-muted text-sm">Noch keine Aktivitäten erfasst.</Card>;

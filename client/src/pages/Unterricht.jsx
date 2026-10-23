@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Play, Square, QrCode, RefreshCw, Users2, DoorOpen, Printer, Clock, Trash2, ListChecks, RotateCcw, ChevronDown, MoreHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, Section, ListGroup, Segmented, EmptyState, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
+import { api, peek } from '../lib/api.js';
+import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, SkeletonRows, Section, ListGroup, Segmented, EmptyState, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { QrStage, printQrCode } from '../components/QrCode.jsx';
 import { ClassSettingsCard, SessionHistoryCard, SchoolDaysCard, SchoolTodayCard, SchoolDayBanner } from './UnterrichtParts.jsx';
 
@@ -76,10 +76,12 @@ export default function Unterricht() {
 
 function TeacherUnterricht() {
   const toast = useToast();
-  const [sessions, setSessions] = useState(null);
-  const [active, setActive] = useState(null); // session id
-  const [attendance, setAttendance] = useState(null);
-  const [session, setSession] = useState(null);
+  // Zuletzt geladener Stand sofort zeigen (lädt im Hintergrund neu).
+  const [cached] = useState(() => { const t = peek('/sessions/today'); const id = t?.sessions?.[0]?.id; return { t, id, att: id ? peek(`/sessions/${id}/attendance`) : null }; });
+  const [sessions, setSessions] = useState(cached.t?.sessions ?? null);
+  const [active, setActive] = useState(cached.id ?? null); // session id
+  const [attendance, setAttendance] = useState(cached.att?.attendance ?? null);
+  const [session, setSession] = useState(cached.att?.session ?? null);
   const [qr, setQr] = useState(null);
   const [door, setDoor] = useState(null); // fester Tür-QR der Klasse
   const [doorOpen, setDoorOpen] = useState(false);
@@ -176,7 +178,9 @@ function TeacherUnterricht() {
     } catch (err) { toast.push(err.message, 'error'); }
   };
 
-  if (!sessions) return <AppLayout title="Unterricht"><Spinner /></AppLayout>;
+  // Erst zeigen, wenn Sitzung UND Anwesenheit da sind -- sonst springt die
+  // Seite, wenn Knöpfe und Liste nachträglich erscheinen (gemessen: CLS 0,2).
+  if (!sessions || (sessions.length > 0 && !session)) return <AppLayout title="Unterricht"><Spinner /></AppLayout>;
   if (!sessions.length) return <AppLayout title="Unterricht"><Card><EmptyState icon={Users2} title="Heute kein Unterricht" text="Heute ist keine Sitzung für deine Klassen geplant." /></Card></AppLayout>;
 
   const counts = (attendance || []).reduce((m, r) => { const k = ['present', 'late', 'excused'].includes(r.status) ? r.status : 'absent'; m[k] = (m[k] || 0) + 1; return m; }, {});
@@ -246,7 +250,7 @@ function TeacherUnterricht() {
             ))}
           </Card>
         )}
-        {!attendance ? <Spinner /> : (
+        {!attendance ? <SkeletonRows rows={4} /> : (
           <>
             {/* Handy: Zeile mit 4 Hauptzuständen, Seltenes im „…“-Menü */}
             <ListGroup className="md:hidden">
@@ -373,8 +377,8 @@ function TeacherUnterricht() {
 
       {session?.classId && (
         <div className="grid gap-4 lg:grid-cols-2 items-start mt-7">
-          <SessionHistoryCard classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
-          <ClassSettingsCard classId={session.classId} onSaved={() => loadAttendance(active)} />
+          <SessionHistoryCard key={`h-${session.classId}`} classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
+          <ClassSettingsCard key={`s-${session.classId}`} classId={session.classId} onSaved={() => loadAttendance(active)} />
         </div>
       )}
       <SelectionBar

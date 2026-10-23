@@ -20,7 +20,44 @@ function setSlow(delta) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// ---- Kurzzeit-Speicher für bereits geladene Seiten-Daten -------------------
+// Wer eine Seite erneut öffnet, sieht sofort den letzten Stand (kein Lade-
+// Kringel); die Seite lädt wie bisher im Hintergrund neu und aktualisiert sich.
+// Sicherheit: nur im Arbeitsspeicher (nie dauerhaft), immer an EINE angemeldete
+// Person gebunden (Wechsel/Abmelden leert ihn sofort), Anmelde-Daten werden nie
+// gespeichert. Jede Änderung (POST/PATCH/DELETE) leert ihn ebenfalls -- danach
+// sieht man nie einen veralteten Stand der eigenen Aktion.
+const MAX_CACHED = 150;
+const getCache = new Map();
+let cacheOwner = null;
+// Reine Lese-Markierungen (und die einmalige Zustimmung / Einführung) ändern
+// keine angezeigten Daten -> leeren den Speicher nicht.
+const KEEPS_CACHE = /^\/(notifications\/read-route|quran\/last-read|push\/|recitation-sessions|me\/(consent|guide)$)/;
+export function setCacheOwner(id) {
+  const next = id || null;
+  if (next !== cacheOwner) { getCache.clear(); cacheOwner = next; }
+}
+/** Letzter geladener Stand eines GET-Pfads der aktuellen Person (oder null). */
+export function peek(path) {
+  if (!cacheOwner) return null;
+  const hit = getCache.get(path);
+  return hit && hit.owner === cacheOwner ? hit.data : null;
+}
+function remember(method, path, data, owner) {
+  if (method !== 'GET') {
+    if (!KEEPS_CACHE.test(path)) getCache.clear();
+    return;
+  }
+  // Nur speichern, wenn die Anfrage noch von derselben Person stammt (eine
+  // späte Antwort nach einem Kontowechsel wird verworfen).
+  if (!owner || owner !== cacheOwner || path.startsWith('/auth') || data == null) return;
+  getCache.delete(path);
+  getCache.set(path, { owner: cacheOwner, data });
+  if (getCache.size > MAX_CACHED) getCache.delete(getCache.keys().next().value);
+}
+
 async function request(method, path, body, isForm = false) {
+  const owner = cacheOwner;
   const opts = {
     method,
     credentials: 'include',
@@ -69,6 +106,7 @@ async function request(method, path, body, isForm = false) {
     if ([502, 503, 504].includes(res.status)) e.network = true;
     throw e;
   }
+  remember(method, path, data, owner);
   return data;
 }
 

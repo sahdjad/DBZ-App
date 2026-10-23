@@ -2,7 +2,7 @@ import { createPortal } from 'react-dom';
 import { useState, useEffect, useMemo } from 'react';
 import { ClipboardCheck, MessageCircle, Send, X, ChevronRight } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, ClassFolders, useBackToClose } from '../components/ui.jsx';
 
 const TYPE_LABEL = { absent: 'Fehlt', late: 'Später', leave_early: 'Früher', other: 'Sonstiges' };
@@ -93,7 +93,7 @@ function RequestRow({ r, decide, onCommentSent, defaultOpen, onShow }) {
 
 export default function Entschuldigungen() {
   const toast = useToast();
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/absence-requests')?.requests ?? null);
   const [shownId, setShownId] = useState(null);
 
   const load = () => api.get('/absence-requests').then((d) => setList(d.requests));

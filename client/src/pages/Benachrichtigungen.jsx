@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck, ChevronRight, ListChecks, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, Button, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { openNotification, notifyBadgeRefresh } from '../lib/notify.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -14,7 +14,7 @@ const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium'
 const dot = { info: 'bg-mint', warning: 'bg-status-late', danger: 'bg-status-absent' };
 
 export default function Benachrichtigungen() {
-  const [items, setItems] = useState(null);
+  const [items, setItems] = useState(() => peek('/notifications')?.items ?? null);
   const navigate = useNavigate();
   const toast = useToast();
   const selection = useSelection();

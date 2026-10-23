@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, ChevronRight, CalendarDays, GraduationCap, Clock, Plus, Trash2, X, Rss, Copy, RefreshCw, Users, School, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Spinner, useToast, Segmented } from '../components/ui.jsx';
+import { api, peek } from '../lib/api.js';
+import { Card, CardHeader, Button, Spinner, SkeletonRows, useToast, Segmented } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { dateKey, monthGrid, calendarUrl } from '../lib/calendarRange.js';
 
 const WEEKDAYS = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
-const key = (d) => {
-  const t = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
-  return t.toISOString().slice(0, 10);
-};
+const key = dateKey;
 const sameDay = (a, b) => key(a) === key(b);
 const mondayIndex = (d) => (d.getDay() + 6) % 7;
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
@@ -41,13 +39,13 @@ function eventLabel(e) {
 export default function Kalender() {
   const toast = useToast();
   const { user } = useAuth();
-  const [classes, setClasses] = useState([]);
+  const [classes, setClasses] = useState(() => peek('/classes')?.classes ?? []);
   useEffect(() => { api.get('/classes').then((d) => setClasses(d.classes || [])).catch(() => {}); }, []);
   const today = useMemo(() => new Date(), []);
   const [view, setView] = useState('month'); // month | week | day | year
   const [cursor, setCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
   const [selected, setSelected] = useState(() => new Date(today.getFullYear(), today.getMonth(), today.getDate()));
-  const [events, setEvents] = useState(null);
+  const [events, setEvents] = useState(() => peek(calendarUrl(monthGrid(new Date())))?.events ?? null);
   const [editing, setEditing] = useState(null); // Termin-Objekt oder {} für neu
   const [subOpen, setSubOpen] = useState(false);
 
@@ -61,15 +59,13 @@ export default function Kalender() {
     if (view === 'year') {
       return { from: new Date(cursor.getFullYear(), 0, 1), to: new Date(cursor.getFullYear(), 11, 31) };
     }
-    // month: 6-Wochen-Raster
-    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-    const start = addDays(first, -mondayIndex(first));
-    return { from: start, to: addDays(start, 41) };
+    return monthGrid(cursor); // 6-Wochen-Raster
   }, [view, cursor]);
 
   const reload = () => {
-    setEvents(null);
-    api.get(`/calendar?from=${key(range.from)}&to=${key(range.to)}`).then((d) => setEvents(d.events)).catch(() => setEvents([]));
+    const url = calendarUrl(range);
+    setEvents(peek(url)?.events ?? null); // schon geladener Zeitraum: sofort zeigen
+    api.get(url).then((d) => setEvents(d.events)).catch(() => setEvents([]));
   };
   useEffect(reload, [range.from, range.to]); // eslint-disable-line
 
@@ -142,25 +138,24 @@ export default function Kalender() {
 
         {subOpen && <SubscribeCard onClose={() => setSubOpen(false)} />}
 
-        {!events ? <Spinner /> : (
-          <>
+        {/* Raster sofort zeigen; Termine erscheinen, sobald sie da sind (kein Sprung) */}
+        <div aria-busy={!events} className={`transition-opacity duration-200 ${events ? '' : 'opacity-60'}`}>
             {view === 'month' && <MonthView cursor={cursor} today={today} selected={selected} setSelected={setSelected} byDate={byDate} onAdd={openNew} />}
             {view === 'week' && <WeekView cursor={cursor} today={today} byDate={byDate} onPick={(d) => { setCursor(d); setView('day'); }} onEvent={openEdit} />}
             {view === 'day' && <DayView cursor={cursor} byDate={byDate} onEvent={openEdit} onAdd={openNew} />}
             {view === 'year' && <YearView cursor={cursor} today={today} byDate={byDate} onPickMonth={(m) => { setCursor(new Date(cursor.getFullYear(), m, 1)); setView('month'); }} />}
-          </>
-        )}
+        </div>
 
         <Legend events={events} />
       </Card>
 
-      {view === 'month' && events && (
+      {view === 'month' && (
         <Card className="p-4 sm:p-5 mt-4 lg:mt-0 lg:sticky lg:top-0">
           <div className="flex items-center justify-between">
             <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
             <Button size="sm" variant="outline" onClick={() => openNew(selected)}><Plus size={16} /></Button>
           </div>
-          <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} onDecide={decide} />
+          {events ? <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} onDecide={decide} /> : <SkeletonRows rows={2} className="mt-1" />}
         </Card>
       )}
       </div>

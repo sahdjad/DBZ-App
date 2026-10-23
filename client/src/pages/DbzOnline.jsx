@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Youtube, Instagram, Share2, ExternalLink } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, Spinner } from '../components/ui.jsx';
 
 const CHANNELS = [
@@ -11,7 +11,7 @@ const CHANNELS = [
 ];
 
 export default function DbzOnline() {
-  const [org, setOrg] = useState(null);
+  const [org, setOrg] = useState(() => peek('/org')?.org ?? null);
   useEffect(() => { api.get('/org').then((d) => setOrg(d.org)); }, []);
 
   return (
