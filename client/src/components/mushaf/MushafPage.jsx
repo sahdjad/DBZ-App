@@ -37,7 +37,11 @@ function useFit(ref, { layout, reserve, measure, key }) {
       const el = ref.current;
       if (!el) return;
       const availW = Math.min(el.parentElement?.clientWidth || document.documentElement.clientWidth, 900) - 20;
-      const availH = Math.max(320, window.innerHeight - reserve);
+      // Sichtbare Höhe ohne Statusleiste/Home-Balken (Abstände des Lesers).
+      const sc = el.closest('[data-testid="mushaf-scroll"]');
+      const cs = sc ? getComputedStyle(sc) : null;
+      const safe = cs ? parseFloat(cs.paddingTop || 0) + parseFloat(cs.paddingBottom || 0) : 0;
+      const availH = Math.max(320, (sc?.clientHeight || window.innerHeight) - safe - reserve);
       let em = PAGE_EM;
       if (measure) {
         // Unicode-Zeilen (Tadschwid): natürliche Breite der längsten Zeile messen.
@@ -59,8 +63,8 @@ function useFit(ref, { layout, reserve, measure, key }) {
       const fs = layout === 'wide' ? Math.min(byW, 46) : Math.min(byW, byH);
       // Hochformat (Handy): die 15 Zeilen über die verfügbare Höhe verteilen,
       // wie in Muṣḥaf-Apps -- nur der Zeilenabstand wächst, Zeileninhalt und
-      // Breite bleiben exakt gleich.
-      const slot = layout === 'wide' ? SLOT_EM : Math.max(SLOT_EM, Math.min(availH / LINES / fs, SLOT_EM * 1.45));
+      // Breite bleiben exakt gleich (beide Einstellungen).
+      const slot = Math.max(SLOT_EM, Math.min(availH / LINES / fs, SLOT_EM * 1.6));
       setFit((f) => (f && Math.abs(f.fs - fs) < 0.05 && f.em === em && Math.abs(f.slot - slot) < 0.01 ? f : { fs, em, slot }));
     };
     run();

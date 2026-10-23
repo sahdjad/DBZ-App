@@ -58,25 +58,37 @@ export default function MushafShell({
   }, []);
   const retry = (p) => { preparePage(p).catch(() => {}).finally(() => setLoaded((x) => x + 1)); setLoaded((x) => x + 1); };
 
-  // ---- waagerecht: eine Seite, Wischen ------------------------------------
-  const [shown, setShown] = useState(() => (cachedPage(page) ? page : null)); // angezeigte Seite (bleibt, bis die neue da ist)
-  const [anim, setAnim] = useState('');
+  // ---- waagerecht: Blättern wie in Muṣḥaf-Apps ----------------------------
+  // Drei Seiten nebeneinander (links die nächste, Mitte die aktuelle, rechts
+  // die vorige -- Leserichtung des Muṣḥaf). Beim Wischen folgt die Seite dem
+  // Finger; losgelassen gleitet sie weiter oder zurück. Die Verschiebung wird
+  // direkt am Element gesetzt (kein Neuzeichnen der Seiten je Fingerbewegung).
+  const trackRef = useRef(null);
+  const flipping = useRef(false);
+  const setTrack = useCallback((dx, animate) => {
+    const t = trackRef.current;
+    if (!t) return;
+    t.style.transition = animate && !reduceMotion() ? 'transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none';
+    t.style.transform = `translate3d(calc(-100% / 3 + ${dx}px), 0, 0)`;
+  }, []);
+  useLayoutEffect(() => { if (!vertical) { setTrack(0, false); flipping.current = false; } }, [page, vertical, setTrack]);
   useEffect(() => {
-    if (vertical) return undefined;
-    let alive = true;
-    const go = () => {
-      setShown((prev) => {
-        if (prev != null && prev !== page && !reduceMotion()) setAnim(page > prev ? 'dbz-flip-next' : 'dbz-flip-prev');
-        return page;
-      });
-      scrollRef.current?.scrollTo({ top: 0 });
-    };
-    if (cachedPage(page)) go();
-    else preparePage(page).then(() => { if (alive) go(); }).catch(() => { if (alive) setLoaded((x) => x + 1); });
+    if (vertical) return;
+    ensure(page);
+    scrollRef.current?.scrollTo({ top: 0 });
     // Nachbarseiten vorladen (in Leserichtung zwei, zurück eine).
     prefetchPage(page + 1); prefetchPage(page - 1); prefetchPage(page + 2);
-    return () => { alive = false; };
-  }, [page, vertical]);
+    ensure(page + 1); ensure(page - 1);
+  }, [page, vertical, ensure]);
+  // dir +1 = nächste Seite (gleitet nach rechts), -1 = vorige.
+  const flip = (dir, source) => {
+    const target = clampPage(page + dir);
+    if (target === page || flipping.current) { setTrack(0, true); return; }
+    flipping.current = true;
+    const w = scrollRef.current?.clientWidth || window.innerWidth;
+    setTrack(dir > 0 ? w : -w, true);
+    setTimeout(() => onPageChange(target, source), reduceMotion() ? 0 : 280);
+  };
 
   // ---- senkrecht: Fenster aus Seiten, das beim Scrollen mitwandert ---------
   // Positionshaltung selbst gemacht (auch für iPhone/Safari, das kein
@@ -153,14 +165,14 @@ export default function MushafShell({
     programmatic.current = Date.now() + (smooth ? 900 : 200);
     smoothUntil.current = smooth ? Date.now() + 700 : 0;
     el.scrollTo({ top: el.scrollTop + (r.top - c.top) - c.height * 0.35, behavior: smooth ? 'smooth' : 'auto' });
-  }, [focusG, shown]);
+  }, [focusG, page]);
 
   // ---- Gesten: Tippen = Leisten, Wischen = Blättern, lange drücken = Wort --
   const g = useRef(null);
   const onPointerDown = (e) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const wordEl = e.target.closest?.('[data-v]');
-    g.current = { x: e.clientX, y: e.clientY, t: Date.now(), long: false, timer: null };
+    g.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), axis: null, long: false, timer: null, lx: e.clientX, lt: Date.now(), v: 0 };
     if (wordEl && onLongPressWord) {
       const cur = g.current;
       cur.timer = setTimeout(() => { cur.long = true; navigator.vibrate?.(8); onLongPressWord({ v: wordEl.dataset.v, g: wordEl.dataset.g != null ? Number(wordEl.dataset.g) : null }); }, 520);
@@ -168,17 +180,41 @@ export default function MushafShell({
   };
   const onPointerMove = (e) => {
     const s = g.current;
-    if (s?.timer && (Math.abs(e.clientX - s.x) > 10 || Math.abs(e.clientY - s.y) > 10)) { clearTimeout(s.timer); s.timer = null; }
+    if (!s || s.id !== e.pointerId) return;
+    const dx = e.clientX - s.x; const dy = e.clientY - s.y;
+    if (s.timer && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) { clearTimeout(s.timer); s.timer = null; }
+    if (!s.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      s.axis = !vertical && !s.long && Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+      if (s.axis === 'x') { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* egal */ } }
+    }
+    if (s.axis !== 'x') return;
+    const now = Date.now();
+    s.v = (e.clientX - s.lx) / Math.max(1, now - s.lt);
+    s.lx = e.clientX; s.lt = now;
+    // Am Anfang/Ende des Muṣḥaf federt die Seite nur leicht.
+    const edge = (dx > 0 && page >= 604) || (dx < 0 && page <= 1);
+    setTrack(edge ? dx * 0.25 : dx, false);
   };
   const onPointerUp = (e) => {
     const s = g.current; g.current = null;
     if (!s) return;
     clearTimeout(s.timer);
     if (s.long) return;
-    if (e.target.closest?.('button, a, input, select')) return;
     const dx = e.clientX - s.x; const dy = e.clientY - s.y;
-    if (!vertical && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { onPageChange(clampPage(page + (dx > 0 ? 1 : -1)), 'swipe'); return; } // RTL: nach rechts = weiter
+    if (s.axis === 'x') {
+      const w = scrollRef.current?.clientWidth || window.innerWidth;
+      // Weiter, wenn weit genug gezogen oder kurz und schnell gewischt.
+      if (Math.abs(dx) > w * 0.22 || (Math.abs(dx) > 24 && Math.abs(s.v) > 0.35)) flip(dx > 0 ? 1 : -1, 'swipe'); // RTL: nach rechts = weiter
+      else setTrack(0, true);
+      return;
+    }
+    if (e.target.closest?.('button, a, input, select')) return;
     if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && Date.now() - s.t < 450) setChrome((c) => !c);
+  };
+  const onPointerCancel = () => {
+    const s = g.current; g.current = null;
+    if (s?.timer) clearTimeout(s.timer);
+    if (s?.axis === 'x') setTrack(0, true);
   };
   const onContextMenu = (e) => {
     const wordEl = e.target.closest?.('[data-v]');
@@ -193,8 +229,8 @@ export default function MushafShell({
     if (e.metaKey || e.ctrlKey || e.altKey || sheet || document.querySelector('.dbz-sheet')) return;
     if (e.key === 'Escape') { if (!onEscape?.()) onClose(); return; }
     if (['input', 'select', 'textarea'].includes((e.target?.tagName || '').toLowerCase())) return;
-    if (!vertical && e.key === 'ArrowLeft') { e.preventDefault(); onPageChange(clampPage(page + 1), 'key'); }
-    else if (!vertical && e.key === 'ArrowRight') { e.preventDefault(); onPageChange(clampPage(page - 1), 'key'); }
+    if (!vertical && e.key === 'ArrowLeft') { e.preventDefault(); flip(1, 'key'); }
+    else if (!vertical && e.key === 'ArrowRight') { e.preventDefault(); flip(-1, 'key'); }
   };
   useEffect(() => {
     const on = (e) => keyRef.current(e);
@@ -205,8 +241,8 @@ export default function MushafShell({
   const jump = (p) => { setSheet(null); onPageChange(clampPage(p), 'jump'); };
   // Angezeigte Seiten behalten ihre Schrift (der Rest darf ausgelagert werden).
   useEffect(() => {
-    pinPageFonts(vertical ? Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i) : [page, shown].filter(Boolean));
-  }, [vertical, win, page, shown]);
+    pinPageFonts(vertical ? Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i) : [page - 1, page, page + 1]);
+  }, [vertical, win, page]);
   const placeholder = (p, full) => {
     const err = pageError(p);
     return (
@@ -223,8 +259,6 @@ export default function MushafShell({
   };
   const info = index ? index.pageInfo(page) : null;
   const pageProps = { index, surahName, prefs, forceTextLayout, renderWord, version };
-  // Neue Seite nicht ladbar? Dann den Fehler zeigen statt der alten Seite.
-  const data = shown != null && !(shown !== page && pageError(page)) ? cachedPage(shown) : null;
 
   return createPortal(
     <div className="mushaf-immersive fixed inset-0 z-[70] flex flex-col" role="dialog" aria-modal="true" aria-label="Mushaf">
@@ -234,9 +268,9 @@ export default function MushafShell({
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        onPointerCancel={() => { if (g.current?.timer) clearTimeout(g.current.timer); g.current = null; }}
+        onPointerCancel={onPointerCancel}
         onContextMenu={onContextMenu}
-        className="flex-1 overflow-y-auto overscroll-contain select-none"
+        className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain select-none"
         style={{ touchAction: vertical ? 'pan-y pinch-zoom' : 'pan-y pinch-zoom', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
         data-testid="mushaf-scroll"
       >
@@ -247,11 +281,15 @@ export default function MushafShell({
               return d ? <MushafPage key={p} data={d} {...pageProps} /> : placeholder(p, false);
             })}
           </div>
-        ) : data ? (
-          <div key={shown} className={anim} onAnimationEnd={() => setAnim('')}>
-            <MushafPage data={data} {...pageProps} />
+        ) : (
+          <div ref={trackRef} className="mushaf-track" style={{ transform: 'translate3d(calc(-100% / 3), 0, 0)' }}>
+            {[page + 1, page, page - 1].map((p) => (
+              <div key={p} className="mushaf-pane" aria-hidden={p !== page || undefined}>
+                {p >= 1 && p <= 604 && (cachedPage(p) ? <MushafPage data={cachedPage(p)} {...pageProps} /> : placeholder(p, true))}
+              </div>
+            ))}
           </div>
-        ) : placeholder(page, true)}
+        )}
       </div>
 
       {overlay}
@@ -331,9 +369,13 @@ function PageSlider({ page, onChange }) {
 
 export function Sheet({ title, onClose, children, tall = false }) {
   useBackToClose(true, onClose); // schließt auch per Escape/Zurück -- nur das oberste Fenster
+  // Nach langem Drücken (Ayah-Menü) löst das Loslassen des Fingers noch einen
+  // Klick an derselben Stelle aus -- der darf das gerade geöffnete Blatt nicht
+  // sofort wieder schließen.
+  const opened = useRef(Date.now());
   return createPortal(
     <div className="fixed inset-0 z-[95] flex items-end sm:items-center justify-center sm:p-3" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={() => { if (Date.now() - opened.current > 450) onClose(); }} />
       <div className={`dbz-sheet relative w-full sm:max-w-md ${tall ? 'h-[88dvh] sm:h-[80vh]' : 'max-h-[88dvh]'} flex flex-col rounded-t-3xl sm:rounded-3xl bg-card dark:bg-elevated shadow-float`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="flex items-center justify-between px-5 pt-4 pb-3 shrink-0">

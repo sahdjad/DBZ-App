@@ -358,6 +358,9 @@ html {
   .mushaf-immersive .mushaf-word { cursor: default; }
   .mushaf-immersive .mushaf-word:not(.mushaf-word-hidden):not(.is-hl):not(.is-selected):not(.is-active):not(.is-word-active):not(.is-recite-current):hover { background: none; }
   .mushaf-sheet { padding: 0.35rem 0 0.5rem; }
+  /* Waagerechtes Blättern: drei Seiten nebeneinander, die mittlere ist sichtbar. */
+  .mushaf-track { display: flex; width: 300%; will-change: transform; }
+  .mushaf-pane { width: calc(100% / 3); flex: 0 0 calc(100% / 3); min-width: 0; }
   [data-testid='mushaf-scroll'] { overflow-anchor: none; } /* Position hält der Leser selbst (gleich auf allen Browsern) */
   .mushaf-vertical .mushaf-sheet + .mushaf-sheet,
   .mushaf-vertical .mushaf-sheet + .mushaf-placeholder,
