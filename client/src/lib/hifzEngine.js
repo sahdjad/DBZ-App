@@ -95,13 +95,27 @@ function truncatedOf(token, word) {
   // Abschneiden oft nur der erste Buchstabe übrig.
   return (token.length >= 2 || word.length === 2) && word.length - token.length === 1 && word.startsWith(token);
 }
-const tokenMatches = (token, word) => token === word || closeEnough(token, word) || truncatedOf(token, word);
+// Angleichung des Artikels an Sonnenbuchstaben: „ولا الضالين" klingt wie
+// „wa-laḍ-ḍāllīn" -- die Erkennung schreibt dann oft „ضالين"/„ولضالين".
+// Reine Lautschrift-Frage (so wird es korrekt gesprochen), kein Fehler.
+const SUN = new Set('تثدذرزسشصضطظلن');
+function withoutArticle(word) {
+  const m = /^([وفب]?)ال(.)/u.exec(word);
+  if (!m || !SUN.has(m[2])) return null;
+  const rest = word.slice(m[1].length + 2);
+  return rest.length >= 3 ? [m[1] + rest, `${m[1]}ل${rest}`] : null;
+}
+const tokenMatches = (token, word) => token === word || closeEnough(token, word) || truncatedOf(token, word)
+  || (withoutArticle(word) || []).some((v) => token === v || collapse(token) === collapse(v) || closeEnough(token, v));
 const wordMatches = (token, w) => tokenMatches(token, w.token) || (w.alt !== w.token && tokenMatches(token, w.alt));
 // Strenger Vergleich (ohne Tippfehler-/Abschneide-Toleranz) -- für das
 // Erkennen von Wiederholungen, damit z. B. "إلا" nicht als abgeschnittenes
 // "إله" gilt.
 const sameWord = (token, w) => [w.token, w.alt].some((x) => token === x || collapse(token) === collapse(x)
   || (Math.min(token.length, x.length) >= 3 && phonetic(token) === phonetic(x)));
+// Für die Qur'an-weite Stellensuche (lib/recitation/locator.js): dieselben
+// Vergleichsregeln wie beim Mitlesen. w = { token, alt }.
+export { wordMatches as matchesWord, sameWord as strictlyMatchesWord, closeEnough };
 
 // Für die Sofort-Vorschau aus dem Zwischenergebnis: nur ganze, gleich lange
 // Wörter (ein angefangenes Wort am Audio-Ende ist kürzer und passt deshalb
@@ -145,7 +159,9 @@ export function validatePassage(input) {
     }
     previous = w;
     return Object.freeze({ id: w.id, surah: w.surah, ayah: w.ayah,
-      position: w.position, line: w.line, text: w.text, token, alt: normalize(w.text, { dagger: 'drop' }) || token });
+      position: w.position, line: w.line, text: w.text, token,
+      // alt kann vorberechnet mitkommen (Qur'an-Index: dort ist text schon die Vergleichsform).
+      alt: (typeof w.alt === 'string' && w.alt ? normalize(w.alt) : normalize(w.text, { dagger: 'drop' })) || token });
   });
   return Object.freeze({ id: input.id, title: input.title, edition: input.edition,
     riwaya: input.riwaya, source: input.source, words: Object.freeze(words) });
@@ -339,9 +355,22 @@ export class HifzEngine {
         for (const k of ks) if (runFrom(k, this.index + m, need)) { skipAt = k; skipBy = m; break; }
       }
       if (skipAt >= 0) {
+        // Zwischen den beiden sicheren Stellen gehörte Bruchstücke: Die
+        // Streaming-Erkennung zerteilt ein Wort an einer Fenstergrenze
+        // manchmal ("ش" für شيء). Ist ein gehörtes Stück eindeutig der Anfang
+        // (mind. die Hälfte) genau dieses Wortes, wurde es gesagt -- sonst
+        // bleibt es ehrlich „ausgelassen".
+        const between = tokens.slice(i, skipAt);
         for (let m = 0; m < skipBy; m++) {
-          this.missed.add(this.index);
-          this.history.push({ kind: 'skipped', index: this.index });
+          const w = words[this.index];
+          const heardIt = between.some((t) => wordMatches(t, w)
+            || ([w.token, w.alt].some((x) => x.startsWith(t) && t.length >= Math.ceil(x.length / 2))));
+          if (heardIt) {
+            this.history.push({ kind: this.hints.has(this.index) ? 'assisted-match' : 'transcript-match', index: this.index });
+          } else {
+            this.missed.add(this.index);
+            this.history.push({ kind: 'skipped', index: this.index });
+          }
           this.index++;
         }
         this.mismatch = null;

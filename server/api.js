@@ -3794,6 +3794,96 @@ router.get('/quran-goals/:id/recording', requireAuth, async (req, res) => {
 });
 
 // =============================================================================
+// KI-Rezitation: Übungsverläufe („Auswendig rezitieren")
+// =============================================================================
+// Gespeichert werden NUR Zahlen und Stellen einer Übung (welcher Bereich, wie
+// viele Wörter erkannt/mitgelesen/nach Hilfe/ausgelassen, Hilfen) -- nie Audio.
+// Sichtbar für die Person selbst und die Lehrkräfte ihrer Klasse. Die Erkennung
+// ist eine Übungshilfe, keine Bewertung (Hinweis auch in der Oberfläche).
+const MAX_RECITATION_SESSIONS = 300; // je Person, älteste fallen weg
+const VERSE_KEY = /^\d{1,3}:\d{1,3}$/;
+const WORD_KEY = /^\d{1,3}:\d{1,3}:\d{1,3}$/;
+const intIn = (v, max) => (Number.isInteger(v) && v >= 0 && v <= max ? v : 0);
+const verseOrNull = (v) => (typeof v === 'string' && VERSE_KEY.test(v) ? v : null);
+
+function cleanRecitationSession(body) {
+  const b = body || {};
+  if (typeof b.id !== 'string' || !/^rs_[a-z0-9]{8,32}$/.test(b.id)) return null;
+  const started = Date.parse(b.startedAt);
+  const ended = Date.parse(b.endedAt);
+  if (!Number.isFinite(started) || !Number.isFinite(ended) || ended < started) return null;
+  const sc = b.scope || {};
+  const scope = sc.kind === 'focused'
+    ? { kind: 'focused', label: typeof sc.label === 'string' ? sc.label.slice(0, 80) : null, from: verseOrNull(sc.from), to: verseOrNull(sc.to) }
+    : { kind: 'free' };
+  const c = b.counts || {};
+  return {
+    id: b.id,
+    startedAt: new Date(started).toISOString(),
+    endedAt: new Date(ended).toISOString(),
+    activeSec: intIn(b.activeSec, 86400),
+    hiddenSec: intIn(b.hiddenSec, 86400),
+    visibleSec: intIn(b.visibleSec, 86400),
+    scope,
+    from: verseOrNull(b.from),
+    to: verseOrNull(b.to),
+    pages: Array.isArray(b.pages) ? b.pages.filter((x) => Number.isInteger(x) && x >= 1 && x <= 604).slice(0, 60) : [],
+    counts: { memory: intIn(c.memory, 100000), read: intIn(c.read, 100000), assisted: intIn(c.assisted, 100000), missed: intIn(c.missed, 100000) },
+    hints: intIn(b.hints, 100000),
+    ayahHints: intIn(b.ayahHints, 100000),
+    peeks: intIn(b.peeks, 100000),
+    relocations: intIn(b.relocations, 100000),
+    suspected: intIn(b.suspected, 100000),
+    missedWords: Array.isArray(b.missedWords) ? b.missedWords.filter((x) => typeof x === 'string' && WORD_KEY.test(x)).slice(0, 60) : [],
+    complete: b.complete === true,
+  };
+}
+
+// Speichern/aktualisieren (gleiche ID = dieselbe Übung, z. B. nach Pause).
+router.post('/recitation-sessions', requireAuth, (req, res) => {
+  const data = cleanRecitationSession(req.body);
+  if (!data) return res.status(400).json({ error: 'Ungültige Übungsdaten' });
+  const all = db.all('recitation_sessions');
+  const existing = all.find((x) => x.id === data.id);
+  if (existing && existing.userId !== req.user.id) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (existing) Object.assign(existing, data, { updatedAt: new Date().toISOString() });
+  else {
+    all.push({ ...data, userId: req.user.id, userName: req.user.name, classIds: [...(req.user.classIds || [])], createdAt: new Date().toISOString() });
+    // Speicher klein halten: je Person nur die neuesten Übungen.
+    const mine = all.filter((x) => x.userId === req.user.id).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+    for (const old of mine.slice(MAX_RECITATION_SESSIONS)) all.splice(all.indexOf(old), 1);
+  }
+  db.commit();
+  res.json({ ok: true });
+});
+
+// Eigene Übungen, die eines Schülers (Lehrkraft der Klasse) oder einer Klasse.
+router.get('/recitation-sessions', requireAuth, (req, res) => {
+  const { studentId, classId } = req.query;
+  let list;
+  if (classId) {
+    if (!isClassManager(req.user) || !canManageClass(req.user, classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+    const students = new Set(db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(classId)).map((u) => u.id));
+    list = db.all('recitation_sessions').filter((x) => students.has(x.userId));
+  } else if (studentId && studentId !== req.user.id) {
+    const student = findUserById(studentId);
+    if (!student || !isClassManager(req.user) || !(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
+    list = db.all('recitation_sessions').filter((x) => x.userId === studentId);
+  } else list = db.all('recitation_sessions').filter((x) => x.userId === req.user.id);
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  res.json({ sessions: [...list].sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, limit).map(({ classIds, ...x }) => x) });
+});
+
+router.delete('/recitation-sessions/:id', requireAuth, (req, res) => {
+  const all = db.all('recitation_sessions');
+  const i = all.findIndex((x) => x.id === req.params.id && x.userId === req.user.id);
+  if (i < 0) return res.status(404).json({ error: 'Nicht gefunden' });
+  all.splice(i, 1);
+  db.commit();
+  res.json({ ok: true });
+});
+
+// =============================================================================
 // Prüfungen / Quiz
 // =============================================================================
 
