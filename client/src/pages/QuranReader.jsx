@@ -1014,7 +1014,8 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
         onClose={() => { stopAudio(); onBack(); }}
         closeLabel="Zur Übersicht"
         page={page}
-        onPageChange={(p) => setPage(p)}
+        // Doppelseite: liegt die gerade abgespielte Seite unter den sichtbaren, bleibt sie die aktuelle.
+        onPageChange={(p, how, shown) => setPage(shown && prevPlayPage.current && shown.includes(prevPlayPage.current) ? prevPlayPage.current : p)}
         index={index}
         surahs={surahs}
         renderWord={renderWord}

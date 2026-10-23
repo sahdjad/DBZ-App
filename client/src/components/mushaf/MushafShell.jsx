@@ -3,14 +3,15 @@
 //  - Die Seite füllt den Bildschirm. Einmal tippen blendet die Leisten ein/aus:
 //    oben Zurück, Inhalt, Suche, Seite, Einstellungen; unten die Steuerung des
 //    Aufrufers (Wiedergabe bzw. Mikrofon) und der Seitenregler.
-//  - Blättern waagerecht (wischen, Pfeiltasten) oder senkrecht (alle Seiten
-//    untereinander scrollen) -- Einstellung.
+//  - Blättern waagerecht (wischen, Trackpad, Pfeiltasten, Pfeilknöpfe) oder
+//    senkrecht (alle Seiten untereinander scrollen) -- Einstellung.
+//  - iPad quer und Mac: Doppelseite wie im aufgeschlagenen Muṣḥaf (umschaltbar).
 //  - Ansicht Mushaf (Medina-Seite) oder Text (Schriftgröße einstellbar).
 //  - Lange drücken auf ein Wort (Rechtsklick am Mac) -> onLongPressWord.
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ChevronLeft, List, Search, Hash, Settings2, X, Minus, Plus, Rows3, Columns3, BookOpen, Type, Trash2,
+  ChevronLeft, ChevronRight, List, Search, Hash, Settings2, X, Minus, Plus, Rows3, Columns3, BookOpen, Type, Trash2, RectangleVertical,
 } from 'lucide-react';
 import MushafPage from './MushafPage.jsx';
 import { Segmented, Button, useBackToClose } from '../ui.jsx';
@@ -18,9 +19,21 @@ import { api } from '../../lib/api.js';
 import { clampPage, cachedPage, pageError, preparePage, prefetchPage, useMushafPrefs, TEXT_SIZES, MARK_COLORS, markColor } from '../../lib/mushafPages.js';
 import { pinPageFonts } from '../../lib/mushafFont.js';
 import { getThemePref, setThemePref } from '../../lib/theme.js';
+import { haptic } from '../../lib/haptics.js';
+import {
+  PANE_GAP, RESERVE, RESERVE_FRAMED, autoSpread, unitOf, unitCount, unitPages, pageOfUnit,
+  OMEGA, noOvershoot, springAt, springDone, rubber, velocity, releaseDir,
+} from '../../lib/mushafPager.js';
 import { normalize, strictlyMatchesWord } from '../../lib/hifzEngine.js';
 
 const reduceMotion = () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+// Zeit eines Ereignisses (wann der Finger dort war, nicht wann es verarbeitet
+// wurde) -- das Fingertempo bleibt richtig, auch wenn gerade gezeichnet wird.
+const evTime = (e) => {
+  const now = performance.now();
+  const t = e?.timeStamp;
+  return t > 0 && Math.abs(now - t) < 5000 ? t : now;
+};
 
 export default function MushafShell({
   onClose, page, onPageChange, index, surahs,
@@ -58,37 +71,171 @@ export default function MushafShell({
   }, []);
   const retry = (p) => { preparePage(p).catch(() => {}).finally(() => setLoaded((x) => x + 1)); setLoaded((x) => x + 1); };
 
+  // ---- Doppelseite (iPad quer, Mac) ----------------------------------------
+  const [vp, setVp] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
+  // Großer Bildschirm, waagerechtes Blättern, Mushaf-Ansicht: Seite im Rahmen,
+  // Doppelseite möglich -- automatisch im Querformat, oder fest gewählt.
+  const framed = !vertical && prefs.view === 'mushaf' && Math.min(vp.w, vp.h) >= 600;
+  const spread = framed && (prefs.spread === 'double' || (prefs.spread === 'auto' && autoSpread(vp.w, vp.h)));
+  const unit = unitOf(page, spread); // Seite bzw. Doppelseite
+  const units = unitCount(spread);
+
   // ---- waagerecht: Blättern wie in Muṣḥaf-Apps ----------------------------
-  // Drei Seiten nebeneinander (links die nächste, Mitte die aktuelle, rechts
-  // die vorige -- Leserichtung des Muṣḥaf). Beim Wischen folgt die Seite dem
-  // Finger; losgelassen gleitet sie weiter oder zurück. Die Verschiebung wird
-  // direkt am Element gesetzt (kein Neuzeichnen der Seiten je Fingerbewegung).
+  // Drei Einheiten nebeneinander: links die nächste, in der Mitte die aktuelle,
+  // rechts die vorige (Leserichtung des Muṣḥaf). Die Lage ist eine Zahl in
+  // Einheiten (pos); Finger, Feder, Trackpad und Tasten ändern nur sie, die
+  // Verschiebung wird direkt am Element gesetzt -- kein Neuzeichnen der Seiten
+  // je Bild. Gemeldet (onPageChange) wird die neue Seite, wenn die Bewegung
+  // dort ankommt, oder sofort, wenn vorher schon die nächste Geste beginnt.
+  // Alle Teile hier lesen nur Refs (pg, live) -- auch aus älteren Closures richtig.
   const trackRef = useRef(null);
-  const flipping = useRef(false);
-  const setTrack = useCallback((dx, animate) => {
+  const pg = useRef({ rendered: unit, spread, pos: unit, expect: null, expectTimer: 0, anim: null, raf: 0, drag: null, wheel: null, S: 0, multi: false });
+  const live = useRef(null);
+  live.current = { onPageChange, spread, units };
+  const stepPx = () => (trackRef.current?.clientWidth || scrollRef.current?.clientWidth || window.innerWidth) + PANE_GAP;
+  const baseUnit = () => pg.current.expect ?? pg.current.rendered;
+  const paint = () => {
+    const st = pg.current;
     const t = trackRef.current;
     if (!t) return;
-    t.style.transition = animate && !reduceMotion() ? 'transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1)' : 'none';
-    t.style.transform = `translate3d(calc(-100% / 3 + ${dx}px), 0, 0)`;
-  }, []);
-  useLayoutEffect(() => { if (!vertical) { setTrack(0, false); flipping.current = false; } }, [page, vertical, setTrack]);
+    const S = st.S || (st.S = stepPx());
+    const off = Math.max(-S, Math.min(S, (st.pos - st.rendered) * S));
+    t.style.transform = `translate3d(calc(-100% - ${PANE_GAP}px + ${off.toFixed(2)}px), 0, 0)`;
+  };
+  const stopAnim = () => {
+    const st = pg.current;
+    st.anim = null;
+    if (st.raf) { cancelAnimationFrame(st.raf); st.raf = 0; }
+  };
+  const commit = (u, source) => {
+    const st = pg.current;
+    const { spread: sp, onPageChange: report } = live.current;
+    const dir = Math.sign(u - baseUnit()) || 1;
+    st.expect = u;
+    clearTimeout(st.expectTimer);
+    // Kommt die gemeldete Seite nicht an, zurück zur angezeigten (Sicherheitsnetz).
+    st.expectTimer = setTimeout(() => { if (st.expect === u && st.rendered !== u) { st.expect = null; animateTo(st.rendered); } }, 1500);
+    report(pageOfUnit(u, sp, dir), source, unitPages(u, sp));
+  };
+  const tick = (now) => {
+    const st = pg.current;
+    st.raf = 0;
+    const a = st.anim;
+    if (!a) return;
+    const f = springAt(a.x0, a.v0, Math.max(0, now - a.t0));
+    if (springDone(f)) {
+      st.anim = null;
+      st.pos = a.target;
+      paint();
+      if (a.target !== baseUnit()) commit(a.target, a.source);
+      return;
+    }
+    st.pos = a.target + f.x / a.S;
+    paint();
+    st.raf = requestAnimationFrame(tick);
+  };
+  // Feder zur Einheit target; v0 = Fingertempo (px/ms, + = Richtung nächste Seite).
+  const animateTo = (target, v0 = 0, source = 'swipe') => {
+    const st = pg.current;
+    const S = st.S || (st.S = stepPx());
+    const x0 = (st.pos - target) * S;
+    if (reduceMotion() || Math.abs(x0) < 0.5) {
+      stopAnim();
+      st.pos = target;
+      paint();
+      if (target !== baseUnit()) commit(target, source);
+      return;
+    }
+    st.anim = { target, x0, v0: noOvershoot(x0, v0, OMEGA), t0: performance.now(), S, source };
+    if (!st.raf) st.raf = requestAnimationFrame(tick);
+  };
+  // Laufende Bewegung anhalten; war sie unterwegs zu einer anderen Seite, diese
+  // sofort melden (die Seite bleibt, wo sie gerade ist).
+  const catchMotion = () => {
+    const a = pg.current.anim;
+    stopAnim();
+    if (a && a.target !== baseUnit()) commit(a.target, a.source);
+    return !!a;
+  };
+  // dir +1 = nächste Seite/Doppelseite, -1 = vorige (Tasten, Knöpfe, Mausrad).
+  const flip = (dir, source) => {
+    const st = pg.current;
+    if (vertical || st.drag) return;
+    catchMotion();
+    st.S = stepPx();
+    const base = baseUnit();
+    const to = base + dir;
+    if (to < 1 || to > live.current.units) { // Anfang/Ende des Muṣḥaf: nur kurz anstoßen
+      if (!reduceMotion()) { st.pos = base + dir * 0.04; paint(); animateTo(base); }
+      return;
+    }
+    animateTo(to, 0, source);
+  };
+
+  // Die Seite liegt nie mehr als eine Einheit neben der angezeigten -- sonst
+  // stünde sie (bei sehr schnellem Weiterblättern) auf einer Seite, die gerade
+  // nicht mehr gezeichnet ist.
+  const clampLag = () => {
+    const st = pg.current;
+    const np = Math.max(st.rendered - 1, Math.min(st.rendered + 1, st.pos));
+    const delta = np - st.pos;
+    if (!delta) return;
+    st.pos = np;
+    if (st.drag) st.drag.startPos += delta;
+    if (st.wheel) st.wheel.startPos += delta;
+    const a = st.anim;
+    if (a) { const f = springAt(a.x0, a.v0, Math.max(0, performance.now() - a.t0)); st.anim = null; animateTo(a.target, f.v, a.source); }
+  };
+  // Neue Einheit angezeigt: eigene Meldung angekommen (Lage bleibt), oder ein
+  // Sprung von außen (Inhalt, Regler, Rezitation folgt) -- eine Seite weiter
+  // gleitet hinüber, weiter weg erscheint sofort.
+  useLayoutEffect(() => {
+    const st = pg.current;
+    const prev = st.rendered;
+    const modeChanged = st.spread !== spread;
+    st.rendered = unit;
+    st.spread = spread;
+    st.S = 0;
+    if (vertical || modeChanged) {
+      stopAnim();
+      st.expect = null;
+      st.pos = unit;
+      if (st.drag) st.drag.startPos = unit;
+      paint();
+      return;
+    }
+    if (prev === unit) return;
+    if (st.expect === unit) { st.expect = null; clearTimeout(st.expectTimer); clampLag(); paint(); return; }
+    st.expect = null;
+    if (st.drag) { st.drag.startPos += unit - prev; st.pos += unit - prev; paint(); return; }
+    if (Math.abs(unit - prev) === 1 && !st.anim && Math.abs(st.pos - prev) < 0.001 && !reduceMotion()) { paint(); animateTo(unit, 0, 'auto'); return; }
+    stopAnim();
+    st.pos = unit;
+    paint();
+  }, [unit, spread, vertical]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const on = () => {
+      setVp((o) => (o.w === window.innerWidth && o.h === window.innerHeight ? o : { w: window.innerWidth, h: window.innerHeight }));
+      pg.current.S = 0;
+      paint();
+    };
+    window.addEventListener('resize', on);
+    return () => {
+      window.removeEventListener('resize', on);
+      const st = pg.current;
+      cancelAnimationFrame(st.raf);
+      clearTimeout(st.expectTimer);
+      clearTimeout(st.wheel?.timer);
+      clearTimeout(st.drag?.timer);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!vertical) scrollRef.current?.scrollTo({ top: 0 }); }, [unit, spread, vertical]);
   useEffect(() => {
     if (vertical) return;
-    ensure(page);
-    scrollRef.current?.scrollTo({ top: 0 });
-    // Nachbarseiten vorladen (in Leserichtung zwei, zurück eine).
-    prefetchPage(page + 1); prefetchPage(page - 1); prefetchPage(page + 2);
-    ensure(page + 1); ensure(page - 1);
-  }, [page, vertical, ensure]);
-  // dir +1 = nächste Seite (gleitet nach rechts), -1 = vorige.
-  const flip = (dir, source) => {
-    const target = clampPage(page + dir);
-    if (target === page || flipping.current) { setTrack(0, true); return; }
-    flipping.current = true;
-    const w = scrollRef.current?.clientWidth || window.innerWidth;
-    setTrack(dir > 0 ? w : -w, true);
-    setTimeout(() => onPageChange(target, source), reduceMotion() ? 0 : 280);
-  };
+    // Angezeigte und benachbarte Einheiten laden, in Leserichtung eine weitere vorladen.
+    for (const u of [unit, unit + 1, unit - 1]) if (u >= 1 && u <= units) unitPages(u, spread).forEach(ensure);
+    if (unit + 2 <= units) unitPages(unit + 2, spread).forEach(prefetchPage);
+  }, [unit, units, spread, vertical, ensure]);
 
   // ---- senkrecht: Fenster aus Seiten, das beim Scrollen mitwandert ---------
   // Positionshaltung selbst gemacht (auch für iPhone/Safari, das kein
@@ -168,54 +315,235 @@ export default function MushafShell({
   }, [focusG, page]);
 
   // ---- Gesten: Tippen = Leisten, Wischen = Blättern, lange drücken = Wort --
-  const g = useRef(null);
-  const onPointerDown = (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const wordEl = e.target.closest?.('[data-v]');
-    g.current = { id: e.pointerId, x: e.clientX, y: e.clientY, t: Date.now(), axis: null, long: false, timer: null, lx: e.clientX, lt: Date.now(), v: 0 };
-    if (wordEl && onLongPressWord) {
-      const cur = g.current;
-      cur.timer = setTimeout(() => { cur.long = true; navigator.vibrate?.(8); onLongPressWord({ v: wordEl.dataset.v, g: wordEl.dataset.g != null ? Number(wordEl.dataset.g) : null }); }, 520);
+  // Finger über Touch-Ereignisse (nicht Pointer-Ereignisse): Safari bricht eine
+  // Pointer-Geste ab, sobald die Bewegung etwas schräg ist und es selbst scrollen
+  // will -- dann blieb die Seite stehen und federte zurück. Touch-Ereignisse
+  // kommen weiter. Erst wenn die Geste als waagerecht erkannt ist, wird dem
+  // Browser das Scrollen untersagt (preventDefault) -- senkrecht bleibt frei.
+  const SLOP = 8;
+  const begin = (x, y, target, kind, now) => {
+    const st = pg.current;
+    const el = scrollRef.current;
+    st.S = stepPx();
+    const caught = !vertical && catchMotion();
+    const d = {
+      x, y, x0: x, t: now, kind, axis: null, startPos: st.pos, samples: [{ t: now, x }], long: false, timer: null, caught,
+      // Passt die Seite ganz auf den Bildschirm, gibt es senkrecht nichts zu
+      // scrollen -- dann blättert auch ein deutlich schräger Wisch.
+      canScrollY: !!el && el.scrollHeight > el.clientHeight + 2,
+    };
+    st.drag = d;
+    const wordEl = target?.closest?.('[data-v]');
+    if (wordEl && onLongPressWord && !caught) {
+      d.timer = setTimeout(() => {
+        d.long = true;
+        haptic();
+        onLongPressWord({ v: wordEl.dataset.v, g: wordEl.dataset.g != null ? Number(wordEl.dataset.g) : null });
+      }, 520);
     }
   };
-  const onPointerMove = (e) => {
-    const s = g.current;
-    if (!s || s.id !== e.pointerId) return;
-    const dx = e.clientX - s.x; const dy = e.clientY - s.y;
-    if (s.timer && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) { clearTimeout(s.timer); s.timer = null; }
-    if (!s.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      s.axis = !vertical && !s.long && Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-      if (s.axis === 'x') { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* egal */ } }
+  const move = (x, y, ev) => {
+    const st = pg.current;
+    const d = st.drag;
+    if (!d) return;
+    const dx = x - d.x;
+    const dy = y - d.y;
+    if (d.timer && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) { clearTimeout(d.timer); d.timer = null; }
+    if (d.long) return;
+    const loose = d.kind === 'touch' && !d.canScrollY;
+    if (!d.axis) {
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      if (Math.max(ax, ay) < SLOP) {
+        // Noch unentschieden, aber eher waagerecht: der Browser darf die Geste nicht übernehmen.
+        if (loose && !vertical && ax > ay && ev.cancelable) ev.preventDefault();
+        return;
+      }
+      const horizontal = !vertical && ax > ay * (loose ? 0.5 : 1);
+      // Scrollt der Browser schon senkrecht (nicht mehr abbrechbar), bleibt es dabei.
+      d.axis = horizontal && !(d.kind === 'touch' && d.canScrollY && !ev.cancelable) ? 'x' : 'y';
+      if (d.axis !== 'x') return;
+      // Ab hier folgt die Seite dem Finger -- ohne Sprung um die Schwelle.
+      if (d.timer) { clearTimeout(d.timer); d.timer = null; }
+      d.x = x;
+      d.startPos = st.pos;
+      d.samples = [{ t: evTime(ev), x }];
+      d.min = 0;
+      d.max = 0;
     }
-    if (s.axis !== 'x') return;
-    const now = Date.now();
-    s.v = (e.clientX - s.lx) / Math.max(1, now - s.lt);
-    s.lx = e.clientX; s.lt = now;
-    // Am Anfang/Ende des Muṣḥaf federt die Seite nur leicht.
-    const edge = (dx > 0 && page >= 604) || (dx < 0 && page <= 1);
-    setTrack(edge ? dx * 0.25 : dx, false);
+    if (d.axis !== 'x') return;
+    if (ev.cancelable) ev.preventDefault();
+    const S = st.S;
+    const base = baseUnit();
+    const lo = Math.max(1, base - 1);
+    const hi = Math.min(live.current.units, base + 1);
+    // Nach rechts ziehen = nächste Seite (sie liegt links); nie mehr als eine
+    // Einheit, am Anfang/Ende des Muṣḥaf mit Widerstand.
+    let p = d.startPos + (x - d.x) / S;
+    if (p > hi) p = hi + rubber((p - hi) * S, S) / S;
+    else if (p < lo) p = lo + rubber((p - lo) * S, S) / S;
+    st.pos = p;
+    d.min = Math.min(d.min, x - d.x);
+    d.max = Math.max(d.max, x - d.x);
+    d.samples.push({ t: evTime(ev), x });
+    if (d.samples.length > 16) d.samples.shift();
+    paint();
   };
-  const onPointerUp = (e) => {
-    const s = g.current; g.current = null;
-    if (!s) return;
-    clearTimeout(s.timer);
-    if (s.long) return;
-    const dx = e.clientX - s.x; const dy = e.clientY - s.y;
-    if (s.axis === 'x') {
-      const w = scrollRef.current?.clientWidth || window.innerWidth;
-      // Weiter, wenn weit genug gezogen oder kurz und schnell gewischt.
-      if (Math.abs(dx) > w * 0.22 || (Math.abs(dx) > 24 && Math.abs(s.v) > 0.35)) flip(dx > 0 ? 1 : -1, 'swipe'); // RTL: nach rechts = weiter
-      else setTrack(0, true);
+  const end = (x, y, target, now) => {
+    const st = pg.current;
+    const d = st.drag;
+    st.drag = null;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (!vertical) {
+      const base = baseUnit();
+      if (d.axis === 'x') {
+        const v = velocity(d.samples, now);
+        const finger = { moved: Math.abs(x - d.x), against: v > 0 ? -d.min : d.max };
+        const dir = releaseDir((st.pos - base) * st.S, v, st.S, { canNext: base < live.current.units, canPrev: base > 1, finger });
+        if (dir && d.kind === 'touch') haptic();
+        animateTo(base + dir, v, 'swipe');
+        return;
+      }
+      if (Math.abs(st.pos - base) > 0.001) animateTo(base); // angehaltene Bewegung zu Ende führen
+    }
+    if (d.long || d.caught || d.axis) return;
+    if (target?.closest?.('button, a, input, select')) return;
+    if (Math.abs(x - d.x0) < 10 && Math.abs(y - d.y) < 10 && now - d.t < 450) setChrome((c) => !c);
+  };
+  const cancel = () => {
+    const st = pg.current;
+    const d = st.drag;
+    st.drag = null;
+    if (!d) return;
+    clearTimeout(d.timer);
+    if (!vertical && Math.abs(st.pos - baseUnit()) > 0.001) animateTo(baseUnit());
+  };
+
+  // Trackpad (zwei Finger waagerecht) und waagerechtes Mausrad: die Seite folgt
+  // den Fingern; nach einem Stück Weg oder bei schnellem Wisch blättert sie
+  // genau eine Einheit weiter. Der Nachlauf des Trackpads blättert nicht ein
+  // zweites Mal: bis zu einer kurzen Pause ist das Rad danach gesperrt.
+  const onWheel = (e) => {
+    const st = pg.current;
+    if (vertical || e.ctrlKey || st.drag) return; // ctrl = Zoomen (Trackpad)
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? (st.S || stepPx()) : 1;
+    const dx = e.deltaX * k;
+    const dy = e.deltaY * k;
+    const now = evTime(e);
+    let w = st.wheel;
+    if (w && now - w.last > 180) { clearTimeout(w.timer); w = st.wheel = null; }
+    if (w?.locked) {
+      w.last = now;
+      if (Math.abs(dx) > Math.abs(dy)) e.preventDefault();
       return;
     }
-    if (e.target.closest?.('button, a, input, select')) return;
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && Date.now() - s.t < 450) setChrome((c) => !c);
+    if (!w) {
+      if (Math.abs(dx) < 2 || Math.abs(dx) <= Math.abs(dy) * 1.2) return; // senkrecht: normal scrollen
+      catchMotion();
+      st.S = stepPx();
+      w = st.wheel = { acc: 0, startPos: st.pos, samples: [], last: now, locked: false, timer: 0 };
+      if (Math.abs(dx) >= 50) { // Raste eines Mausrads
+        e.preventDefault();
+        w.locked = true;
+        flip(dx < 0 ? 1 : -1, 'wheel');
+        return;
+      }
+    }
+    e.preventDefault(); // auch kein „Zurück" des Browsers per Wischen
+    w.last = now;
+    w.acc -= dx; // Finger nach rechts = nächste Seite, wie beim Wischen
+    const S = st.S;
+    const base = baseUnit();
+    const { units: n } = live.current;
+    const lo = Math.max(1, base - 1);
+    const hi = Math.min(n, base + 1);
+    let p = w.startPos + w.acc / S;
+    if (p > hi) p = hi + rubber((p - hi) * S, S) / S;
+    else if (p < lo) p = lo + rubber((p - lo) * S, S) / S;
+    st.pos = p;
+    paint();
+    w.samples.push({ t: now, x: w.acc });
+    if (w.samples.length > 16) w.samples.shift();
+    const v = velocity(w.samples, now);
+    const off = (p - base) * S;
+    const dir = Math.sign(off);
+    const can = dir > 0 ? base < n : base > 1;
+    clearTimeout(w.timer);
+    if (dir && can && (Math.abs(off) > Math.min(S * 0.3, 140) || (Math.abs(off) > 24 && Math.abs(v) > 0.6 && Math.sign(v) === dir))) {
+      w.locked = true;
+      animateTo(base + dir, v, 'wheel');
+      return;
+    }
+    // Finger ruhen, ohne genug Weg: zurückfedern.
+    w.timer = setTimeout(() => { if (st.wheel === w && !w.locked) { st.wheel = null; animateTo(baseUnit()); } }, 140);
   };
-  const onPointerCancel = () => {
-    const s = g.current; g.current = null;
-    if (s?.timer) clearTimeout(s.timer);
-    if (s?.axis === 'x') setTrack(0, true);
+
+  // Touch und Rad als eigene Ereignisse (touchmove/wheel nicht passiv, damit
+  // nur eine erkannte waagerechte Geste dem Browser das Scrollen untersagt).
+  // Bewegung und Ende einer Berührung gehen immer an das Element, auf dem sie
+  // begann -- auch wenn es beim Blättern inzwischen aus der Seite genommen
+  // wurde. Deshalb wird dort zugehört, nicht nur am Leser.
+  const gest = useRef(null);
+  gest.current = { begin, move, end, cancel, onWheel };
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return undefined;
+    const st = pg.current;
+    let held = null; // Element der laufenden Berührung
+    const release = () => {
+      if (!held) return;
+      held.removeEventListener('touchmove', tm);
+      held.removeEventListener('touchend', te);
+      held.removeEventListener('touchcancel', tc);
+      held = null;
+    };
+    function tm(e) {
+      if (st.multi || e.touches.length !== 1) return;
+      gest.current.move(e.touches[0].clientX, e.touches[0].clientY, e);
+    }
+    function te(e) {
+      if (st.multi) { if (!e.touches.length) { st.multi = false; release(); } return; }
+      if (e.touches.length) return;
+      release();
+      const t = e.changedTouches[0];
+      gest.current.end(t.clientX, t.clientY, e.target, evTime(e));
+    }
+    function tc() { release(); st.multi = false; gest.current.cancel(); }
+    const ts = (e) => {
+      if (e.touches.length > 1) { st.multi = true; gest.current.cancel(); return; } // zwei Finger: zoomen, nicht blättern
+      st.multi = false;
+      release();
+      held = e.target;
+      held.addEventListener('touchmove', tm, { passive: false });
+      held.addEventListener('touchend', te);
+      held.addEventListener('touchcancel', tc);
+      gest.current.begin(e.touches[0].clientX, e.touches[0].clientY, e.target, 'touch', evTime(e));
+    };
+    const wh = (e) => gest.current.onWheel(e);
+    el.addEventListener('touchstart', ts, { passive: true });
+    el.addEventListener('wheel', wh, { passive: false });
+    return () => {
+      release();
+      el.removeEventListener('touchstart', ts);
+      el.removeEventListener('wheel', wh);
+    };
+  }, []);
+  // Maus (Mac/PC): ziehen blättert ebenfalls, Klick blendet die Leisten ein/aus.
+  // Touch und Stift laufen über die Touch-Ereignisse oben.
+  const onPointerDown = (e) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    begin(e.clientX, e.clientY, e.target, 'mouse', evTime(e));
   };
+  const onPointerMove = (e) => {
+    const d = pg.current.drag;
+    if (e.pointerType !== 'mouse' || !d || d.kind !== 'mouse') return;
+    const had = d.axis;
+    move(e.clientX, e.clientY, e);
+    if (!had && d.axis === 'x') { try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* egal */ } }
+  };
+  const onPointerUp = (e) => { if (e.pointerType === 'mouse' && pg.current.drag?.kind === 'mouse') end(e.clientX, e.clientY, e.target, evTime(e)); };
+  const onPointerCancel = (e) => { if (e.pointerType === 'mouse' && pg.current.drag?.kind === 'mouse') cancel(); };
   const onContextMenu = (e) => {
     const wordEl = e.target.closest?.('[data-v]');
     if (!wordEl || !onLongPressWord) return;
@@ -241,8 +569,10 @@ export default function MushafShell({
   const jump = (p) => { setSheet(null); onPageChange(clampPage(p), 'jump'); };
   // Angezeigte Seiten behalten ihre Schrift (der Rest darf ausgelagert werden).
   useEffect(() => {
-    pinPageFonts(vertical ? Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i) : [page - 1, page, page + 1]);
-  }, [vertical, win, page]);
+    pinPageFonts(vertical
+      ? Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i)
+      : [unit - 1, unit, unit + 1].flatMap((u) => (u >= 1 && u <= units ? unitPages(u, spread) : [])));
+  }, [vertical, win, unit, units, spread]);
   const placeholder = (p, full) => {
     const err = pageError(p);
     return (
@@ -258,10 +588,12 @@ export default function MushafShell({
     );
   };
   const info = index ? index.pageInfo(page) : null;
-  const pageProps = { index, surahName, prefs, forceTextLayout, renderWord, version };
+  const pageProps = { index, surahName, prefs, forceTextLayout, renderWord, version, framed, reserve: framed ? RESERVE_FRAMED : RESERVE };
+  const pageView = (p, side) => (cachedPage(p) ? <MushafPage data={cachedPage(p)} side={side} {...pageProps} /> : placeholder(p, true));
+  const shown = unitPages(unit, spread);
 
   return createPortal(
-    <div className="mushaf-immersive fixed inset-0 z-[70] flex flex-col" role="dialog" aria-modal="true" aria-label="Mushaf">
+    <div className={`mushaf-immersive fixed inset-0 z-[70] flex flex-col ${framed ? 'is-framed' : ''}`} role="dialog" aria-modal="true" aria-label="Mushaf">
       <div
         ref={scrollRef}
         onScroll={onScroll}
@@ -271,7 +603,7 @@ export default function MushafShell({
         onPointerCancel={onPointerCancel}
         onContextMenu={onContextMenu}
         className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain select-none"
-        style={{ touchAction: vertical ? 'pan-y pinch-zoom' : 'pan-y pinch-zoom', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
+        style={{ touchAction: 'pan-y pinch-zoom', overscrollBehaviorX: 'none', paddingTop: 'env(safe-area-inset-top)', paddingBottom: 'env(safe-area-inset-bottom)' }}
         data-testid="mushaf-scroll"
       >
         {vertical ? (
@@ -282,17 +614,39 @@ export default function MushafShell({
             })}
           </div>
         ) : (
-          <div ref={trackRef} className="mushaf-track" style={{ transform: 'translate3d(calc(-100% / 3), 0, 0)' }}>
-            {[page + 1, page, page - 1].map((p) => (
-              <div key={p} className="mushaf-pane" aria-hidden={p !== page || undefined}>
-                {p >= 1 && p <= 604 && (cachedPage(p) ? <MushafPage data={cachedPage(p)} {...pageProps} /> : placeholder(p, true))}
-              </div>
-            ))}
+          <div className="mushaf-clip">
+            <div ref={trackRef} className="mushaf-track" data-testid="mushaf-track">
+              {[unit + 1, unit, unit - 1].map((u) => (
+                <div key={`${spread ? 'd' : 'p'}${u}`} className="mushaf-pane" data-unit={u} aria-hidden={u !== unit || undefined}>
+                  {u >= 1 && u <= units && (spread ? (
+                    // Doppelseite: gerade Seite links, ungerade rechts (wie gedruckt)
+                    <div className="mushaf-spread">
+                      <div className="mushaf-half is-left">{pageView(unitPages(u, true)[1], 'left')}</div>
+                      <div className="mushaf-half is-right">{pageView(unitPages(u, true)[0], 'right')}</div>
+                    </div>
+                  ) : pageView(u))}
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
       {overlay}
+
+      {/* Mac/PC (Maus, Trackpad): Pfeile am Rand. Links = weiter (Leserichtung). */}
+      {!vertical && (
+        <>
+          <button type="button" onClick={() => flip(1, 'button')} disabled={unit >= units} className={`mushaf-nav is-left ${chrome ? '' : 'is-quiet'}`}
+            aria-label={spread ? 'Nächste Doppelseite' : 'Nächste Seite'} title={spread ? 'Nächste Doppelseite' : 'Nächste Seite'}>
+            <ChevronLeft size={24} aria-hidden="true" />
+          </button>
+          <button type="button" onClick={() => flip(-1, 'button')} disabled={unit <= 1} className={`mushaf-nav is-right ${chrome ? '' : 'is-quiet'}`}
+            aria-label={spread ? 'Vorige Doppelseite' : 'Vorige Seite'} title={spread ? 'Vorige Doppelseite' : 'Vorige Seite'}>
+            <ChevronRight size={24} aria-hidden="true" />
+          </button>
+        </>
+      )}
 
       {/* Obere Leiste */}
       <div className={`mushaf-bar top-0 ${chrome ? '' : 'is-hidden -translate-y-full'}`} style={{ paddingTop: 'env(safe-area-inset-top)' }}>
@@ -302,8 +656,18 @@ export default function MushafShell({
           <BarIcon onClick={() => setSheet('search')} label="Suche" icon={Search} />
           <div className="flex-1 min-w-0 text-center">
             <div className="text-footnote font-semibold text-ivory truncate">{info ? surahName(info.surah) : ''}</div>
-            <div className="text-caption text-sage-muted tabular-nums">{info ? `Juzʼ ${info.juz} · Seite ${page}` : `Seite ${page}`}</div>
+            <div className="text-caption text-sage-muted tabular-nums">
+              {spread
+                ? (info ? `Juzʼ ${info.juz} · Seiten ${shown[0]}–${shown[1]}` : `Seiten ${shown[0]}–${shown[1]}`)
+                : (info ? `Juzʼ ${info.juz} · Seite ${page}` : `Seite ${page}`)}
+            </div>
           </div>
+          {framed && (
+            <div className="flex items-center rounded-full bg-subtle p-0.5 mr-1" role="group" aria-label="Seitenansicht">
+              <ViewToggle active={!spread} onClick={() => setPrefs({ spread: 'single' })} label="Einzelseite" icon={RectangleVertical} />
+              <ViewToggle active={spread} onClick={() => setPrefs({ spread: 'double' })} label="Doppelseite" icon={BookOpen} />
+            </div>
+          )}
           <BarIcon onClick={() => setSheet('jump')} label="Seite wählen" icon={Hash} />
           <BarIcon onClick={() => setSheet('settings')} label="Einstellungen" icon={Settings2} />
         </div>
@@ -320,7 +684,7 @@ export default function MushafShell({
 
       {sheet === 'settings' && (
         <Sheet title="Seiteneinstellungen" onClose={() => setSheet(null)}>
-          <SettingsPanel prefs={prefs} setPrefs={setPrefs} extra={settingsExtra} />
+          <SettingsPanel prefs={prefs} setPrefs={setPrefs} extra={settingsExtra} spreadPossible={framed} />
         </Sheet>
       )}
       {sheet === 'contents' && (
@@ -347,6 +711,15 @@ function BarIcon({ onClick, label, icon: Icon }) {
   return (
     <button onClick={onClick} aria-label={label} title={label} className="grid place-items-center h-10 w-10 rounded-full text-mint-light hover:bg-hover active:bg-hover">
       <Icon size={21} aria-hidden="true" />
+    </button>
+  );
+}
+
+function ViewToggle({ active, onClick, label, icon: Icon }) {
+  return (
+    <button onClick={onClick} aria-label={label} title={label} aria-pressed={active}
+      className={`grid place-items-center h-8 w-9 rounded-full transition-colors ${active ? 'bg-card dark:bg-elevated text-mint-light shadow-sm' : 'text-sage-muted hover:text-mint-light'}`}>
+      <Icon size={17} aria-hidden="true" />
     </button>
   );
 }
@@ -390,7 +763,7 @@ export function Sheet({ title, onClose, children, tall = false }) {
 }
 
 // ---- Einstellungen -----------------------------------------------------------
-function SettingsPanel({ prefs, setPrefs, extra }) {
+function SettingsPanel({ prefs, setPrefs, extra, spreadPossible }) {
   const [theme, setTheme] = useState(getThemePref);
   const label = (t) => <h4 className="text-footnote font-semibold text-sage-muted uppercase tracking-wide mb-2">{t}</h4>;
   return (
@@ -423,6 +796,13 @@ function SettingsPanel({ prefs, setPrefs, extra }) {
             <button onClick={() => setPrefs({ textSize: Math.min(TEXT_SIZES.length - 1, prefs.textSize + 1) })} disabled={prefs.textSize >= TEXT_SIZES.length - 1} aria-label="Größer"
               className="h-11 w-14 rounded-xl border border-line text-ivory disabled:opacity-40 grid place-items-center"><Plus size={18} /></button>
           </div>
+        </section>
+      )}
+      {spreadPossible && (
+        <section>
+          {label('Seitenansicht')}
+          <Segmented className="w-full" options={[['auto', 'Automatisch'], ['single', 'Einzelseite'], ['double', 'Doppelseite']]} value={prefs.spread} onChange={(v) => setPrefs({ spread: v })} />
+          <p className="text-caption text-sage-muted mt-2">Automatisch: im Querformat zwei Seiten wie im aufgeschlagenen Muṣḥaf, im Hochformat eine.</p>
         </section>
       )}
       <section>

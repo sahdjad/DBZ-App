@@ -358,9 +358,83 @@ html {
   .mushaf-immersive .mushaf-word { cursor: default; }
   .mushaf-immersive .mushaf-word:not(.mushaf-word-hidden):not(.is-hl):not(.is-selected):not(.is-active):not(.is-word-active):not(.is-recite-current):hover { background: none; }
   .mushaf-sheet { padding: 0.35rem 0 0.5rem; }
-  /* Waagerechtes Blättern: drei Seiten nebeneinander, die mittlere ist sichtbar. */
-  .mushaf-track { display: flex; width: 300%; will-change: transform; }
-  .mushaf-pane { width: calc(100% / 3); flex: 0 0 calc(100% / 3); min-width: 0; }
+  /* Waagerechtes Blättern: drei Einheiten (Seite oder Doppelseite) mit 24 px
+     Abstand nebeneinander, die mittlere ist sichtbar. Die Verschiebung setzt
+     der Leser direkt (MushafShell.jsx, PANE_GAP in lib/mushafPager.js). */
+  .mushaf-clip { overflow: hidden; }
+  .mushaf-track { display: flex; gap: 24px; width: 100%; transform: translate3d(calc(-100% - 24px), 0, 0); will-change: transform; }
+  .mushaf-pane { flex: 0 0 100%; min-width: 0; }
+  /* Doppelseite: gerade Seite links, ungerade rechts, beide rücken an den Bund
+     in der Mitte (GUTTER = 14 px je Seite). */
+  .mushaf-spread { display: flex; direction: ltr; }
+  .mushaf-half { flex: 1 1 0; min-width: 0; }
+  .mushaf-half.is-left { padding-right: 14px; }
+  .mushaf-half.is-right { padding-left: 14px; }
+  .mushaf-sheet.is-left > * { margin-left: auto; margin-right: 0; }
+  .mushaf-sheet.is-right > * { margin-left: 0; margin-right: auto; }
+  /* iPad/Mac: die Seite liegt als ruhiges Blatt auf etwas dunklerem Grund
+     (--pw = Seitenbreite, gesetzt von MushafPage). Doppelseite: zwei Blätter
+     treffen sich am Bund, dort ein leichter Schatten wie im aufgeschlagenen Buch. */
+  .mushaf-immersive.is-framed { background: #efe8d7; }
+  .dark .mushaf-immersive.is-framed { background: #08120e; }
+  .is-framed .mushaf-sheet { position: relative; isolation: isolate; margin-top: 12px; }
+  .is-framed .mushaf-sheet.has-pw::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: calc(var(--pw) + 40px);
+    transform: translateX(-50%);
+    background-color: #fbf7ec;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(70, 52, 20, 0.08), 0 6px 24px rgba(70, 52, 20, 0.1);
+  }
+  .dark .is-framed .mushaf-sheet.has-pw::before { background-color: #0f1d17; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 8px 28px rgba(0, 0, 0, 0.4); }
+  .is-framed .mushaf-sheet.is-left::before,
+  .is-framed .mushaf-sheet.is-right::before { transform: none; width: calc(var(--pw) + 34px); }
+  .is-framed .mushaf-sheet.is-left::before {
+    left: auto;
+    right: -14px;
+    border-radius: 6px 0 0 6px;
+    background-image: linear-gradient(to left, rgba(90, 70, 30, 0.09), transparent 28px);
+    clip-path: inset(-40px 0 -40px -40px);
+  }
+  .is-framed .mushaf-sheet.is-right::before {
+    left: -14px;
+    border-radius: 0 6px 6px 0;
+    background-image: linear-gradient(to right, rgba(90, 70, 30, 0.09), transparent 28px);
+    clip-path: inset(-40px -40px -40px 0);
+  }
+  .dark .is-framed .mushaf-sheet.is-left::before { background-image: linear-gradient(to left, rgba(0, 0, 0, 0.35), transparent 28px); }
+  .dark .is-framed .mushaf-sheet.is-right::before { background-image: linear-gradient(to right, rgba(0, 0, 0, 0.35), transparent 28px); }
+  /* Pfeile am Rand -- nur mit Maus/Trackpad (auf Touch-Geräten wird gewischt). */
+  .mushaf-nav { display: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .mushaf-nav {
+      position: absolute;
+      top: 50%;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 2.75rem;
+      height: 4.5rem;
+      margin-top: -2.25rem;
+      border-radius: 9999px;
+      color: rgb(var(--c-mint-light));
+      background: rgba(251, 247, 236, 0.72);
+      opacity: 0.6;
+      transition: opacity 0.2s ease, background-color 0.2s ease;
+    }
+    .dark .mushaf-nav { background: rgba(18, 32, 26, 0.72); }
+    .mushaf-nav.is-left { left: 0.5rem; }
+    .mushaf-nav.is-right { right: 0.5rem; }
+    .mushaf-nav.is-quiet { opacity: 0.3; }
+    .mushaf-nav:hover:not(:disabled),
+    .mushaf-nav:focus-visible { opacity: 1; }
+    .mushaf-nav:disabled { opacity: 0.12; cursor: default; }
+  }
   [data-testid='mushaf-scroll'] { overflow-anchor: none; } /* Position hält der Leser selbst (gleich auf allen Browsern) */
   .mushaf-vertical .mushaf-sheet + .mushaf-sheet,
   .mushaf-vertical .mushaf-sheet + .mushaf-placeholder,

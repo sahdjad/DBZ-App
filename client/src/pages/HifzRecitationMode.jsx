@@ -272,10 +272,16 @@ export default function HifzRecitationMode({ surahs }) {
   useEffect(() => { if (trackPage) prefetchPage(trackPage + 1); }, [trackPage]);
 
   // Blättern/Scrollen durch die Person = selbst durchsehen; die Rezitation
-  // läuft weiter, „Zurück zur Rezitation" bringt sie zurück.
-  const onPageChange = (p, how) => {
-    const q = clampPage(p);
-    if (how !== 'auto' && active && trackPage != null) setFollowing(q === trackPage);
+  // läuft weiter, „Zurück zur Rezitation" bringt sie zurück. shown: alle jetzt
+  // sichtbaren Seiten (Doppelseite) -- liegt die rezitierte darunter, folgt der
+  // Leser weiter und sie bleibt die aktuelle Seite.
+  const onPageChange = (p, how, shown) => {
+    let q = clampPage(p);
+    if (how !== 'auto' && active && trackPage != null) {
+      const sees = (shown || [q]).includes(trackPage);
+      setFollowing(sees);
+      if (sees) q = trackPage;
+    }
     setPage(q);
   };
   const backToRecitation = () => { setFollowing(true); if (trackPage) setPage(trackPage); };
