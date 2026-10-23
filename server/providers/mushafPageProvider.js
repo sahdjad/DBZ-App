@@ -58,7 +58,7 @@ export async function getMushafPage(page) {
     e.code = 'NOT_FOUND';
     throw e;
   }
-  const key = `page_${p}_v3`; // v3: mit Seitenschrift-Glyphen (code_v1) + Tadschwid je Wort
+  const key = `page_${p}_v4`; // v4: + Wortposition in der Ayah (p)
   if (memo.has(key)) return memo.get(key);
   const disk = readDisk(key);
   if (disk) { memo.set(key, disk); return disk; }
@@ -103,6 +103,9 @@ export async function getMushafPage(page) {
         tj: w.text_uthmani_tajweed || w.text_uthmani || '',
         e: w.char_type_name === 'end',
         v: v.verse_key,
+        // p = Wortnummer innerhalb der Ayah (auch bei Ayat, die auf der
+        // Vorseite beginnen) -- verknüpft das Wort mit dem Qur'an-Suchindex.
+        ...(w.char_type_name !== 'end' && Number.isInteger(w.position) ? { p: w.position } : {}),
       });
     }
   }

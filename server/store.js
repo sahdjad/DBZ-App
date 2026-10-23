@@ -64,6 +64,7 @@ const emptyDb = () => ({
   events: [], // persönliche Kalendertermine (pro Nutzer)
   quran_goals: [],
   recitation_attempts: [],
+  recitation_sessions: [], // KI-Rezitation: Übungsverläufe (nur Zahlen/Stellen, nie Audio)
   exams: [],
   exam_attempts: [],
   announcements: [],

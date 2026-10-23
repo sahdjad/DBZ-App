@@ -19,7 +19,7 @@
 // Versionskennung wird beim Build eingesetzt (vite.config.js) -> jede neue
 // Version ist ein neuer Service Worker mit frischem Cache.
 const CACHE = 'dbz-cache-__BUILD_ID__'; // App-Shell + statische Assets (wird bei Updates ersetzt)
-const DATA = 'dbz-quran-v1'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
+const DATA = 'dbz-quran-v2'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 
 self.addEventListener('install', (event) => {
@@ -110,6 +110,21 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // Fremd-Hosts (z. B. Audio-CDN) unangetastet
+
+  // Mushaf-Seiten ändern sich nie: sofort aus dem Speicher (kein Warten beim
+  // Blättern/Auswendig-Üben), im Hintergrund still aktualisieren.
+  if (url.pathname.startsWith('/api/quran/page/') || url.pathname.startsWith('/api/quran/surah-page/')) {
+    event.respondWith((async () => {
+      const cached = await caches.match(request, { cacheName: DATA });
+      const network = fetch(request).then((res) => {
+        if (res && res.status === 200) { const copy = res.clone(); caches.open(DATA).then((c) => c.put(request, copy)); }
+        return res;
+      });
+      if (cached) { network.catch(() => {}); return cached; }
+      return network.catch(() => Response.error());
+    })());
+    return;
+  }
 
   // Qur'an-Leseinhalte: network-first (frisch, wenn online), Fallback auf Cache.
   if (url.pathname.startsWith('/api/quran/') && isQuranReadPath(url.pathname)) {

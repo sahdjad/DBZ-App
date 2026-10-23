@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Ring, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { useRecorder, mmss } from '../lib/recorder.js';
+import { RecitationSessionList } from '../components/RecitationSessions.jsx';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const GOAL_TYPES = { new_hifz: 'Neu auswendig', murajaah: "Muraja'ah", consolidation: 'Festigung', test: 'Prüfung' };
@@ -253,6 +254,8 @@ function ManagerView({ surahs }) {
         </div>
       )}
 
+      {studentId && <PracticeCard studentId={studentId} surahs={surahs} />}
+
       <div className="flex justify-end">
         <Button onClick={() => setShowForm((s) => !s)}><Plus size={18} /> Neue Aufgabe</Button>
       </div>
@@ -262,6 +265,27 @@ function ManagerView({ surahs }) {
         <Card className="p-6 text-sage-muted">Noch keine Aufgaben für diesen Schüler.</Card>
       ) : data.goals.map((g) => <GoalCard key={g.id} g={g} onAttempt={attempt} canGrade />)}
     </div>
+  );
+}
+
+// KI-Übungen des Schülers („Auswendig rezitieren"): nur Zahlen/Stellen, keine
+// Bewertung -- die Erkennung ist eine Übungshilfe.
+function PracticeCard({ studentId, surahs }) {
+  const [list, setList] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setList(null);
+    api.get(`/recitation-sessions?studentId=${studentId}&limit=10`).then((d) => { if (alive) setList(d.sessions); }).catch(() => { if (alive) setList([]); });
+    return () => { alive = false; };
+  }, [studentId]);
+  const surahName = (n) => surahs.find((x) => x.n === n)?.name || `Sure ${n}`;
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="KI-Übungen" subtitle="Auswendig rezitieren · Übungshilfe, keine Bewertung" icon={Mic} />
+      {!list ? <Spinner /> : list.length === 0
+        ? <p className="text-footnote text-sage-muted">Noch keine Übungen.</p>
+        : <RecitationSessionList sessions={list} surahName={surahName} />}
+    </Card>
   );
 }
 

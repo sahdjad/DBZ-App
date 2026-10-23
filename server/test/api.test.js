@@ -2660,3 +2660,40 @@ test('Sprache: Französisch für Push und Konto', async () => {
   assert.equal((await student('PATCH', '/me', { lang: 'fr' })).data.user.lang, 'fr');
   await student('PATCH', '/me', { lang: 'de' });
 });
+
+test('KI-Rezitation: Übungsverlauf speichern (nur Zahlen), eigene + Lehrkraft der Klasse sehen ihn, andere nicht', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const other = await loginAs('sprecher@dbz.de');
+  const parent = await loginAs('eltern@dbz.de');
+  const body = {
+    id: 'rs_testabcdef12', startedAt: '2026-10-20T10:00:00.000Z', endedAt: '2026-10-20T10:05:00.000Z',
+    activeSec: 280, hiddenSec: 200, visibleSec: 80, scope: { kind: 'free' }, from: '67:1', to: '67:4', pages: [562],
+    counts: { memory: 39, read: 6, assisted: 1, missed: 1 }, hints: 1, ayahHints: 0, peeks: 0, relocations: 0, suspected: 1,
+    missedWords: ['67:1:8', '<script>'], complete: false, audio: 'darf nicht gespeichert werden',
+  };
+  assert.equal((await student('POST', '/recitation-sessions', body)).status, 200);
+  // Gleiche ID = dieselbe Übung (z. B. nach Pause) -> aktualisiert statt doppelt
+  assert.equal((await student('POST', '/recitation-sessions', { ...body, counts: { ...body.counts, memory: 45 } })).status, 200);
+  const mine = await student('GET', '/recitation-sessions');
+  const s = mine.data.sessions.filter((x) => x.id === body.id);
+  assert.equal(s.length, 1);
+  assert.equal(s[0].counts.memory, 45);
+  assert.deepEqual(s[0].missedWords, ['67:1:8']); // Ungültiges verworfen
+  assert.equal(s[0].audio, undefined); // Nur erlaubte Felder
+  // Lehrkraft der Klasse: je Schüler und je Klasse
+  assert.ok((await teacher('GET', '/recitation-sessions?studentId=user_yusuf')).data.sessions.some((x) => x.id === body.id));
+  assert.ok((await teacher('GET', '/recitation-sessions?classId=class_3')).data.sessions.some((x) => x.id === body.id));
+  // Mitschüler und Eltern: kein Zugriff auf fremde Übungen
+  assert.equal((await other('GET', '/recitation-sessions?studentId=user_yusuf')).status, 403);
+  assert.equal((await parent('GET', '/recitation-sessions?classId=class_3')).status, 403);
+  assert.ok(!(await other('GET', '/recitation-sessions')).data.sessions.some((x) => x.id === body.id));
+  // Fremde Übung überschreiben/löschen geht nicht
+  assert.equal((await other('POST', '/recitation-sessions', body)).status, 403);
+  assert.equal((await other('DELETE', `/recitation-sessions/${body.id}`)).status, 404);
+  // Ungültige Daten
+  assert.equal((await student('POST', '/recitation-sessions', { ...body, id: 'x' })).status, 400);
+  assert.equal((await student('POST', '/recitation-sessions', { ...body, endedAt: '2026-10-19T00:00:00.000Z' })).status, 400);
+  // Eigene Übung löschen
+  assert.equal((await student('DELETE', `/recitation-sessions/${body.id}`)).status, 200);
+});

@@ -168,6 +168,27 @@ nie als rezitiert. Gemessen an 70+ echten, teils nicht professionellen
 Aufnahmen aus dem Tilawa-Testkorpus stieg die Trefferquote so deutlich, ohne
 zusätzliche falsch aufgedeckte Wörter.
 
+### Freie Rezitation, zwei Anzeigen, Übungsverläufe
+
+- **Eine Sitzung, zwei Anzeigen:** „Text versteckt" (erkannte Wörter werden
+  aufgedeckt) und „Text sichtbar" (die App folgt der Rezitation). Das
+  Augen-Symbol wechselt jederzeit, ohne Mikrofon-Neustart und ohne Stand zu
+  verlieren (`client/src/lib/recitation/tracker.js`).
+- **Frei oder gezielt:** Ohne Auswahl einfach losrezitieren – die App sucht die
+  Stelle im ganzen Qur'an (`lib/recitation/locator.js`, Index
+  `client/public/quran/index-v1.json`, gebaut mit
+  `scripts/build-quran-index.mjs` aus dem Tanzil-Text). Mehrdeutige Stellen
+  (z. B. wiederholte Ayat) werden nicht geraten, sondern zur Auswahl angeboten.
+  Gezielt: Sure/Ayat, Seiten oder Juzʼ.
+- **Über Seiten- und Surengrenzen:** Die Seite blättert mit; wer selbst
+  blättert, kommt mit „Zurück zur Rezitation" (oder Esc) zurück.
+- **Übungsverläufe:** Nur Zahlen/Stellen (nie Audio) werden gespeichert
+  (`/api/recitation-sessions`), sichtbar für die Person und die Lehrkräfte
+  ihrer Klasse (Lernstand → KI-Übungen). Hilfen und Mitlesen zählen nie als
+  „auswendig". Keine Bewertung von Aussprache oder Tadschwid.
+- Tests: `client/src/lib/test/recitation.test.js` nutzt echte Ergebnisse der
+  Erkennung auf öffentlichen Testaufnahmen.
+
 ## Rollen, Postfächer & Organisation
 
 - **Eine Anmeldung pro Person, beliebig viele Rollen:** Die Verwaltung gibt

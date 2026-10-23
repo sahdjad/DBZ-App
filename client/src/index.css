@@ -344,6 +344,17 @@ html {
     user-select: none;
   }
   .dark .mushaf-word-hidden { background: rgba(74, 170, 116, 0.14); }
+  /* KI-Rezitation, Text sichtbar: aktuelles Wort nur dezent hinterlegt (der
+     Text bleibt voll lesbar, keine kräftige Farbe über dem Arabischen). */
+  .mushaf-word.is-recite-current { background: rgba(21, 101, 63, 0.12); }
+  .dark .mushaf-word.is-recite-current { background: rgba(74, 170, 116, 0.18); }
+  /* Text versteckt: das nächste erwartete (verdeckte) Wort zeigt nur, WO es
+     weitergeht -- feine Linie unten, ohne den Wortlaut zu verraten. */
+  .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(21, 101, 63, 0.55); }
+  .dark .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(112, 196, 156, 0.7); }
+  [data-testid='hifz-page'] .mushaf-word { cursor: default; }
+  [data-testid='hifz-page'] .mushaf-word:not(.mushaf-word-hidden):hover { background: none; }
+  [data-testid='hifz-page'] .mushaf-word.is-recite-current:hover { background: rgba(21, 101, 63, 0.12); }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
   /* Sure-Kopf über dem ersten Vers einer Sure auf der Seite. Bewusst OHNE
      Rahmen/Hintergrund/Karten-Optik: eine umrandete Box mittendrin sah wie
