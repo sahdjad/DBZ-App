@@ -15,7 +15,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PageList, JuzList } from 'quran-meta/hafs';
+import { PageList, JuzList, HizbQuarterList, SurahList } from 'quran-meta/hafs';
 import { normalize } from '../client/src/lib/hifzEngine.js';
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -24,6 +24,11 @@ if (src.length !== 6236) throw new Error(`6236 Ayat erwartet, ${src.length} gefu
 
 const BASMALA = 4;
 const surahAyat = new Array(114).fill(0);
+const realWords = (x) => {
+  let words = x.text_uthmani.replace(/\uFEFF/g, '').split(/\s+/).filter((t) => /[\u0621-\u064A\u0671]/.test(t));
+  if (x.ayah === 1 && x.surah !== 1 && x.surah !== 9) words = words.slice(BASMALA);
+  return words;
+};
 const ayat = src.map((x) => {
   surahAyat[x.surah - 1] = Math.max(surahAyat[x.surah - 1], x.ayah);
   // Nur echte Wörter: Pausenzeichen (ۚ ۖ ۗ …) stehen im Tanzil-Text als eigene Tokens.
@@ -41,13 +46,18 @@ const ayat = src.map((x) => {
 const words = ayat.reduce((n, a) => n + a.split(' ').length, 0);
 const out = {
   v: 1,
-  source: 'Tanzil Quran Text (Uthmani, tanzil.net) -- nur normalisierte Vergleichsformen; Seiten/Juz: quran-meta (MIT), Medina-Mushaf Hafs',
+  source: 'Tanzil Quran Text (Uthmani, tanzil.net) -- normalisierte Vergleichsformen + unveränderte Viertel-Anfänge; Seiten/Juz/Hizb: quran-meta (MIT), Medina-Mushaf Hafs',
   words,
   surahAyat,
   pageStart: PageList.slice(1, 605), // globale Ayah-Nr. (1..6236), mit der Seite 1..604 beginnt
   juzStart: JuzList.slice(1, 31),
+  hizbStart: HizbQuarterList.slice(1, 241), // 240 Viertel (Rubʿ al-Hizb)
+  // Anfang jedes Viertels für das Inhaltsverzeichnis: unveränderter
+  // Tanzil-Text (die ersten Wörter), wird so angezeigt.
+  hizbPreview: HizbQuarterList.slice(1, 241).map((ga) => realWords(src[ga - 1]).slice(0, 4).join(' ')),
+  meccan: SurahList.slice(1, 115).map((x) => (x[5] ? 1 : 0)),
   ayat,
 };
-if (out.pageStart.length !== 604 || out.juzStart.length !== 30) throw new Error('Seiten/Juz-Liste unvollständig');
+if (out.pageStart.length !== 604 || out.juzStart.length !== 30 || out.hizbStart.length !== 240 || out.meccan.length !== 114) throw new Error('Seiten/Juz/Hizb-Liste unvollständig');
 fs.writeFileSync(path.join(root, 'client/public/quran/index-v1.json'), JSON.stringify(out));
 console.log(`${words} Wörter, ${ayat.length} Ayat geschrieben`);

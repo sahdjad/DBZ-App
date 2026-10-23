@@ -85,6 +85,31 @@ export function buildQuranIndex(data) {
     },
     /** Passt die Ayah-Grenze? (Wort ist das letzte seiner Ayah) */
     isAyahEnd: (i) => i + 1 >= total || ayahNo[i + 1] !== ayahNo[i],
+
+    // ---- Navigation (Inhaltsverzeichnis, Seitenränder) ----
+    meccan: data.meccan || [],
+    /** Seite einer Ayah. */
+    pageOfAyah: (s, a) => ayahPage[globalAyah(s, a)],
+    surahStartPage: (s) => ayahPage[surahFirstAyah[s]],
+    juzStartPage: (j) => ayahPage[data.juzStart[j - 1]],
+    /** Viertel (Rubʿ al-Hizb) 1..240: { n, surah, ayah, page, preview, juz, hizb, quarter } */
+    quarters: (data.hizbStart || []).map((ga, i) => {
+      let s = 1;
+      while (s < 114 && surahFirstAyah[s + 1] <= ga) s++;
+      return { n: i + 1, surah: s, ayah: ga - surahFirstAyah[s] + 1, page: ayahPage[ga], preview: data.hizbPreview?.[i] || '', juz: Math.floor(i / 8) + 1, hizb: Math.floor(i / 4) + 1, quarter: (i % 4) + 1 };
+    }),
+    /** Juzʼ, Hizb und Viertel am Anfang einer Seite. */
+    pageInfo: (p) => {
+      const ga = pageStart[p - 1];
+      let j = 1;
+      while (j < 30 && data.juzStart[j] <= ga) j++;
+      const hs = data.hizbStart || [];
+      let q = 0;
+      while (q + 1 < hs.length && hs[q + 1] <= ga) q++;
+      let s = 1;
+      while (s < 114 && surahFirstAyah[s + 1] <= ga) s++;
+      return { juz: j, hizb: Math.floor(q / 4) + 1, quarter: (q % 4) + 1, surah: s, ayah: ga - surahFirstAyah[s] + 1 };
+    },
   };
   return index;
 }

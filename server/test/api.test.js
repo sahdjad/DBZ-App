@@ -2697,3 +2697,28 @@ test('KI-Rezitation: Übungsverlauf speichern (nur Zahlen), eigene + Lehrkraft d
   // Eigene Übung löschen
   assert.equal((await student('DELETE', `/recitation-sessions/${body.id}`)).status, 200);
 });
+
+test('Qur\'an: farbige Lesezeichen und Markierungen (je Person, gültige Farben/Ayat)', async () => {
+  const student = await loginAs('schueler@dbz.de');
+  const other = await loginAs('sprecher@dbz.de');
+  // Lesezeichen mit Farbe, Farbe ändern, gleiche Farbe = entfernen
+  assert.equal((await student('POST', '/quran/bookmarks', { surah: 67, ayah: 1, color: 'blue' })).status, 200);
+  let me = (await student('GET', '/quran/me')).data;
+  assert.equal(me.bookmarks.find((b) => b.surah === 67 && b.ayah === 1).color, 'blue');
+  await student('POST', '/quran/bookmarks', { surah: 67, ayah: 1, color: 'red' });
+  me = (await student('GET', '/quran/me')).data;
+  assert.equal(me.bookmarks.filter((b) => b.surah === 67 && b.ayah === 1).length, 1);
+  assert.equal(me.bookmarks.find((b) => b.surah === 67 && b.ayah === 1).color, 'red');
+  assert.equal((await student('POST', '/quran/bookmarks', { surah: 67, ayah: 1, color: 'red' })).data.removed, true);
+  // Ungültige Farbe/Ayah
+  assert.equal((await student('POST', '/quran/bookmarks', { surah: 67, ayah: 1, color: 'pink' })).status, 400);
+  assert.equal((await student('POST', '/quran/highlights', { surah: 67, ayah: 31, color: 'yellow' })).status, 400); // Al-Mulk hat 30 Ayat
+  // Markierung setzen, ändern, entfernen
+  assert.equal((await student('POST', '/quran/highlights', { surah: 2, ayah: 255, color: 'yellow' })).status, 200);
+  await student('POST', '/quran/highlights', { surah: 2, ayah: 255, color: 'green' });
+  me = (await student('GET', '/quran/me')).data;
+  assert.deepEqual(me.highlights.map((h) => [h.surah, h.ayah, h.color]), [[2, 255, 'green']]);
+  assert.equal((await other('GET', '/quran/me')).data.highlights.length, 0, 'Markierungen sind persönlich');
+  await student('POST', '/quran/highlights', { surah: 2, ayah: 255, color: null });
+  assert.equal((await student('GET', '/quran/me')).data.highlights.length, 0);
+});

@@ -1,4 +1,5 @@
-// „Auswendig rezitieren" – KI-Rezitation auf der echten Mushaf-Seite.
+// „Auswendig rezitieren" – KI-Rezitation auf der echten Mushaf-Seite, im
+// selben Vollbild-Leser wie „Lesen" (components/mushaf/MushafShell.jsx).
 //
 // Zwei Anzeigen, EINE Sitzung (lib/recitation/tracker.js):
 //  - Text versteckt: noch nicht rezitierte Wörter sind verdeckt (die Wort-
@@ -12,59 +13,33 @@
 // Zwei Übungsumfänge: frei (einfach anfangen, die App findet die Stelle im
 // ganzen Qur'an -- locator.js) oder gezielt (Sure/Ayat, Seiten, Juzʼ).
 // Die Sitzung läuft über Seiten- und Surengrenzen weiter; die Seite blättert
-// mit. Wer selbst blättert, kann jederzeit „Zurück zur Rezitation".
+// (bzw. scrollt) mit. Wer selbst blättert, kann jederzeit „Zurück zur Rezitation".
 //
 // Spracherkennung: NVIDIA FastConformer (Qur'an-Feinabstimmung) direkt auf dem
 // Gerät (lib/asr/). Audio verlässt das Gerät nie. KEIN simulierter
 // Fortschritt. Gespeichert wird nur die Übungsstatistik (Server, sichtbar für
 // die Person und die Lehrkräfte ihrer Klasse) -- keine Bewertung.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Mic, Pause, Eye, EyeOff, Lightbulb, Target, History, Square, AlertTriangle, X, ChevronLeft, ChevronRight,
-  Undo2, Search, Loader2,
+  Mic, Pause, Eye, EyeOff, Lightbulb, Target, History, Square, AlertTriangle, X, Undo2, Search, Loader2, BookOpen,
 } from 'lucide-react';
-import { Card, Button, Segmented, Spinner, useBackToClose } from '../components/ui.jsx';
+import { Card, Button, Segmented, Spinner } from '../components/ui.jsx';
+import MushafShell, { Sheet } from '../components/mushaf/MushafShell.jsx';
 import { api } from '../lib/api.js';
 import { NvidiaSpeech } from '../lib/asr/nvidiaSpeech.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { ensurePageFont, isPageFontLoaded, useMushafAutoFit, loadMushafLayout } from '../lib/mushafFont.js';
+import { clampPage, lastPage, rememberPage, prefetchPage } from '../lib/mushafPages.js';
 import { loadQuranIndex } from '../lib/recitation/quranIndex.js';
 import { RecitationTracker, KIND } from '../lib/recitation/tracker.js';
 import { RecitationSessionList, fmtDuration, fmtRange } from '../components/RecitationSessions.jsx';
 
 const DISPLAY_KEY = 'dbz-hifz-display';
-const PAGE_KEY = 'dbz-mushaf-page';
-const clampPage = (p) => Math.max(1, Math.min(604, Number(p) || 1));
 const fmtMb = (b) => `${(b / 1048576).toFixed(0)} MB`;
 const ERROR_TEXT = {
   'not-allowed': 'Mikrofonzugriff wurde nicht erlaubt. Bitte in den Browser-Einstellungen erlauben.',
   'audio-capture': 'Kein Mikrofon gefunden.',
 };
 const newSessionId = () => `rs_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-
-// ---- Seiten-Daten (Speicher über Tab-Wechsel hinweg) ------------------------
-const pageCache = new Map();
-const pageRequests = new Map();
-function fetchPage(p) {
-  if (pageCache.has(p)) return Promise.resolve(pageCache.get(p));
-  if (!pageRequests.has(p)) {
-    pageRequests.set(p, api.get(`/quran/page/${p}`)
-      .then((r) => { pageCache.set(p, r.page); return r.page; })
-      .finally(() => pageRequests.delete(p)));
-  }
-  return pageRequests.get(p);
-}
-// Seite + Seitenschrift vorbereiten. Die Schrift wartet höchstens kurz, sonst
-// erscheint die Seite in der lesbaren Ersatzschrift (nie ein Ladebildschirm).
-async function preparePage(p) {
-  const d = await fetchPage(p);
-  if (d.font === 'v1' && !isPageFontLoaded(d.fontPage)) {
-    await Promise.race([ensurePageFont(d.fontPage), new Promise((r) => setTimeout(r, 2500))]);
-  }
-  return d;
-}
-const prefetchPage = (p) => { if (p >= 1 && p <= 604) fetchPage(p).then((d) => { if (d.font === 'v1') ensurePageFont(d.fontPage); }).catch(() => {}); };
 
 function useModelCached() {
   const [cached, setCached] = useState(true);
@@ -85,6 +60,7 @@ export default function HifzRecitationMode({ surahs }) {
   const { user } = useAuth();
   const consent = Boolean(user?.consentAt);
   const modelCached = useModelCached();
+  const surahName = useCallback((n) => surahs?.find((s) => s.n === n)?.name || `Sure ${n}`, [surahs]);
 
   // ---- Qur'an-Index -------------------------------------------------------
   const [index, setIndex] = useState(null);
@@ -95,25 +71,10 @@ export default function HifzRecitationMode({ surahs }) {
     return () => { alive = false; };
   }, []);
 
-  // ---- Seite --------------------------------------------------------------
-  const [page, setPage] = useState(() => { try { return clampPage(localStorage.getItem(PAGE_KEY) || 1); } catch { return 1; } });
-  const [pageData, setPageData] = useState(null);
-  const [pageLoading, setPageLoading] = useState(false);
-  const [pageError, setPageError] = useState(null);
-  const pageReq = useRef(0);
-  useEffect(() => {
-    const req = ++pageReq.current;
-    setPageLoading(true); setPageError(null);
-    preparePage(page)
-      .then((d) => {
-        if (req !== pageReq.current) return;
-        setPageData(d);
-        try { localStorage.setItem(PAGE_KEY, String(page)); } catch { /* egal */ }
-        prefetchPage(page + 1);
-      })
-      .catch((e) => { if (req === pageReq.current) setPageError(e.message || 'Seite konnte nicht geladen werden.'); })
-      .finally(() => { if (req === pageReq.current) setPageLoading(false); });
-  }, [page]);
+  const [open, setOpen] = useState(false); // Vollbild-Leser offen?
+  const [page, setPageState] = useState(lastPage);
+  const setPage = (p) => { const q = clampPage(p); rememberPage(q); setPageState(q); };
+  const [rangeSheet, setRangeSheet] = useState(false);
 
   // ---- Sitzung --------------------------------------------------------------
   const trackerRef = useRef(null);
@@ -132,7 +93,7 @@ export default function HifzRecitationMode({ surahs }) {
   const [following, setFollowing] = useState(true);
   const [chrome, setChrome] = useState(true);
   const [ended, setEnded] = useState(false);
-  const [sheet, setSheet] = useState(null); // 'range' | 'history' | 'help'
+  const [sheet, setSheet] = useState(null); // 'help' | 'summary'
   const [saveState, setSaveState] = useState('idle');
   const metaRef = useRef(null); // { id, startedAt, activeSec, hiddenSec, visibleSec }
   const heardRef = useRef(false);
@@ -243,7 +204,9 @@ export default function HifzRecitationMode({ surahs }) {
   const resetPreview = () => { previewRef.current = { cursor: trackerRef.current?.cursor ?? null, n: 0 }; };
 
   const begin = (scope) => {
+    setRangeSheet(false);
     if (!index || !consent || !supported) return;
+    setOpen(true);
     if (!globalThis.isSecureContext) { setCapture('error'); setCaptureError('Bitte HTTPS oder localhost verwenden.'); return; }
     if (trackerRef.current && metaRef.current) save();
     const tr = new RecitationTracker(index, { scope, reading: readingNow });
@@ -260,10 +223,16 @@ export default function HifzRecitationMode({ surahs }) {
   function finish() {
     speech.stop();
     setCapture('idle');
-    setEnded(true); setPeek(false); setSheet(null);
+    setEnded(true); setPeek(false); setSheet('summary');
     save();
   }
-  const closeSession = () => { speech.stop(); trackerRef.current = null; metaRef.current = null; setEnded(false); setCapture('idle'); setPeek(false); rerender(); };
+  const closeSession = () => { speech.stop(); trackerRef.current = null; metaRef.current = null; setEnded(false); setCapture('idle'); setPeek(false); setSheet(null); rerender(); };
+  const closeReader = () => {
+    if (trackerRef.current && !ended) { speech.stop(); save(); }
+    trackerRef.current = null; metaRef.current = null;
+    setEnded(false); setCapture('idle'); setPeek(false); setSheet(null); setOpen(false);
+    rerender();
+  };
 
   const onMic = () => {
     if (micBusy) return;
@@ -297,30 +266,30 @@ export default function HifzRecitationMode({ surahs }) {
   useEffect(() => {
     if (!active || !following || trackPage == null || trackPage === page) return;
     setPage(trackPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, following, trackPage, page]);
   // Nächste Seite rechtzeitig vorladen (kein Warten beim Umblättern).
   useEffect(() => { if (trackPage) prefetchPage(trackPage + 1); }, [trackPage]);
 
-  const goPage = (p, manual = true) => {
+  // Blättern/Scrollen durch die Person = selbst durchsehen; die Rezitation
+  // läuft weiter, „Zurück zur Rezitation" bringt sie zurück.
+  const onPageChange = (p, how) => {
     const q = clampPage(p);
-    if (manual && active && trackPage != null) setFollowing(q === trackPage);
+    if (how !== 'auto' && active && trackPage != null) setFollowing(q === trackPage);
     setPage(q);
   };
   const backToRecitation = () => { setFollowing(true); if (trackPage) setPage(trackPage); };
 
-  // ---- Tastatur (Mac/iPad mit Tastatur) ------------------------------------
+  // ---- Tastatur (Mac/iPad mit Tastatur); Pfeiltasten blättert der Leser ----
   const keyRef = useRef(null);
   keyRef.current = (e) => {
-    if (e.metaKey || e.ctrlKey || e.altKey || sheet) return;
+    if (!open || e.metaKey || e.ctrlKey || e.altKey || sheet || rangeSheet) return;
     const tag = (e.target?.tagName || '').toLowerCase();
     if (['input', 'select', 'textarea'].includes(tag)) return;
     // Leertaste auf einem fokussierten Knopf löst diesen Knopf aus (Standard) -- nicht zusätzlich das Mikrofon.
     if (tag === 'button' && e.key === ' ') return;
-    if (e.key === 'ArrowLeft') { e.preventDefault(); goPage(page + 1); } // RTL: links = weiter
-    else if (e.key === 'ArrowRight') { e.preventDefault(); goPage(page - 1); }
-    else if (e.key === ' ') { e.preventDefault(); onMic(); }
+    if (e.key === ' ') { e.preventDefault(); onMic(); }
     else if ((e.key === 'v' || e.key === 'V') && active) toggleDisplay();
-    else if (e.key === 'Escape' && active && !following) backToRecitation();
   };
   useEffect(() => {
     const on = (e) => keyRef.current(e);
@@ -328,78 +297,33 @@ export default function HifzRecitationMode({ surahs }) {
     return () => window.removeEventListener('keydown', on);
   }, []);
 
-  // ---- Wischen = Blättern, Tippen = Bedienelemente ein/aus -----------------
-  const gesture = useRef(null);
-  const onPointerDown = (e) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    gesture.current = { x: e.clientX, y: e.clientY, t: Date.now() };
-  };
-  const onPointerUp = (e) => {
-    const g = gesture.current; gesture.current = null;
-    if (!g) return;
-    const dx = e.clientX - g.x; const dy = e.clientY - g.y;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) { goPage(dx > 0 ? page + 1 : page - 1); return; } // RTL: nach rechts = weiter
-    if (Math.abs(dx) < 10 && Math.abs(dy) < 10 && Date.now() - g.t < 500) setChrome((c) => !c);
-  };
-
-  // ---- Darstellung der Seite ------------------------------------------------
-  const glyph = !!(pageData?.font === 'v1' && isPageFontLoaded(pageData.fontPage));
-  const pageElRef = useRef(null);
-  const { fs: glyphFs, width: glyphW, shortLines } = useMushafAutoFit(pageElRef, {
-    active: glyph,
-    numLines: pageData?.lines.length || 0,
-    resetKey: pageData ? `${pageData.page}:${glyph}` : null,
-    layout: loadMushafLayout(),
-  });
-  // Jedem Wort der Seite seine Nummer im Qur'an-Index zuordnen (s:a:p).
-  const lines = useMemo(() => {
-    if (!pageData) return [];
-    const counter = {};
-    return pageData.lines.map((line) => ({
-      n: line.n,
-      words: line.words.map((w) => {
-        if (w.e) return { ...w, g: null };
-        counter[w.v] = (counter[w.v] || 0) + 1;
-        const [s, a] = w.v.split(':').map(Number);
-        const p = Number.isInteger(w.p) ? w.p : counter[w.v];
-        return { ...w, g: index ? index.wordOf(s, a, p) : null };
-      }),
-    }));
-  }, [pageData, index]);
-  const headerByLine = useMemo(() => {
-    if (!pageData) return {};
-    const placed = new Set();
-    const out = {};
-    for (const line of pageData.lines) for (const w of line.words) {
-      if (pageData.starts?.[w.v] && !placed.has(w.v)) { placed.add(w.v); (out[line.n] ||= []).push(pageData.starts[w.v]); }
-    }
-    return out;
-  }, [pageData]);
-
+  // ---- Darstellung je Wort --------------------------------------------------
   const tracking = active && tracker.phase === 'tracking';
   const pv = previewRef.current;
   const previewN = listening && tracking && pv.cursor === tracker.cursor ? pv.n : 0;
   const current = tracking ? tracker.cursor + previewN : null;
   const hideMode = !!tracker && display === 'hidden' && !peek && !ended;
   const range = tracker?.range;
-  const wordClass = (g) => {
-    if (g == null || !tracker) return 'mushaf-word';
+  const renderWord = (w) => {
+    const g = w.g;
+    if (g == null || !tracker) return {};
     const kind = tracker.marks.get(g);
-    const outside = g < range[0] || g >= range[1];
+    if (g < range[0] || g >= range[1]) return { className: 'opacity-40' };
     const known = !!kind || tracker.hints.has(g) || (tracking && g >= tracker.cursor && g < tracker.cursor + previewN);
-    const cls = ['mushaf-word'];
-    if (outside) { cls.push('opacity-40'); return cls.join(' '); }
-    if (hideMode && !known) cls.push('mushaf-word-hidden');
+    const cls = [];
+    const hidden = hideMode && !known;
+    if (hidden) cls.push('mushaf-word-hidden');
     if (kind === KIND.MISSED) cls.push('mushaf-word-missed');
     else if (!hideMode && kind === KIND.ASSISTED) cls.push('text-sage-muted');
     if (tracker.mismatch?.suspected && tracker.mismatch.g === g) cls.push('ring-1 ring-status-absent/60 rounded');
     if (g === current && !ended) cls.push(hideMode ? 'is-recite-next' : 'is-recite-current');
-    return cls.join(' ');
+    return { className: cls.join(' '), hidden };
   };
+  const version = `${tracker?.version ?? 'x'}|${display}|${peek}|${previewN}|${ended}|${current}|${!!tracker}`;
 
   // ---- Statuszeile -----------------------------------------------------------
-  const surahName = (n) => surahs?.find((s) => s.n === n)?.name || `Sure ${n}`;
-  const where = tracking && index ? `${surahName(index.surah[Math.min(tracker.cursor, index.total - 1)])}, Ayah ${index.ayah[Math.min(tracker.cursor, index.total - 1)]}` : null;
+  const cur = tracking && index ? Math.min(tracker.cursor, index.total - 1) : null;
+  const where = cur != null ? `${surahName(index.surah[cur])}, Ayah ${index.ayah[cur]}` : null;
   let status;
   if (!tracker) status = index ? 'Mikrofon antippen und einfach losrezitieren – die App findet die Stelle selbst.' : 'Qur\'an-Index wird geladen …';
   else if (ended) status = 'Übung beendet.';
@@ -412,163 +336,124 @@ export default function HifzRecitationMode({ surahs }) {
   else if (tracker.mismatch?.suspected) status = 'Mögliche Abweichung – bitte die Stelle wiederholen.';
   else status = `Hört zu · ${where}`;
   const micState = !tracker || ended ? 'off' : capture === 'listening' ? (tracker.phase === 'searching' ? 'search' : 'on') : micBusy ? 'busy' : capture === 'error' ? 'error' : 'paused';
-
-  const counts = tracker?.counts();
   const showReturn = active && !following && trackPage != null && trackPage !== page;
 
-  return (
-    <div className="pb-28 md:pb-24">
-      {/* Kopf: Seite + Bereich (blendet beim Antippen der Seite aus, ohne Platz zu ändern) */}
-      <div className={`flex items-center justify-between gap-2 mb-3 transition-opacity ${chrome ? '' : 'opacity-0 pointer-events-none'}`} aria-hidden={!chrome}>
-        <div className="flex items-center gap-1">
-          <button onClick={() => goPage(page - 1)} disabled={page <= 1} aria-label="Vorige Seite" className="p-2 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40"><ChevronRight size={16} /></button>
-          <button onClick={() => goPage(page + 1)} disabled={page >= 604} aria-label="Nächste Seite" className="p-2 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40"><ChevronLeft size={16} /></button>
-        </div>
-        <div className="text-center min-w-0">
-          <div className="text-ivory text-sm font-medium tabular-nums inline-flex items-center gap-1.5">
-            Seite {page} <span className="text-sage-muted font-normal">/ 604</span>
-            {pageLoading && pageData && <Loader2 size={13} className="animate-spin text-sage-muted" aria-label="Seite lädt" />}
-          </div>
-          <div className="text-caption text-sage-muted truncate">
-            {tracker?.scope.kind === 'focused' ? `Gezielt: ${tracker.scope.label}` : pageData?.juz ? `Juzʼ ${pageData.juz}` : ''}
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <button onClick={() => setSheet('range')} className="p-2 rounded-lg border border-line text-sage hover:bg-hover" aria-label="Gezielt üben" title="Gezielt üben"><Target size={16} /></button>
-          <button onClick={() => setSheet('history')} className="p-2 rounded-lg border border-line text-sage hover:bg-hover" aria-label="Verlauf" title="Verlauf"><History size={16} /></button>
-        </div>
-      </div>
-
-      {/* Status (live, für Screenreader) */}
-      <div className={`min-h-[1.5rem] mb-2 transition-opacity ${chrome ? '' : 'opacity-0'}`}>
-        <p className="flex items-center gap-2 text-subhead" role="status" aria-live="polite">
-          {micState === 'on' || micState === 'search' ? <span className="h-2 w-2 rounded-full bg-status-present animate-pulse motion-reduce:animate-none shrink-0" aria-hidden="true" /> : null}
-          {capture === 'error' && <AlertTriangle size={15} className="text-status-absent shrink-0" />}
-          <span className={capture === 'error' ? 'text-status-absent' : 'text-sage'}>{status}</span>
-        </p>
-        {listening && interim && <p className="text-caption text-sage-muted truncate" aria-live="off">Gehört: <span dir="rtl" lang="ar" className="font-arabic-ui">{interim}</span></p>}
-        {slowDevice && listening && <p className="text-caption text-status-late">Dieses Gerät kommt kurz nicht hinterher – Wörter erscheinen etwas verzögert.</p>}
-        {noAudio && listening && <p className="text-caption text-status-late">Das Mikrofon scheint nichts zu empfangen. Bitte Mikrofonberechtigung prüfen.</p>}
-      </div>
-
-      {/* Mehrdeutige Stelle: selbst wählen */}
+  const statusBlock = (
+    <div className="space-y-1">
+      <p className="flex items-center gap-2 text-footnote" role="status" aria-live="polite">
+        {micState === 'on' || micState === 'search' ? <span className="h-2 w-2 rounded-full bg-status-present animate-pulse motion-reduce:animate-none shrink-0" aria-hidden="true" /> : null}
+        {capture === 'error' && <AlertTriangle size={14} className="text-status-absent shrink-0" />}
+        <span className={capture === 'error' ? 'text-status-absent' : 'text-sage'}>{status}</span>
+      </p>
+      {listening && interim && <p className="text-caption text-sage-muted truncate" aria-live="off">Gehört: <span dir="rtl" lang="ar" className="font-arabic-ui">{interim}</span></p>}
+      {slowDevice && listening && <p className="text-caption text-status-late">Dieses Gerät kommt kurz nicht hinterher – Wörter erscheinen etwas verzögert.</p>}
+      {noAudio && listening && <p className="text-caption text-status-late">Das Mikrofon scheint nichts zu empfangen. Bitte Mikrofonberechtigung prüfen.</p>}
       {active && tracker.candidates.length > 0 && (
-        <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 pt-1">
           <span className="text-caption text-sage-muted">Welche Stelle?</span>
           {tracker.candidates.slice(0, 5).map((c, i) => (
-            <button key={c.end} onClick={() => choose(i)} className="px-3 py-1.5 rounded-full border border-line bg-card text-footnote text-ivory hover:bg-hover">
+            <button key={c.end} onClick={() => choose(i)} className="px-3 py-1 rounded-full border border-line bg-card text-footnote text-ivory hover:bg-hover">
               {surahName(index.surah[c.start])} {index.ayah[c.start]}
             </button>
           ))}
         </div>
       )}
+    </div>
+  );
 
-      {!consent && <Notice>Für die Spracherkennung fehlt noch deine Einwilligung (Konto → Datenschutz).</Notice>}
-      {!supported && <Notice>Die Spracherkennung läuft in diesem Browser nicht. Bitte Safari oder Chrome aktualisieren.</Notice>}
-      {indexError && <Notice>{indexError}</Notice>}
-      {pageError && !pageData && <Notice>{pageError} <button className="underline ml-1" onClick={() => goPage(page, false)}>Erneut versuchen</button></Notice>}
-
-      {/* Mushaf-Seite */}
-      {!pageData ? (pageError ? null : <Spinner label="Mushaf-Seite wird geladen …" />) : (
-        <div className="relative select-none" onPointerDown={onPointerDown} onPointerUp={onPointerUp} style={{ touchAction: 'pan-y pinch-zoom' }} data-testid="hifz-page">
-          <Card className="p-0 overflow-hidden">
-            <div
-              ref={pageElRef}
-              className={`mushaf-page px-4 py-5 sm:px-8 sm:py-7 font-mushaf mx-auto ${glyph ? 'is-glyph' : ''} ${hideMode ? 'is-hidden-mode' : ''}`}
-              style={{
-                fontSize: glyph ? (glyphFs ? `${glyphFs}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.3rem, 4.4vw, 1.85rem)',
-                width: glyph && glyphW ? `${glyphW}px` : undefined,
-                maxWidth: glyph ? '100%' : '44rem',
-              }}
-            >
-              <div className="mushaf-lines">
-                {lines.map((line) => (
-                  <div key={line.n} className="mushaf-line-wrap">
-                    {(headerByLine[line.n] || []).map((h) => (
-                      <div key={h.surah} className="mushaf-surah-head">
-                        <div className="text-mint" style={{ fontSize: '1.05em' }} dir="rtl">سُورَةُ {h.name}</div>
-                        {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.9em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
-                      </div>
-                    ))}
-                    <p data-line={line.n} className={`mushaf-line ${(glyph ? shortLines.has(String(line.n)) : line.words.length <= 6) ? 'is-short' : ''}`}>
-                      {line.words.map((w, wi) => {
-                        if (w.e) return <span key={wi} className="mushaf-word mushaf-end" aria-hidden="true" style={glyph && w.g ? { fontFamily: `qcf-p${pageData.fontPage}` } : undefined}>{glyph && w.g ? w.g : `﴿${w.t}﴾`}</span>;
-                        const cls = wordClass(w.g);
-                        const hidden = cls.includes('mushaf-word-hidden');
-                        return (
-                          <span key={wi} data-g={w.g ?? undefined} aria-hidden={hidden || undefined}
-                            style={glyph && w.g ? { fontFamily: `qcf-p${pageData.fontPage}` } : undefined}
-                            className={cls}>
-                            {glyph && w.g ? w.g : w.t}{glyph ? '' : ' '}
-                          </span>
-                        );
-                      })}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </Card>
-          {showReturn && (
-            <button onClick={backToRecitation} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()}
-              className="absolute left-1/2 -translate-x-1/2 top-3 z-10 inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-mint text-onaccent px-4 py-2 text-footnote font-semibold shadow-float">
-              <Undo2 size={15} /> Zurück zur Rezitation · Seite {trackPage}
-            </button>
-          )}
-          {!chrome && (micState === 'on' || micState === 'search') && (
-            <span className="absolute top-2 right-2 h-2.5 w-2.5 rounded-full bg-status-present animate-pulse motion-reduce:animate-none" aria-label="Mikrofon an" />
-          )}
-        </div>
-      )}
-
-      {/* Ergebnis nach dem Beenden */}
-      {ended && tracker && (
-        <Card className="p-4 sm:p-5 mt-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-body font-semibold text-ivory">Übung beendet</h3>
-            <span className="text-caption text-sage-muted">
-              {saveState === 'saving' ? 'Wird gespeichert …' : saveState === 'saved' ? 'Gespeichert' : saveState === 'error' ? 'Nicht gespeichert (offline?)' : ''}
-            </span>
-          </div>
-          <SummaryStats counts={counts} summary={tracker.summary()} meta={metaRef.current} surahName={surahName} />
-          <p className="text-caption text-sage-muted">Übungshilfe der Spracherkennung – keine Bewertung von Aussprache oder Tadschwid. Deine Lehrkraft sieht diese Übersicht.</p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => begin(tracker.scope)}><Mic size={16} /> Neue Übung</Button>
-            <Button variant="outline" onClick={closeSession}>Schließen</Button>
-            {saveState === 'error' && <Button variant="ghost" onClick={() => save()}>Erneut speichern</Button>}
-          </div>
-        </Card>
-      )}
-
-      {!tracker && !modelCached && supported && (
-        <p className="text-caption text-sage-muted text-center mt-3">Beim ersten Mal lädt die Spracherkennung einmalig (ca. 85 MB) – am besten im WLAN. Audio bleibt auf dem Gerät.</p>
-      )}
-
-      {/* Bedienleiste */}
-      <ControlBar hidden={!chrome}>
-        {active && (
-          <BarButton onClick={() => setSheet('help')} disabled={!tracking} label="Hilfe" icon={Lightbulb} />
-        )}
-        {active && (
-          <BarButton onClick={toggleDisplay} pressed={display === 'visible'} label={display === 'hidden' ? 'Text zeigen' : 'Text verbergen'}
+  const controls = (
+    <div className="flex items-center justify-center gap-3 sm:gap-5" data-testid="hifz-controls">
+      {active
+        ? <BarButton onClick={() => setSheet('help')} disabled={!tracking} label="Hilfe" icon={Lightbulb} />
+        : <BarButton onClick={() => setRangeSheet(true)} label="Gezielt" icon={Target} />}
+      {active
+        ? <BarButton onClick={toggleDisplay} pressed={display === 'visible'} label={display === 'hidden' ? 'Text zeigen' : 'Text verbergen'}
             icon={display === 'hidden' ? Eye : EyeOff} title="Text versteckt / sichtbar (Taste V)" testid="eye-toggle" />
+        : <BarButton onClick={() => setSheet('history')} label="Verlauf" icon={History} />}
+      <button
+        onClick={onMic}
+        disabled={!index || !consent || !supported || micBusy}
+        data-testid="mic-button"
+        aria-label={micState === 'on' || micState === 'search' ? 'Mikrofon pausieren' : 'Mikrofon starten'}
+        className={[
+          'relative grid place-items-center h-14 w-14 rounded-full shadow-float transition-colors disabled:opacity-50 shrink-0',
+          micState === 'on' || micState === 'search' ? 'bg-status-absent text-white' : 'bg-mint text-onaccent',
+        ].join(' ')}
+      >
+        {micBusy ? <Loader2 size={24} className="animate-spin" /> : micState === 'on' || micState === 'search' ? <Pause size={24} fill="currentColor" /> : <Mic size={24} />}
+        {micState === 'search' && <Search size={13} className="absolute bottom-2 right-2" aria-hidden="true" />}
+      </button>
+      {active ? <BarButton onClick={finish} label="Beenden" icon={Square} /> : <span className="min-w-[3.25rem]" aria-hidden="true" />}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      {/* Startkarte im Tab: frei rezitieren, gezielt üben, letzte Übungen */}
+      <Card className="p-5 sm:p-6">
+        <div className="flex items-start gap-4">
+          <span className="grid place-items-center h-12 w-12 rounded-2xl bg-mint/10 text-mint-light shrink-0"><Mic size={24} /></span>
+          <div className="min-w-0">
+            <h2 className="text-title3 text-ivory">Auswendig rezitieren</h2>
+            <p className="text-subhead text-sage-muted mt-1">Einfach losrezitieren – die App findet die Stelle im ganzen Qur'an und deckt die Wörter auf, die du richtig rezitierst. Mit dem Auge wechselst du jederzeit zwischen verstecktem und sichtbarem Text.</p>
+          </div>
+        </div>
+        {!consent && <div className="mt-4"><Notice>Für die Spracherkennung fehlt noch deine Einwilligung (Konto → Datenschutz).</Notice></div>}
+        {!supported && <div className="mt-4"><Notice>Die Spracherkennung läuft in diesem Browser nicht. Bitte Safari oder Chrome aktualisieren.</Notice></div>}
+        {indexError && <div className="mt-4"><Notice>{indexError}</Notice></div>}
+        <div className="grid sm:grid-cols-3 gap-2 mt-5">
+          <Button size="lg" onClick={() => begin({ kind: 'free' })} disabled={!index || !consent || !supported} data-testid="start-free"><Mic size={18} /> Frei rezitieren</Button>
+          <Button size="lg" variant="outline" onClick={() => setRangeSheet(true)} disabled={!index || !consent || !supported}><Target size={18} /> Gezielt üben</Button>
+          <Button size="lg" variant="ghost" onClick={() => setOpen(true)} disabled={!index}><BookOpen size={18} /> Seite ansehen</Button>
+        </div>
+        {!modelCached && supported && (
+          <p className="text-caption text-sage-muted mt-3">Beim ersten Mal lädt die Spracherkennung einmalig (ca. 85 MB) – am besten im WLAN. Audio bleibt auf dem Gerät.</p>
         )}
-        <button
-          onClick={onMic}
-          disabled={!index || !consent || !supported || micBusy}
-          data-testid="mic-button"
-          aria-label={micState === 'on' || micState === 'search' ? 'Mikrofon pausieren' : 'Mikrofon starten'}
-          className={[
-            'relative grid place-items-center h-14 w-14 rounded-full shadow-float transition-colors disabled:opacity-50',
-            micState === 'on' || micState === 'search' ? 'bg-status-absent text-white' : 'bg-mint text-onaccent',
-          ].join(' ')}
-        >
-          {micBusy ? <Loader2 size={24} className="animate-spin" /> : micState === 'on' || micState === 'search' ? <Pause size={24} fill="currentColor" /> : <Mic size={24} />}
-          {micState === 'search' && <Search size={13} className="absolute bottom-2 right-2" aria-hidden="true" />}
-        </button>
-        {active && <BarButton onClick={finish} label="Beenden" icon={Square} />}
-        {!active && <BarButton onClick={() => setSheet('range')} label="Gezielt" icon={Target} />}
-      </ControlBar>
+      </Card>
+      <Card className="p-5 sm:p-6">
+        <h3 className="text-body font-semibold text-ivory mb-2">Meine Übungen</h3>
+        <HistoryList surahName={surahName} key={saveState} />
+      </Card>
+
+      {open && (
+        <MushafShell
+          onClose={closeReader}
+          closeLabel="Schließen"
+          onEscape={() => { if (!showReturn) return false; backToRecitation(); return true; }}
+          page={page}
+          onPageChange={onPageChange}
+          index={index}
+          surahs={surahs}
+          renderWord={renderWord}
+          version={version}
+          focusG={following ? current : null}
+          chrome={chrome}
+          onChromeChange={setChrome}
+          status={statusBlock}
+          bottom={controls}
+          overlay={(
+            <>
+              {showReturn && (
+                <div className="absolute inset-x-0 z-[3] flex justify-center pointer-events-none" style={{ top: 'calc(env(safe-area-inset-top) + 4.25rem)' }}>
+                  <button onClick={backToRecitation} className="pointer-events-auto inline-flex items-center gap-1.5 whitespace-nowrap rounded-full bg-mint text-onaccent px-4 py-2 text-footnote font-semibold shadow-float">
+                    <Undo2 size={15} /> Zurück zur Rezitation · Seite {trackPage}
+                  </button>
+                </div>
+              )}
+              {peek && active && (
+                <div className="absolute inset-x-0 z-[3] flex justify-center" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 9.5rem)' }}>
+                  <button onClick={togglePeek} className="rounded-full bg-elevated border border-line px-4 py-2 text-footnote text-ivory shadow-float inline-flex items-center gap-1.5">
+                    <EyeOff size={15} /> Wieder verbergen
+                  </button>
+                </div>
+              )}
+              {!chrome && (micState === 'on' || micState === 'search') && (
+                <span className="absolute z-[3] right-3 h-2.5 w-2.5 rounded-full bg-status-present animate-pulse motion-reduce:animate-none" style={{ top: 'calc(env(safe-area-inset-top) + 0.75rem)' }} aria-label="Mikrofon an" />
+              )}
+            </>
+          )}
+        />
+      )}
 
       {sheet === 'help' && tracker && (
         <Sheet title="Hilfe" onClose={() => setSheet(null)}>
@@ -582,9 +467,20 @@ export default function HifzRecitationMode({ surahs }) {
           <p className="text-caption text-sage-muted mt-3">Hilfen decken auf, zählen aber nicht als auswendig rezitiert.</p>
         </Sheet>
       )}
-      {sheet === 'range' && index && (
-        <Sheet title="Gezielt üben" onClose={() => setSheet(null)}>
-          <RangePicker index={index} surahs={surahs} page={page} onStart={(scope) => begin(scope)} />
+      {sheet === 'summary' && tracker && (
+        <Sheet title="Übung beendet" onClose={() => setSheet(null)}>
+          <div className="space-y-3">
+            <div className="text-caption text-sage-muted text-right -mt-2">
+              {saveState === 'saving' ? 'Wird gespeichert …' : saveState === 'saved' ? 'Gespeichert' : saveState === 'error' ? 'Nicht gespeichert (offline?)' : ''}
+            </div>
+            <SummaryStats counts={tracker.counts()} summary={tracker.summary()} meta={metaRef.current} surahName={surahName} />
+            <p className="text-caption text-sage-muted">Übungshilfe der Spracherkennung – keine Bewertung von Aussprache oder Tadschwid. Deine Lehrkraft sieht diese Übersicht.</p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => begin(tracker.scope)}><Mic size={16} /> Neue Übung</Button>
+              <Button variant="outline" onClick={closeSession}>Schließen</Button>
+              {saveState === 'error' && <Button variant="ghost" onClick={() => save()}>Erneut speichern</Button>}
+            </div>
+          </div>
         </Sheet>
       )}
       {sheet === 'history' && (
@@ -592,10 +488,10 @@ export default function HifzRecitationMode({ surahs }) {
           <HistoryList surahName={surahName} />
         </Sheet>
       )}
-      {peek && active && (
-        <button onClick={togglePeek} className="fixed left-1/2 -translate-x-1/2 z-40 top-[calc(env(safe-area-inset-top)+4.5rem)] rounded-full bg-elevated border border-line px-4 py-2 text-footnote text-ivory shadow-float inline-flex items-center gap-1.5">
-          <EyeOff size={15} /> Wieder verbergen
-        </button>
+      {rangeSheet && index && (
+        <Sheet title="Gezielt üben" onClose={() => setRangeSheet(false)}>
+          <RangePicker index={index} surahs={surahs} page={page} onStart={(scope) => begin(scope)} />
+        </Sheet>
       )}
     </div>
   );
@@ -609,17 +505,6 @@ function Notice({ children }) {
   );
 }
 
-function ControlBar({ hidden, children }) {
-  return createPortal(
-    <div className={`fixed inset-x-0 z-30 px-3 bottom-[calc(var(--dbz-tabbar-h,0px)+0.75rem)] md:bottom-5 md:left-[5.5rem] lg:left-[17rem] pointer-events-none transition-opacity ${hidden ? 'opacity-0' : ''}`}>
-      <div className={`mx-auto w-fit flex items-center gap-3 sm:gap-4 rounded-full border border-line/70 bg-card/95 dark:bg-elevated/95 backdrop-blur px-3 py-2 shadow-float ${hidden ? '' : 'pointer-events-auto'}`} data-testid="hifz-controls">
-        {children}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 function BarButton({ onClick, label, icon: Icon, pressed, disabled, title, testid }) {
   return (
     <button onClick={onClick} disabled={disabled} aria-pressed={pressed} title={title || label} data-testid={testid}
@@ -627,28 +512,6 @@ function BarButton({ onClick, label, icon: Icon, pressed, disabled, title, testi
       <Icon size={20} aria-hidden="true" />
       <span>{label}</span>
     </button>
-  );
-}
-
-function Sheet({ title, onClose, children }) {
-  useBackToClose(true, onClose);
-  useEffect(() => {
-    const on = (e) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', on);
-    return () => window.removeEventListener('keydown', on);
-  }, [onClose]);
-  return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="dbz-backdrop absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="dbz-sheet relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl bg-card dark:bg-elevated p-5 shadow-float" style={{ marginBottom: 'env(safe-area-inset-bottom)' }}>
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-title3 text-ivory">{title}</h3>
-          <button onClick={onClose} className="p-1.5 rounded-full text-sage-muted hover:bg-hover" aria-label="Schließen"><X size={18} /></button>
-        </div>
-        {children}
-      </div>
-    </div>,
-    document.body,
   );
 }
 

@@ -352,9 +352,6 @@ html {
      weitergeht -- feine Linie unten, ohne den Wortlaut zu verraten. */
   .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(21, 101, 63, 0.55); }
   .dark .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(112, 196, 156, 0.7); }
-  [data-testid='hifz-page'] .mushaf-word { cursor: default; }
-  [data-testid='hifz-page'] .mushaf-word:not(.mushaf-word-hidden):hover { background: none; }
-  [data-testid='hifz-page'] .mushaf-word.is-recite-current:hover { background: rgba(21, 101, 63, 0.12); }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
   /* Sure-Kopf über dem ersten Vers einer Sure auf der Seite. Bewusst OHNE
      Rahmen/Hintergrund/Karten-Optik: eine umrandete Box mittendrin sah wie
@@ -365,7 +362,89 @@ html {
     text-align: center;
     margin: 0.5rem auto;
   }
+
+  /* ---- Vollbild-Leser (components/mushaf/) --------------------------------
+     Wie in gängigen Qur'an-Apps: die Seite füllt den Bildschirm auf ruhigem
+     Papiergrund, Leisten erscheinen nur beim Tippen (schweben über der Seite,
+     verschieben sie nicht). Sure/Juzʼ oben, Hizb/Seitenzahl unten am Rand. */
+  .mushaf-immersive { background: #fbf7ec; color: #1a2b22; }
+  .dark .mushaf-immersive { background: #0d1a15; color: #e9f2eb; }
+  .mushaf-immersive .mushaf-page {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0.25rem 0.75rem;
+  }
+  .mushaf-immersive .mushaf-page.is-glyph {
+    min-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+  .mushaf-immersive .mushaf-word { cursor: default; }
+  .mushaf-immersive .mushaf-word:not(.mushaf-word-hidden):not(.is-hl):not(.is-selected):not(.is-active):not(.is-word-active):not(.is-recite-current):hover { background: none; }
+  .mushaf-sheet { padding: 0.35rem 0 0.5rem; }
+  [data-testid='mushaf-scroll'] { overflow-anchor: none; } /* Position hält der Leser selbst (gleich auf allen Browsern) */
+  .mushaf-vertical .mushaf-sheet + .mushaf-sheet,
+  .mushaf-vertical .mushaf-sheet + .mushaf-placeholder,
+  .mushaf-vertical .mushaf-placeholder + .mushaf-sheet { border-top: 1px solid rgba(120, 100, 60, 0.18); }
+  .dark .mushaf-vertical .mushaf-sheet + .mushaf-sheet { border-top-color: rgba(255, 255, 255, 0.08); }
+  .mushaf-margin {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 52rem;
+    margin: 0 auto;
+    padding: 0.15rem 1rem;
+    font-family: var(--font-ui);
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: rgb(var(--c-sage-muted));
+  }
+  .mushaf-margin > span:last-child { text-align: right; }
+  .mushaf-margin > :nth-child(3):empty { min-width: 3rem; }
+  .mushaf-pageno {
+    min-width: 2.25rem;
+    padding: 0.05rem 0.55rem;
+    border-radius: 9999px;
+    text-align: center;
+    border: 1px solid rgba(160, 130, 70, 0.45);
+    color: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+  .mushaf-placeholder {
+    min-height: 85dvh;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-ui);
+    color: rgb(var(--c-sage-muted));
+    opacity: 0.6;
+  }
+  /* Text-Ansicht: Fließtext mit eigener Schriftgröße */
+  .mushaf-page.is-text { max-width: 46rem; padding: 0.5rem 1.1rem; }
+  .mushaf-flow { direction: rtl; text-align: justify; text-align-last: right; line-height: 2.15; margin: 0 0 0.6em; }
+  .mushaf-bar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 2;
+    background: rgba(251, 247, 236, 0.92);
+    -webkit-backdrop-filter: saturate(1.6) blur(18px);
+    backdrop-filter: saturate(1.6) blur(18px);
+    box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08);
+    transition: transform 0.28s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.2s ease;
+  }
+  .dark .mushaf-bar { background: rgba(18, 32, 26, 0.92); box-shadow: 0 0 0 0.5px rgba(255, 255, 255, 0.07); }
+  .mushaf-bar.is-hidden { opacity: 0; pointer-events: none; }
+  .dbz-flip-next { animation: dbzFlipNext 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
+  .dbz-flip-prev { animation: dbzFlipPrev 0.28s cubic-bezier(0.22, 0.61, 0.36, 1); }
+  /* Ayah-Markierungen (Farbe kommt als Inline-Variable --hl) */
+  .mushaf-word.is-hl { background: color-mix(in srgb, var(--hl) 22%, transparent); border-radius: 4px; }
+  .dark .mushaf-word.is-hl { background: color-mix(in srgb, var(--hl) 30%, transparent); }
+  .mushaf-word.is-selected { background: rgba(21, 101, 63, 0.16); }
+  .dark .mushaf-word.is-selected { background: rgba(112, 196, 156, 0.2); }
 }
+@keyframes dbzFlipNext { from { opacity: 0.2; transform: translateX(-28%); } to { opacity: 1; transform: none; } }
+@keyframes dbzFlipPrev { from { opacity: 0.2; transform: translateX(28%); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dbz-flip-next, .dbz-flip-prev { animation: none; } }
 
 /* Druck: nur das Dokument, sauberes A4-Layout */
 @media print {

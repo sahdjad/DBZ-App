@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, ZoomIn, ZoomOut, LayoutGrid, List as ListIcon, BookOpen } from 'lucide-react';
+import { ArrowLeft, Play, Pause, Search, RotateCcw, Bookmark, BookmarkCheck, Trash2, BookOpenText, StickyNote, ScrollText, Palette, FileText, Gauge, ChevronLeft, ChevronRight, X, SlidersHorizontal, ChevronDown, LayoutGrid, List as ListIcon, BookOpen, Highlighter, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Spinner, useToast, Segmented } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Spinner, useToast, Segmented, Switch } from '../components/ui.jsx';
 import { cleanQuran, toArabicNum } from '../lib/quranText.js';
-import { ensurePageFont, isPageFontLoaded, useMushafAutoFit, loadMushafLayout, MUSHAF_LAYOUT_KEY } from '../lib/mushafFont.js';
-import PageScrubber from '../components/PageScrubber.jsx';
+import MushafShell, { Sheet } from '../components/mushaf/MushafShell.jsx';
+import { clampPage, lastPage, rememberPage, fetchPage, cachedPage, MARK_COLORS, markColor } from '../lib/mushafPages.js';
+import { loadQuranIndex } from '../lib/recitation/quranIndex.js';
 import HifzRecitationMode from './HifzRecitationMode.jsx';
 import { HifzContent } from './Hifz.jsx';
 
@@ -114,7 +115,7 @@ export default function QuranReader() {
 
       {tab === 'lesen' && (
         pageView ? (
-          <MushafReader initialSurah={pageView.surah || null} initialPage={pageView.page || null} initialTajweed={!!pageView.tajweed}
+          <MushafReader surahs={surahs} initialSurah={pageView.surah || null} initialPage={pageView.page || null} initialTajweed={!!pageView.tajweed}
             onBack={() => { setPageView(null); loadMarks(); }} onMarksChanged={loadMarks} />
         ) : selected ? (
           <SurahView n={selected.n} targetAyah={selected.ayah} surahs={surahs} onBack={() => { setSelected(null); loadMarks(); }}
@@ -150,7 +151,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
         <span className="grid place-items-center h-12 w-12 rounded-full bg-mint/10 text-mint shrink-0"><BookOpen size={22} /></span>
         <div className="min-w-0 flex-1">
           <div className="text-ivory font-medium">Mushaf-Ansicht</div>
-          <div className="text-xs text-sage-muted">Klassische Seiten wie im gedruckten Qur'an – blättern, Juzʼ, tippen zum Anhören</div>
+          <div className="text-xs text-sage-muted">Klassische Seiten wie im gedruckten Qur'an – blättern oder scrollen, Ayah lange drücken zum Anhören</div>
         </div>
         <ChevronRight size={20} className="text-sage-muted shrink-0 transition group-hover:translate-x-0.5" />
       </button>
@@ -174,7 +175,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
             {marks.bookmarks.map((b) => (
               <div key={b.id} className="py-2.5 flex items-center justify-between gap-3">
                 <button onClick={() => onSelect(b.surah, b.ayah)} className="text-left min-w-0">
-                  <div className="text-ivory text-sm">{b.surahName} · Ayah {b.ayah}</div>
+                  <div className="text-ivory text-sm flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ background: markColor(b.color) }} aria-hidden="true" />{b.surahName} · Ayah {b.ayah}</div>
                   {b.note && <div className="text-xs text-sage-muted truncate">{b.note}</div>}
                 </button>
                 <button onClick={() => delBookmark(b.id)} className="text-status-absent p-1 shrink-0" aria-label="Entfernen"><Trash2 size={15} /></button>
@@ -228,8 +229,6 @@ const REPEATS = [1, 3, 5, 10, 'inf'];
 const repLabel = (r) => (r === 'inf' ? '∞' : `${r}×`);
 const placeLabel = (t) => (t === 'Meccan' ? 'Mekkanisch' : t === 'Medinan' ? 'Medinensisch' : null);
 
-// Startseiten der 30 Juzʼ im Madina-Mushaf (604 Seiten) – für die Schnellnavigation.
-const JUZ_START_PAGE = [1, 22, 42, 62, 82, 102, 121, 142, 162, 182, 201, 222, 242, 262, 282, 302, 322, 342, 362, 382, 402, 422, 442, 462, 482, 502, 522, 542, 562, 582];
 
 // Abspielgeschwindigkeiten (Standard 1×). Tonhöhe bleibt dank preservesPitch
 // natürlich. Deutsche Schreibweise mit Komma.
@@ -717,45 +716,29 @@ function SurahView({ n, targetAyah, surahs, onBack, onMarksChanged, onOpenPages,
 // =============================================================================
 // Mushaf-Seitenansicht (klassisches Medina-Layout, 604 Seiten)
 // =============================================================================
-const clampPage = (p) => Math.max(1, Math.min(604, p | 0));
-
-function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMarksChanged }) {
+// ---- Mushaf-Lese-Ansicht (Vollbild-Leser, components/mushaf/) ---------------
+// Tippen blendet die Leisten ein/aus; eine Ayah LANGE drücken (Rechtsklick am
+// Mac) öffnet Wiedergabe, Tafsir, Lesezeichen und Markierung.
+function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMarksChanged, surahs }) {
   const toast = useToast();
+  const [index, setIndex] = useState(null);
+  useEffect(() => { loadQuranIndex().then(setIndex).catch(() => {}); }, []);
   const [page, setPage] = useState(null);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
   const [reciter, setReciter] = useState('ar.alafasy');
   const [reciters, setReciters] = useState([]);
   const [speed, setSpeed] = useState(1);
   const [playingKey, setPlayingKey] = useState(null); // "surah:ayah"
   const [playingWord, setPlayingWord] = useState(null); // "surah:ayah#wortNr" (Mitlesen)
-  const [sheetKey, setSheetKey] = useState(null); // ausgewählte Ayah (Aktionsleiste)
-  const sheetRef = useRef(null);
-  // Aktionsleiste sichtbar ins Bild scrollen -- auf dem Handy sonst hinter
-  // der unteren Navigationsleiste "versteckt" (Nutzer muss sonst erst
-  // erraten, dass darunter noch etwas ist).
-  useEffect(() => { if (sheetKey && sheetRef.current) sheetRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); }, [sheetKey]);
-  const [marked, setMarked] = useState(new Set()); // "s:a"
+  const [sheetKey, setSheetKey] = useState(null); // lange gedrückte Ayah (Aktionen)
+  const [bookmarks, setBookmarks] = useState(new Map()); // "s:a" -> { id, color }
+  const [highlights, setHighlights] = useState(new Map()); // "s:a" -> color
   const [tafsirEd, setTafsirEd] = useState('de');
   const [tafsir, setTafsir] = useState({}); // `${ed}:${s:a}` -> {…}
   const [showTafsir, setShowTafsir] = useState(false);
-  const [jump, setJump] = useState('');
   const [elPaused, setElPaused] = useState(false);
-  const [tajweed, setTajweed] = useState(!!initialTajweed); // farbige Tadschwid-Seitenansicht
-  const [fontReady, setFontReady] = useState(true); // Seitenschrift geladen?
-  const [zoom, setZoom] = useState(() => { const z = Number(localStorage.getItem('dbz-mushaf-zoom')); return z >= 0.7 && z <= 3 ? z : 1; });
-  useEffect(() => { try { localStorage.setItem('dbz-mushaf-zoom', String(zoom)); } catch { /* egal */ } }, [zoom]);
-  const changeZoom = (d) => setZoom((z) => Math.max(0.7, Math.min(3, Math.round((z + d) * 100) / 100)));
-  const [vvScale, setVvScale] = useState(1); // Finger-Zoom (Pinch) des Browsers
-  useEffect(() => {
-    const vv = window.visualViewport; if (!vv) return;
-    const on = () => setVvScale(vv.scale || 1);
-    vv.addEventListener('resize', on); vv.addEventListener('scroll', on); on();
-    return () => { vv.removeEventListener('resize', on); vv.removeEventListener('scroll', on); };
-  }, []);
-  // Beim (Button- ODER Finger-)Zoomen wird geschoben/gescrollt statt geblättert.
-  const zoomed = zoom > 1.001;
-  const gestureZoom = zoomed || vvScale > 1.01;
+  const [tajweed, setTajweed] = useState(!!initialTajweed);
+  const [hint, setHint] = useState(() => { try { return !localStorage.getItem('dbz-mushaf-hint'); } catch { return false; } });
+  const closeHint = () => { setHint(false); try { localStorage.setItem('dbz-mushaf-hint', '1'); } catch { /* egal */ } };
 
   const elRef = useRef(null); // in-DOM <audio> (iOS-tauglich)
   const audioCache = useRef(new Map()); // surah -> {url,ayahs}  (chapter-Rezitatoren)
@@ -774,21 +757,6 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const reciterModeRef = useRef('chapter');
   useEffect(() => { reciterModeRef.current = reciterMode; }, [reciterMode]);
 
-  // Jedem echten Wort seine Wort-Nummer innerhalb der Ayah geben (für das
-  // Mitlesen: Abgleich mit den Wort-Zeitmarken der Audiodatei). Endzeichen zählen nicht.
-  const annotatedLines = useMemo(() => {
-    if (!data) return [];
-    const counter = {};
-    return data.lines.map((line) => ({
-      n: line.n,
-      words: line.words.map((w) => {
-        let wi = null;
-        if (!w.e) { counter[w.v] = (counter[w.v] || 0) + 1; wi = counter[w.v]; }
-        return { ...w, wi };
-      }),
-    }));
-  }, [data]);
-
   useEffect(() => { api.get('/quran/reciters').then((d) => setReciters(d.reciters)).catch(() => {}); }, []);
 
   // Startseite bestimmen: explizite Seite -> Sure -> zuletzt -> 1.
@@ -799,67 +767,52 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
       if (!p && initialSurah) {
         try { const r = await api.get(`/quran/surah-page/${initialSurah}`); p = clampPage(r.page); } catch { /* egal */ }
       }
-      if (!p) { const saved = Number(localStorage.getItem('dbz-mushaf-page')); p = saved ? clampPage(saved) : 1; }
+      if (!p) p = lastPage();
       if (!cancel) setPage(p);
     })();
     return () => { cancel = true; };
     // eslint-disable-next-line
   }, []);
 
-  // Lesezeichen laden (als Schlüssel-Set).
-  useEffect(() => {
-    api.get('/quran/me').then((m) => setMarked(new Set((m.bookmarks || []).map((b) => `${b.surah}:${b.ayah}`)))).catch(() => {});
-  }, []);
+  // Lesezeichen + Markierungen (je Ayah, mit Farbe).
+  const loadMarks = () => api.get('/quran/me').then((m) => {
+    setBookmarks(new Map((m.bookmarks || []).map((b) => [`${b.surah}:${b.ayah}`, { id: b.id, color: b.color || 'green' }])));
+    setHighlights(new Map((m.highlights || []).map((h) => [`${h.surah}:${h.ayah}`, h.color])));
+  }).catch(() => {});
+  useEffect(() => { loadMarks(); /* eslint-disable-next-line */ }, []);
 
   // Audio der Sure(n) auf der Seite im Voraus laden -> beim Antippen kann play()
   // synchron im Klick laufen (wichtig für iOS/Safari), ohne Warten.
   const prefetchPageAudio = (sarr) => (sarr || []).forEach((su) => { ensureAudio(su).catch(() => {}); });
-
-  const fontPageRef = useRef(null); // aktuell benötigte Seitenschrift (gegen Wettläufe)
-  const pageDataCache = useRef(new Map()); // Seiten-Daten für flüssiges Blättern
-  const fetchPageData = (p) => api.get(`/quran/page/${p}`).then((d) => { pageDataCache.current.set(p, d.page); return d.page; });
-  // Nur eine Seite vorausladen (vorwärts, die häufigste Leserichtung) statt
-  // beide Nachbarn, und ohne deren Audio gleich mitzuladen (das holt applyPage
-  // nach, sobald diese Seite wirklich angezeigt wird). Rückmeldung nach
-  // echtem Gerätetest: die ersten ein/zwei Seiten laden, danach bricht es ab
-  // -- passt zu einem knappen Anfragelimit bei der kostenlosen, anonymen
-  // quran.com-Anbindung, wenn mehrere Seiten gleichzeitig vorausgeladen
-  // werden. Weniger gleichzeitige Anfragen senken das Risiko spürbar.
-  const prefetchNeighbors = (p) => {
-    const q = p + 1;
-    if (q >= 1 && q <= 604 && !pageDataCache.current.has(q)) fetchPageData(q).catch(() => {});
-  };
-  const applyPage = (pg) => {
-    setData(pg);
-    prefetchPageAudio(pg?.surahs);
-    if (pg?.font === 'v1') {
-      fontPageRef.current = pg.fontPage;
-      ensurePageFont(pg.fontPage); ensurePageFont(pg.fontPage - 1); ensurePageFont(pg.fontPage + 1); // (Nachbarn) vorladen
-      // In der Tadschwid-Ansicht wird die farbige Schrift genutzt (keine
-      // Glyphenschrift) -> kein Warten. Sonst erst zeigen, wenn Schrift da ist.
-      if (tajweed || isPageFontLoaded(pg.fontPage)) setFontReady(true);
-      else { setFontReady(false); ensurePageFont(pg.fontPage).then(() => { if (fontPageRef.current === pg.fontPage) setFontReady(true); }); }
-    } else { fontPageRef.current = null; setFontReady(true); }
-    if (pg?.surahs?.[0]) api.post('/quran/last-read', { surah: pg.surahs[0] }).then(onMarksChanged).catch(() => {});
-  };
-  // Schnelles Blättern/Springen: eine spät eintreffende Antwort für eine
-  // bereits verlassene Seite darf die inzwischen angezeigte Seite nicht ersetzen.
-  const pageReq = useRef(0);
-  const loadPage = (p) => {
-    setError(null);
-    const cached = pageDataCache.current.get(p);
-    if (cached) { applyPage(cached); prefetchNeighbors(p); return; }
-    setData(null);
-    const req = ++pageReq.current;
-    fetchPageData(p)
-      .then((pg) => { if (req === pageReq.current) { applyPage(pg); prefetchNeighbors(p); } })
-      .catch((e) => { if (req === pageReq.current) setError(e.message); });
-  };
-  useEffect(() => { if (page != null) { stopAudio(); setSheetKey(null); setShowTafsir(false); loadPage(page); localStorage.setItem('dbz-mushaf-page', String(page)); window.scrollTo?.({ top: 0 }); } /* eslint-disable-next-line */ }, [page]);
+  const lastReadSurah = useRef(null);
+  useEffect(() => {
+    if (page == null) return;
+    rememberPage(page);
+    let alive = true;
+    fetchPage(page).then((d) => {
+      if (!alive) return;
+      if (reciterModeRef.current === 'chapter') prefetchPageAudio(d.surahs);
+      const su = d.surahs?.[0];
+      if (su && su !== lastReadSurah.current) { lastReadSurah.current = su; api.post('/quran/last-read', { surah: su }).then(onMarksChanged).catch(() => {}); }
+    }).catch(() => {});
+    return () => { alive = false; };
+    // eslint-disable-next-line
+  }, [page]);
   useEffect(() => () => { const a = elRef.current; if (a) { a.pause(); } }, []);
-  // Rezitatorwechsel: Cache leeren, Wiedergabe stoppen, Quelle zurücksetzen,
-  // Audio der aktuellen Seite erneut vorladen.
-  useEffect(() => { audioCache.current.clear(); ayahAudioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; if (data && reciterMode === 'chapter') prefetchPageAudio(data.surahs); /* eslint-disable-next-line */ }, [reciter]);
+  // Rezitatorwechsel: Cache leeren, Wiedergabe stoppen, Quelle zurücksetzen.
+  useEffect(() => { audioCache.current.clear(); ayahAudioCache.current.clear(); stopAudio(); if (elRef.current) elRef.current.__surah = null; /* eslint-disable-next-line */ }, [reciter]);
+
+  // Wiedergabe folgt über Seiten hinweg -- aber nur, wenn man gerade bei der
+  // laufenden Ayah war (wer selbst woandershin geblättert hat, wird nicht zurückgezogen).
+  const prevPlayPage = useRef(null);
+  useEffect(() => {
+    if (!playingKey || !index) { prevPlayPage.current = null; return; }
+    const [s, a] = playingKey.split(':').map(Number);
+    const target = index.pageOfAyah(s, a);
+    if (target !== page && (prevPlayPage.current == null || prevPlayPage.current === page)) setPage(target);
+    prevPlayPage.current = target;
+    // eslint-disable-next-line
+  }, [playingKey, index]);
 
   function stopAudio() { winRef.current.stopped = true; const a = elRef.current; if (a) a.pause(); playingKeyRef.current = null; setPlayingKey(null); playingWordRef.current = null; setPlayingWord(null); setElPaused(false); }
 
@@ -957,32 +910,36 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     if (cached) { playWith(cached, verseKey); return; } // Normalfall: bereits vorgeladen
     ensureAudio(s).then((ad) => playWith(ad, verseKey)).catch(() => toast.push('Audio konnte nicht geladen werden', 'error'));
   }
-  // Gut sichtbarer Abspiel-Knopf oben (statt nur über das Antippen eines
-  // Wortes erreichbar -- auf dem Handy sonst schwer zu finden). Startet ab
-  // der ersten Ayah dieser Seite bzw. pausiert/setzt fort, was schon läuft.
+  const playing = playingKey && !winRef.current.stopped;
+  // Abspielen ab der ersten Ayah der Seite bzw. Pause/Fortsetzen.
   const topPlay = () => {
-    if (playingKey && !winRef.current.stopped) {
+    if (playing) {
       const el = elRef.current;
       if (el) { if (elPaused) el.play().catch(() => {}); else el.pause(); }
       return;
     }
-    if (data?.firstVerse) playFrom(data.firstVerse);
+    const d = cachedPage(page);
+    if (d?.firstVerse) playFrom(d.firstVerse);
   };
-
-  const tapWord = (verseKey) => { setSheetKey(verseKey); setShowTafsir(false); };
   const onPlaySheet = (verseKey) => {
     const el = elRef.current;
     if (playingKey === verseKey && !winRef.current.stopped) { if (el && !el.paused) el.pause(); else el?.play().catch(() => {}); return; }
     playFrom(verseKey);
   };
 
-  const toggleBookmark = async (verseKey) => {
+  const setBookmark = async (verseKey, color) => {
     const [s, a] = verseKey.split(':').map(Number);
     try {
-      await api.post('/quran/bookmarks', { surah: s, ayah: a });
-      setMarked((prev) => { const n = new Set(prev); n.has(verseKey) ? n.delete(verseKey) : n.add(verseKey); return n; });
+      const cur = bookmarks.get(verseKey);
+      if (color == null) { if (cur) await api.del(`/quran/bookmarks/${cur.id}`); }
+      else await api.post('/quran/bookmarks', { surah: s, ayah: a, color });
+      await loadMarks();
       onMarksChanged();
     } catch (err) { toast.push(err.message, 'error'); }
+  };
+  const setHighlight = async (verseKey, color) => {
+    const [s, a] = verseKey.split(':').map(Number);
+    try { await api.post('/quran/highlights', { surah: s, ayah: a, color }); await loadMarks(); } catch (err) { toast.push(err.message, 'error'); }
   };
 
   const loadTafsir = (verseKey, ed) => {
@@ -997,119 +954,33 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const openTafsir = (verseKey) => { setShowTafsir(true); loadTafsir(verseKey, tafsirEd); };
   const changeEd = (ed) => { setTafsirEd(ed); if (sheetKey) loadTafsir(sheetKey, ed); };
 
-  // Sure-Kopf pro Zeile (erste Zeile, in der eine neue Sure beginnt).
-  const headerByLine = {};
-  if (data) {
-    const placed = new Set();
-    for (const line of data.lines) for (const w of line.words) {
-      if (data.starts[w.v] && !placed.has(w.v)) { placed.add(w.v); (headerByLine[line.n] ||= []).push(data.starts[w.v]); }
-    }
-  }
-  const goto = (p) => setPage(clampPage(p));
-  const doJump = () => { const p = Number(jump); if (p >= 1 && p <= 604) { goto(p); setJump(''); } else toast.push('Seite 1–604 eingeben'); };
+  // Darstellung je Wort: Mitlesen, Markierung, Auswahl, Tadschwid.
+  const hlVersion = useMemo(() => [...highlights].join(',') + '|' + [...bookmarks].map(([k, b]) => k + b.color).join(','), [highlights, bookmarks]);
+  const renderWord = useCallback((w) => {
+    const cls = [];
+    let style;
+    if (playingWord && w.wi != null && playingWord === `${w.v}#${w.wi}`) cls.push('is-word-active');
+    else if (playingKey === w.v) cls.push('is-active');
+    if (sheetKey === w.v) cls.push('is-selected');
+    const hl = highlights.get(w.v);
+    if (hl && !w.e) { cls.push('is-hl'); style = { '--hl': markColor(hl) }; }
+    const bm = w.e ? bookmarks.get(w.v) : null;
+    if (bm) { cls.push('underline decoration-2 underline-offset-4'); style = { ...style, textDecorationColor: markColor(bm.color) }; }
+    return { className: cls.join(' '), style, html: tajweed && !w.e ? tajweedWordToHtml(w.tj) : undefined };
+  }, [playingWord, playingKey, sheetKey, highlights, bookmarks, tajweed]);
+  const focusG = useMemo(() => {
+    if (!index || !playingWord) return null;
+    const [vk, wi] = playingWord.split('#');
+    const [s, a] = vk.split(':').map(Number);
+    return index.wordOf(s, a, Number(wi));
+  }, [index, playingWord]);
 
-  // ---- Natürliches Umblättern per Wisch/Ziehen (wie ein Buch) --------------
-  const pageElRef = useRef(null);
+  const [sSurah, sAyah] = sheetKey ? sheetKey.split(':').map(Number) : [];
+  const surahName = (n) => surahs?.find((x) => x.n === n)?.name || `Sure ${n}`;
 
-  // Passende Schriftgröße je Seite (Auto-Fit, geteilt mit dem Auswendig-Modus
-  // -- siehe useMushafAutoFit): die breiteste Zeile soll die volle Breite
-  // exakt ausfüllen (ohne Umbruch). So nutzt jede Seite die ganze Breite aus und
-  // sieht auf jedem Gerät wie eine echte Mushaf-Seite aus.
-  const canFit = !!(data && (tajweed || (data.font === 'v1' && isPageFontLoaded(data.fontPage))));
-  // Eng (wie gedruckter Mushaf, Standard) oder Weit (Anfänger, luftiger).
-  const [layout, setLayout] = useState(loadMushafLayout);
-  const toggleLayout = () => setLayout((l) => { const n = l === 'wide' ? 'tight' : 'wide'; try { localStorage.setItem(MUSHAF_LAYOUT_KEY, n); } catch { /* egal */ } return n; });
-  const { fs: glyphFs, width: glyphW, shortLines } = useMushafAutoFit(pageElRef, {
-    active: canFit,
-    numLines: data?.lines.length || 0,
-    resetKey: data ? `${data.page}:${tajweed}:${fontReady}` : null,
-    layout,
-  });
-
-  const dragRef = useRef({ active: false, x0: 0, y0: 0, dx: 0, horiz: false });
-  const flipDirRef = useRef(null); // 'next' | 'prev' – für die Einblend-Animation
-  const reduceRef = useRef(false);
-  useEffect(() => { reduceRef.current = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }, []);
-
-  const pageWidth = () => pageElRef.current?.offsetWidth || 320;
-  function setFlip(dx, animate) {
-    const el = pageElRef.current; if (!el) return;
-    el.style.transition = animate && !reduceRef.current ? 'transform .32s cubic-bezier(.22,.61,.36,1), box-shadow .32s' : 'none';
-    const frac = Math.max(-1, Math.min(1, dx / pageWidth()));
-    el.style.transformOrigin = dx < 0 ? 'left center' : 'right center';
-    el.style.transform = `translateX(${dx}px) rotateY(${frac * -16}deg)`;
-    el.style.boxShadow = Math.abs(frac) > 0.02 ? `0 24px 60px rgba(0,0,0,${0.12 + 0.3 * Math.abs(frac)})` : '';
-  }
-  function commitFlip(dir) {
-    const el = pageElRef.current; const w = pageWidth();
-    flipDirRef.current = dir;
-    if (reduceRef.current) { goto(dir === 'next' ? page + 1 : page - 1); return; }
-    el.style.transition = 'transform .28s ease-in, box-shadow .28s';
-    // Arabisch (RTL): die nächste Seite blättert nach RECHTS hinaus.
-    el.style.transformOrigin = dir === 'next' ? 'right center' : 'left center';
-    el.style.transform = `translateX(${dir === 'next' ? w * 1.15 : -w * 1.15}px) rotateY(${dir === 'next' ? 24 : -24}deg)`;
-    el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.42)';
-    setTimeout(() => goto(dir === 'next' ? page + 1 : page - 1), 230);
-  }
-  // Nach dem Seitenwechsel: neue Seite hereinziehen (Gegenrichtung).
-  useEffect(() => {
-    const el = pageElRef.current; if (!el || !data) return;
-    const dir = flipDirRef.current; flipDirRef.current = null;
-    if (!dir || reduceRef.current) { el.style.transition = 'none'; el.style.transform = ''; el.style.boxShadow = ''; return; }
-    const w = el.offsetWidth || 320;
-    el.style.transition = 'none';
-    // RTL: die neue (nächste) Seite kommt von LINKS herein.
-    el.style.transformOrigin = dir === 'next' ? 'left center' : 'right center';
-    el.style.transform = `translateX(${dir === 'next' ? -w * 0.5 : w * 0.5}px) rotateY(${dir === 'next' ? -14 : 14}deg)`;
-    el.style.boxShadow = '0 24px 60px rgba(0,0,0,0.28)';
-    requestAnimationFrame(() => {
-      el.style.transition = 'transform .3s cubic-bezier(.22,.61,.36,1), box-shadow .3s';
-      el.style.transform = 'translateX(0) rotateY(0)'; el.style.boxShadow = '';
-    });
-  }, [data]);
-
-  function onPointerDown(e) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-    if (gestureZoom) return; // beim (Finger-/Button-)Zoomen wird geschoben, nicht geblättert
-    dragRef.current = { active: true, x0: e.clientX, y0: e.clientY, dx: 0, horiz: false, id: e.pointerId, t0: Date.now() };
-    // Zeiger einfangen, damit die Wischgeste nicht an den Wort-Elementen verloren geht.
-    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* egal */ }
-  }
-  function onPointerMove(e) {
-    const d = dragRef.current; if (!d.active) return;
-    const dx = e.clientX - d.x0; const dy = e.clientY - d.y0;
-    if (!d.horiz) {
-      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-      d.horiz = Math.abs(dx) > Math.abs(dy);
-      if (!d.horiz) { d.active = false; return; } // vertikal -> normales Scrollen
-    }
-    let ddx = dx;
-    // RTL: erste Seite -> Wischen nach links (prev) zäh; letzte Seite -> nach rechts (next) zäh.
-    if ((page <= 1 && dx < 0) || (page >= 604 && dx > 0)) ddx = dx * 0.25;
-    d.dx = ddx; setFlip(ddx, false);
-  }
-  function onPointerUp(e) {
-    const d = dragRef.current; if (!d.active) return; d.active = false;
-    try { if (e && d.id != null) e.currentTarget.releasePointerCapture(d.id); } catch { /* egal */ }
-    if (!d.horiz) return;
-    // Leichter auslösbar: kurze, schnelle Wischer (Flick) zählen auch.
-    const fast = Date.now() - (d.t0 || 0) < 300 && Math.abs(d.dx) > 24;
-    const threshold = Math.min(70, pageWidth() * 0.14);
-    // Arabisch (RTL): nach RECHTS wischen -> nächste Seite; nach LINKS -> vorige.
-    if ((d.dx >= threshold || (fast && d.dx > 0)) && page < 604) commitFlip('next');
-    else if ((d.dx <= -threshold || (fast && d.dx < 0)) && page > 1) commitFlip('prev');
-    else setFlip(0, true); // zurückfedern
-  }
-
-  // Glyphen nur nutzen, wenn die Seitenschrift wirklich geladen ist (sonst
-  // würden wirre Ersatzzeichen erscheinen) – sonst lesbarer Text-Fallback.
-  // In der Tadschwid-Ansicht wird stattdessen der farbige Text gezeigt.
-  const glyph = !!(data && data.font === 'v1' && !tajweed && isPageFontLoaded(data.fontPage));
-  const pageLayout = glyph || tajweed; // volle Seiten-Layout (Blocksatz, Auto-Fit, Zoom)
-  const fontLoading = !!(data && data.font === 'v1' && !tajweed && !fontReady);
-
+  if (page == null) return <Spinner label="Mushaf-Seite wird geladen …" />;
   return (
-    <div>
+    <>
       {/* Echtes <audio> im DOM (iOS/Safari-tauglich). */}
       <audio ref={elRef} preload="auto" playsInline className="hidden"
         onTimeUpdate={onTimeUpdate}
@@ -1117,170 +988,110 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
         onPause={() => { if (!winRef.current.stopped) setElPaused(true); }}
         onEnded={onAudioEnded}
         onError={() => { const a = elRef.current; if (a && a.getAttribute('src') && a.error) { toast.push('Audio-Fehler (Code ' + a.error.code + ')', 'error'); stopAudio(); } }} />
-      <button onClick={() => { stopAudio(); onBack(); }} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory mb-4">
-        <ArrowLeft size={16} /> Zur Übersicht
-      </button>
-
-      {/* Navigationsleiste */}
-      <Card className="p-3 mb-4">
-        <div className="flex items-center justify-between gap-2">
-          <Button size="sm" variant="outline" onClick={() => goto(page - 1)} disabled={!page || page <= 1}><ChevronRight size={16} /> Zurück</Button>
-          <div className="text-center">
-            <div className="text-ivory text-sm font-medium">Seite {page || '…'}<span className="text-sage-muted"> / 604</span></div>
-            {data?.juz && <div className="text-caption text-sage-muted">Juzʼ {data.juz}</div>}
-          </div>
-          <Button size="sm" variant="outline" onClick={() => goto(page + 1)} disabled={!page || page >= 604}>Weiter <ChevronLeft size={16} /></Button>
-        </div>
-        <div className="mt-3 flex justify-center">
-          <Button onClick={topPlay} disabled={!data}>
-            {playingKey && !winRef.current.stopped && !elPaused ? <><Pause size={16} /> Pause</> : <><Play size={16} /> Abspielen</>}
-          </Button>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
-          <label className="flex items-center gap-1">
-            <span className="text-sage-muted">Juzʼ</span>
-            <select className="input py-1 w-auto text-sm" value="" onChange={(e) => e.target.value && goto(Number(e.target.value))}>
-              <option value="">wählen</option>
-              {JUZ_START_PAGE.map((p, i) => <option key={i} value={p}>{i + 1}</option>)}
-            </select>
-          </label>
-          <div className="inline-flex items-center gap-1">
-            <input value={jump} onChange={(e) => setJump(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doJump()}
-              inputMode="numeric" placeholder="Seite" className="input py-1 w-20 text-center text-sm" />
-            <Button size="sm" variant="ghost" onClick={doJump}>Los</Button>
-          </div>
-          {data?.font === 'v1' && (<>
-            <button onClick={toggleLayout} className="text-caption px-2 py-1 rounded-lg border border-line text-sage hover:bg-hover" title="Ganze Seite auf einen Blick oder große Schrift für Anfänger" aria-pressed={layout === 'wide'}>
-              {layout === 'wide' ? 'Große Schrift' : 'Ganze Seite'}
+      <MushafShell
+        onClose={() => { stopAudio(); onBack(); }}
+        closeLabel="Zur Übersicht"
+        page={page}
+        onPageChange={(p) => setPage(p)}
+        index={index}
+        surahs={surahs}
+        renderWord={renderWord}
+        version={`${playingWord}|${playingKey}|${sheetKey}|${tajweed}|${hlVersion}`}
+        forceTextLayout={tajweed}
+        focusG={focusG}
+        onLongPressWord={({ v }) => { setSheetKey(v); setShowTafsir(false); closeHint(); }}
+        onMarksChanged={() => { loadMarks(); onMarksChanged(); }}
+        bottom={(
+          <div className="flex items-center gap-2">
+            <label className="flex-1 min-w-0 relative">
+              <span className="sr-only">Rezitator</span>
+              <select className="w-full appearance-none rounded-full bg-mint/10 text-mint-light font-semibold text-footnote pl-4 pr-8 h-10 truncate" value={reciter} onChange={(e) => setReciter(e.target.value)}>
+                {reciters.length ? (
+                  <>
+                    <optgroup label="Mit Wort-Mitlesen">
+                      {reciters.filter((r) => r.mode !== 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </optgroup>
+                    <optgroup label="Ayah-für-Ayah (ohne Mitlesen)">
+                      {reciters.filter((r) => r.mode === 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </optgroup>
+                  </>
+                ) : <option value={reciter}>Mishary Al-Afasy</option>}
+              </select>
+              <ChevronDown size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-mint-light pointer-events-none" aria-hidden="true" />
+            </label>
+            <label className="relative shrink-0">
+              <span className="sr-only">Geschwindigkeit</span>
+              <select className="appearance-none rounded-full border border-line bg-card text-footnote text-ivory h-10 pl-3 pr-7 tabular-nums" value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+                {SPEEDS.map((x) => <option key={x} value={x}>{spLabel(x)}</option>)}
+              </select>
+              <Gauge size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-sage-muted pointer-events-none" aria-hidden="true" />
+            </label>
+            <button onClick={topPlay} aria-label={playing && !elPaused ? 'Pause' : 'Abspielen'}
+              className="grid place-items-center h-11 w-11 shrink-0 rounded-full bg-mint text-onaccent shadow-sm">
+              {playing && !elPaused ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
             </button>
-            <div className="inline-flex items-center gap-1" title="Zoom">
-              <button onClick={() => changeZoom(-0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom <= 0.7} aria-label="Kleiner"><ZoomOut size={15} /></button>
-              <button onClick={() => setZoom(1)} className="text-caption text-sage-muted tabular-nums w-11 text-center hover:text-ivory" title="Auf Bildschirmgröße zurücksetzen">{Math.round(zoom * 100)}%</button>
-              <button onClick={() => changeZoom(0.15)} className="p-1.5 rounded-lg border border-line text-sage hover:bg-hover disabled:opacity-40" disabled={zoom >= 3} aria-label="Größer"><ZoomIn size={15} /></button>
-            </div>
-          </>)}
-          <button onClick={() => setTajweed((t) => !t)}
-            className={['inline-flex items-center gap-1 px-2.5 py-1 rounded-md border', tajweed ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage'].join(' ')}
-            title="Tadschwid-Farben ein/aus">
-            <Palette size={14} /> Tadschwid
-          </button>
-          <label className="flex items-center gap-1">
-            <span className="text-sage-muted">Rezitator</span>
-            <select className="input py-1 w-auto text-sm" value={reciter} onChange={(e) => setReciter(e.target.value)}>
-              {reciters.length ? (
-                <>
-                  <optgroup label="Mit Wort-Mitlesen">
-                    {reciters.filter((r) => r.mode !== 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </optgroup>
-                  <optgroup label="Ayah-für-Ayah (ohne Mitlesen)">
-                    {reciters.filter((r) => r.mode === 'ayah').map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </optgroup>
-                </>
-              ) : <option value={reciter}>Mishary Al-Afasy</option>}
-            </select>
-          </label>
-        </div>
-      </Card>
-
-      {tajweed && (
-        <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mb-3 text-caption">
-          {TAJWEED_LEGEND.map(([c, l]) => (
-            <span key={l} className="inline-flex items-center gap-1 text-sage-muted">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {error ? (
-        <Card className="p-8 text-center">
-          <p className="text-status-absent mb-4">{error}</p>
-          <Button variant="outline" onClick={() => loadPage(page)}><RotateCcw size={16} /> Erneut versuchen</Button>
-        </Card>
-      ) : !data || fontLoading ? (
-        <Spinner label="Mushaf-Seite wird geladen …" />
-      ) : (
-        <div style={{ perspective: '1600px', touchAction: gestureZoom ? 'pan-x pan-y pinch-zoom' : 'pan-y pinch-zoom', overflowX: zoomed ? 'auto' : 'hidden', direction: zoomed ? 'rtl' : undefined }}
-          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
-        <div ref={pageElRef} className={`mushaf-page rounded-2xl px-3 py-4 sm:px-7 sm:py-6 font-mushaf mx-auto ${pageLayout ? 'is-glyph' : ''}`}
-          style={{
-            fontSize: pageLayout ? (glyphFs ? `${glyphFs * zoom}px` : 'clamp(1.1rem, 4.2vw, 1.7rem)') : 'clamp(1.35rem, 4.6vw, 1.9rem)',
-            width: pageLayout && glyphW ? `${glyphW * zoom}px` : undefined,
-            maxWidth: pageLayout ? (zoomed ? 'none' : '100%') : '44rem',
-            willChange: 'transform',
-          }}>
-          <div className="mushaf-lines">
-            {annotatedLines.map((line) => (
-              <div key={line.n} className="mushaf-line-wrap">
-                {(headerByLine[line.n] || []).map((h) => (
-                  <div key={h.surah} className="mushaf-surah-head">
-                    <div className="text-mint" style={{ fontSize: '1.1em' }} dir="rtl">سُورَةُ {h.name}</div>
-                    {h.bismillah && <div dir="rtl" className="mt-1" style={{ fontSize: '0.92em' }}>بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ</div>}
-                  </div>
+          </div>
+        )}
+        settingsExtra={(
+          <section>
+            <h4 className="text-footnote font-semibold text-sage-muted uppercase tracking-wide mb-2">Tadschwid</h4>
+            <Switch checked={tajweed} onChange={setTajweed} label="Tadschwid-Farben anzeigen" />
+            {tajweed && (
+              <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-caption">
+                {TAJWEED_LEGEND.map(([c, l]) => (
+                  <span key={l} className="inline-flex items-center gap-1 text-sage-muted"><span className="h-2.5 w-2.5 rounded-full" style={{ background: c }} /> {l}</span>
                 ))}
-                <p data-line={line.n} className={`mushaf-line ${(canFit ? shortLines.has(String(line.n)) : line.words.length <= 6) ? 'is-short' : ''}`}>
-                  {line.words.map((w, i) => {
-                    const cls = `mushaf-word ${playingWord === `${w.v}#${w.wi}` ? 'is-word-active' : playingKey === w.v ? 'is-active' : ''} ${w.e ? 'mushaf-end' : ''} ${marked.has(w.v) && w.e ? 'underline decoration-mint/60' : ''}`;
-                    if (tajweed) {
-                      return w.e
-                        ? <span key={i} onClick={() => tapWord(w.v)} className={cls}>﴿{cleanQuran(w.t)}﴾</span>
-                        : <span key={i} onClick={() => tapWord(w.v)} className={cls} dangerouslySetInnerHTML={{ __html: tajweedWordToHtml(w.tj) }} />;
-                    }
-                    return (
-                      <span key={i} onClick={() => tapWord(w.v)}
-                        style={glyph && w.g ? { fontFamily: `qcf-p${data.fontPage}` } : undefined}
-                        className={cls}>
-                        {glyph && w.g ? w.g : cleanQuran(w.t)}{glyph ? '' : ' '}
-                      </span>
-                    );
-                  })}
-                </p>
               </div>
-            ))}
-          </div>
-          <p className="text-caption text-sage-muted mt-4 text-center font-sans">Zum Blättern wischen · tippe auf ein Wort für Wiedergabe, Übersetzung, Tafsir &amp; Lesezeichen.</p>
-        </div>
-        </div>
-      )}
-
-      {/* Aktionsleiste zur ausgewählten Ayah */}
-      {sheetKey && (
-        <div ref={sheetRef}>
-        <Card className="p-4 mt-4 border-mint/40">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm text-ivory">Sure {sheetKey.split(':')[0]} · Ayah {sheetKey.split(':')[1]}</div>
-            <button onClick={() => { setSheetKey(null); setShowTafsir(false); }} className="text-sage-muted hover:text-ivory" aria-label="Schließen"><X size={18} /></button>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => onPlaySheet(sheetKey)}>
-              {playingKey === sheetKey && !winRef.current.stopped
-                ? (elPaused ? <><Play size={14} /> Weiter</> : <><Pause size={14} /> Pause</>)
-                : <><Play size={14} /> Abspielen</>}
-            </Button>
-            <Button size="sm" variant={showTafsir ? 'primary' : 'outline'} onClick={() => (showTafsir ? setShowTafsir(false) : openTafsir(sheetKey))}>
-              <FileText size={14} /> Tafsir &amp; Übersetzung
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => toggleBookmark(sheetKey)}>
-              {marked.has(sheetKey) ? <><BookmarkCheck size={14} /> Gemerkt</> : <><Bookmark size={14} /> Merken</>}
-            </Button>
-            <div className="inline-flex items-center gap-1 text-xs">
-              <Gauge size={13} className="text-sage-muted" />
-              {SPEEDS.map((s) => (
-                <button key={s} onClick={() => setSpeed(s)}
-                  className={['px-1.5 py-0.5 rounded border tabular-nums', speed === s ? 'border-mint bg-mint/10 text-mint-light' : 'border-line text-sage-muted'].join(' ')}>{spLabel(s)}</button>
-              ))}
+            )}
+          </section>
+        )}
+        overlay={hint ? (
+          <div className="absolute inset-x-0 z-[3] flex justify-center px-4" style={{ bottom: 'calc(env(safe-area-inset-bottom) + 8.5rem)' }}>
+            <div className="max-w-sm rounded-2xl bg-elevated border border-line shadow-float px-4 py-3 text-footnote text-sage flex items-start gap-3">
+              <span>Einmal tippen: Leisten ein/aus. Eine Ayah lange drücken: Abspielen, Tafsir, Lesezeichen, Markieren.</span>
+              <button onClick={closeHint} className="text-sage-muted shrink-0" aria-label="Schließen"><X size={16} /></button>
             </div>
           </div>
-          {showTafsir && <TafsirPanel data={tafsir[`${tafsirEd}:${sheetKey}`]} edition={tafsirEd} onEdition={changeEd} />}
-        </Card>
-        </div>
+        ) : null}
+      />
+      {sheetKey && (
+        <Sheet title={`${surahName(sSurah)} · Ayah ${sAyah}`} onClose={() => { setSheetKey(null); setShowTafsir(false); }}>
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              <Button size="sm" onClick={() => onPlaySheet(sheetKey)}>
+                {playingKey === sheetKey && !winRef.current.stopped
+                  ? (elPaused ? <><Play size={14} /> Weiter</> : <><Pause size={14} /> Pause</>)
+                  : <><Play size={14} /> Ab hier abspielen</>}
+              </Button>
+              <Button size="sm" variant={showTafsir ? 'primary' : 'outline'} onClick={() => (showTafsir ? setShowTafsir(false) : openTafsir(sheetKey))}>
+                <FileText size={14} /> Tafsir &amp; Übersetzung
+              </Button>
+            </div>
+            <ColorRow label="Lesezeichen" icon={Bookmark} value={bookmarks.get(sheetKey)?.color} onPick={(c) => setBookmark(sheetKey, c)} />
+            <ColorRow label="Markieren" icon={Highlighter} value={highlights.get(sheetKey)} onPick={(c) => setHighlight(sheetKey, c)} />
+            {showTafsir && <TafsirPanel data={tafsir[`${tafsirEd}:${sheetKey}`]} edition={tafsirEd} onEdition={changeEd} />}
+          </div>
+        </Sheet>
       )}
+    </>
+  );
+}
 
-      {/* Platz für die feste untere Seiten-Leiste (+ mobile Tab-Leiste darunter),
-          damit sie den letzten Zeilen der Seite nichts verdeckt. Gemessen:
-          Leiste 67px + mobile Tab-Leiste 65.5px = ~147px, mit Puffer h-40 (160px). */}
-      {data && <div className="h-40 lg:hidden" aria-hidden="true" />}
-      {data && <PageScrubber page={page} onNavigate={goto} />}
+// Farbauswahl für Lesezeichen/Markierung (nochmal dieselbe Farbe = entfernen).
+function ColorRow({ label, icon: Icon, value, onPick }) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-footnote font-semibold text-sage-muted mb-2"><Icon size={14} aria-hidden="true" /> {label}</div>
+      <div className="flex items-center gap-2.5">
+        {MARK_COLORS.map(([c, name, hex]) => (
+          <button key={c} onClick={() => onPick(value === c ? null : c)} aria-pressed={value === c} aria-label={name} title={name}
+            className={`h-9 w-9 rounded-full grid place-items-center transition ${value === c ? 'ring-2 ring-offset-2 ring-offset-card ring-ivory/60' : ''}`}
+            style={{ background: hex }}>
+            {value === c && <Check size={16} className="text-white" aria-hidden="true" />}
+          </button>
+        ))}
+        {value && <button onClick={() => onPick(null)} className="ml-1 text-footnote text-sage-muted underline">Entfernen</button>}
+      </div>
     </div>
   );
 }

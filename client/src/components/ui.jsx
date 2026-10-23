@@ -464,7 +464,9 @@ function onGlobalPop() {
   const top = overlayStack.pop();
   if (top) { top.closedByBack = true; top.close(); }
 }
-export function useBackToClose(open, onClose) {
+// escape: false -> Escape behandelt der Aufrufer selbst (z. B. Vollbild-Leser).
+// Escape schließt immer nur das OBERSTE offene Fenster.
+export function useBackToClose(open, onClose, { escape = true } = {}) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -476,7 +478,7 @@ export function useBackToClose(open, onClose) {
     }
     const entry = { closedByBack: false, close: () => closeRef.current() };
     overlayStack.push(entry);
-    const onKey = (e) => { if (e.key === 'Escape') closeRef.current(); };
+    const onKey = (e) => { if (escape && e.key === 'Escape' && overlayStack[overlayStack.length - 1] === entry) closeRef.current(); };
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('keydown', onKey);
