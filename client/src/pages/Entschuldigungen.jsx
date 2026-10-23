@@ -59,32 +59,37 @@ function RequestRow({ r, decide, onCommentSent, defaultOpen, onShow }) {
   const commentCount = (r.comments || []).length;
   return (
     <div className="py-3">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
-        {/* Antippen öffnet den Antrag mit der kompletten Nachricht. */}
-        <button type="button" onClick={() => onShow(r)} className="min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-hover" aria-label={`Antrag von ${r.studentName} ganz anzeigen`}>
-          <div className="text-ivory flex items-center gap-2 flex-wrap">
-            {r.studentName} · {TYPE_LABEL[r.requestType]}
-            {r.studentAbsences > 0 && (
-              <span className={`text-caption px-2 py-0.5 rounded-full ${r.studentAbsences >= 2 ? 'bg-status-late/15 text-status-late' : 'bg-subtle text-sage-muted'}`}>
-                schon {r.studentAbsences}× abwesend
-              </span>
-            )}
-          </div>
-          <div className="text-xs text-sage-muted line-clamp-2">Grund: {r.reasonCategory}{r.comment ? ` · ${r.comment}` : ''} · {r.sessionDate ? fmt(r.sessionDate) : fmt(r.createdAt)}</div>
-          <div className="text-caption text-mint mt-0.5 inline-flex items-center gap-0.5">Ganze Nachricht ansehen <ChevronRight size={12} /></div>
-        </button>
-        <div className="flex gap-2 items-center">
-          <button onClick={() => setOpen((o) => !o)} className="text-xs text-sage-muted inline-flex items-center gap-1 hover:text-ivory">
-            <MessageCircle size={14} /> {commentCount > 0 ? commentCount : ''}
+      {/* Handy: oben Name/Grund in voller Breite, darunter die Knöpfe nebeneinander.
+          Ab Tablet-Breite alles in einer Zeile. */}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:gap-3">
+        <div className="flex items-start gap-1 min-w-0 sm:flex-1">
+          {/* Antippen öffnet den Antrag mit der kompletten Nachricht. */}
+          <button type="button" onClick={() => onShow(r)} className="min-w-0 flex-1 text-left rounded-lg -m-1 p-1 hover:bg-hover" aria-label={`Antrag von ${r.studentName} ganz anzeigen`}>
+            <div className="text-ivory flex items-center gap-x-2 gap-y-1 flex-wrap">
+              <span className="font-medium" data-noi18n>{r.studentName}</span>
+              <span className="text-sage-muted">· {TYPE_LABEL[r.requestType]}</span>
+              {r.studentAbsences > 0 && (
+                <span className={`text-caption px-2 py-0.5 rounded-full ${r.studentAbsences >= 2 ? 'bg-status-late/15 text-status-late' : 'bg-subtle text-sage-muted'}`}>
+                  schon {r.studentAbsences}× abwesend
+                </span>
+              )}
+            </div>
+            <div className="text-footnote text-sage-muted line-clamp-2 mt-0.5">Grund: {r.reasonCategory}{r.comment ? ` · ${r.comment}` : ''} · {r.sessionDate ? fmt(r.sessionDate) : fmt(r.createdAt)}</div>
+            <div className="text-caption text-mint mt-1 inline-flex items-center gap-0.5">Ganze Nachricht ansehen <ChevronRight size={12} /></div>
           </button>
-          {decide && (
-            <>
-              <Button size="sm" onClick={() => decide(r.id, 'approve')}>Genehmigen</Button>
-              <Button size="sm" variant="outline" onClick={() => decide(r.id, 'needs_info')}>Rückfrage</Button>
-              <Button size="sm" variant="danger" onClick={() => decide(r.id, 'reject')}>Ablehnen</Button>
-            </>
-          )}
+          <button type="button" onClick={() => setOpen((o) => !o)} aria-expanded={open}
+            aria-label={commentCount > 0 ? `${commentCount} Rückfragen anzeigen` : 'Rückfrage schreiben'}
+            className="shrink-0 h-9 min-w-9 px-2 rounded-full text-sage-muted inline-flex items-center justify-center gap-1 text-xs hover:bg-hover hover:text-ivory">
+            <MessageCircle size={16} /> {commentCount > 0 ? commentCount : ''}
+          </button>
         </div>
+        {decide && (
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0">
+            <Button size="sm" className="w-full sm:w-auto" onClick={() => decide(r.id, 'approve')}>Genehmigen</Button>
+            <Button size="sm" className="w-full sm:w-auto" variant="outline" onClick={() => decide(r.id, 'needs_info')}>Rückfrage</Button>
+            <Button size="sm" className="w-full sm:w-auto" variant="danger" onClick={() => decide(r.id, 'reject')}>Ablehnen</Button>
+          </div>
+        )}
       </div>
       {open && <CommentThread request={r} onSent={onCommentSent} />}
     </div>
