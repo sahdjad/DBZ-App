@@ -15,7 +15,8 @@ import {
 import MushafPage from './MushafPage.jsx';
 import { Segmented, Button, useBackToClose } from '../ui.jsx';
 import { api } from '../../lib/api.js';
-import { clampPage, cachedPage, preparePage, prefetchPage, useMushafPrefs, TEXT_SIZES, MARK_COLORS, markColor } from '../../lib/mushafPages.js';
+import { clampPage, cachedPage, pageError, preparePage, prefetchPage, useMushafPrefs, TEXT_SIZES, MARK_COLORS, markColor } from '../../lib/mushafPages.js';
+import { pinPageFonts } from '../../lib/mushafFont.js';
 import { getThemePref, setThemePref } from '../../lib/theme.js';
 import { normalize, strictlyMatchesWord } from '../../lib/hifzEngine.js';
 
@@ -53,8 +54,9 @@ export default function MushafShell({
   const ensure = useCallback((p) => {
     if (p < 1 || p > 604 || cachedPage(p) || want.current.has(p)) return;
     want.current.add(p);
-    preparePage(p).then(() => setLoaded((x) => x + 1)).catch(() => {}).finally(() => want.current.delete(p));
+    preparePage(p).catch(() => {}).finally(() => { want.current.delete(p); setLoaded((x) => x + 1); });
   }, []);
+  const retry = (p) => { preparePage(p).catch(() => {}).finally(() => setLoaded((x) => x + 1)); setLoaded((x) => x + 1); };
 
   // ---- waagerecht: eine Seite, Wischen ------------------------------------
   const [shown, setShown] = useState(() => (cachedPage(page) ? page : null)); // angezeigte Seite (bleibt, bis die neue da ist)
@@ -70,8 +72,9 @@ export default function MushafShell({
       scrollRef.current?.scrollTo({ top: 0 });
     };
     if (cachedPage(page)) go();
-    else preparePage(page).then(() => { if (alive) go(); }).catch(() => {});
-    prefetchPage(page + 1); prefetchPage(page - 1);
+    else preparePage(page).then(() => { if (alive) go(); }).catch(() => { if (alive) setLoaded((x) => x + 1); });
+    // Nachbarseiten vorladen (in Leserichtung zwei, zurück eine).
+    prefetchPage(page + 1); prefetchPage(page - 1); prefetchPage(page + 2);
     return () => { alive = false; };
   }, [page, vertical]);
 
@@ -200,9 +203,28 @@ export default function MushafShell({
   }, []);
 
   const jump = (p) => { setSheet(null); onPageChange(clampPage(p), 'jump'); };
+  // Angezeigte Seiten behalten ihre Schrift (der Rest darf ausgelagert werden).
+  useEffect(() => {
+    pinPageFonts(vertical ? Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i) : [page, shown].filter(Boolean));
+  }, [vertical, win, page, shown]);
+  const placeholder = (p, full) => {
+    const err = pageError(p);
+    return (
+      <div key={p} data-page={p} className={`mushaf-placeholder ${full ? 'h-full' : ''}`} aria-busy={err ? undefined : 'true'} role={err ? 'alert' : undefined}>
+        <span>{p}</span>
+        {err && (
+          <>
+            <span className="text-footnote max-w-xs">Seite {p} konnte nicht geladen werden. {err}</span>
+            <button type="button" onClick={() => retry(p)} className="text-footnote font-semibold text-mint-light dark:text-mint underline underline-offset-4">Erneut versuchen</button>
+          </>
+        )}
+      </div>
+    );
+  };
   const info = index ? index.pageInfo(page) : null;
   const pageProps = { index, surahName, prefs, forceTextLayout, renderWord, version };
-  const data = shown != null ? cachedPage(shown) : null;
+  // Neue Seite nicht ladbar? Dann den Fehler zeigen statt der alten Seite.
+  const data = shown != null && !(shown !== page && pageError(page)) ? cachedPage(shown) : null;
 
   return createPortal(
     <div className="mushaf-immersive fixed inset-0 z-[70] flex flex-col" role="dialog" aria-modal="true" aria-label="Mushaf">
@@ -222,18 +244,14 @@ export default function MushafShell({
           <div className="mushaf-vertical">
             {Array.from({ length: win[1] - win[0] + 1 }, (_, i) => win[0] + i).map((p) => {
               const d = cachedPage(p);
-              return d
-                ? <MushafPage key={p} data={d} {...pageProps} />
-                : <div key={p} data-page={p} className="mushaf-placeholder" aria-busy="true"><span>{p}</span></div>;
+              return d ? <MushafPage key={p} data={d} {...pageProps} /> : placeholder(p, false);
             })}
           </div>
         ) : data ? (
           <div key={shown} className={anim} onAnimationEnd={() => setAnim('')}>
             <MushafPage data={data} {...pageProps} />
           </div>
-        ) : (
-          <div className="mushaf-placeholder h-full" aria-busy="true"><span>{page}</span></div>
-        )}
+        ) : placeholder(page, true)}
       </div>
 
       {overlay}

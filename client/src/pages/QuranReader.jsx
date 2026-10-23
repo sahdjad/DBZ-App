@@ -8,6 +8,7 @@ import { cleanQuran, toArabicNum } from '../lib/quranText.js';
 import MushafShell, { Sheet } from '../components/mushaf/MushafShell.jsx';
 import { clampPage, lastPage, rememberPage, fetchPage, cachedPage, MARK_COLORS, markColor } from '../lib/mushafPages.js';
 import { loadQuranIndex } from '../lib/recitation/quranIndex.js';
+import { splitTajweedAyah } from '../lib/tajweedWords.js';
 // KI-Rezitation (Erkennung, Qur'an-weite Suche) erst laden, wenn der Reiter
 // „Auswendig rezitieren" geöffnet wird -- „Lesen" bleibt dadurch schlank.
 const HifzRecitationMode = lazy(() => import('./HifzRecitationMode.jsx'));
@@ -40,19 +41,6 @@ function tajweedToHtml(html) {
     .replace(/<(?!\/?span)[^>]*>/g, ''); // alles andere entfernen
 }
 
-// Tadschwid je WORT (Seitenansicht): quran.com liefert die Auszeichnung als
-// <rule class=…>…</rule>. Nur echte Regel-Klassen bekommen eine Farbe; reine
-// Darstellungs-Klassen (custom-…) bleiben ohne Farbe. Nur eigene <span>.
-function tajweedWordToHtml(html) {
-  return (html || '')
-    .replace(/[۟۠]/g, '')
-    .replace(/<rule class=["']?([a-z_-]+)["']?>/g, (m, cls) => {
-      const c = TAJWEED_COLORS[cls];
-      return c ? `<span style="color:${c}">` : '<span>';
-    })
-    .replace(/<\/rule>/g, '</span>')
-    .replace(/<(?!\/?span)[^>]*>/g, '');
-}
 
 function TafsirPanel({ data, edition, onEdition }) {
   const EDS = [['saadi', 'as-Saʿdī · عربي'], ['ibnkathir', 'Ibn Kathīr · EN'], ['de', 'Deutsch']];
@@ -740,6 +728,10 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
   const [showTafsir, setShowTafsir] = useState(false);
   const [elPaused, setElPaused] = useState(false);
   const [tajweed, setTajweed] = useState(!!initialTajweed);
+  // Tadschwid-Farben je Wort ("s:a:k" -> HTML), aus der Ayah-Auszeichnung der
+  // Suren auf der Seite. Nur eindeutig zerlegbare Ayat werden gefärbt.
+  const [tjMap, setTjMap] = useState(() => new Map());
+  const tjSurahs = useRef(new Set());
   const [hint, setHint] = useState(() => { try { return !localStorage.getItem('dbz-mushaf-hint'); } catch { return false; } });
   const closeHint = () => { setHint(false); try { localStorage.setItem('dbz-mushaf-hint', '1'); } catch { /* egal */ } };
 
@@ -776,6 +768,33 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     return () => { cancel = true; };
     // eslint-disable-next-line
   }, []);
+
+  useEffect(() => {
+    if (!tajweed || page == null || !index) return undefined;
+    let alive = true;
+    fetchPage(page).then((d) => {
+      for (const su of d.surahs || []) {
+        if (tjSurahs.current.has(su)) continue;
+        tjSurahs.current.add(su);
+        api.get(`/quran/tajweed/${su}`).then(({ surah }) => {
+          if (!alive) return;
+          setTjMap((prev) => {
+            const next = new Map(prev);
+            for (const ay of surah.ayahs || []) {
+              const words = splitTajweedAyah(ay.html);
+              const [from, to] = index.ayahRange(su, ay.n, ay.n);
+              // 37:130 „إِلْ يَاسِينَ": im Index zwei Wörter, auf der Seite eines.
+              const expected = (to - from) - (su === 37 && ay.n === 130 ? 1 : 0);
+              if (!words || words.length !== expected) continue;
+              words.forEach((w, i) => next.set(`${su}:${ay.n}:${i + 1}`, tajweedToHtml(w)));
+            }
+            return next;
+          });
+        }).catch(() => { tjSurahs.current.delete(su); });
+      }
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [tajweed, page, index]);
 
   // Lesezeichen + Markierungen (je Ayah, mit Farbe).
   const loadMarks = () => api.get('/quran/me').then((m) => {
@@ -969,8 +988,8 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
     if (hl && !w.e) { cls.push('is-hl'); style = { '--hl': markColor(hl) }; }
     const bm = w.e ? bookmarks.get(w.v) : null;
     if (bm) { cls.push('underline decoration-2 underline-offset-4'); style = { ...style, textDecorationColor: markColor(bm.color) }; }
-    return { className: cls.join(' '), style, html: tajweed && !w.e ? tajweedWordToHtml(w.tj) : undefined };
-  }, [playingWord, playingKey, sheetKey, highlights, bookmarks, tajweed]);
+    return { className: cls.join(' '), style, html: tajweed && !w.e && !w.part ? tjMap.get(`${w.v}:${w.p}`) : undefined };
+  }, [playingWord, playingKey, sheetKey, highlights, bookmarks, tajweed, tjMap]);
   const focusG = useMemo(() => {
     if (!index || !playingWord) return null;
     const [vk, wi] = playingWord.split('#');
@@ -999,7 +1018,7 @@ function MushafReader({ initialSurah, initialPage, initialTajweed, onBack, onMar
         index={index}
         surahs={surahs}
         renderWord={renderWord}
-        version={`${playingWord}|${playingKey}|${sheetKey}|${tajweed}|${hlVersion}`}
+        version={`${playingWord}|${playingKey}|${sheetKey}|${tajweed}|${hlVersion}|${tjMap.size}`}
         forceTextLayout={tajweed}
         focusG={focusG}
         onLongPressWord={({ v }) => { setSheetKey(v); setShowTafsir(false); closeHint(); }}

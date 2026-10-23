@@ -13,7 +13,7 @@ import { locate } from '../recitation/locator.js';
 import { RecitationTracker, KIND } from '../recitation/tracker.js';
 import { normalize } from '../hifzEngine.js';
 
-const index = buildQuranIndex(JSON.parse(fs.readFileSync(new URL('../../../public/quran/index-v1.json', import.meta.url), 'utf8')));
+const index = buildQuranIndex(JSON.parse(fs.readFileSync(new URL('../../../public/quran/index-v2.json', import.meta.url), 'utf8')));
 const fixtures = JSON.parse(fs.readFileSync(new URL('./fixtures/asr-transcripts.json', import.meta.url), 'utf8'));
 const words = (s, a1, a2 = a1) => { const [f, t] = index.ayahRange(s, a1, a2); const out = []; for (let g = f; g < t; g++) out.push(index.token[g]); return out; };
 

@@ -44,8 +44,7 @@ import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
 import { getTajweedSurah } from './providers/tajweedProvider.js';
 import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvider.js';
 import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
-import { getMushafPage, surahStartPage } from './providers/mushafPageProvider.js';
-import { getMushafFont } from './providers/mushafFontProvider.js';
+import { legacyPage, surahStartPage } from './mushaf.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription, pushToUser } from './webpush.js';
 import { createLoginThrottle } from './security.js';
 import { backupNow } from './maintenance.js';
@@ -3462,42 +3461,25 @@ router.get('/quran/audio/:n', requireAuth, async (req, res) => {
   }
 });
 
-// Klassische Medina-Mushaf-Seite (1..604) als Zeilenstruktur.
-router.get('/quran/page/:p', requireAuth, async (req, res) => {
+// Muṣḥaf-Seite (1..604) aus den eingebauten Seiten (server/mushaf.js). Die App
+// lädt Seiten heute direkt unter /mushaf/qpc-v2/ -- diese Form bleibt für
+// ältere, noch geöffnete App-Versionen (richtiger Text, ohne Seitenschrift).
+router.get('/quran/page/:p', requireAuth, (req, res) => {
   try {
-    const data = await getMushafPage(req.params.p);
-    res.json({ page: data });
+    res.json({ page: legacyPage(req.params.p) });
   } catch (err) {
     if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Seite nicht gefunden' });
-    if (err.code === 'PROVIDER_UNAVAILABLE')
-      return res.status(503).json({ error: 'Mushaf-Seite konnte nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.' });
     res.status(500).json({ error: 'Serverfehler beim Laden der Mushaf-Seite' });
   }
 });
 
-// Offizielle Seitenschrift (KFGQPC HAFS v1) je Mushaf-Seite – ausgeliefert vom
-// eigenen Server (font-src 'self'). Öffentlich (nur gemeinfreie Schrift-Bytes),
-// damit der Browser sie per @font-face laden kann; lange Cache-Zeit.
-router.get('/quran/font/v1/:page', async (req, res) => {
-  try {
-    const buf = await getMushafFont(req.params.page);
-    res.setHeader('Content-Type', 'font/woff2');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.send(buf);
-  } catch (err) {
-    if (err.code === 'NOT_FOUND') return res.status(404).end();
-    res.status(502).end();
-  }
-});
-
 // Startseite einer Sure (Sprung aus der Surenliste in die Seitenansicht).
-router.get('/quran/surah-page/:n', requireAuth, async (req, res) => {
+router.get('/quran/surah-page/:n', requireAuth, (req, res) => {
   try {
-    const page = await surahStartPage(req.params.n);
-    res.json({ page });
-  } catch {
-    res.status(503).json({ error: 'Seitenzuordnung nicht verfügbar' });
+    res.json({ page: surahStartPage(req.params.n) });
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Sure nicht gefunden' });
+    res.status(500).json({ error: 'Seitenzuordnung nicht verfügbar' });
   }
 });
 

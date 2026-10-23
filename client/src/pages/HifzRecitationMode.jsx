@@ -307,7 +307,8 @@ export default function HifzRecitationMode({ surahs }) {
   const renderWord = (w) => {
     const g = w.g;
     if (g == null || !tracker) return {};
-    const kind = tracker.marks.get(g);
+    // 37:130 „إِلْ يَاسِينَ": ein Wort auf der Seite, zwei im Index (g … gEnd).
+    const kind = tracker.marks.get(g) ?? (w.gEnd != null ? tracker.marks.get(w.gEnd) : undefined);
     if (g < range[0] || g >= range[1]) return { className: 'opacity-40' };
     const known = !!kind || tracker.hints.has(g) || (tracking && g >= tracker.cursor && g < tracker.cursor + previewN);
     const cls = [];
@@ -316,7 +317,7 @@ export default function HifzRecitationMode({ surahs }) {
     if (kind === KIND.MISSED) cls.push('mushaf-word-missed');
     else if (!hideMode && kind === KIND.ASSISTED) cls.push('text-sage-muted');
     if (tracker.mismatch?.suspected && tracker.mismatch.g === g) cls.push('ring-1 ring-status-absent/60 rounded');
-    if (g === current && !ended) cls.push(hideMode ? 'is-recite-next' : 'is-recite-current');
+    if ((g === current || (w.gEnd != null && current > g && current <= w.gEnd)) && !ended) cls.push(hideMode ? 'is-recite-next' : 'is-recite-current');
     return { className: cls.join(' '), hidden };
   };
   const version = `${tracker?.version ?? 'x'}|${display}|${peek}|${previewN}|${ended}|${current}|${!!tracker}`;

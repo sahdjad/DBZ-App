@@ -1,6 +1,6 @@
 // Wandelt eine bereits geprüfte, bereits angezeigte Mushaf-SEITE (dieselbe
-// Quelle wie in QuranReader.jsx/MushafReader: /quran/page/:p, quran.com API
-// v4 "verses/by_page") in das Abschnittsformat der Hifz-Engine
+// Seitenform wie früher /quran/page/:p (heute: eingebaute Muṣḥaf-Seiten,
+// lib/mushafPages.js) in das Abschnittsformat der Hifz-Engine
 // (client/src/lib/hifzEngine.js) um. Reine, ohne Netzwerkzugriff testbare
 // Funktion – die Seite selbst wird vom aufrufenden Code geladen.
 //

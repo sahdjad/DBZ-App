@@ -19,7 +19,7 @@
 // Versionskennung wird beim Build eingesetzt (vite.config.js) -> jede neue
 // Version ist ein neuer Service Worker mit frischem Cache.
 const CACHE = 'dbz-cache-__BUILD_ID__'; // App-Shell + statische Assets (wird bei Updates ersetzt)
-const DATA = 'dbz-quran-v2'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar)
+const DATA = 'dbz-quran-v3'; // Qur'an-Leseinhalte (bleibt bestehen -> offline verfügbar); v3: neue Muṣḥaf-Seiten, alte Seiten verwerfen
 const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/fonts/UthmanicHafs.woff2'];
 
 self.addEventListener('install', (event) => {
@@ -110,6 +110,19 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return; // Fremd-Hosts (z. B. Audio-CDN) unangetastet
+
+  // Muṣḥaf al-Madīnah (Seiten + Seitenschriften) und Qur'an-Index: unveränderlich
+  // (Ausgabe im Pfad) -> aus dem Speicher, sonst einmal laden und behalten.
+  if (url.pathname.startsWith('/mushaf/qpc-v2/') || url.pathname === '/quran/index-v2.json') {
+    event.respondWith((async () => {
+      const cached = await caches.match(request, { cacheName: DATA });
+      if (cached) return cached;
+      const res = await fetch(request);
+      if (res && res.status === 200) { const copy = res.clone(); caches.open(DATA).then((c) => c.put(request, copy)); }
+      return res;
+    })());
+    return;
+  }
 
   // Mushaf-Seiten ändern sich nie: sofort aus dem Speicher (kein Warten beim
   // Blättern/Auswendig-Üben), im Hintergrund still aktualisieren.

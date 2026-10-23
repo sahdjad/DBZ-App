@@ -1,8 +1,7 @@
 // Gemeinsame Mushaf-Seitendaten und Leser-Einstellungen für „Lesen" und
 // „Auswendig rezitieren" (beide nutzen den Vollbild-Leser, components/mushaf/).
 import { useEffect, useState } from 'react';
-import { api } from './api.js';
-import { ensurePageFont, isPageFontLoaded } from './mushafFont.js';
+import { ensurePageFont, ensureBasmalaFont } from './mushafFont.js';
 
 export const clampPage = (p) => Math.max(1, Math.min(604, Number(p) || 1));
 export const LAST_PAGE_KEY = 'dbz-mushaf-page';
@@ -13,30 +12,46 @@ export function rememberPage(p) {
   try { localStorage.setItem(LAST_PAGE_KEY, String(p)); } catch { /* egal */ }
 }
 
-// ---- Seiten (Speicher bleibt über Tab-Wechsel bestehen) --------------------
-const cache = new Map();
+// ---- Seiten (Muṣḥaf al-Madīnah 1421H, eingebaut: /mushaf/qpc-v2) -----------
+// Jede Seite ist eine feste Einheit aus 15 Zeilen (scripts/build-mushaf.mjs):
+// { page, firstVerse, lastVerse, surahs, lines: [{ n, type: 'surah'|'basmala'|'text',
+//   c?: zentriert, words?: [{ t, g, v, p, x?, xn?, e?, q?, part? }] }] }.
+// „Bereit" ist eine Seite erst, wenn auch ihre Seitenschrift geladen ist.
+const BASE = '/mushaf/qpc-v2/pages';
+const cache = new Map(); // Seite -> Daten (Schrift geladen)
 const pending = new Map();
+const failed = new Map(); // Seite -> Fehlermeldung
 export const cachedPage = (p) => cache.get(p) || null;
-export function fetchPage(p) {
+export const pageError = (p) => failed.get(p) || null;
+
+async function loadPage(p) {
+  const res = await fetch(`${BASE}/${String(p).padStart(3, '0')}.json`);
+  if (!res.ok) throw new Error(`Seite ${p} nicht gefunden (${res.status})`);
+  const d = await res.json();
+  if (d.page !== p || !Array.isArray(d.lines) || !d.lines.length) throw new Error(`Seite ${p} ist unvollständig`);
+  const fonts = [ensurePageFont(p)];
+  if (d.lines.some((l) => l.type === 'basmala')) fonts.push(ensureBasmalaFont());
+  const ok = await Promise.all(fonts);
+  if (ok.includes(false)) throw new Error('Die Seitenschrift konnte nicht geladen werden.');
+  return d;
+}
+
+/** Seite + Seitenschrift(en). Wirft bei Fehler -- es gibt keine Ersatzdarstellung. */
+export function preparePage(p) {
   if (cache.has(p)) return Promise.resolve(cache.get(p));
   if (!pending.has(p)) {
-    pending.set(p, api.get(`/quran/page/${p}`)
-      .then((r) => { cache.set(p, r.page); return r.page; })
+    failed.delete(p);
+    pending.set(p, loadPage(p)
+      .then((d) => { cache.set(p, d); return d; })
+      .catch((err) => { failed.set(p, err.message || 'Seite konnte nicht geladen werden.'); throw err; })
       .finally(() => pending.delete(p)));
   }
   return pending.get(p);
 }
-/** Seite + Seitenschrift. Die Schrift wartet höchstens kurz, sonst lesbare Ersatzschrift. */
-export async function preparePage(p) {
-  const d = await fetchPage(p);
-  if (d.font === 'v1' && !isPageFontLoaded(d.fontPage)) {
-    await Promise.race([ensurePageFont(d.fontPage), new Promise((r) => setTimeout(r, 2500))]);
-  }
-  return d;
-}
+export const fetchPage = preparePage;
 export function prefetchPage(p) {
   if (p < 1 || p > 604) return;
-  fetchPage(p).then((d) => { if (d.font === 'v1') ensurePageFont(d.fontPage); }).catch(() => {});
+  preparePage(p).catch(() => {});
 }
 
 // ---- Leser-Einstellungen ---------------------------------------------------

@@ -1,18 +1,19 @@
 // Qur'an-weiter Wortindex für „Auswendig rezitieren" (freie Rezitation):
 // alle 77.430 Wörter in Lesereihenfolge, je mit Sure/Ayah/Wortnummer, Seite
-// und Vergleichsform. Quelle: client/public/quran/index-v1.json (gebaut von
+// und Vergleichsform. Quelle: client/public/quran/index-v2.json (gebaut von
 // scripts/build-quran-index.mjs). Nur Vergleichsformen -- angezeigt wird immer
 // der Originaltext der Mushaf-Seite.
 //
 // Ein Wort heißt hier global über seine Nummer `g` (0..77429). Die Wort-ID
 // `s:a:k` (k = Wortnummer in der Ayah, ab 1) ist dieselbe wie die der
-// Mushaf-Seite (Feld p aus server/providers/mushafPageProvider.js).
+// Muṣḥaf-Seite (Feld p in client/public/mushaf/qpc-v2, scripts/build-mushaf.mjs;
+// einzige Ausnahme 37:130 „إِلْ يَاسِينَ": dort Feld x/xn).
 import { phonetic } from '../hifzEngine.js';
 
-export const INDEX_URL = '/quran/index-v1.json';
+export const INDEX_URL = '/quran/index-v2.json';
 
 export function buildQuranIndex(data) {
-  if (!data || data.v !== 1 || data.ayat?.length !== 6236) throw new Error('Qur\'an-Index ungültig.');
+  if (!data || data.v !== 2 || data.ayat?.length !== 6236) throw new Error('Qur\'an-Index ungültig.');
   const total = data.words;
   const surah = new Uint8Array(total);
   const ayah = new Uint16Array(total);
