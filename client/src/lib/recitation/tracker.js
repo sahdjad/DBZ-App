@@ -122,7 +122,7 @@ export class RecitationTracker {
     for (let g = from; g < to; g++) {
       words.push({ id: ix.id(g), surah: ix.surah[g], ayah: ix.ayah[g], position: ix.pos[g], line: ix.ayahNo[g], text: ix.token[g], alt: ix.alt[g] });
     }
-    const engine = new HifzEngine({ id: `rec:${from}`, title: 'Rezitation', edition: 'Qur\'an-Index (Tanzil Uthmani)', riwaya: 'Hafs ʿan ʿĀṣim', source: 'client/public/quran/index-v1.json', words });
+    const engine = new HifzEngine({ id: `rec:${from}`, title: 'Rezitation', edition: 'Qur\'an-Index (Tanzil Uthmani)', riwaya: 'Hafs ʿan ʿĀṣim', source: 'client/public/quran/index-v2.json', words });
     engine.index = c - from;
     engine.status = 'following';
     for (const g of this.hints) if (g >= from && g < to) engine.hints.add(g - from);

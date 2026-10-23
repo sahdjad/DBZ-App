@@ -51,7 +51,8 @@ export function createApp() {
     app.use(express.static(dist, {
       setHeaders(res, file) {
         const rel = path.relative(dist, file).replace(/\\/g, '/');
-        if (rel.startsWith('assets/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        // assets/: Inhalts-Hash im Namen; mushaf/qpc-v2/: Ausgabe im Pfad -- beide unveränderlich.
+        if (rel.startsWith('assets/') || rel.startsWith('mushaf/')) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         else if (/^(index\.html|sw\.js|version\.json|manifest\.webmanifest)$/.test(rel)) res.setHeader('Cache-Control', 'no-cache');
         else res.setHeader('Cache-Control', 'public, max-age=86400');
       },

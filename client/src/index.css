@@ -234,72 +234,67 @@ html {
     user-select: none;
   }
 
-  /* ---- Klassische Mushaf-Seitenansicht (Medina-Layout) ------------------- */
-  /* Warmer, papierähnlicher Seitenhintergrund; im Dunkelmodus gedämpft. */
-  .mushaf-page {
-    background: #fbf7ec;
-    color: #1a2b22;
-    border: 1px solid #e7dcc2;
-    box-shadow: 0 1px 0 #efe6d2 inset, 0 10px 30px rgba(0, 0, 0, 0.06);
+  /* ---- Muṣḥaf-Seite (Muṣḥaf al-Madīnah 1421H, components/mushaf/MushafPage) ----
+     Die Seite ist eine feste Einheit: 15 gleich hohe Zeilenplätze (--slot),
+     Breite 16,4 em der Seitenschrift. Die Schriftgröße (per JS) skaliert die
+     ganze Seite -- Zeilenumbrüche ändern sich dabei nie. Jede Textzeile wird
+     wie gedruckt auf die volle Breite gesetzt (Blocksatz zwischen Wörtern,
+     die Glyphen selbst bleiben unverändert); zentrierte Zeilen (Seiten 1–2,
+     Sure-Enden) stehen mittig. */
+  .mushaf-page { color: #1a2b22; }
+  .dark .mushaf-page { color: #e9f2eb; }
+  .mushaf-page.is-paged { padding: 0; }
+  .mushaf-lines { display: flex; flex-direction: column; }
+  .mushaf-lines.is-opening {
+    /* Seiten 1–2: 8 Zeilen, größerer Abstand, mittig im Seitenrahmen */
+    height: calc(15 * var(--slot));
+    justify-content: center;
   }
-  .dark .mushaf-page {
-    background: #10201a; /* ruhiges Dunkelgrün wie die App */
-    color: #e9f2eb;
-    border-color: #33463c;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset, 0 10px 30px rgba(0, 0, 0, 0.3);
+  .mushaf-slot {
+    height: var(--slot);
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
-  /* Natürlicher, fließender Zeilenfall wie in einem normalen gedruckten Qur'an:
-     die Wörter stehen mit gleichmäßigem, natürlichem Abstand nebeneinander
-     (rechtsbündig, RTL). KEIN gestreckter Blocksatz – der hätte im Browser die
-     Wortabstände auseinandergezogen und die störenden „Lücken" erzeugt. */
+  .mushaf-lines.is-opening .mushaf-slot { height: calc(1.45 * var(--slot)); }
   .mushaf-line {
     direction: rtl;
-    text-align: right;
-    line-height: 2.05;
+    width: 100%;
     margin: 0;
-  }
-  /* Kurze Zeilen (Sure-Ende, kurze Suren wie Al-Ichlas) mittig setzen. */
-  .mushaf-line.is-short {
-    text-align: center;
-  }
-  /* Echte Seitenschrift (KFGQPC v1): die ganze Seite wird ausgenutzt.
-     - Die Seite füllt die verfügbare HÖHE; die 13–15 Zeilen werden gleichmäßig
-       über die Seite verteilt (space-between) wie im gedruckten Mushaf.
-     - Jede Zeile ist ein Flex-Streifen (rechts nach links), der die volle BREITE
-       ausnutzt: die Wörter werden bis an beide Ränder verteilt.
-     - Die Schriftgröße wird per JS so gewählt, dass die breiteste Zeile exakt
-       passt (kein Umbruch) – dadurch passt es auf jedes Gerät. */
-  .mushaf-page.is-glyph {
-    display: flex;
-    flex-direction: column;
-    min-height: calc(100dvh - 13rem);
-  }
-  .mushaf-page.is-glyph .mushaf-lines {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    gap: 0.1rem;
-  }
-  .mushaf-page.is-glyph .mushaf-line {
     display: flex;
     flex-wrap: nowrap;
     justify-content: space-between;
     align-items: baseline;
-    gap: 0.28em;
-    direction: rtl;
-    text-align: initial;
-    text-align-last: initial;
-    line-height: 1.85;
+    white-space: nowrap;
+    line-height: 1;
   }
-  .mushaf-page.is-glyph .mushaf-line.is-short {
-    justify-content: center;
-  }
-  .mushaf-page.is-glyph .mushaf-word {
+  .mushaf-line.is-center { justify-content: center; gap: 0.08em; }
+  .mushaf-basmala { font-size: 1em; }
+  .mushaf-page.is-paged .mushaf-word {
     flex: 0 0 auto;
     white-space: nowrap;
     padding: 0;
+    border-radius: 0.18em;
   }
+  /* Sure-Kopf: ruhiger, doppelt gerahmter Streifen über die Zeilenbreite. */
+  .mushaf-surah-frame {
+    width: 100%;
+    height: 82%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0.06em solid rgba(160, 128, 64, 0.7);
+    outline: 0.04em solid rgba(160, 128, 64, 0.35);
+    outline-offset: 0.12em;
+    border-radius: 0.35em;
+    background: rgba(21, 101, 63, 0.06);
+    font-family: 'Uthmanic Hafs', 'Amiri Quran', serif;
+    color: #15653f;
+  }
+  .mushaf-surah-frame > span { font-size: 0.82em; line-height: 1; }
+  .dark .mushaf-surah-frame { border-color: rgba(200, 170, 100, 0.55); outline-color: rgba(200, 170, 100, 0.28); background: rgba(74, 170, 116, 0.08); color: #8fd3ad; }
+  .mushaf-page.is-text .mushaf-surah-frame { height: 2.2em; margin: 0.6em 0; }
+  .mushaf-page.is-text .mushaf-surah-frame > span { font-size: 1em; }
   .mushaf-word {
     cursor: pointer;
     border-radius: 6px;
@@ -353,31 +348,13 @@ html {
   .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(21, 101, 63, 0.55); }
   .dark .mushaf-word.is-recite-next { box-shadow: inset 0 -2px 0 rgba(112, 196, 156, 0.7); }
   .mushaf-end { color: rgb(var(--c-mint)); } /* Ayah-Nummer im Endzeichen */
-  /* Sure-Kopf über dem ersten Vers einer Sure auf der Seite. Bewusst OHNE
-     Rahmen/Hintergrund/Karten-Optik: eine umrandete Box mittendrin sah wie
-     ein unerwarteter Absatz/Kasten im fließenden Seitentext aus (Rückmeldung
-     nach echtem Gerätetest, v.a. in der Tadschwid-Ansicht). Nur eine ruhige,
-     zentrierte Textzeile, die sich in den Lesefluss der Seite einfügt. */
-  .mushaf-surah-head {
-    text-align: center;
-    margin: 0.5rem auto;
-  }
-
   /* ---- Vollbild-Leser (components/mushaf/) --------------------------------
      Wie in gängigen Qur'an-Apps: die Seite füllt den Bildschirm auf ruhigem
      Papiergrund, Leisten erscheinen nur beim Tippen (schweben über der Seite,
      verschieben sie nicht). Sure/Juzʼ oben, Hizb/Seitenzahl unten am Rand. */
   .mushaf-immersive { background: #fbf7ec; color: #1a2b22; }
   .dark .mushaf-immersive { background: #0d1a15; color: #e9f2eb; }
-  .mushaf-immersive .mushaf-page {
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    padding: 0.25rem 0.75rem;
-  }
-  .mushaf-immersive .mushaf-page.is-glyph {
-    min-height: calc(100dvh - 88px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-  }
+  .mushaf-immersive .mushaf-page.is-text { background: transparent; padding: 0.25rem 1.1rem; }
   .mushaf-immersive .mushaf-word { cursor: default; }
   .mushaf-immersive .mushaf-word:not(.mushaf-word-hidden):not(.is-hl):not(.is-selected):not(.is-active):not(.is-word-active):not(.is-recite-current):hover { background: none; }
   .mushaf-sheet { padding: 0.35rem 0 0.5rem; }
@@ -414,10 +391,14 @@ html {
     min-height: 85dvh;
     display: grid;
     place-items: center;
+    align-content: center;
+    gap: 0.75rem;
+    padding: 1rem;
+    text-align: center;
     font-family: var(--font-ui);
     color: rgb(var(--c-sage-muted));
-    opacity: 0.6;
   }
+  .mushaf-placeholder > span:first-child { opacity: 0.6; }
   /* Text-Ansicht: Fließtext mit eigener Schriftgröße */
   .mushaf-page.is-text { max-width: 46rem; padding: 0.5rem 1.1rem; }
   .mushaf-flow { direction: rtl; text-align: justify; text-align-last: right; line-height: 2.15; margin: 0 0 0.6em; }

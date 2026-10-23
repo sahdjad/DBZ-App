@@ -1648,18 +1648,66 @@ test('Qurʼan: Basmala wird aus Ayah 1 herausgelöst (außer Al-Fatiha)', async 
   const plain = 'يَٰٓأَيُّهَا ٱلنَّاسُ ٱتَّقُوا۟ رَبَّكُمُ';
   assert.equal(stripLeadingBasmala(plain), plain, 'ohne Basmala unverändert');
 });
-test('Mushaf-Seitenschrift: ungültige Seite 404, gültige liefert woff2', async () => {
-  const bad = await fetch(base + '/api/quran/font/v1/0');
-  assert.equal(bad.status, 404, 'ungültige Seite -> 404');
-  const ok = await fetch(base + '/api/quran/font/v1/1');
-  // Netz-tolerant: bei fehlender Verbindung liefert der Proxy 502.
-  if (ok.status === 200) {
-    assert.equal(ok.headers.get('content-type'), 'font/woff2');
-    const buf = Buffer.from(await ok.arrayBuffer());
-    assert.equal(buf.slice(0, 4).toString('latin1'), 'wOF2', 'gültige woff2-Signatur');
-  } else {
-    assert.equal(ok.status, 502, 'ohne Netz -> 502');
+test('Muṣḥaf: Sprung Sure -> Seite und frühere Seiten-API aus den eingebauten Seiten', async () => {
+  const c = await loginAs('schueler@dbz.de');
+  assert.equal((await c('GET', '/quran/surah-page/1')).data.page, 1);
+  assert.equal((await c('GET', '/quran/surah-page/2')).data.page, 2);
+  assert.equal((await c('GET', '/quran/surah-page/5')).data.page, 106);
+  assert.equal((await c('GET', '/quran/surah-page/114')).data.page, 604);
+  assert.equal((await c('GET', '/quran/surah-page/115')).status, 404);
+  const r = await c('GET', '/quran/page/105');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.page.font, null, 'ältere App-Versionen: ohne Seitenschrift, nur richtiger Text');
+  assert.equal(r.data.page.firstVerse, '4:171');
+  assert.equal(r.data.page.lastVerse, '4:175');
+  assert.equal(r.data.page.lines.length, 15);
+  assert.equal((await c('GET', '/quran/page/0')).status, 404);
+});
+
+// Konsistenz aller 604 Seiten (Muṣḥaf al-Madīnah 1421H, scripts/build-mushaf.mjs):
+// Zeilen je Seite, jedes Wort genau einmal in Qur'an-Reihenfolge, Endzeichen,
+// Sure-Köpfe, Glyphen in Lesereihenfolge, Seitenschrift vorhanden.
+test('Muṣḥaf: alle 604 Seiten vollständig und in Reihenfolge', async () => {
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const dir = path.join(process.cwd(), 'client/public/mushaf/qpc-v2');
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+  let words = 0;
+  let ends = 0;
+  let heads = 0;
+  let last = [1, 0, 0];
+  const endSeen = new Set(['1:0']); // vor dem ersten Wort
+  for (let p = 1; p <= 604; p++) {
+    const d = JSON.parse(fs.readFileSync(path.join(dir, 'pages', `${String(p).padStart(3, '0')}.json`), 'utf8'));
+    assert.equal(d.page, p);
+    assert.equal(d.lines.length, p <= 2 ? 8 : 15, `Seite ${p}: Zeilenzahl`);
+    assert.ok(fs.statSync(path.join(dir, 'fonts', `p${String(p).padStart(3, '0')}.woff2`)).size > 1000, `Seite ${p}: Schrift`);
+    d.lines.forEach((l, i) => assert.equal(l.n, i + 1, `Seite ${p}: Zeile ${i + 1}`));
+    let cp = 0;
+    for (const l of d.lines) {
+      if (l.type === 'surah') { heads++; assert.equal(l.surah, heads, `Sure-Kopf ${heads}`); continue; }
+      if (l.type !== 'text') continue;
+      assert.ok(l.words.length > 0, `Seite ${p} Zeile ${l.n} leer`);
+      for (const w of l.words) {
+        for (const ch of w.g.replace(/\s/g, '')) { assert.ok(ch.codePointAt(0) > cp, `Seite ${p}: Glyph-Reihenfolge bei ${w.v}`); cp = ch.codePointAt(0); }
+        const [s, a] = w.v.split(':').map(Number);
+        if (w.e) { assert.ok(!endSeen.has(w.v), `Endzeichen ${w.v} doppelt`); endSeen.add(w.v); ends++; continue; }
+        if (w.part === 2) continue; // zweite Hälfte eines im Druck geteilten Worts
+        const [ls, la, lk] = last;
+        const ok = (s === ls && a === la && w.p === lk + 1) || (w.p === 1 && endSeen.has(`${ls}:${la}`) && ((s === ls && a === la + 1) || (s === ls + 1 && a === 1)));
+        assert.ok(ok, `Seite ${p}: ${w.v}:${w.p} folgt nicht auf ${last.join(':')}`);
+        last = [s, a, w.p];
+        words++;
+      }
+    }
   }
+  assert.equal(words, meta.counts.words);
+  assert.equal(words, 77429, 'Wörter (Zählung quran.com)');
+  assert.equal(ends, 6236, 'Endzeichen');
+  assert.equal(heads, 114, 'Sure-Köpfe');
+  assert.equal(meta.pageStart.length, 604);
+  const ix = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'client/public/quran/index-v2.json'), 'utf8'));
+  assert.deepEqual(ix.pageStart, meta.pageStart, 'Qur\'an-Index kennt dieselben Seiten');
 });
 
 // --- Helfer für Multipart-Tests ---------------------------------------------

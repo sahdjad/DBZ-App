@@ -180,6 +180,30 @@ Suren, Vierteln (Hizb) und Juzʼ-Leiste; Suche nach Seite, Sure, `2:255` oder
 arabischem Text. Ayah lange drücken (Mac: Rechtsklick): Abspielen, Tafsir,
 farbiges Lesezeichen, Markierung.
 
+### Muṣḥaf-Seiten (Muṣḥaf al-Madīnah, Ḥafṣ ʿan ʿĀṣim, Druck 1421H)
+
+Die Mushaf-Ansicht zeigt die 604 gedruckten Seiten mit den Seitenschriften
+des King Fahd Complex (QCF V2; jede Seite hat eine eigene Schrift, jedes Wort
+ist ein Glyph aus dem Druck) und dem Zeilenlayout derselben Ausgabe: 15 feste
+Zeilen je Seite, Sure-Köpfe und Basmala an ihrer gedruckten Zeile. Die Seite
+skaliert nur als Ganzes; Zeilen und Seiten ändern sich nie mit der
+Bildschirmgröße. Eine Seite erscheint erst, wenn ihre Schrift geladen ist –
+nie mit Ersatzschrift; bei Fehlern gibt es „Erneut versuchen".
+
+- Daten: `client/public/mushaf/qpc-v2/` (Seiten-JSON, unveränderte Schriften,
+  `meta.json` mit Quellen und Prüfsummen), gebaut von
+  `scripts/build-mushaf.mjs` aus github.com/zonetecde/mushaf-layout (QPC2) mit
+  Gegenprobe gegen die QUL-Layoutdatenbank (Tarteel) und den Tanzil-Text.
+  Belegte Korrekturen der Quelle (Zeilenbreiten-Messung, Glyph-Reihenfolge)
+  stehen im Skript.
+- Prüfungen: `npm test` (alle 604 Seiten vollständig und in Reihenfolge),
+  `python3 scripts/check-mushaf-fonts.py` (jeder Glyph in seiner
+  Seitenschrift), `node scripts/check-mushaf-widths.mjs` (Zeilenbreiten aller
+  8.790 Zeilen mit den echten Schriften).
+- Schriften © King Fahd Glorious Quran Printing Complex – unverändert,
+  kostenlos genutzt (Nutzungsbedingungen: freie Verwendung in Websites und
+  Software, keine Veränderung, kein Verkauf).
+
 ### Freie Rezitation, zwei Anzeigen, Übungsverläufe
 
 - **Eine Sitzung, zwei Anzeigen:** „Text versteckt" (erkannte Wörter werden
@@ -188,8 +212,9 @@ farbiges Lesezeichen, Markierung.
   verlieren (`client/src/lib/recitation/tracker.js`).
 - **Frei oder gezielt:** Ohne Auswahl einfach losrezitieren – die App sucht die
   Stelle im ganzen Qur'an (`lib/recitation/locator.js`, Index
-  `client/public/quran/index-v1.json`, gebaut mit
-  `scripts/build-quran-index.mjs` aus dem Tanzil-Text). Mehrdeutige Stellen
+  `client/public/quran/index-v2.json`, gebaut mit
+  `scripts/build-quran-index.mjs` aus dem Tanzil-Text; Seitengrenzen wie die
+  Muṣḥaf-Seiten). Mehrdeutige Stellen
   (z. B. wiederholte Ayat) werden nicht geraten, sondern zur Auswahl angeboten.
   Gezielt: Sure/Ayat, Seiten oder Juzʼ.
 - **Über Seiten- und Surengrenzen:** Die Seite blättert mit; wer selbst

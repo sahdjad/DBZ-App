@@ -4,7 +4,7 @@ import { pageToHifzPassage, EmptyPassageError } from '../hifzPassage.js';
 import { validatePassage } from '../hifzEngine.js';
 
 // Neutrale, künstliche Seitendaten in der Form, wie /quran/page/:p sie liefert
-// (server/providers/mushafPageProvider.js: lines[].words[] = {t,g,tj,e,v}).
+// (frühere Seitenform: lines[].words[] = {t,g,tj,e,v}).
 const page = (overrides = {}) => ({
   page: 1,
   juz: 1,
