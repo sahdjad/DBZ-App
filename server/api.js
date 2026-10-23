@@ -3515,7 +3515,8 @@ router.get('/quran/me', requireAuth, (req, res) => {
   const s = quranState(req.user.id);
   res.json({
     lastRead: s.lastSurah ? { surah: s.lastSurah, surahName: surahByN(s.lastSurah)?.name } : null,
-    bookmarks: s.bookmarks.map((b) => ({ ...b, surahName: surahByN(b.surah)?.name })),
+    bookmarks: s.bookmarks.map((b) => ({ ...b, color: b.color || 'green', surahName: surahByN(b.surah)?.name })),
+    highlights: (s.highlights || []).map((h) => ({ ...h, surahName: surahByN(h.surah)?.name })),
   });
 });
 
@@ -3530,17 +3531,33 @@ router.post('/quran/last-read', requireAuth, (req, res) => {
 });
 
 // Lesezeichen umschalten (vorhandenes an gleicher Stelle wird entfernt).
+// Farben für Lesezeichen und Markierungen (wie in gängigen Qur'an-Apps).
+const MARK_COLORS = ['red', 'yellow', 'green', 'blue'];
+const validAyah = (surah, ayah) => {
+  const s = surahByN(surah);
+  const a = Number(ayah);
+  return s && Number.isInteger(a) && a >= 1 && a <= s.ayat;
+};
+
+// Lesezeichen setzen/umschalten. Ohne Farbe (oder gleiche Farbe) = umschalten
+// wie bisher; andere Farbe an derselben Ayah = nur die Farbe ändern.
 router.post('/quran/bookmarks', requireAuth, (req, res) => {
-  const { surah, ayah, note } = req.body || {};
-  if (!surahByN(surah) || !ayah) return res.status(400).json({ error: 'Ungültige Angabe' });
+  const { surah, ayah, note, color } = req.body || {};
+  if (!validAyah(surah, ayah)) return res.status(400).json({ error: 'Ungültige Angabe' });
+  if (color != null && !MARK_COLORS.includes(color)) return res.status(400).json({ error: 'Ungültige Farbe' });
   const s = quranState(req.user.id);
   const existing = s.bookmarks.find((b) => b.surah === Number(surah) && b.ayah === Number(ayah));
+  if (existing && color && (existing.color || 'green') !== color) {
+    existing.color = color;
+    db.commit();
+    return res.json({ bookmark: { ...existing, surahName: surahByN(existing.surah)?.name } });
+  }
   if (existing) {
     s.bookmarks = s.bookmarks.filter((b) => b !== existing);
     db.commit();
     return res.json({ removed: true });
   }
-  const b = { id: newId('bm'), surah: Number(surah), ayah: Number(ayah), note: note || '', createdAt: new Date().toISOString() };
+  const b = { id: newId('bm'), surah: Number(surah), ayah: Number(ayah), note: note || '', color: color || 'green', createdAt: new Date().toISOString() };
   s.bookmarks.unshift(b);
   db.commit();
   res.json({ bookmark: { ...b, surahName: surahByN(b.surah)?.name } });
@@ -3551,6 +3568,28 @@ router.delete('/quran/bookmarks/:id', requireAuth, (req, res) => {
   const before = s.bookmarks.length;
   s.bookmarks = s.bookmarks.filter((b) => b.id !== req.params.id);
   if (s.bookmarks.length === before) return res.status(404).json({ error: 'Nicht gefunden' });
+  db.commit();
+  res.json({ ok: true });
+});
+
+// Markierungen: eine Ayah farbig hinterlegen (Farbe null = Markierung entfernen).
+router.post('/quran/highlights', requireAuth, (req, res) => {
+  const { surah, ayah, color } = req.body || {};
+  if (!validAyah(surah, ayah)) return res.status(400).json({ error: 'Ungültige Angabe' });
+  if (color != null && !MARK_COLORS.includes(color)) return res.status(400).json({ error: 'Ungültige Farbe' });
+  const s = quranState(req.user.id);
+  s.highlights ||= [];
+  const i = s.highlights.findIndex((h) => h.surah === Number(surah) && h.ayah === Number(ayah));
+  if (!color) {
+    if (i >= 0) s.highlights.splice(i, 1);
+    db.commit();
+    return res.json({ removed: true });
+  }
+  if (i >= 0) s.highlights[i].color = color;
+  else {
+    if (s.highlights.length >= 5000) return res.status(400).json({ error: 'Zu viele Markierungen' });
+    s.highlights.push({ surah: Number(surah), ayah: Number(ayah), color, createdAt: new Date().toISOString() });
+  }
   db.commit();
   res.json({ ok: true });
 });

@@ -168,6 +168,18 @@ nie als rezitiert. Gemessen an 70+ echten, teils nicht professionellen
 Aufnahmen aus dem Tilawa-Testkorpus stieg die Trefferquote so deutlich, ohne
 zusätzliche falsch aufgedeckte Wörter.
 
+### Vollbild-Leser (Lesen + Auswendig)
+
+Beide Tabs nutzen denselben Mushaf-Leser (`client/src/components/mushaf/`),
+nach dem Vorbild gängiger Qur'an-Apps: Die Seite füllt den Bildschirm, ein
+Tippen blendet die Leisten ein/aus (oben Inhalt, Suche, Seite, Einstellungen;
+unten Wiedergabe bzw. Mikrofon und Seitenregler). Am Rand stehen Sure, Juzʼ,
+Hizb und Seitenzahl. Einstellungen: Mushaf-Seite oder Text mit Schriftgröße,
+waagerecht blättern oder senkrecht scrollen, Hell/Dunkel/Auto. Inhalt mit
+Suren, Vierteln (Hizb) und Juzʼ-Leiste; Suche nach Seite, Sure, `2:255` oder
+arabischem Text. Ayah lange drücken (Mac: Rechtsklick): Abspielen, Tafsir,
+farbiges Lesezeichen, Markierung.
+
 ### Freie Rezitation, zwei Anzeigen, Übungsverläufe
 
 - **Eine Sitzung, zwei Anzeigen:** „Text versteckt" (erkannte Wörter werden

@@ -46,7 +46,10 @@ export function loadMushafLayout() {
   try { return localStorage.getItem(MUSHAF_LAYOUT_KEY) === 'wide' ? 'wide' : 'tight'; } catch { return 'tight'; }
 }
 
-export function useMushafAutoFit(pageElRef, { active, numLines, resetKey, layout = 'tight' }) {
+// reserve: Höhe (px), die oben/unten für feste Leisten frei bleiben muss. Der
+// Vollbild-Leser (components/mushaf/) blendet seine Leisten nur bei Bedarf über
+// der Seite ein und braucht deshalb nur Platz für die Seitenränder.
+export function useMushafAutoFit(pageElRef, { active, numLines, resetKey, layout = 'tight', reserve = null }) {
   const [fs, setFs] = useState(null);
   const [width, setWidth] = useState(null);
   const [shortLines, setShortLines] = useState(() => new Set());
@@ -90,7 +93,7 @@ export function useMushafAutoFit(pageElRef, { active, numLines, resetKey, layout
       // Höhe: ganzer Bildschirm abzüglich fester Leisten (oben App-Leiste,
       // unten Seiten-Leiste/Tab-Leiste) -- NICHT abzüglich der Werkzeuge über
       // der Seite; sonst wird die Schrift auf dem Desktop winzig.
-      const chrome = docW < 1024 ? 190 : 150;
+      const chrome = reserve ?? (docW < 1024 ? 190 : 150);
       const availH = Math.max(320, window.innerHeight - chrome);
       const vpad = parseFloat(cs.paddingTop || 0) + parseFloat(cs.paddingBottom || 0);
       const fontByWidth = (REF * targetInnerW) / maxNat;
@@ -110,6 +113,6 @@ export function useMushafAutoFit(pageElRef, { active, numLines, resetKey, layout
     window.addEventListener('resize', measure);
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', measure); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, numLines, resetKey, layout]);
+  }, [active, numLines, resetKey, layout, reserve]);
   return { fs, width, shortLines };
 }
