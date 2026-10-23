@@ -1,6 +1,11 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Text": "Texte",
+"Oder beginne mit „Neue Nachricht“ ein Gespräch.": "Ou commence une conversation avec « Nouveau message ».",
+"Wähle einen Chat": "Choisis une conversation",
+"Zur aktuellen Woche": "Aller à la semaine en cours",
+"Keine Hausaufgaben": "Aucun devoir",
 "Alle Bereiche": "Toutes les rubriques",
 "Inaktiv": "Inactif",
 "Keine Treffer": "Aucun résultat",
@@ -2103,6 +2108,9 @@
 "Audio": "Audio"
 },
 "patterns": [
+["Nr. {}", "N° {1}"],
+["/{} abgegeben", "/{1} rendus"],
+["{} öffnen", "Ouvrir {1}"],
 ["Aktiv: {}", "Actif : {1}"],
 ["Weitere Aktionen für {}", "Autres actions pour {1}"],
 ["Status von {}", "Statut de {1}"],

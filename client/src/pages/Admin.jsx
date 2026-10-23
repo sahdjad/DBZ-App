@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Badge, Spinner, Avatar, ListGroup, EmptyState, useToast } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
+import { PersonAdminPanel } from '../components/PersonAdmin.jsx';
 
 const TABS = [
   ['users', 'Nutzer', Users2],
@@ -277,6 +278,13 @@ function UsersTab() {
   const onlyUnassigned = params.get('ohneKlasse') === '1';
   const [roleFilter, setRoleFilter] = useState(() => (focusRole === 'klassenlehrer' ? 'teachers' : focusRole || 'all'));
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
+  const [detailId, setDetailId] = useState(null);
+  useEffect(() => {
+    if (!detailId) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setDetailId(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [detailId]);
   const [showDisabled, setShowDisabled] = useState(false);
 
   const load = () => api.get('/admin/users').then((d) => setUsers(d.users));
@@ -383,7 +391,24 @@ function UsersTab() {
         toggleOne={toggleOne}
         setSelected={setSelected}
         searching={Boolean(needle)}
-        onOpen={(u) => navigate(`/person/${u.id}`)}
+        onOpen={(u) => {
+          // Großer Bildschirm: Steckbrief rechts neben der Tabelle, sonst eigene Seite
+          if (window.matchMedia('(min-width: 1280px)').matches) setDetailId(u.id);
+          else navigate(`/person/${u.id}`);
+        }}
+        detailId={detailId}
+        detail={detailId ? (
+          <div className="person-compact">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h2 className="text-title3 text-ivory truncate" data-noi18n>{users.find((x) => x.id === detailId)?.name}</h2>
+              <div className="flex items-center gap-1 shrink-0">
+                <Button size="sm" variant="ghost" onClick={() => navigate(`/person/${detailId}`)}>Ganze Seite</Button>
+                <button type="button" onClick={() => setDetailId(null)} className="grid place-items-center h-8 w-8 rounded-full bg-subtle text-sage-muted hover:text-ivory" aria-label="Schließen"><XCircle size={16} /></button>
+              </div>
+            </div>
+            <PersonAdminPanel key={detailId} userId={detailId} viewer={me} onChanged={load} />
+          </div>
+        ) : null}
       />
 
       <details className="rounded-2xl border border-line/70 bg-card text-subhead">
@@ -423,7 +448,7 @@ const STATUS_LABEL = { pending: 'Wartet', disabled: 'Inaktiv' };
 
 // Personenverzeichnis: Handy/iPad = gruppierte Liste mit Filter-Pillen,
 // Mac/iPad quer = Filterspalte + sortierbare Tabelle.
-function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen }) {
+function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen, detailId, detail }) {
   const filter = FILTERS.find((f) => f[0] === roleFilter) || FILTERS[0];
   const counts = Object.fromEntries(FILTERS.map(([k, , fn]) => [k, users.filter(fn).length]));
   const list = users.filter(filter[2]).sort((a, b) => {
@@ -445,12 +470,14 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
     </th>
   );
   return (
-    <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-6 items-start">
-      {/* Filter: Pillen (Handy/iPad hochkant), Spalte (iPad quer/Mac) */}
-      <div className="no-scrollbar flex lg:flex-col gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 lg:mb-0 lg:sticky lg:top-0" role="tablist" aria-label="Nach Rolle filtern">
+    <div className={`lg:grid lg:gap-6 items-start ${detail ? 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_27rem]' : 'lg:grid-cols-[13rem_minmax(0,1fr)]'}`}>
+      {/* Filter: Pillen (Handy/iPad hochkant bzw. bei offenem Steckbrief), Spalte (iPad quer/Mac) */}
+      <div className={`no-scrollbar flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 ${detail ? 'lg:col-span-full' : 'lg:flex-col lg:mb-0 lg:sticky lg:top-0'}`} role="tablist" aria-label="Nach Rolle filtern">
         {FILTERS.map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={roleFilter === k} onClick={() => setRoleFilter(k)}
-            className={`shrink-0 inline-flex items-center justify-between gap-2 rounded-full lg:rounded-lg px-3.5 lg:px-3 h-9 text-footnote lg:text-subhead font-semibold lg:font-medium transition-colors ${roleFilter === k ? 'bg-mint text-onaccent lg:bg-mint/10 lg:text-mint-light lg:dark:text-mint' : 'bg-card border border-line/70 lg:border-0 lg:bg-transparent text-sage hover:bg-hover'}`}>
+            className={detail
+              ? `shrink-0 inline-flex items-center gap-2 rounded-full px-3.5 h-9 text-footnote font-semibold transition-colors ${roleFilter === k ? 'bg-mint text-onaccent' : 'bg-card border border-line/70 text-sage hover:bg-hover'}`
+              : `shrink-0 inline-flex items-center justify-between gap-2 rounded-full lg:rounded-lg px-3.5 lg:px-3 h-9 text-footnote lg:text-subhead font-semibold lg:font-medium transition-colors ${roleFilter === k ? 'bg-mint text-onaccent lg:bg-mint/10 lg:text-mint-light lg:dark:text-mint' : 'bg-card border border-line/70 lg:border-0 lg:bg-transparent text-sage hover:bg-hover'}`}>
             <span>{label}</span>
             <span className={`font-mono text-caption ${roleFilter === k ? 'opacity-80' : 'text-sage-muted'}`}>{counts[k]}</span>
           </button>
@@ -495,14 +522,14 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                     </th>
                     {th('name', 'Name')}
                     {th('role', 'Rolle')}
-                    <th className="py-2.5 px-3 font-medium">Klassen</th>
-                    {th('seen', 'Zuletzt online')}
+                    {!detail && <th className="py-2.5 px-3 font-medium">Klassen</th>}
+                    {!detail && th('seen', 'Zuletzt online')}
                     <th className="py-2.5 pr-4 w-10"><span className="sr-only">Öffnen</span></th>
                   </tr>
                 </thead>
                 <tbody>
                   {list.map((u) => (
-                    <tr key={u.id} className="group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer" onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
+                    <tr key={u.id} aria-selected={detailId === u.id} className={`group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer ${detailId === u.id ? 'bg-mint/[0.08]' : ''}`} onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
                       <td className="py-2.5 pl-4 pr-1">
                         {u.id !== me?.id && <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
                       </td>
@@ -520,10 +547,11 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                       </td>
                       <td className="py-2.5 px-3 whitespace-nowrap">
                         <span className="text-sage">{ROLE_LABEL[u.role] || u.role}</span>
+                        {detail && u.classNames?.length > 0 && <div className="text-footnote text-sage-muted">{u.classNames.join(', ')}</div>}
                         {u.otherRoles?.length > 0 && <div className="text-footnote text-sage-muted">auch: {u.otherRoles.join(', ')}</div>}
                       </td>
-                      <td className="py-2.5 px-3 text-sage-muted">{u.classNames?.length ? u.classNames.join(', ') : '–'}</td>
-                      <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>
+                      {!detail && <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{u.classNames?.length ? u.classNames.join(', ') : '–'}</td>}
+                      {!detail && <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>}
                       <td className="py-2.5 pr-4 text-right"><ChevronRight size={18} className="inline text-sage-muted/50 group-hover:text-sage-muted" /></td>
                     </tr>
                   ))}
@@ -533,6 +561,11 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
           </>
         )}
       </div>
+      {detail && (
+        <aside className="hidden xl:block sticky top-0 max-h-[calc(100dvh-7rem)] overflow-y-auto rounded-2xl bg-card border border-line/70 shadow-card p-4" aria-label="Steckbrief">
+          {detail}
+        </aside>
+      )}
     </div>
   );
 }

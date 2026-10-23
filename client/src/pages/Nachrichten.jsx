@@ -4,10 +4,17 @@ import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, Smile
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented, EmptyState } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
+// Liste: heute nur Uhrzeit, sonst Datum (wie in Nachrichten-Apps)
+const fmtShort = (iso) => {
+  const d = new Date(iso);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+};
 const REACTIONS = ['👍', '❤️', '🤲', '✅', '😊', '😮'];
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 const RECALL_ROLES = ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'];
@@ -46,74 +53,91 @@ export default function Nachrichten() {
   };
   const backToList = () => { setView('list'); setBroadcastId(null); loadThreads(); if (threadId) navigate('/nachrichten'); };
 
-  return (
-    <AppLayout title="Nachrichten">
-      {view === 'list' && (
-        <>
-          <div className="flex justify-end gap-2 mb-4">
-            {threads?.length > 0 && !selection.active && (
-              <Button variant="outline" onClick={() => selection.start()}><ListChecks size={18} /> Auswählen</Button>
-            )}
-            <Button onClick={() => setView('new')}><Plus size={18} /> Neue Nachricht</Button>
-          </div>
-          {isStaff && <BroadcastList onOpen={(id) => { setBroadcastId(id); setView('broadcast'); }} />}
-          {!threads ? <Spinner /> : threads.length === 0 ? (
-            <Card className="p-8 text-center text-sage-muted">
-              <MessagesSquare size={32} className="mx-auto mb-3 opacity-50" />
-              Noch keine Nachrichten.
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              {threads.map((t) => (
-                <ThreadRow key={t.id} t={t} selection={selection} onOpen={() => openThread(t.id)}>
-                  <Avatar name={t.otherName} size={40} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-ivory truncate">{t.otherName}{t.inboxLabel && <span className="ml-2 text-caption text-sage-muted">{t.inboxLabel}</span>}</span>
-                      <span className="text-caption text-sage-muted shrink-0">{t.lastAt ? fmt(t.lastAt) : ''}</span>
-                    </div>
-                    <div className="text-sm text-sage-muted truncate">{t.lastBody}</div>
-                  </div>
-                  {t.unread > 0 && <span className="min-w-5 h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-caption font-mono shrink-0">{t.unread}</span>}
-                </ThreadRow>
-              ))}
-            </div>
-          )}
-          <SelectionBar
-            selection={selection}
-            allIds={(threads || []).map((t) => t.id)}
-            actions={[
-              { label: 'Gelesen', icon: CheckCheck, onClick: () => bulk('read') },
-              // Schüler/Eltern dürfen Verläufe nicht löschen.
-              ...(isStaff ? [{ label: 'Löschen', icon: Trash2, variant: 'danger', onClick: () => bulk('delete') }] : []),
-            ]}
-          />
-        </>
+  const listPane = (
+    <>
+      <div className="flex justify-end gap-2 mb-4">
+        {threads?.length > 0 && !selection.active && (
+          <Button variant="ghost" onClick={() => selection.start()} aria-label="Auswählen" title="Auswählen"><ListChecks size={18} /> <span className="md:hidden lg:inline">Auswählen</span></Button>
+        )}
+        <Button onClick={() => setView('new')}><Plus size={18} /> <span className="md:hidden lg:inline">Neue Nachricht</span><span className="hidden md:inline lg:hidden">Neu</span></Button>
+      </div>
+      {isStaff && <BroadcastList onOpen={(id) => { setBroadcastId(id); setView('broadcast'); }} />}
+      {!threads ? <Spinner /> : threads.length === 0 ? (
+        <Card><EmptyState icon={MessagesSquare} title="Noch keine Nachrichten." /></Card>
+      ) : (
+        <div className="bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">
+          {threads.map((t) => (
+            <ThreadRow key={t.id} t={t} selection={selection} active={view === 'thread' && activeId === t.id} onOpen={() => openThread(t.id)}>
+              <Avatar name={t.otherName} size={44} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={`text-body truncate ${t.unread > 0 ? 'font-semibold text-ivory' : 'text-ivory'}`} data-noi18n>{t.otherName}</span>
+                  <span className={`text-caption shrink-0 ${t.unread > 0 ? 'text-mint-light dark:text-mint font-semibold' : 'text-sage-muted'}`}>{t.lastAt ? fmtShort(t.lastAt) : ''}</span>
+                </div>
+                {t.inboxLabel && <div className="text-caption text-sage-muted truncate">{t.inboxLabel}</div>}
+                <div className="flex items-center gap-2">
+                  <span className={`text-subhead truncate flex-1 ${t.unread > 0 ? 'text-sage' : 'text-sage-muted'}`} data-noi18n>{t.lastBody}</span>
+                  {t.unread > 0 && <span className="min-w-[1.25rem] h-5 px-1.5 grid place-items-center rounded-full bg-mint text-onaccent text-caption font-semibold font-mono shrink-0">{t.unread}</span>}
+                </div>
+              </div>
+            </ThreadRow>
+          ))}
+        </div>
       )}
+      <SelectionBar
+        selection={selection}
+        allIds={(threads || []).map((t) => t.id)}
+        actions={[
+          { label: 'Gelesen', icon: CheckCheck, onClick: () => bulk('read') },
+          // Schüler/Eltern dürfen Verläufe nicht löschen.
+          ...(isStaff ? [{ label: 'Löschen', icon: Trash2, variant: 'danger', onClick: () => bulk('delete') }] : []),
+        ]}
+      />
+    </>
+  );
 
-      {view === 'new' && <NewThread onCancel={() => setView('list')} onOpen={(id) => { loadThreads(); openThread(id); }} onBroadcast={(id) => { setBroadcastId(id); setView('broadcast'); }} />}
-      {view === 'broadcast' && <BroadcastDetail id={broadcastId} onBack={backToList} onOpenThread={openThread} />}
-      {view === 'thread' && <ThreadView id={activeId} onBack={backToList} />}
+  const detail = view === 'new'
+    ? <NewThread onCancel={() => setView('list')} onOpen={(id) => { loadThreads(); openThread(id); }} onBroadcast={(id) => { setBroadcastId(id); setView('broadcast'); }} />
+    : view === 'broadcast'
+      ? <BroadcastDetail id={broadcastId} onBack={backToList} onOpenThread={openThread} />
+      : view === 'thread'
+        ? <ThreadView key={activeId} id={activeId} onBack={backToList} />
+        : null;
+
+  // iPhone: Liste ODER Gespräch. iPad/Mac: Liste links, Gespräch rechts.
+  return (
+    <AppLayout title="Nachrichten" wide>
+      <div className="md:grid md:grid-cols-[18.5rem_minmax(0,1fr)] lg:grid-cols-[21rem_minmax(0,1fr)] xl:grid-cols-[24rem_minmax(0,1fr)] md:gap-5 lg:gap-6 items-start">
+        <div className={`${view === 'list' ? '' : 'hidden md:block'} md:sticky md:top-0 md:max-h-[calc(100dvh-8rem)] md:overflow-y-auto md:pr-1`}>{listPane}</div>
+        <div className={view === 'list' ? 'hidden md:block' : ''}>
+          {detail || (
+            <Card className="hidden md:flex items-center justify-center" style={{ minHeight: 'calc(100dvh - 9rem)' }}>
+              <EmptyState icon={MessagesSquare} title="Wähle einen Chat" text="Oder beginne mit „Neue Nachricht“ ein Gespräch." />
+            </Card>
+          )}
+        </div>
+      </div>
     </AppLayout>
   );
 }
 
-function ThreadRow({ t, selection, onOpen, children }) {
+function ThreadRow({ t, selection, onOpen, active, children }) {
   const longPress = useLongPress(() => selection.start(t.id));
   const selected = selection.has(t.id);
   return (
-    <Card
+    <div
       {...longPress.handlers}
       role="button"
       tabIndex={0}
       aria-pressed={selection.active ? selected : undefined}
-      className={`p-4 hover:bg-hover transition flex items-center gap-3 cursor-pointer select-none ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
+      aria-current={active ? 'true' : undefined}
+      className={`px-4 py-3 flex items-center gap-3 cursor-pointer select-none transition-colors active:bg-hover hover:bg-hover/60 ${selected || active ? 'bg-mint/[0.07]' : ''}`}
       onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(t.id); else onOpen(); }}
       onKeyDown={(e) => { if (e.key === 'Enter') (selection.active ? selection.toggle(t.id) : onOpen()); }}
     >
       {selection.active && <SelectCheck checked={selected} />}
       {children}
-    </Card>
+    </div>
   );
 }
 
@@ -472,7 +496,7 @@ function ThreadView({ id, onBack }) {
   return (
     <Card className="flex flex-col overflow-hidden" style={{ height: 'calc(100dvh - var(--dbz-tabbar-h, 0px) - env(safe-area-inset-top) - 7.5rem)', minHeight: 380 }}>
       <div className="flex items-center gap-3 p-4 border-b border-line">
-        <button onClick={onBack} className="text-sage hover:text-ivory" aria-label="Zurück zur Übersicht"><ArrowLeft size={20} /></button>
+        <button onClick={onBack} className="md:hidden text-sage hover:text-ivory" aria-label="Zurück zur Übersicht"><ArrowLeft size={20} /></button>
         <Avatar name={data.otherName} size={36} />
         <div className="min-w-0">
           <div className="text-ivory truncate">{data.otherName}</div>
