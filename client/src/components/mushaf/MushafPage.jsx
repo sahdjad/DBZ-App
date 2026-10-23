@@ -17,26 +17,21 @@ import { memo, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { pageFontFamily, BASMALA_FONT } from '../../lib/mushafFont.js';
 import { TEXT_SIZES } from '../../lib/mushafPages.js';
 import { cleanQuran } from '../../lib/quranText.js';
+import { PAGE_EM, SLOT_EM, LINES, FRAME_INSET } from '../../lib/mushafPager.js';
 
-// Geometrie der gedruckten Seite in em der Seitenschrift (gemessen über alle
-// 8.790 Zeilen, scripts/check-mushaf-widths.mjs): längste Zeile 16,22 em,
-// typische 15,6 em. Zeilenabstand so, dass 15 Zeilen das Seitenverhältnis des
-// Drucks ergeben.
-const PAGE_EM = 16.4;
-const SLOT_EM = 1.72;
-const LINES = 15;
 const BASMALA_TEXT = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ';
 const QUARTER = ['', '¼', '½', '¾'];
 
 // Schriftgröße so, dass die ganze Seite auf den Bildschirm passt ('tight') bzw.
-// die Breite füllt ('wide', „Große Schrift": dann wird gescrollt).
-function useFit(ref, { layout, reserve, measure, key }) {
+// die Breite füllt ('wide', „Große Schrift": dann wird gescrollt). Seiten-
+// geometrie: lib/mushafPager.js. framed: Platz für den Seitenrahmen (iPad/Mac).
+function useFit(ref, { layout, reserve, measure, framed, key }) {
   const [fit, setFit] = useState(null);
   useLayoutEffect(() => {
     const run = () => {
       const el = ref.current;
       if (!el) return;
-      const availW = Math.min(el.parentElement?.clientWidth || document.documentElement.clientWidth, 900) - 20;
+      const availW = Math.min(el.parentElement?.clientWidth || document.documentElement.clientWidth, 900) - 20 - (framed ? FRAME_INSET : 0);
       // Sichtbare Höhe ohne Statusleiste/Home-Balken (Abstände des Lesers).
       const sc = el.closest('[data-testid="mushaf-scroll"]');
       const cs = sc ? getComputedStyle(sc) : null;
@@ -70,7 +65,7 @@ function useFit(ref, { layout, reserve, measure, key }) {
     run();
     window.addEventListener('resize', run);
     return () => window.removeEventListener('resize', run);
-  }, [layout, reserve, measure, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [layout, reserve, measure, framed, key]); // eslint-disable-line react-hooks/exhaustive-deps
   return fit;
 }
 
@@ -80,13 +75,13 @@ function SurahHead({ name }) {
   );
 }
 
-function MushafPage({ data, index, surahName, prefs, forceTextLayout = false, renderWord, reserve = 72, version }) {
+function MushafPage({ data, index, surahName, prefs, forceTextLayout = false, renderWord, reserve = 72, version, side, framed = false }) {
   const textView = prefs.view === 'text';
   const unicodeLines = !textView && forceTextLayout;
   const elRef = useRef(null);
   // Neu messen nur bei Unicode-Zeilen (Tadschwid-Farben ändern die Breite);
   // die Glyph-Seite hat feste Maße.
-  const fit = useFit(elRef, { layout: prefs.layout, reserve, measure: unicodeLines, key: `${data.page}:${unicodeLines ? version : ''}` });
+  const fit = useFit(elRef, { layout: prefs.layout, reserve, measure: unicodeLines, framed, key: `${data.page}:${unicodeLines ? version : ''}` });
 
   // Wortnummer im Qur'an-Index (g; bei 37:130 „إِلْ يَاسِينَ" zwei Index-Wörter).
   const lines = useMemo(() => data.lines.map((line) => (line.type !== 'text' ? line : {
@@ -158,7 +153,10 @@ function MushafPage({ data, index, surahName, prefs, forceTextLayout = false, re
 
   const pageW = fit && !textView ? `${fit.em * fit.fs}px` : undefined;
   return (
-    <article className="mushaf-sheet" data-page={data.page} aria-label={`Seite ${data.page}`}>
+    // side: Seite einer Doppelseite ('right' = ungerade, 'left' = gerade) -- sie
+    // rückt an den Bund in der Mitte.
+    <article className={`mushaf-sheet ${side ? `is-${side}` : ''} ${pageW ? 'has-pw' : ''}`} style={pageW ? { '--pw': pageW } : undefined}
+      data-page={data.page} aria-label={`Seite ${data.page}`}>
       <header className="mushaf-margin" style={{ maxWidth: pageW }}>
         <span>{firstSurah ? surahName(firstSurah) : ''}</span>
         <span>{info ? `Juzʼ ${info.juz}` : ''}</span>
@@ -186,4 +184,5 @@ function MushafPage({ data, index, surahName, prefs, forceTextLayout = false, re
 
 // Neu zeichnen nur, wenn sich Seite, Ansicht oder der Stand des Aufrufers (version) ändert.
 export default memo(MushafPage, (a, b) => a.data === b.data && a.index === b.index && a.prefs === b.prefs
-  && a.forceTextLayout === b.forceTextLayout && a.version === b.version && a.reserve === b.reserve);
+  && a.forceTextLayout === b.forceTextLayout && a.version === b.version && a.reserve === b.reserve
+  && a.side === b.side && a.framed === b.framed);

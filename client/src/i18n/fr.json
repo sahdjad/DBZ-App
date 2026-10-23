@@ -5,6 +5,12 @@
 "Inhalt": "Sommaire",
 "Suche": "Recherche",
 "Seiteneinstellungen": "Réglages de la page",
+"Einzelseite": "Page simple",
+"Doppelseite": "Double page",
+"Seitenansicht": "Affichage des pages",
+"Nächste Doppelseite": "Double page suivante",
+"Vorige Doppelseite": "Double page précédente",
+"Automatisch: im Querformat zwei Seiten wie im aufgeschlagenen Muṣḥaf, im Hochformat eine.": "Automatique : deux pages côte à côte comme un muṣḥaf ouvert en paysage, une seule page en portrait.",
 "Medina-Seite": "Page de Médine",
 "Schrift anpassbar": "Texte ajustable",
 "Seitengröße": "Taille de la page",
@@ -2203,6 +2209,8 @@
 "Audio": "Audio"
 },
 "patterns": [
+["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
+["Seiten {}–{}", "Pages {1}–{2}"],
 ["Juzʼ {} · Seite {}", "Juzʼ {1} · Page {2}"],
 ["Seite {} · {} Ayat · mekkanisch", "Page {1} · {2} ayat · mecquoise"],
 ["Seite {} · {} Ayat · medinensisch", "Page {1} · {2} ayat · médinoise"],

@@ -59,9 +59,11 @@ export function prefetchPage(p) {
 // scroll: 'horizontal' (blättern) | 'vertical' (untereinander scrollen)
 // layout: 'tight' (ganze Seite) | 'wide' (große Schrift) -- nur Mushaf-Ansicht
 // textSize: Stufe 0..6 -- nur Text-Ansicht
+// spread: 'auto' (Doppelseite im Querformat auf iPad/Mac) | 'single' | 'double'
+// (gespeichert je Gerät; Handys zeigen immer eine Seite)
 const PREFS_KEY = 'dbz-mushaf-prefs';
 export const TEXT_SIZES = [1.25, 1.5, 1.75, 2, 2.35, 2.75, 3.25]; // rem
-const DEFAULTS = { view: 'mushaf', scroll: 'horizontal', layout: 'tight', textSize: 2 };
+const DEFAULTS = { view: 'mushaf', scroll: 'horizontal', layout: 'tight', textSize: 2, spread: 'auto' };
 function readPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -72,6 +74,7 @@ function readPrefs() {
       scroll: p.scroll === 'vertical' ? 'vertical' : 'horizontal',
       layout: (p.layout || oldLayout) === 'wide' ? 'wide' : 'tight',
       textSize: Number.isInteger(p.textSize) && p.textSize >= 0 && p.textSize < TEXT_SIZES.length ? p.textSize : DEFAULTS.textSize,
+      spread: ['single', 'double'].includes(p.spread) ? p.spread : 'auto',
     };
   } catch { return { ...DEFAULTS }; }
 }

@@ -5,6 +5,12 @@
 "Inhalt": "Contents",
 "Suche": "Search",
 "Seiteneinstellungen": "Page settings",
+"Einzelseite": "Single page",
+"Doppelseite": "Two-page spread",
+"Seitenansicht": "Page view",
+"Nächste Doppelseite": "Next spread",
+"Vorige Doppelseite": "Previous spread",
+"Automatisch: im Querformat zwei Seiten wie im aufgeschlagenen Muṣḥaf, im Hochformat eine.": "Automatic: two pages side by side like an open muṣḥaf in landscape, one page in portrait.",
 "Medina-Seite": "Medina page",
 "Schrift anpassbar": "Adjustable text",
 "Seitengröße": "Page size",
@@ -2202,6 +2208,8 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
+["Seiten {}–{}", "Pages {1}–{2}"],
 ["Juzʼ {} · Seite {}", "Juzʼ {1} · Page {2}"],
 ["Seite {} · {} Ayat · mekkanisch", "Page {1} · {2} ayat · Meccan"],
 ["Seite {} · {} Ayat · medinensisch", "Page {1} · {2} ayat · Medinan"],
