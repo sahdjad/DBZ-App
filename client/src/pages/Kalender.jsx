@@ -217,23 +217,45 @@ function WeekView({ cursor, today, byDate, onPick, onEvent }) {
   const start = addDays(cursor, -mondayIndex(cursor));
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-7 gap-2">
-      {days.map((d) => {
-        const evs = byDate[key(d)] || [];
-        const isToday = sameDay(d, today);
-        return (
-          <div key={key(d)} className="rounded-lg border border-line p-2 min-h-[120px]">
-            <button onClick={() => onPick(d)} className="w-full text-left mb-1.5">
-              <div className="text-caption font-mono text-sage-muted">{WEEKDAYS[mondayIndex(d)]}</div>
-              <div className={`text-sm ${isToday ? 'text-mint font-semibold' : 'text-ivory'}`}>{d.getDate()}.{d.getMonth() + 1}.</div>
-            </button>
-            <div className="space-y-1">
-              {evs.map((e, i) => <EventChip key={i} e={e} onClick={() => onEvent(e)} />)}
+    <>
+      {/* iPhone: Agenda – Tage untereinander, leere Tage kompakt */}
+      <div className="md:hidden divide-y divide-line/70 border-y border-line/70 -mx-4 sm:-mx-5">
+        {days.map((d) => {
+          const evs = byDate[key(d)] || [];
+          const isToday = sameDay(d, today);
+          return (
+            <div key={key(d)} className="flex gap-3 px-4 sm:px-5 py-2.5">
+              <button onClick={() => onPick(d)} className="w-11 shrink-0 text-center leading-none pt-0.5" aria-label={`${d.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} öffnen`}>
+                <span className={`block text-caption font-semibold uppercase ${isToday ? 'text-status-absent' : 'text-sage-muted'}`}>{WEEKDAYS[mondayIndex(d)]}</span>
+                <span className={`mt-1 mx-auto grid place-items-center h-8 w-8 rounded-full text-body font-semibold font-mono ${isToday ? 'bg-mint text-onaccent' : 'text-ivory'}`}>{d.getDate()}</span>
+              </button>
+              <div className="min-w-0 flex-1 space-y-1 self-center">
+                {evs.length === 0 ? <span className="text-footnote text-sage-muted/70">–</span> : evs.map((e, i) => <EventChip key={i} e={e} onClick={() => onEvent(e)} />)}
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+
+      {/* iPad & Mac: sieben Spalten nebeneinander */}
+      <div className="hidden md:grid grid-cols-7 border border-line/70 rounded-xl overflow-hidden divide-x divide-line/70">
+        {days.map((d) => {
+          const evs = byDate[key(d)] || [];
+          const isToday = sameDay(d, today);
+          return (
+            <div key={key(d)} className={`min-h-[12rem] flex flex-col ${isToday ? 'bg-mint/[0.04]' : ''}`}>
+              <button onClick={() => onPick(d)} className="px-2 pt-2 pb-1.5 text-left border-b border-line/60 hover:bg-hover/60">
+                <div className={`text-caption font-semibold uppercase ${isToday ? 'text-status-absent' : 'text-sage-muted'}`}>{WEEKDAYS[mondayIndex(d)]}</div>
+                <div className={`mt-0.5 inline-grid place-items-center h-7 min-w-[1.75rem] px-1 rounded-full text-body font-semibold font-mono ${isToday ? 'bg-mint text-onaccent' : 'text-ivory'}`}>{d.getDate()}</div>
+              </button>
+              <div className="p-1.5 space-y-1 flex-1">
+                {evs.map((e, i) => <EventChip key={i} e={e} wrap onClick={() => onEvent(e)} />)}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -241,7 +263,8 @@ function DayView({ cursor, byDate, onEvent, onAdd }) {
   const evs = byDate[key(cursor)] || [];
   return (
     <div>
-      <div className="flex justify-end mb-2">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-body font-semibold text-ivory">{cursor.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
         <Button size="sm" variant="outline" onClick={() => onAdd(cursor)}><Plus size={16} /> Termin</Button>
       </div>
       <DayAgenda events={evs} onEvent={onEvent} />
@@ -279,18 +302,18 @@ function YearView({ cursor, today, byDate, onPickMonth }) {
   );
 }
 
-function EventChip({ e, onClick }) {
+function EventChip({ e, onClick, wrap = false }) {
   const c = eventColor(e);
   return (
-    <button onClick={onClick} className="w-full text-left text-caption rounded px-1.5 py-1 flex items-center gap-1 truncate" style={{ background: `${c}1a`, color: c }}>
+    <button onClick={onClick} className={`w-full text-left text-caption font-medium text-ivory rounded-md px-1.5 py-1 flex gap-1.5 hover:brightness-95 ${wrap ? 'items-start' : 'items-center truncate'}`} style={{ background: `${c}24`, boxShadow: `inset 2px 0 0 ${c}` }}>
       <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: c }} />
-      <span className="truncate">{e.time && !e.allDay ? `${e.time} ` : ''}{e.scope === 'class' && e.className ? `${e.className}: ` : ''}{e.title}</span>
+      <span className={wrap ? 'line-clamp-3 break-words' : 'truncate'}>{e.time && !e.allDay ? `${e.time} ` : ''}{e.scope === 'class' && e.className ? `${e.className}: ` : ''}{e.title}</span>
     </button>
   );
 }
 
 function DayAgenda({ events, onEvent, onDecide }) {
-  if (events.length === 0) return <p className="p-4 text-sage-muted text-sm">Keine Termine an diesem Tag.</p>;
+  if (events.length === 0) return <p className="py-6 text-center text-sage-muted text-subhead">Keine Termine an diesem Tag.</p>;
   return (
     <div className="divide-y divide-line">
       {events.map((e, i) => {
@@ -304,8 +327,8 @@ function DayAgenda({ events, onEvent, onDecide }) {
               {e.type === 'lesson' ? <GraduationCap size={18} /> : e.type === 'deadline' ? <Clock size={18} /> : e.scope === 'class' ? <Users size={18} /> : e.scope === 'school' ? <School size={18} /> : <CalendarDays size={18} />}
             </span>
             <div className="min-w-0">
-              <div className="text-ivory truncate">{e.title}</div>
-              <div className="text-xs text-sage-muted">
+              <div className="text-body text-ivory truncate">{e.title}</div>
+              <div className="text-footnote text-sage-muted">
                 {eventLabel(e)}{e.allDay ? ' · ganztägig' : e.time ? ` · ${e.time}` : ''}{e.recurring ? ' · wiederkehrend' : ''}
                 {e.note ? ` · ${e.note}` : ''}
               </div>

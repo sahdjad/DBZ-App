@@ -25,7 +25,7 @@ const STATUS = {
 export default function Strafen() {
   const { user } = useAuth();
   return (
-    <AppLayout title="Strafen">
+    <AppLayout title="Strafen" wide>
       {MANAGER.includes(user.role) ? (
         <ManagerView />
       ) : user.role === 'klassensprecher' ? (
@@ -260,7 +260,7 @@ function RecordForm({ onCreated }) {
               ))}
             </select>
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)] gap-3">
             <label className="block">
               <span className="text-sm text-sage">Art</span>
               <select className="input mt-1" value={form.type} onChange={(e) => changeType(e.target.value)}>
@@ -346,8 +346,9 @@ function ManagerView() {
   const debts = debtSummary(list);
 
   return (
-    <div className="space-y-4">
-      <RecordForm onCreated={load} />
+    <div className="xl:grid xl:grid-cols-[26rem_minmax(0,1fr)] xl:gap-6 items-start space-y-4 xl:space-y-0">
+      <div className="xl:sticky xl:top-0"><RecordForm onCreated={load} /></div>
+    <div className="space-y-4 min-w-0">
 
       <TotalsBar list={list} />
 
@@ -443,6 +444,7 @@ function ManagerView() {
         </Card>
       )}
     </div>
+    </div>
   );
 }
 
@@ -467,9 +469,9 @@ function SprecherView() {
   const list = data.penalties;
 
   return (
-    <div className="space-y-4">
-      <RecordForm onCreated={load} />
-      <Card className="p-4 sm:p-5">
+    <div className="xl:grid xl:grid-cols-[26rem_minmax(0,1fr)] xl:gap-6 items-start space-y-4 xl:space-y-0">
+      <div className="xl:sticky xl:top-0"><RecordForm onCreated={load} /></div>
+      <Card className="p-4 sm:p-5 min-w-0">
         <CardHeader title="Strafen der Klasse" subtitle="Vom Lehrer noch zu genehmigen bzw. bereits entschieden" />
         <div className="divide-y divide-line">
           {list.length === 0 ? (

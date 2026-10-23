@@ -606,3 +606,8 @@ body {
 @keyframes dbzPopIn { from { transform: translateY(6px) scale(0.98); opacity: 0; } to { transform: none; opacity: 1; } }
 .dbz-drawer { animation: dbzDrawerIn 0.28s cubic-bezier(0.32, 0.72, 0, 1) both; }
 .dbz-pop { animation: dbzPopIn 0.2s cubic-bezier(0.32, 0.72, 0, 1) both; transform-origin: bottom left; }
+
+/* Steckbrief im schmalen Seitenbereich (Nutzerverwaltung am Mac): einspaltig */
+.person-compact [class*='sm:grid-cols-'],
+.person-compact [class*='md:grid-cols-'],
+.person-compact [class*='lg:grid-cols-'] { grid-template-columns: minmax(0, 1fr) !important; }

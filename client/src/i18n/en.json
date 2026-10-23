@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Audio": "Audio",
+"Text": "Text",
+"Oder beginne mit „Neue Nachricht“ ein Gespräch.": "Or start a conversation with “New message”.",
+"Wähle einen Chat": "Choose a chat",
+"Zur aktuellen Woche": "Go to current week",
+"Keine Hausaufgaben": "No homework",
 "Alle Bereiche": "All sections",
 "Inaktiv": "Inactive",
 "Keine Treffer": "No results",
@@ -2101,6 +2107,9 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["Nr. {}", "No. {1}"],
+["/{} abgegeben", "/{1} submitted"],
+["{} öffnen", "Open {1}"],
 ["Aktiv: {}", "Active: {1}"],
 ["Weitere Aktionen für {}", "More actions for {1}"],
 ["Status von {}", "Status of {1}"],

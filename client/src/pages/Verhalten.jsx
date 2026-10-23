@@ -12,7 +12,7 @@ const fmt = (iso) => new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'med
 export default function Verhalten() {
   const { user } = useAuth();
   return (
-    <AppLayout title="Verhalten & Tarbiyah">
+    <AppLayout title="Verhalten & Tarbiyah" wide>
       {MANAGER.includes(user.role) ? <ManagerView /> : <ReadView role={user.role} />}
     </AppLayout>
   );
@@ -117,7 +117,8 @@ function ManagerView() {
         </select>
       )}
 
-      <Card className="p-4 sm:p-5">
+      <div className="xl:grid xl:grid-cols-[28rem_minmax(0,1fr)] xl:gap-6 items-start space-y-4 xl:space-y-0">
+      <Card className="p-4 sm:p-5 xl:sticky xl:top-0">
         <CardHeader title="Neuer Vermerk" subtitle="Positive oder verbesserungswürdige Beobachtung" icon={Sparkles} />
         <form onSubmit={save} className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -177,10 +178,11 @@ function ManagerView() {
         </form>
       </Card>
 
-      <Card className="p-4 sm:p-5">
+      <Card className="p-4 sm:p-5 min-w-0">
         <CardHeader title="Vermerke der Klasse" />
         <RecordList records={records} showStudent />
       </Card>
+      </div>
     </div>
   );
 }

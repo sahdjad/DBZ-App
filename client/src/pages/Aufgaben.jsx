@@ -10,6 +10,7 @@ import { groupByWeek, weekInfo } from '../lib/weeks.js';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
+const TYPE_LABEL = { audio: 'Audio', text: 'Text', file: 'Datei', quran: "Qur'an", mixed: 'Gemischt' };
 
 export default function Aufgaben() {
   const { user } = useAuth();
@@ -42,13 +43,13 @@ function StudentView() {
   const toggle = (k) => setOpenWeeks((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const row = (a) => (
     <Link key={a.id} to={`/aufgaben/${a.id}`} className="block">
-      <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
+      <div className="px-4 py-3 active:bg-hover hover:bg-hover/60 transition-colors flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="text-ivory line-clamp-2">{a.title}</div>
           <div className="text-xs text-sage-muted">{a.subjectName || 'Aufgabe'} · Frist {fmt(a.dueAt)}</div>
         </div>
         <StatusBadge status={a.studentStatus} />
-      </Card>
+      </div>
     </Link>
   );
   return (
@@ -60,7 +61,7 @@ function StudentView() {
         return (
           <section key={w.key || 'none'}>
             <WeekTitle info={info} count={w.items.length} />
-            <div className="space-y-2.5">{w.items.map(row)}</div>
+            <div className="bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">{w.items.map(row)}</div>
           </section>
         );
       })}
@@ -86,7 +87,7 @@ function StudentView() {
                     </span>
                     <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />
                   </button>
-                  {open && <div className="space-y-2.5 mt-2">{w.items.map(row)}</div>}
+                  {open && <div className="mt-2 bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">{w.items.map(row)}</div>}
                 </div>
               );
             })}
@@ -423,12 +424,12 @@ function ManagerView() {
   };
 
   const renderRow = (a, isHidden) => (editId === a.id ? (
-    <Card key={a.id} className="p-4 border-mint/50">
+    <div key={a.id} className="p-4 bg-mint/[0.04]">
       <div className="text-sm text-ivory font-medium mb-3 flex items-center gap-2"><Pencil size={15} /> Hausaufgabe bearbeiten</div>
       <AssignmentEditForm assignment={a} klass={classes.find((c) => c.id === a.classId)} subjects={subjects}
         onSubmit={(edits) => saveEdit(a, edits)} onCancel={() => setEditId(null)} />
       <p className="text-caption text-sage-muted mt-2">Bereits abgegebene Hausaufgaben bleiben erhalten. Wird die Frist verlängert, können Schüler wieder abgeben.</p>
-    </Card>
+    </div>
   ) : (
     <AssignmentRow key={a.id} a={a} selection={selection} archived={isHidden}
       onEdit={() => setEditId(a.id)}
@@ -540,7 +541,7 @@ function ManagerView() {
                   {archived && <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />}
                 </button>
                 {open && (
-                  <div className="space-y-2.5">
+                  <div className="bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">
                     {w.items.map((a) => renderRow(a, false))}
                   </div>
                 )}
@@ -564,7 +565,7 @@ function ManagerView() {
                 <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${openWeeks.has('__hidden') ? 'rotate-180' : ''}`} />
               </button>
               {(openWeeks.has('__hidden') || selection.active) && (
-                <div className="space-y-2.5">{hidden.map((a) => renderRow(a, true))}</div>
+                <div className="bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">{hidden.map((a) => renderRow(a, true))}</div>
               )}
             </section>
           )}
@@ -607,39 +608,46 @@ function ManagerView() {
 function AssignmentRow({ a, selection, archived, onEdit, onDelete, onRestore }) {
   const longPress = useLongPress(() => selection.start(a.id));
   const selected = selection.has(a.id);
+  const pct = a.targetCount ? Math.round((a.submittedCount / a.targetCount) * 100) : 0;
   return (
-    <Card
+    <div
       {...longPress.handlers}
       onClick={() => { if (longPress.wasLongPress()) return; if (selection.active) selection.toggle(a.id); }}
-      className={`p-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 select-none ${selection.active ? 'cursor-pointer' : ''} ${selected ? 'border-mint/60 bg-mint/5' : ''}`}
+      className={`px-4 py-3 flex flex-wrap md:flex-nowrap items-center gap-x-4 gap-y-2 select-none transition-colors ${selection.active ? 'cursor-pointer hover:bg-hover/60' : ''} ${selected ? 'bg-mint/[0.07]' : ''}`}
     >
       {selection.active && <SelectCheck checked={selected} />}
       <div className="min-w-0 flex-1 basis-48">
-        <div className="text-ivory break-words">{a.title}</div>
-        <div className="text-xs text-sage-muted">{a.className} · {a.subjectName || a.type} · Frist {fmt(a.dueAt)}</div>
+        <div className="text-body font-medium text-ivory line-clamp-2" data-noi18n>{a.title}</div>
+        <div className="text-footnote text-sage-muted">{a.className} · {a.subjectName || TYPE_LABEL[a.type] || a.type} · Frist {fmt(a.dueAt)}</div>
       </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <Badge tone="neutral">{a.submittedCount}/{a.targetCount} abgegeben</Badge>
-        {a.pendingReview > 0 && <Badge tone="late">{a.pendingReview} offen</Badge>}
+      {/* Abgabefortschritt: Zahl + Balken (nicht nur Farbe) */}
+      <div className="w-36 shrink-0">
+        <div className="flex items-baseline justify-between text-footnote">
+          <span className="text-sage"><b className="text-ivory tabular-nums">{a.submittedCount}</b>/{a.targetCount} abgegeben</span>
+        </div>
+        <div className="mt-1 h-1.5 rounded-full bg-subtle overflow-hidden" aria-hidden="true"><div className="h-full rounded-full bg-status-present" style={{ width: `${pct}%` }} /></div>
+      </div>
+      <div className="flex items-center gap-1 shrink-0 md:w-[9.5rem] md:justify-end">
+        {a.pendingReview > 0 && <Badge tone="late">{a.pendingReview} zu bewerten</Badge>}
         {!selection.active && (archived ? (
           <button onClick={onRestore} title="Wiederherstellen" aria-label="Wiederherstellen"
-                  className="p-1.5 rounded-lg text-sage-muted hover:text-ivory hover:bg-hover">
+                  className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-ivory hover:bg-hover">
             <ArchiveRestore size={16} />
           </button>
         ) : (
           <>
           <button onClick={onEdit} title="Bearbeiten" aria-label="Aufgabe bearbeiten"
-                  className="p-1.5 rounded-lg text-sage-muted hover:text-ivory hover:bg-hover">
+                  className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-ivory hover:bg-hover">
             <Pencil size={16} />
           </button>
           <button onClick={onDelete} title="Aufgabe entfernen" aria-label="Aufgabe entfernen"
-                  className="p-1.5 rounded-lg text-sage-muted hover:text-status-absent hover:bg-status-absent/10">
+                  className="grid place-items-center h-9 w-9 rounded-full text-sage-muted hover:text-status-absent hover:bg-status-absent/10">
             <Trash2 size={16} />
           </button>
           </>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 

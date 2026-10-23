@@ -18,15 +18,17 @@ export default function Regeln() {
   if (!data) return <AppLayout title="Regeln & Strafen"><Spinner /></AppLayout>;
 
   return (
-    <AppLayout title="Regeln & Strafen">
+    <AppLayout title="Regeln & Strafen" wide>
       <div className="space-y-4">
         {data.classes?.length > 1 && (
           <select className="input w-auto" value={classId} onChange={(e) => { setClassId(e.target.value); setData(null); load(e.target.value); }}>
             {data.classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <RulesCard data={data} onReload={() => load(classId)} toast={toast} />
-        <CatalogCard data={data} onReload={() => load(classId)} toast={toast} />
+        <div className="xl:grid xl:grid-cols-2 xl:gap-6 items-start space-y-4 xl:space-y-0">
+          <RulesCard data={data} onReload={() => load(classId)} toast={toast} />
+          <CatalogCard data={data} onReload={() => load(classId)} toast={toast} />
+        </div>
       </div>
     </AppLayout>
   );
