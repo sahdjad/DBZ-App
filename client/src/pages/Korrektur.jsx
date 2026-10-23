@@ -3,7 +3,7 @@ import { CheckSquare, EyeOff, ListChecks } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
 import HomeworkOverview from '../components/HomeworkOverview.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Spinner, useToast, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
@@ -23,7 +23,7 @@ export default function Korrektur() {
 }
 
 function SubmissionList() {
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/review-queue')?.submissions ?? null);
   const toast = useToast();
   const selection = useSelection();
   const load = () => api.get('/review-queue').then((d) => setList(d.submissions));

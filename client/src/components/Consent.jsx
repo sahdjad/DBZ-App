@@ -77,7 +77,7 @@ export function ConsentGate({ user, onDone }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center p-3 bg-black/50 backdrop-blur-sm">
-      <div className="w-full max-w-md rounded-2xl bg-card border border-line shadow-2xl p-4 animate-[dbz-rise_.35s_ease-out]">
+      <div className="w-full max-w-md rounded-2xl bg-card dark:bg-elevated border border-line/70 shadow-float p-4 animate-[dbz-rise_.35s_ease-out]">
         <div className="flex items-center gap-2 mb-2 text-ivory">
           <ShieldCheck size={18} className="text-mint" />
           <span className="font-medium">{needsConsent ? 'Einmal bestätigen – dann bist du startklar' : 'Dieses Gerät einrichten'}</span>

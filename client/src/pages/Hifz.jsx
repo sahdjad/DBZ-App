@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { BookOpen, Plus, Mic, Square, Paperclip, Award, Send, Trash2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, StatusBadge, Ring, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { useRecorder, mmss } from '../lib/recorder.js';
@@ -16,7 +16,7 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyl
 // damit die Lernziel-/Bewertungslogik nicht doppelt existiert.
 export function HifzContent() {
   const { user } = useAuth();
-  const [surahs, setSurahs] = useState([]);
+  const [surahs, setSurahs] = useState(() => peek('/surahs')?.surahs ?? []);
   useEffect(() => { api.get('/surahs').then((d) => setSurahs(d.surahs)); }, []);
   return MANAGER.includes(user.role) ? <ManagerView surahs={surahs} /> : <ReadView role={user.role} surahs={surahs} />;
 }

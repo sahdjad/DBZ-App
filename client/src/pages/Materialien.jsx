@@ -5,9 +5,10 @@ import {
   Folder, ChevronLeft, ChevronRight, ArrowDown,
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast, FileAttachment } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { scrollBehavior } from '../lib/scroll.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const ADMIN = ['super_admin', 'leitung'];
@@ -23,8 +24,8 @@ const SubjectSuggestions = createContext([]);
 export default function Materialien() {
   const { user } = useAuth();
   const toast = useToast();
-  const [list, setList] = useState(null);
-  const [subjects, setSubjects] = useState([]);
+  const [list, setList] = useState(() => peek('/materials')?.materials ?? null);
+  const [subjects, setSubjects] = useState(() => peek('/subjects')?.subjects ?? []);
   const [mode, setMode] = useState(null); // null | 'new' | 'bulk'
   // Geöffnetes Fach steht in der Adresse (?fach=…), damit „Zurück“ (Wischgeste,
   // Android-Taste) wieder zur Fächer-Übersicht führt.
@@ -108,7 +109,7 @@ export default function Materialien() {
               </div>
               {group.items.length > 3 && (
                 <button
-                  onClick={() => document.getElementById('mat-end')?.scrollIntoView({ behavior: 'smooth', block: 'end' })}
+                  onClick={() => document.getElementById('mat-end')?.scrollIntoView({ behavior: scrollBehavior(), block: 'end' })}
                   className="inline-flex items-center gap-1 text-xs text-mint hover:underline"
                 >
                   <ArrowDown size={14} /> Zum Neuesten
@@ -154,7 +155,7 @@ export default function Materialien() {
                     <button
                       key={g.id}
                       onClick={() => openSubject(g.id)}
-                      className="group text-left rounded-2xl border border-line bg-card p-4 flex items-center gap-3 shadow-sm hover:border-mint/50 hover:bg-subtle/50 transition"
+                      className="group text-left rounded-2xl border border-line/70 bg-card p-4 flex items-center gap-3 shadow-card hover:border-mint/50 hover:bg-subtle/50 transition"
                     >
                       <span className="grid place-items-center h-12 w-12 shrink-0 rounded-xl bg-mint/15 text-mint">
                         <Folder size={24} />

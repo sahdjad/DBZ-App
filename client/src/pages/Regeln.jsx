@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import { BookText, Scale, Pencil, Save, X } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from '../components/ui.jsx';
 
 export default function Regeln() {
   const toast = useToast();
-  const [data, setData] = useState(null);
-  const [classId, setClassId] = useState('');
+  const [data, setData] = useState(() => peek('/rules'));
+  const [classId, setClassId] = useState(() => peek('/rules')?.classId || '');
 
   const load = (cid) => {
     const q = cid ? `?classId=${cid}` : '';

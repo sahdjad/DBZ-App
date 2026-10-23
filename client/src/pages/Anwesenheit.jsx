@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CalendarCheck, Download, Users2 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Ring, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 
@@ -68,7 +68,7 @@ function rate(a) {
 }
 
 function SelfView() {
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState(() => peek('/me/attendance')?.stats ?? null);
   useEffect(() => { api.get('/me/attendance').then((d) => setStats(d.stats)); }, []);
   if (!stats) return <Spinner />;
   return (

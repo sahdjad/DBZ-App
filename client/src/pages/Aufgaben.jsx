@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Plus, Trash2, ListChecks, ArchiveRestore, Lightbulb, Check, X, SlidersHorizontal, Pencil, ChevronDown, Archive } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSelection, useLongPress, SelectCheck, SelectionBar, ChoiceDialog, Segmented } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { DuePresets, toLocalInput, AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
@@ -30,7 +30,7 @@ export default function Aufgaben() {
 // Schüler: oben nur, was noch zu tun ist (nach Woche), darunter vergangene
 // Wochen zusammengeklappt – eine Zeile pro Kalenderwoche.
 function StudentView() {
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/assignments')?.assignments ?? null);
   const [openWeeks, setOpenWeeks] = useState(() => new Set());
   useEffect(() => {
     api.get('/assignments').then((d) => setList(d.assignments)).catch(() => setList([]));
@@ -351,12 +351,12 @@ function EditProposal({ p, klass, onDecide }) {
 
 function ManagerView() {
   const toast = useToast();
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/assignments')?.assignments ?? null);
   const [archived, setArchived] = useState(false);
   const [confirm, setConfirm] = useState(null); // { ids, title?, onlyDelete? }
   const selection = useSelection();
-  const [classes, setClasses] = useState([]);
-  const [subjects, setSubjects] = useState([]);
+  const [classes, setClasses] = useState(() => peek('/classes')?.classes ?? []);
+  const [subjects, setSubjects] = useState(() => peek('/subjects')?.subjects ?? []);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ classId: '', title: '', description: '', subjectId: '', type: 'audio', dueAt: '' });
@@ -386,7 +386,8 @@ function ManagerView() {
   const [openWeeks, setOpenWeeks] = useState(() => new Set());
   const toggleWeek = (k) => setOpenWeeks((prev) => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n; });
   const allIds = [...visible, ...hidden].map((a) => a.id);
-  useEffect(() => { setList(null); selection.clear(); load(); /* eslint-disable-next-line */ }, [archived]);
+  // Aktuelle Liste: zuletzt geladener Stand sofort; Archiv immer frisch laden.
+  useEffect(() => { setList(archived ? null : (peek('/assignments')?.assignments ?? null)); selection.clear(); load(); /* eslint-disable-next-line */ }, [archived]);
   useEffect(() => {
     api.get('/classes').then((d) => {
       setClasses(d.classes);

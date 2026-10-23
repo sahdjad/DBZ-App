@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
 import HomeworkOverview from '../components/HomeworkOverview.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, StatusBadge, Spinner, FileAttachment, ClassFolders, Segmented } from '../components/ui.jsx';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : '');
@@ -70,8 +70,8 @@ export default function Abgaben() {
 }
 
 function ByAssignment() {
-  const [subs, setSubs] = useState(null);
-  const [classes, setClasses] = useState([]);
+  const [subs, setSubs] = useState(() => peek('/review-queue')?.submissions ?? null);
+  const [classes, setClasses] = useState(() => peek('/classes')?.classes ?? []);
   const [cls, setCls] = useState(null);
   useEffect(() => {
     api.get('/review-queue').then((d) => setSubs(d.submissions)).catch(() => setSubs([]));

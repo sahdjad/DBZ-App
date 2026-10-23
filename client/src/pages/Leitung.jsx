@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, GraduationCap, UserCheck, Scale } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, Spinner, Section, ListGroup, ListRow, Stat } from '../components/ui.jsx';
 
 function rateColor(r) {
@@ -14,7 +14,7 @@ function rateColor(r) {
 
 export default function Leitung() {
   const navigate = useNavigate();
-  const [d, setD] = useState(null);
+  const [d, setD] = useState(() => peek('/leadership/overview'));
 
   useEffect(() => { api.get('/leadership/overview').then(setD).catch(() => setD(null)); }, []);
 

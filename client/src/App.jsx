@@ -1,6 +1,8 @@
-import { Suspense, lazy, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/AuthContext.jsx';
+import { api } from './lib/api.js';
+import { calendarUrl, monthGrid } from './lib/calendarRange.js';
 import { Spinner } from './components/ui.jsx';
 
 // Login bleibt eager geladen (erste, unangemeldete Ansicht -> schnellster Start).
@@ -103,18 +105,54 @@ function PageFallback() {
 // Wechsel dorthin braucht dann auf dem Handy keinen Ladebildschirm mehr.
 if (typeof window !== 'undefined') {
   const preload = () => [
+    // Startseite zuerst: wird direkt nach dem Anmelden gebraucht (lädt, während man das Passwort tippt).
+    () => import('./pages/Dashboard.jsx'), () => import('./pages/Mehr.jsx'),
     () => import('./pages/Nachrichten.jsx'), () => import('./pages/Aufgaben.jsx'), () => import('./pages/Kalender.jsx'),
     () => import('./pages/Benachrichtigungen.jsx'), () => import('./pages/Ankuendigungen.jsx'), () => import('./pages/Materialien.jsx'),
     () => import('./pages/Unterricht.jsx'), () => import('./pages/Klassenliste.jsx'), () => import('./pages/AufgabeDetail.jsx'),
+    () => import('./pages/QuranReader.jsx'),
   ].forEach((load, i) => setTimeout(() => load().catch(() => {}), 200 * i));
   const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2500));
   window.addEventListener('load', () => idle(preload), { once: true });
+}
+
+// Daten der Haupt-Reiter (untere Leiste) nach dem Start im Leerlauf holen --
+// der erste Wechsel dorthin zeigt dann sofort Inhalt (Daten-Speicher je Person,
+// siehe lib/api.js). Nur wenige, kleine Anfragen; nichts davon blockiert.
+// CAL = Termine des aktuellen Monats (gleiche Adresse wie im Kalender).
+const CAL = 'cal';
+const WARM = {
+  klassenlehrer: ['/sessions/today', '/school-days', '/assignments', '/threads', CAL],
+  vertretung: ['/sessions/today', '/school-days', '/assignments', '/threads', CAL],
+  schueler: ['/assignments', '/quran/surahs', '/quran/me', '/threads', CAL],
+  klassensprecher: ['/assignments', '/quran/surahs', '/quran/me', '/threads', CAL],
+  eltern: ['/threads', CAL],
+  leitung: ['/leadership/overview', '/threads', CAL],
+  super_admin: ['/leadership/overview', '/threads', CAL],
+};
+function useWarmTabs(user) {
+  useEffect(() => {
+    if (!user) return undefined;
+    const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 1500));
+    const cancel = window.cancelIdleCallback || clearTimeout;
+    let n = 0;
+    const id = idle(() => {
+      (WARM[user.role] || []).map((p) => (p === CAL ? calendarUrl(monthGrid(new Date())) : p)).forEach((p) => setTimeout(() => {
+        api.get(p).then((d) => {
+          // Unterricht: auch die Anwesenheit der ersten Sitzung, damit die Seite komplett sofort steht.
+          if (p === '/sessions/today' && d?.sessions?.[0]) api.get(`/sessions/${d.sessions[0].id}/attendance`).catch(() => {});
+        }).catch(() => {});
+      }, 250 * n++));
+    }, { timeout: 1500 });
+    return () => cancel(id);
+  }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export default function App() {
   // Bei Rollenwechsel (anderes Konto) alle Seiten frisch aufbauen – keine
   // Daten der vorherigen Rolle bleiben stehen, ohne die ganze App neu zu laden.
   const { user } = useAuth();
+  useWarmTabs(user);
   return (
     <Suspense fallback={<PageFallback />}>
       <Routes key={user?.id || 'anon'}>

@@ -8,6 +8,9 @@
 const supportsTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
 const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
+/** 'smooth' -- oder 'auto', wenn im System „Bewegung reduzieren" an ist. */
+export const scrollBehavior = () => (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth');
+
 /**
  * Hängt das Scroll-Gefühl an ein Element. Gibt eine Aufräum-Funktion zurück.
  * @param {HTMLElement|null} el Scroll-Container (overflow-y: auto)

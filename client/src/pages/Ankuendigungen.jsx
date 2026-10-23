@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Megaphone, Plus, Trash2, AlertTriangle, CheckCheck, SmilePlus, X } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast, useBackToClose } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { lastSeenLabel } from '../lib/format.js';
@@ -20,7 +20,7 @@ const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium'
 export default function Ankuendigungen() {
   const { user } = useAuth();
   const toast = useToast();
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/announcements')?.announcements ?? null);
   const [showForm, setShowForm] = useState(false);
 
   // Das Öffnen markiert Ankündigungen als gelesen -> Badges/Zähler aktualisieren.

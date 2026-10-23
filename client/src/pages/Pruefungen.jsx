@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { GraduationCap, Plus, Trash2, Mic, Square, Paperclip } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { useRecorder, mmss } from '../lib/recorder.js';
@@ -15,7 +15,7 @@ export default function Pruefungen() {
 }
 
 function StudentView() {
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/exams')?.exams ?? null);
   useEffect(() => { api.get('/exams').then((d) => setList(d.exams)); }, []);
   if (!list) return <Spinner />;
   if (!list.length) return <Card className="p-6 text-sage-muted">Aktuell sind keine Prüfungen verfügbar.</Card>;
@@ -41,7 +41,7 @@ function StudentView() {
 }
 
 function ManagerView() {
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/exams')?.exams ?? null);
   const [creating, setCreating] = useState(false);
   const load = () => api.get('/exams').then((d) => setList(d.exams));
   useEffect(() => { load(); }, []);

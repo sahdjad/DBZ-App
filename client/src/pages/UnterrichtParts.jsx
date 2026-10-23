@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Settings2, History, School, Plus, Trash2, Printer, CalendarDays, Gauge, ArrowLeft, ChevronRight, CalendarPlus } from 'lucide-react';
-import { api } from '../lib/api.js';
-import { Card, CardHeader, Button, Badge, Spinner, useToast, useBackToClose } from '../components/ui.jsx';
+import { api, peek } from '../lib/api.js';
+import { Card, CardHeader, Button, Badge, Spinner, SkeletonRows, useToast, useBackToClose } from '../components/ui.jsx';
 import { QrStage, printQrCode } from '../components/QrCode.jsx';
 
 export const WEEKDAYS = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
@@ -24,20 +24,22 @@ function Field({ label, hint, children }) {
 // Lehrkraft selbst ein, unabhängig von anderen Klassen und der Leitung.
 export function ClassSettingsCard({ classId, onSaved }) {
   const toast = useToast();
-  const [f, setF] = useState(null);
+  const formOf = (d) => {
+    const c = d?.classes?.find((x) => x.id === classId);
+    return c ? {
+      weekday: c.weekday ?? 6, startTime: c.startTime || '14:00', endTime: c.endTime || '18:00',
+      lateAfterMinutes: c.rules?.lateAfterMinutes ?? 5,
+      unexcusedLateAfterMinutes: c.rules?.unexcusedLateAfterMinutes ?? '',
+      checkinOpensBefore: c.rules?.checkinOpensBefore ?? 15,
+    } : null;
+  };
+  const [f, setF] = useState(() => formOf(peek('/classes')));
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.get('/classes').then((d) => {
-      const c = d.classes.find((x) => x.id === classId);
-      if (!c) return;
-      setF({
-        weekday: c.weekday ?? 6, startTime: c.startTime || '14:00', endTime: c.endTime || '18:00',
-        lateAfterMinutes: c.rules?.lateAfterMinutes ?? 5,
-        unexcusedLateAfterMinutes: c.rules?.unexcusedLateAfterMinutes ?? '',
-        checkinOpensBefore: c.rules?.checkinOpensBefore ?? 15,
-      });
-    });
-  }, [classId]);
+    // Bereits angezeigte Werte nicht überschreiben (könnten gerade bearbeitet
+    // werden). Je Klasse eine eigene Karte (key in Unterricht.jsx).
+    api.get('/classes').then((d) => { const next = formOf(d); if (next) setF((cur) => cur || next); });
+  }, [classId]); // eslint-disable-line react-hooks/exhaustive-deps
   const save = async (e) => {
     e.preventDefault();
     setBusy(true);
@@ -56,7 +58,7 @@ export function ClassSettingsCard({ classId, onSaved }) {
   return (
     <Card className="p-4 sm:p-5">
       <CardHeader title="QR-Check-in: Zeiten & Regeln" subtitle="Gilt nur für diese Klasse – hier stellst du ein, wann der QR-Code gilt" icon={Settings2} />
-      {!f ? <Spinner /> : (
+      {!f ? <SkeletonRows rows={3} bare /> : (
         <form onSubmit={save} className="p-4 grid gap-3 grid-cols-2">
           <div className="col-span-2"><Field label="Wochentag">
             <select className="input" value={f.weekday} onChange={(e) => setF({ ...f, weekday: e.target.value })}>
@@ -89,7 +91,7 @@ const localToday = () => {
 
 export function SessionHistoryCard({ classId, className, onChanged }) {
   const toast = useToast();
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek(`/classes/${classId}/sessions`)?.sessions ?? null);
   const [sel, setSel] = useState([]);
   const [editing, setEditing] = useState(null); // { id, date }
   const [newDate, setNewDate] = useState('');
@@ -132,7 +134,7 @@ export function SessionHistoryCard({ classId, className, onChanged }) {
         </label>
         <Button onClick={() => openDate(newDate)} disabled={!newDate}><CalendarPlus size={16} /> Öffnen</Button>
       </div>
-      {!list ? <Spinner /> : list.length === 0 ? <p className="p-4 text-sm text-sage-muted">Noch keine Unterrichtstage.</p> : (
+      {!list ? <SkeletonRows rows={3} bare /> : list.length === 0 ? <p className="p-4 text-sm text-sage-muted">Noch keine Unterrichtstage.</p> : (
         <ul className="divide-y divide-line max-h-96 overflow-y-auto dbz-scroll">
           {list.map((x) => (
             <li key={x.id} className="flex items-center gap-3 py-1 px-1">
@@ -275,9 +277,10 @@ function DayEditor({ sessionId, date, onClose }) {
 }
 
 // Hinweis für Lehrkräfte, wenn ein gemeinsamer Schultag ansteht.
+const upcomingDays = (d) => (d?.days || []).filter((x) => x.date >= new Date().toISOString().slice(0, 10)).slice(0, 2);
 export function SchoolDayBanner() {
-  const [days, setDays] = useState([]);
-  useEffect(() => { api.get('/school-days').then((d) => setDays(d.days.filter((x) => x.date >= new Date().toISOString().slice(0, 10)).slice(0, 2))).catch(() => {}); }, []);
+  const [days, setDays] = useState(() => upcomingDays(peek('/school-days')));
+  useEffect(() => { api.get('/school-days').then((d) => setDays(upcomingDays(d))).catch(() => {}); }, []);
   if (!days.length) return null;
   return (
     <div className="mb-4 rounded-2xl border border-gold/40 bg-gold/10 px-4 py-3 text-sm text-ivory flex items-start gap-3">
@@ -294,7 +297,7 @@ export function SchoolDayBanner() {
 // Gemeinsamer Unterricht der ganzen Koran-Schule (Leitung/Admin).
 export function SchoolDaysCard() {
   const toast = useToast();
-  const [days, setDays] = useState(null);
+  const [days, setDays] = useState(() => peek('/school-days')?.days ?? null);
   const [show, setShow] = useState(false);
   const today = new Date();
   const todayKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -343,7 +346,7 @@ export function SchoolDaysCard() {
           </div>
         </div>
       )}
-      {!days ? <Spinner /> : days.length === 0 ? <p className="p-4 text-sm text-sage-muted">Kein gemeinsamer Unterricht geplant.</p> : (
+      {!days ? <SkeletonRows rows={2} bare /> : days.length === 0 ? <p className="p-4 text-sm text-sage-muted">Kein gemeinsamer Unterricht geplant.</p> : (
         <ul className="divide-y divide-line mt-2">
           {days.map((d) => (
             <li key={d.id} className="flex items-center gap-3 py-2.5 px-1">
@@ -366,14 +369,14 @@ export function SchoolDaysCard() {
 
 // Tagesüberblick für die DBZ-Leitung: nur Zahlen je Klasse, keine Namen.
 export function SchoolTodayCard() {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => peek('/school/today'));
   useEffect(() => {
     const load = () => api.get('/school/today').then(setData).catch(() => setData({ classes: [] }));
     load();
     const t = setInterval(load, 30000);
     return () => clearInterval(t);
   }, []);
-  if (!data) return <Card className="p-4 sm:p-5 mb-4"><Spinner /></Card>;
+  if (!data) return <Card className="p-4 sm:p-5 mb-4"><SkeletonRows rows={2} bare /></Card>;
   const withLesson = data.classes.filter((c) => c.lessonToday);
   return (
     <Card className="p-4 sm:p-5 mb-4">

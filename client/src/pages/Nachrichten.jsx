@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MessagesSquare, Plus, Send, ArrowLeft, Paperclip, Mic, Square, X, SmilePlus, FileText, Undo2, CheckCheck, Check, Trash2, ListChecks, Megaphone, Users, Inbox, Search } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
-import { api } from '../lib/api.js';
+import { api, peek } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { Card, CardHeader, Button, Avatar, Spinner, useToast, ImageAttachment, FileAttachment, useSelection, useLongPress, SelectCheck, SelectionBar, Segmented, EmptyState } from '../components/ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
+import { scrollBehavior } from '../lib/scroll.js';
 
 const fmt = (iso) => new Date(iso).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' });
 // Liste: heute nur Uhrzeit, sonst Datum (wie in Nachrichten-Apps)
@@ -27,7 +28,7 @@ export default function Nachrichten() {
   const { threadId } = useParams();
   const navigate = useNavigate();
   const [view, setView] = useState(threadId ? 'thread' : 'list'); // list | thread | new
-  const [threads, setThreads] = useState(null);
+  const [threads, setThreads] = useState(() => peek('/threads')?.threads ?? null);
   const [activeId, setActiveId] = useState(threadId || null);
   const { user } = useAuth();
   const isStaff = STAFF_ROLES.includes(user?.role);
@@ -362,7 +363,7 @@ function NewThread({ onCancel, onOpen, onBroadcast }) {
 
 // Gesendete Rundnachrichten (nur Mitarbeitende) mit Lese-Zähler.
 function BroadcastList({ onOpen }) {
-  const [list, setList] = useState(null);
+  const [list, setList] = useState(() => peek('/broadcasts')?.broadcasts ?? null);
   const [open, setOpen] = useState(false);
   useEffect(() => { api.get('/broadcasts').then((d) => setList(d.broadcasts)).catch(() => setList([])); }, []);
   if (!list?.length) return null;
@@ -456,7 +457,7 @@ function ThreadView({ id, onBack }) {
     return () => clearInterval(t);
     // eslint-disable-next-line
   }, [id]);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [data?.messages?.length]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: scrollBehavior() }); }, [data?.messages?.length]);
 
   const send = async ({ body, file }) => {
     if (file) {

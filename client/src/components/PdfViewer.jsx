@@ -659,7 +659,7 @@ function ShareSheet({ fileName, bytes, strokes, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[95] flex items-end justify-center bg-black/50 sm:items-center" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-md rounded-t-2xl bg-card p-4 text-ivory shadow-2xl sm:rounded-2xl" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}>
+      <div className="w-full max-w-md rounded-t-2xl bg-card dark:bg-elevated p-4 text-ivory shadow-float sm:rounded-2xl" style={{ paddingBottom: 'max(env(safe-area-inset-bottom), 1rem)' }}>
         <div className="mb-3 flex items-center justify-between">
           <h3 className="font-medium">Speichern oder teilen</h3>
           <button onClick={onClose} className="rounded-full p-1.5 hover:bg-subtle" aria-label="Schließen"><X size={18} /></button>

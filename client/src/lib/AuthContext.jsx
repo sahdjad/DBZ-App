@@ -1,11 +1,14 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { api } from './api.js';
+import { api, setCacheOwner } from './api.js';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Daten-Speicher immer an die gerade angemeldete Person binden -- schon beim
+  // Rendern (vor den Seiten), damit nie Daten einer anderen Person aufblitzen.
+  setCacheOwner(user?.id);
 
   const refresh = useCallback(async () => {
     try {
