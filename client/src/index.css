@@ -45,6 +45,8 @@
   --c-sage-muted: 96 107 101;/* #606B65 Sekundärtext (≥ 4.5:1 auch auf Feldern) */
   --c-present: 30 128 80;
   --c-late: 150 98 8;
+  --c-partial: 194 86 12;     /* #C2560C Orange (zwischen Rot und Gelb) */
+  --c-half: 226 172 16;       /* #E2AC10 Gelb für Balken/Punkte (Text: --c-late) */
   --c-excused: 44 98 156;
   --c-absent: 192 60 44;
   --shadow-card: 0 1px 2px rgb(23 35 30 / 0.04), 0 1px 1px rgb(23 35 30 / 0.02);
@@ -75,6 +77,8 @@
   --c-sage-muted: 160 173 166;/* #A0ADA6 Sekundärtext */
   --c-present: 104 204 148;
   --c-late: 232 184 96;
+  --c-partial: 246 160 80;
+  --c-half: 240 200 80;
   --c-excused: 138 182 236;
   --c-absent: 244 140 120;
   --c-info: 138 182 236;

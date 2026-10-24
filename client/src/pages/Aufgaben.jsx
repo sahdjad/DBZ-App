@@ -7,6 +7,7 @@ import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast, useSel
 import { useAuth } from '../lib/AuthContext.jsx';
 import { DuePresets, toLocalInput, AssignmentEditForm } from '../components/AssignmentEditForm.jsx';
 import { groupByWeek, weekInfo } from '../lib/weeks.js';
+import { homeworkTone, TONE } from '../lib/homeworkProgress.js';
 
 const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: 'medium', timeStyle: 'short' }) : 'offen');
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
@@ -82,7 +83,7 @@ function StudentView() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-ivory">{info.range}</span>
                       <span className="block text-xs text-sage-muted">
-                        {`${done} von ${w.items.length} erledigt`}{missed > 0 ? <span className="text-status-absent">{` · ${missed} verpasst`}</span> : null}
+                        <span className={missed > 0 ? `font-semibold ${TONE[homeworkTone(done, w.items.length, missed)].text}` : ''}>{`${done} von ${w.items.length} erledigt`}</span>{missed > 0 ? <span className="text-status-absent">{` · ${missed} verpasst`}</span> : null}
                       </span>
                     </span>
                     <ChevronDown size={18} className={`shrink-0 text-sage-muted transition-transform ${open ? 'rotate-180' : ''}`} />

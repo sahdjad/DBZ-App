@@ -2570,7 +2570,8 @@ test('Hausaufgaben-Übersicht: x von y pro Schüler und Woche; Audio + schriftli
   assert.equal((await me('POST', `/assignments/${text1.id}/submit`, { text: 'Antwort 1' })).status, 200, 'schriftlich + Audio am selben Tag ok');
   const r = await me('POST', `/assignments/${text2.id}/submit`, { text: 'Antwort 2' });
   assert.equal(r.status, 400, 'zweite schriftliche am selben Tag gesperrt');
-  const ov = (await teacher('GET', '/homework-overview?classId=class_3')).data;
+  // Woche der Frist abfragen (Frist kann am Wochenende schon in der nächsten Woche liegen).
+  const ov = (await teacher('GET', `/homework-overview?classId=class_3&week=${due.slice(0, 10)}`)).data;
   const row = ov.students.find((x) => x.id === st.id);
   assert.ok(row.total >= 3);
   assert.equal(row.done, 2);
