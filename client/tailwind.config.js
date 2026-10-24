@@ -32,6 +32,7 @@ export default {
           present: 'rgb(var(--c-present) / <alpha-value>)',
           late: 'rgb(var(--c-late) / <alpha-value>)',
           incomplete: 'rgb(var(--c-late) / <alpha-value>)',
+          partial: 'rgb(var(--c-partial) / <alpha-value>)', // Hausaufgaben: weniger als die Hälfte abgegeben (orange)
           excused: 'rgb(var(--c-excused) / <alpha-value>)',
           absent: 'rgb(var(--c-absent) / <alpha-value>)',
         },

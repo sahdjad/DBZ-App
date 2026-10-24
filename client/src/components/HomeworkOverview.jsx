@@ -1,10 +1,13 @@
 // Hausaufgaben-Übersicht pro Woche: je Schüler nur Name + "x von y".
-// Rot = Frist vorbei und noch nicht alles abgegeben. Antippen klappt die
-// Abgaben (Audios, Text, Bewerten) des Schülers auf.
+// Frist vorbei und nicht alles abgegeben: Farbe nach Anteil (rot = nichts,
+// orange = weniger als die Hälfte, gelb = mindestens die Hälfte, grün = alles;
+// lib/homeworkProgress.js). Antippen klappt die Abgaben (Audios, Text,
+// Bewerten) des Schülers auf.
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, AlertTriangle, CheckCircle2, ClipboardCheck } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { Card, Spinner, EmptyState } from './ui.jsx';
+import { homeworkTone, TONE } from '../lib/homeworkProgress.js';
 
 const addDays = (key, n) => { const d = new Date(`${key}T12:00:00`); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const fmtDay = (key) => new Date(`${key}T12:00:00`).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
@@ -79,7 +82,7 @@ export default function HomeworkOverview({ renderSubmission }) {
               <Stat label="Vollständig" value={`${s.studentsComplete} von ${s.studentsTotal}`} hint="Schüler mit allen Hausaufgaben" tone="mint" />
               <Stat label="Abgaben gesamt" value={`${s.done} von ${s.expected}`} hint="abgegebene Hausaufgaben" />
               <Stat label="Zu bewerten" value={s.toReview} hint="warten auf Korrektur" tone={s.toReview ? 'gold' : null} />
-              <Stat label="Frist verpasst" value={s.missedStudents} hint="Schüler (rot markiert)" tone={s.missedStudents ? 'red' : null} />
+              <Stat label="Frist verpasst" value={s.missedStudents} hint="Schüler (farbig markiert)" tone={s.missedStudents ? 'red' : null} />
             </Card>
           )}
 
@@ -99,25 +102,25 @@ export default function HomeworkOverview({ renderSubmission }) {
           {/* iPhone: Liste, antippen klappt die Abgaben auf */}
           <div className="md:hidden bg-card border border-line/70 rounded-2xl shadow-card overflow-hidden divide-y divide-line/70">
             {students.map((st) => {
-              const red = st.missed > 0;
-              const complete = st.total > 0 && st.done === st.total;
+              const late = st.missed > 0;
+              const tone = TONE[homeworkTone(st.done, st.total, st.missed)];
               const open = openId === st.id;
               return (
-                <div key={st.id} className={red ? 'shadow-[inset_3px_0_0_rgb(var(--c-absent))]' : ''}>
+                <div key={st.id} className={tone.edge || ''}>
                   <button type="button" onClick={() => setOpenId(open ? null : st.id)} aria-expanded={open}
                     className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-hover">
                     <span className="min-w-0 flex-1">
-                      <span className={`block text-body truncate ${red ? 'text-status-absent font-semibold' : 'text-ivory font-medium'}`} data-noi18n>{st.name}</span>
+                      <span className={`block text-body truncate ${late ? `${tone.text} font-semibold` : 'text-ivory font-medium'}`} data-noi18n>{st.name}</span>
                       <span className="flex gap-1 mt-1.5" aria-hidden="true">
                         {st.items.map((it) => (
                           <span key={it.assignmentId} className={`h-1.5 w-5 rounded-full ${BAR[it.state] || 'bg-line'}`} />
                         ))}
                       </span>
-                      {red && <span className="block text-footnote text-status-absent mt-1">fehlt: {st.items.filter((i) => i.state === 'missed' || i.state === 'revision').map((i) => titles[i.assignmentId]).join(', ')}</span>}
+                      {late && <span className={`block text-footnote mt-1 ${tone.text}`}>fehlt: {st.items.filter((i) => i.state === 'missed' || i.state === 'revision').map((i) => titles[i.assignmentId]).join(', ')}</span>}
                     </span>
                     {st.sameDay && <AlertTriangle size={15} className="text-status-absent shrink-0" aria-label="Mehrere Hausaufgaben am selben Tag" />}
                     {st.toReview > 0 && <span className="text-caption font-semibold rounded-full bg-gold/15 text-gold px-2 py-0.5 shrink-0">{st.toReview} zu bewerten</span>}
-                    <span className={`text-subhead font-semibold tabular-nums shrink-0 ${red ? 'text-status-absent' : complete ? 'text-status-present' : 'text-sage'}`}>{st.done} von {st.total}</span>
+                    <span className={`text-subhead font-semibold tabular-nums shrink-0 ${tone.text}`}>{st.done} von {st.total}</span>
                     {open ? <ChevronUp size={16} className="text-sage-muted shrink-0" /> : <ChevronDown size={16} className="text-sage-muted shrink-0" />}
                   </button>
                   {open && <Details st={st} titles={titles} chip={chip} renderSubmission={renderSubmission} load={load} />}
@@ -141,16 +144,16 @@ export default function HomeworkOverview({ renderSubmission }) {
               </thead>
               <tbody>
                 {students.map((st) => {
-                  const red = st.missed > 0;
-                  const complete = st.total > 0 && st.done === st.total;
+                  const late = st.missed > 0;
+                  const tone = TONE[homeworkTone(st.done, st.total, st.missed)];
                   const open = openId === st.id;
                   const byId = Object.fromEntries(st.items.map((it) => [it.assignmentId, it]));
                   return [
                     <tr key={st.id} onClick={() => setOpenId(open ? null : st.id)}
-                      className={`border-b border-line/60 cursor-pointer hover:bg-hover/60 ${open ? 'bg-mint/[0.05]' : ''} ${red ? 'shadow-[inset_3px_0_0_rgb(var(--c-absent))]' : ''}`}>
+                      className={`border-b border-line/60 cursor-pointer hover:bg-hover/60 ${open ? 'bg-mint/[0.05]' : ''} ${tone.edge || ''}`}>
                       <td className="py-2.5 px-4">
                         <div className="flex items-center gap-2">
-                          <span className={`font-medium ${red ? 'text-status-absent' : 'text-ivory'}`} data-noi18n>{st.name}</span>
+                          <span className={`font-medium ${late ? tone.text : 'text-ivory'}`} data-noi18n>{st.name}</span>
                           {st.sameDay && <AlertTriangle size={14} className="text-status-absent" aria-label="Mehrere Hausaufgaben am selben Tag" />}
                           {st.toReview > 0 && <span className="text-caption font-semibold rounded-full bg-gold/15 text-gold px-2 py-0.5">{st.toReview} zu bewerten</span>}
                         </div>
@@ -158,7 +161,7 @@ export default function HomeworkOverview({ renderSubmission }) {
                       {data.assignments.map((a) => (
                         <td key={a.id} className="py-2 px-2 text-center">{byId[a.id] ? chip(byId[a.id]) : <span className="text-sage-muted/50">–</span>}</td>
                       ))}
-                      <td className={`py-2.5 px-3 text-right font-semibold tabular-nums whitespace-nowrap ${red ? 'text-status-absent' : complete ? 'text-status-present' : 'text-sage'}`}>{st.done} von {st.total}</td>
+                      <td className={`py-2.5 px-3 text-right font-semibold tabular-nums whitespace-nowrap ${tone.text}`}>{st.done} von {st.total}</td>
                       <td className="py-2.5 pr-3 text-right">{open ? <ChevronUp size={16} className="inline text-sage-muted" /> : <ChevronDown size={16} className="inline text-sage-muted" />}</td>
                     </tr>,
                     open && (
@@ -173,7 +176,14 @@ export default function HomeworkOverview({ renderSubmission }) {
           </Card>
         </>
       )}
-      <p className="text-footnote text-sage-muted flex items-start gap-1.5 px-1"><ClipboardCheck size={14} className="shrink-0 mt-0.5" /> Rot = Frist vorbei und nicht abgegeben – danach kann der Schüler nichts mehr hochladen. Die Woche richtet sich nach der Frist der Hausaufgabe. Wie viele Hausaufgaben es pro Woche gibt, bestimmst du einfach durch das, was du aufgibst.</p>
+      {data.assignments.length > 0 && (
+        <ul className="flex flex-wrap gap-x-4 gap-y-1 px-1 text-footnote text-sage" aria-label="Farben">
+          {['none', 'low', 'high', 'complete'].map((k) => (
+            <li key={k} className="flex items-center gap-1.5"><span className={`h-2.5 w-2.5 rounded-full ${TONE[k].dot}`} aria-hidden="true" />{TONE[k].label}</li>
+          ))}
+        </ul>
+      )}
+      <p className="text-footnote text-sage-muted flex items-start gap-1.5 px-1"><ClipboardCheck size={14} className="shrink-0 mt-0.5" /> Farbig = Frist vorbei und nicht alles abgegeben – je mehr abgegeben, desto näher an Grün. Nach der Frist kann der Schüler nichts mehr hochladen. Die Woche richtet sich nach der Frist der Hausaufgabe. Wie viele Hausaufgaben es pro Woche gibt, bestimmst du einfach durch das, was du aufgibst.</p>
     </div>
   );
 }
