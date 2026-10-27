@@ -44,8 +44,9 @@ export function whiteDaysInfo(now = new Date()) {
   return null;
 }
 
-// Kopf der Startseite: Begrüßung, islamisches Datum und ein Hadith – als
-// ruhiger, redaktioneller Bereich direkt unter der grünen Kopfzeile.
+// Kopf der Startseite: Begrüßung, islamisches Datum und ein Hadith. Auf
+// iPad/Mac als grüne Fläche (.day-hero), auf dem Handy hell und schlicht:
+// Begrüßung frei auf dem Hintergrund, Tag und Hadith in einer ruhigen Karte.
 export default function DayHero({ name, subtitle }) {
   const now = new Date();
   const h = hijriParts(now);
@@ -72,7 +73,7 @@ export default function DayHero({ name, subtitle }) {
   ].filter(Boolean);
 
   return (
-    <section className="nav-surface pattern-geo -mx-4 sm:-mx-6 md:mx-0 -mt-5 md:mt-0 md:rounded-3xl rounded-b-[1.5rem] px-5 sm:px-7 pt-2 pb-5 md:py-6 text-ivory md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:gap-8">
+    <section className="day-hero md:rounded-3xl px-1 md:px-7 md:py-6 text-ivory md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] md:gap-8">
       {/* Begrüßung */}
       <div className="min-w-0">
         <div className="flex items-start justify-between gap-4">
@@ -82,15 +83,15 @@ export default function DayHero({ name, subtitle }) {
               <span className="block text-subhead md:text-body font-medium text-sage">As-salāmu ʿalaykum,</span>
               <span data-noi18n>{name}</span>
             </h2>
-            {subtitle && <p className="mt-1 text-footnote text-sage-muted">{subtitle}</p>}
           </div>
           <p className="md:hidden font-arabic-ui text-body leading-none text-gold shrink-0 pt-5" lang="ar" dir="rtl">السلام عليكم</p>
         </div>
+        {subtitle && <p className="mt-1 text-footnote text-sage-muted">{subtitle}</p>}
         <p className="hidden md:block mt-3 font-arabic-ui text-title3 text-gold text-left" lang="ar" dir="rtl">السلام عليكم</p>
       </div>
 
       {/* Islamischer Tag */}
-      <div className="mt-4 pt-3.5 border-t border-white/10 md:mt-0 md:pt-0 md:border-t-0 md:border-l md:pl-8 min-w-0">
+      <div className="mt-4 -mx-1 rounded-2xl border border-line/70 bg-card shadow-card p-4 md:m-0 md:rounded-none md:border-0 md:border-l md:border-white/10 md:bg-transparent md:shadow-none md:p-0 md:pl-8 min-w-0">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <div className="flex items-center gap-2 min-w-0">
             <Moon size={15} className="text-gold shrink-0 self-center" aria-hidden="true" />
@@ -100,11 +101,11 @@ export default function DayHero({ name, subtitle }) {
         </div>
         {chips.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {chips.map((c) => <span key={c} className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-caption font-medium text-gold">{c}</span>)}
+            {chips.map((c) => <span key={c} className="rounded-full bg-gold/10 md:bg-white/[0.08] px-2.5 py-0.5 text-caption font-medium text-gold">{c}</span>)}
           </div>
         )}
         <figure key={hi} className="dbz-fade-in mt-3">
-          <blockquote className="font-serif text-subhead md:text-body leading-relaxed text-ivory/95 line-clamp-3 md:line-clamp-none">„{hadith.t}“</blockquote>
+          <blockquote className="font-serif text-footnote md:text-body leading-relaxed text-sage md:text-ivory/95 line-clamp-3 md:line-clamp-none">„{hadith.t}“</blockquote>
           <figcaption className="text-caption text-sage-muted mt-1">Hadith · {hadith.s}</figcaption>
         </figure>
       </div>
