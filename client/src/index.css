@@ -126,6 +126,21 @@ html {
   --c-gold: 222 204 156;
   --c-onaccent: 7 56 46;
 }
+/* Kopf der Startseite (components/DayCard.jsx): auf iPad/Mac grüne Fläche
+   wie die Kopfzeile (gleiche Farben wie .nav-surface); auf dem Handy ruhig
+   und hell auf dem Seitenhintergrund -- dort ist die Kopfzeile schon grün. */
+@media (min-width: 768px) {
+  .day-hero {
+    background-color: rgb(var(--header-bg));
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56' viewBox='0 0 56 56'%3E%3Cg fill='none' stroke='%23ffffff' stroke-opacity='0.07' stroke-width='0.8'%3E%3Ccircle cx='0' cy='0' r='28'/%3E%3Ccircle cx='56' cy='0' r='28'/%3E%3Ccircle cx='0' cy='56' r='28'/%3E%3Ccircle cx='56' cy='56' r='28'/%3E%3Ccircle cx='28' cy='28' r='28'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 56px 56px;
+    --c-ivory: 247 246 240;
+    --c-sage: 222 230 224;
+    --c-sage-muted: 168 186 176;
+    --c-line: 44 90 76;
+    --c-gold: 222 204 156;
+  }
+}
 
 @layer base {
   html {
