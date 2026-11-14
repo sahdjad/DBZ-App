@@ -39,8 +39,19 @@ export function createApp() {
 
   app.use('/api', api);
   app.use('/api', (err, _req, res, _next) => {
-    console.error('[api error]', err.message);
-    res.status(err.status || 400).json({ error: err.message || 'Serverfehler' });
+    if (res.headersSent) return;
+    // Erwartete Fehler (kaputtes JSON, zu große Anfrage, abgelehnter Upload)
+    // bringen einen 4xx-Status oder einen Multer-Code mit -> Meldung weitergeben.
+    // Alles andere ist ein Programmfehler: protokollieren, nach außen neutral.
+    const status = Number(err?.status || err?.statusCode) || (err?.name === 'MulterError' ? 400 : 0);
+    if (status >= 400 && status < 500) {
+      return res.status(status).json({ error: err.type === 'entity.parse.failed' ? 'Ungültige Anfrage' : err.message || 'Ungültige Anfrage' });
+    }
+    console.error('[api error]', err?.stack || err);
+    // Ein TypeError entsteht hier praktisch immer durch eine Eingabe im falschen
+    // Format (Zahl statt Text o. Ä.) -> als fehlerhafte Anfrage beantworten.
+    if (err instanceof TypeError) return res.status(400).json({ error: 'Ungültige Eingabe' });
+    res.status(500).json({ error: 'Serverfehler. Bitte erneut versuchen.' });
   });
 
   const dist = path.join(__dirname, '..', 'client', 'dist');

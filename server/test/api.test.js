@@ -12,6 +12,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dbz-test-'));
 process.env.DBZ_DATA_DIR = TMP;
 process.env.JWT_SECRET = 'test-secret';
 process.env.EXPOSE_RESET_LINK = '1'; // nur für Tests: Reset-Link in der Antwort
+process.env.PUSH_ALLOWED_HOSTS = 'example.com,push.example.invalid'; // Test-Zustelldienste
 
 let server;
 let base;
@@ -1568,8 +1569,8 @@ test('Passwort vergessen: Reset-Link erzeugen und Passwort neu setzen', async ()
   await client()('POST', '/auth/reset-password', { token: again.data.devLink.split('token=')[1], newPassword: 'demo1234' });
 });
 
-test('Backup-Download nur für Leitung; Retention-Einstellung speicherbar', async () => {
-  const cookie = await cookieFor('leitung@dbz.de');
+test('Backup-Download nur für den System-Administrator; Retention-Einstellung speicherbar', async () => {
+  const cookie = await cookieFor('admin@dbz.de');
   const res = await fetch(`${base}/api/admin/backup.json`, { headers: { cookie } });
   assert.equal(res.status, 200);
   assert.ok((await res.text()).includes('organizations'), 'Backup enthält Daten');
@@ -1579,7 +1580,8 @@ test('Backup-Download nur für Leitung; Retention-Einstellung speicherbar', asyn
   assert.equal((await leitung('GET', '/org')).data.org.audioRetentionDays, 45);
   await leitung('PATCH', '/org', { audioRetentionDays: 0 }); // wieder deaktivieren
 
-  // Schüler darf kein Backup laden
+  // Leitung und Schüler dürfen kein Backup laden (enthält alle privaten Daten)
+  assert.equal((await leitung('GET', '/admin/backup.json')).status, 403);
   const student = await loginAs('schueler@dbz.de');
   assert.equal((await student('GET', '/admin/backup.json')).status, 403);
 });

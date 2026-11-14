@@ -117,10 +117,30 @@ async function sendPush(sub, payloadObj) {
 }
 
 // --- Abo-Verwaltung -----------------------------------------------------------
+// Push-Nachrichten gehen ausschließlich an die Zustelldienste der Browser-
+// Hersteller. Die Zieladresse kommt vom Gerät des Nutzers -- ohne diese Prüfung
+// könnte ein angemeldetes Konto den Server beliebige (auch interne) Adressen
+// aufrufen lassen. PUSH_ALLOWED_HOSTS (kommagetrennt) erlaubt zusätzliche Hosts.
+const PUSH_HOSTS = [
+  'fcm.googleapis.com', 'android.googleapis.com', // Chrome, Edge (Android), Android
+  '.push.apple.com', // Safari, iOS
+  'updates.push.services.mozilla.com', '.push.services.mozilla.com', // Firefox
+  '.notify.windows.com', // Edge (Windows)
+];
+export function isAllowedPushEndpoint(endpoint) {
+  let url;
+  try { url = new URL(String(endpoint)); } catch { return false; }
+  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443')) return false;
+  const host = url.hostname.toLowerCase();
+  const extra = String(process.env.PUSH_ALLOWED_HOSTS || '').split(',').map((h) => h.trim().toLowerCase()).filter(Boolean);
+  return [...PUSH_HOSTS, ...extra].some((h) => (h.startsWith('.') ? host.endsWith(h) : host === h));
+}
+
 export function saveSubscription(userId, subscription) {
   const endpoint = subscription?.endpoint;
   const keys = subscription?.keys;
-  if (!endpoint || !keys?.p256dh || !keys?.auth) return null;
+  if (typeof endpoint !== 'string' || typeof keys?.p256dh !== 'string' || typeof keys?.auth !== 'string') return null;
+  if (!isAllowedPushEndpoint(endpoint)) return null;
   const arr = db.all('push_subscriptions');
   const existing = arr.find((s) => s.endpoint === endpoint);
   if (existing) {
@@ -162,7 +182,8 @@ function personIds(userId) {
 export async function pushToUser(userId, payload) {
   if (!pushConfigured()) return { sent: 0, ok: 0, failed: [] };
   const ids = personIds(userId);
-  const subs = db.all('push_subscriptions').filter((s) => ids.has(s.userId));
+  // Auch früher gespeicherte Abos mit unzulässiger Adresse werden nie angesprochen.
+  const subs = db.all('push_subscriptions').filter((s) => ids.has(s.userId) && isAllowedPushEndpoint(s.endpoint));
   if (!subs.length) return { sent: 0, ok: 0, failed: [] };
   const target = db.all('users').find((u) => u.id === userId);
   const gone = [];

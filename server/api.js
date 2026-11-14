@@ -47,7 +47,7 @@ import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
 import { legacyPage, surahStartPage } from './mushaf.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription, pushToUser } from './webpush.js';
 import { createLoginThrottle } from './security.js';
-import { backupNow } from './maintenance.js';
+import { backupNow, listBackups, loadBackup } from './backup.js';
 import { ASR_FILES, ensureAsrFile } from './asr.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
@@ -55,6 +55,61 @@ const loginThrottle = createLoginThrottle({ max: 8, windowMs: 10 * 60 * 1000 });
 const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
 const router = express.Router();
+
+// --- Robustheit ---------------------------------------------------------------
+// Express 4 fängt Fehler aus async-Routen nicht ab: ein abgelehntes Promise
+// würde den ganzen Prozess beenden. Deshalb wird JEDER Handler dieses Routers
+// so eingehängt, dass ein Fehler (synchron oder asynchron) beim zentralen
+// Fehler-Handler in app.js landet.
+const guarded = (fn) => {
+  if (typeof fn !== 'function' || fn.length >= 4) return fn; // Fehler-Handler unverändert
+  return function guardedHandler(req, res, next) {
+    try {
+      const out = fn.call(this, req, res, next);
+      if (out && typeof out.then === 'function') out.then(undefined, next);
+    } catch (err) {
+      next(err);
+    }
+  };
+};
+for (const method of ['use', 'get', 'post', 'put', 'patch', 'delete']) {
+  const orig = router[method].bind(router);
+  router[method] = (...args) => orig(...args.map((a) => (Array.isArray(a) ? a.map(guarded) : guarded(a))));
+}
+
+// Eingaben an der Tür prüfen: Anmelde-, Konto- und Profilfelder sind überall
+// in der API Text. Kommt stattdessen eine Zahl, Liste oder ein Objekt, wird die
+// Anfrage abgelehnt, bevor ein Handler damit rechnet (z. B. `.trim()` aufruft).
+// Bewusst nur diese Felder: andere Namen (code, text, body …) haben je nach
+// Route verschiedene Formen; dort greift der Fehler-Handler (TypeError -> 400).
+const TEXT_FIELDS = [
+  'name', 'email', 'emailA', 'emailB', 'password', 'newPassword', 'currentPassword', 'oldPassword', 'token', 'phone',
+  'firstName', 'lastName', 'birthDate', 'gender', 'street', 'houseNumber', 'zip', 'city', 'desiredLevel', 'siblings', 'notes',
+];
+const MAX_TEXT = 20000;
+function badBody(body) {
+  if (body === undefined || body === null) return false;
+  if (typeof body !== 'object' || Array.isArray(body)) return true;
+  for (const k of TEXT_FIELDS) {
+    const v = body[k];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== 'string' || v.length > MAX_TEXT) return true;
+  }
+  return false;
+}
+router.use((req, res, next) => {
+  if (badBody(req.body)) return res.status(400).json({ error: 'Ungültige Eingabe' });
+  next();
+});
+
+// Vor jeder Massenlöschung: erst sichern. Schlägt die Sicherung fehl, wird
+// NICHT gelöscht. Im Demo-Sandkasten gibt es nichts zu sichern.
+const BACKUP_FAILED = 'Die Sicherung vor diesem Schritt ist fehlgeschlagen – es wurde nichts verändert. Bitte später erneut versuchen.';
+async function safeguard(label) {
+  if (inSandbox()) return true;
+  const r = await backupNow('event', label);
+  return r.ok || r.skipped === 'leer';
+}
 
 // Betriebsmodus: "production" = dieses Deployment bedient echte Nutzer
 // (Supabase oder DBZ_LIVE=1), "demo" = lokale Entwicklung. Wird nur noch zur
@@ -360,7 +415,7 @@ const rawUpload = multer({
   fileFilter: (_req, file, cb) => {
     file.mimetype = normalizeMime(file);
     if (ALLOWED_MIME.has(file.mimetype)) cb(null, true);
-    else cb(new Error('Dateityp nicht erlaubt (nur Audio, PDF, Bild)'));
+    else cb(Object.assign(new Error('Dateityp nicht erlaubt (nur Audio, PDF, Bild)'), { status: 400 }));
   },
 });
 // multer liest den Upload über Stream-Ereignisse; dabei kann der
@@ -1322,9 +1377,10 @@ function deleteSessionCascade(sess) {
   if (idx >= 0) list.splice(idx, 1);
   return removed;
 }
-router.post('/sessions/bulk-delete', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/sessions/bulk-delete', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(String) : [];
   if (!ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Auswahl' });
+  if (!(await safeguard('unterricht-loeschen'))) return res.status(503).json({ error: BACKUP_FAILED });
   let sessions = 0; let entries = 0;
   for (const id of ids) {
     const sess = byId('sessions', id);
@@ -1417,14 +1473,14 @@ router.get('/school/today', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
 // Regeln und Einstellungen bleiben unangetastet. Vorher wird automatisch eine
 // Sicherung angelegt. Nur Lehrkräfte der Klasse sowie Leitung/Admin.
 const CLASS_RESET_SCOPES = ['attendance', 'absences', 'assignments', 'behavior', 'penalties', 'protocols'];
-router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   const scopes = (Array.isArray(req.body?.scopes) ? req.body.scopes : []).filter((x) => CLASS_RESET_SCOPES.includes(x));
   if (!scopes.length) return res.status(400).json({ error: 'Bitte auswählen, was gelöscht werden soll' });
   if (String(req.body?.confirmName || '').trim() !== klass.name) return res.status(400).json({ error: 'Zur Bestätigung bitte den Klassennamen genau eingeben' });
-  backupNow();
+  if (!(await safeguard(`reset-${klass.name}`))) return res.status(503).json({ error: BACKUP_FAILED });
   const inClass = (x) => x.classId === klass.id;
   const drop = (collection, pred) => {
     const list = db.all(collection);
@@ -2154,8 +2210,11 @@ router.post('/absence-requests', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Nur Schüler oder Eltern können Anträge stellen' });
   }
   const student = findUserById(targetStudentId);
+  if (!student) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   const cid = classId || (student.classIds || [])[0];
   if (!cid) return res.status(400).json({ error: 'Keine Klasse zugeordnet' });
+  // Nur an die EIGENE Klasse: sonst bekämen fremde Lehrkräfte die Meldung.
+  if (!(student.classIds || []).includes(cid)) return res.status(403).json({ error: 'Diese Klasse gehört nicht zu diesem Schüler' });
   const valid = ['absent', 'late', 'leave_early', 'other'];
   if (!valid.includes(requestType)) return res.status(400).json({ error: 'Ungültiger Antragstyp' });
 
@@ -6154,6 +6213,11 @@ router.post('/admin/link-accounts', requireAuth, requireRole(ROLES.SUPER_ADMIN, 
   const b = findUserByEmail((emailB || '').trim());
   if (!a || !b) return res.status(404).json({ error: 'Mindestens ein Konto wurde nicht gefunden' });
   if (a.id === b.id) return res.status(400).json({ error: 'Das ist dasselbe Konto' });
+  // Verknüpfte Konten lassen sich ohne Passwort wechseln. Deshalb darf niemand
+  // Konten verknüpfen, deren Rolle er nicht selbst vergeben dürfte -- sonst
+  // käme die DBZ-Leitung so an ein Administrator-Konto.
+  if ([...personAccounts(a), ...personAccounts(b)].some((u) => !canGrantRole(req.user, u.role)))
+    return res.status(403).json({ error: 'Konten mit der Rolle „System-Administrator" kann nur ein System-Administrator verknüpfen' });
   a.linkedAccountIds = a.linkedAccountIds || [];
   b.linkedAccountIds = b.linkedAccountIds || [];
   if (!a.linkedAccountIds.includes(b.id)) a.linkedAccountIds.push(b.id);
@@ -7086,9 +7150,10 @@ router.delete('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, RO
 // und vollständig entfernt. Jeder Eintrag durchläuft weiterhin die
 // Schutzregeln (eigenes Konto, letzter System-Administrator); fehlgeschlagene
 // Einträge werden einzeln zurückgemeldet, ohne die restliche Löschung zu stoppen.
-router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const { ids } = req.body || {};
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Keine Nutzer ausgewählt' });
+  if (!(await safeguard('nutzer-loeschen'))) return res.status(503).json({ error: BACKUP_FAILED });
 
   const results = ids.map((id) => {
     const u = findUserById(id);
@@ -7189,12 +7254,49 @@ router.get('/admin/audit', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEI
   res.json({ logs: enriched });
 });
 
-// Vollständiges Backup herunterladen (Leitung/Admin) – für Off-Site-Sicherung.
-router.get('/admin/backup.json', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+// --- Datensicherung -------------------------------------------------------------
+// Eine Sicherung enthält ALLES (auch Passwort-Hashes und private Nachrichten).
+// Herunterladen und Wiederherstellen darf deshalb nur der System-Administrator.
+
+// Geheimnisse, die auch in einem heruntergeladenen Abzug nichts zu suchen haben.
+function withoutSecrets(snap) {
+  const out = { ...snap };
+  out.users = (snap.users || []).map(({ passwordHash, familyCode, calendarToken, ...u }) => u);
+  for (const k of ['password_resets', 'invites', 'push_subscriptions', 'push_keys']) delete out[k];
+  return out;
+}
+
+router.get('/admin/backup.json', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
   audit(req.user.id, 'backup.download', 'organization', org().id);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="dbz-backup-${new Date().toISOString().slice(0, 10)}.json"`);
-  res.send(JSON.stringify(db.snapshot(), null, 2));
+  res.send(JSON.stringify(withoutSecrets(db.snapshot()), null, 2));
+});
+
+router.get('/admin/backups', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (_req, res) => {
+  if (inSandbox()) return res.json({ backups: [] });
+  res.json({ backups: await listBackups() });
+});
+
+router.post('/admin/backups', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (req, res) => {
+  const r = await backupNow('event', 'manuell');
+  if (!r.ok) return res.status(503).json({ error: BACKUP_FAILED });
+  audit(req.user.id, 'backup.create', 'organization', org().id, null, { name: r.name });
+  res.json(r);
+});
+
+// Stand einer Sicherung wieder einspielen. Der aktuelle Stand wird vorher
+// selbst gesichert, die Wiederherstellung lässt sich also zurücknehmen.
+router.post('/admin/backups/:name/restore', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (req, res) => {
+  if (inSandbox()) return res.status(403).json({ error: 'Im Demo-Modus nicht möglich' });
+  if (req.body?.confirm !== 'WIEDERHERSTELLEN') return res.status(400).json({ error: 'Zur Bestätigung bitte WIEDERHERSTELLEN eingeben' });
+  const data = await loadBackup(req.params.name);
+  if (!data) return res.status(404).json({ error: 'Sicherung nicht gefunden' });
+  if (!(await safeguard('vor-wiederherstellung'))) return res.status(503).json({ error: BACKUP_FAILED });
+  const actor = req.user.id;
+  try { db.restore(data); } catch (err) { return res.status(400).json({ error: err.message }); }
+  audit(actor, 'backup.restore', 'organization', org()?.id, null, { name: req.params.name });
+  res.json({ ok: true, users: db.all('users').length });
 });
 
 // Passwort eines Nutzers zurücksetzen (Leitung/Admin). Neues Passwort wird

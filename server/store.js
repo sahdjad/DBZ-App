@@ -135,25 +135,32 @@ let writing = false;
 let dirty = false;
 export let lastPersistError = null;
 
-async function drainWrites() {
-  if (writing) return;
+// Der laufende Schreibvorgang als Promise: wer wirklich warten muss (Herunter-
+// fahren, Sicherung), wartet darauf -- auch wenn der Vorgang schon unterwegs ist.
+let draining = null;
+function drainWrites() {
+  if (draining) return draining;
   writing = true;
-  try {
-    while (dirty) {
-      dirty = false;
-      try {
-        await sbSave(cache);
-        lastPersistError = null;
-      } catch (err) {
-        lastPersistError = err;
-        dirty = true; // erneut versuchen
-        console.error('[store]', err.message, '– neuer Versuch in 3s');
-        await new Promise((r) => setTimeout(r, 3000));
+  draining = (async () => {
+    try {
+      while (dirty) {
+        dirty = false;
+        try {
+          await sbSave(cache);
+          lastPersistError = null;
+        } catch (err) {
+          lastPersistError = err;
+          dirty = true; // erneut versuchen
+          console.error('[store]', err.message, '– neuer Versuch in 3s');
+          await new Promise((r) => setTimeout(r, 3000));
+        }
       }
+    } finally {
+      writing = false;
+      draining = null;
     }
-  } finally {
-    writing = false;
-  }
+  })();
+  return draining;
 }
 
 function scheduleSbFlush() {
@@ -317,6 +324,17 @@ export const db = {
   /** Vollständige Kopie des Datenbestands (für Backups/Export). */
   snapshot() {
     return JSON.parse(JSON.stringify(load()));
+  },
+  /**
+   * Ersetzt den gesamten Datenbestand (Wiederherstellung aus einer Sicherung).
+   * Nur für echte Daten, nie im Demo-Sandkasten.
+   */
+  restore(data) {
+    if (inSandbox()) throw new Error('Im Demo-Modus nicht möglich');
+    if (!data || typeof data !== 'object' || !Array.isArray(data.users) || !data.users.length)
+      throw new Error('Sicherung ist leer oder beschädigt');
+    cache = { ...emptyDb(), ...JSON.parse(JSON.stringify(data)) };
+    persist();
   },
   /** Speicher-Backend als Text (für Diagnose/Health). */
   get backend() {

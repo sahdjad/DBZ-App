@@ -672,7 +672,64 @@ function ClassTeachers({ classId }) {
   );
 }
 
+// Datensicherung (nur System-Administrator): täglich automatisch, vor jeder
+// Massenlöschung zusätzlich. Hier: Liste, sofort sichern, Stand zurückholen.
+function BackupsCard() {
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get('/admin/backups').then((d) => setList(d.backups)).catch((err) => { setList([]); toast.push(err.message, 'error'); });
+  useEffect(() => { load(); }, []);
+  const create = async () => {
+    setBusy(true);
+    try { await api.post('/admin/backups', {}); toast.push('Sicherung angelegt', 'success'); await load(); }
+    catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  const restore = async (b) => {
+    const typed = window.prompt(`Der gesamte Datenbestand wird auf den Stand „${backupLabel(b)}" zurückgesetzt. Alles, was danach eingetragen wurde, geht verloren (der jetzige Stand wird vorher gesichert).\n\nZur Bestätigung WIEDERHERSTELLEN eingeben:`);
+    if (typed == null) return;
+    setBusy(true);
+    try {
+      await api.post(`/admin/backups/${encodeURIComponent(b.name)}/restore`, { confirm: typed.trim() });
+      toast.push('Stand wiederhergestellt', 'success');
+      window.location.reload();
+    } catch (err) { toast.push(err.message, 'error'); setBusy(false); }
+  };
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Datensicherung" subtitle="Täglich automatisch, zusätzlich vor jeder Massenlöschung" icon={RotateCcw} />
+      <div className="flex gap-2 flex-wrap mb-3">
+        <Button type="button" onClick={create} disabled={busy}>Jetzt sichern</Button>
+        <Button as="a" href="/api/admin/backup.json" variant="outline" type="button"><Download size={18} /> Abzug herunterladen</Button>
+      </div>
+      {!list ? <Spinner /> : !list.length ? (
+        <p className="text-sm text-sage-muted">Noch keine Sicherung vorhanden.</p>
+      ) : (
+        <ul className="divide-y divide-line text-sm max-h-80 overflow-y-auto">
+          {list.map((b) => (
+            <li key={b.name} className="flex items-center justify-between gap-3 py-2">
+              <span className="min-w-0">
+                <span className="block truncate">{backupLabel(b)}</span>
+                <span className="block text-xs text-sage-muted">{b.kind === 'daily' ? 'Täglich' : 'Vor einer Änderung'}{b.size ? ` · ${Math.max(1, Math.round(b.size / 1024))} KB` : ''}</span>
+              </span>
+              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => restore(b)}>Wiederherstellen</Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-xs text-sage-muted mt-3">Der heruntergeladene Abzug enthält keine Passwörter und Zugangsschlüssel.</p>
+    </Card>
+  );
+}
+function backupLabel(b) {
+  const m = /^(?:daily|event)-(\d{4})-(\d{2})-(\d{2})(?:T(\d{2})-(\d{2}))?/.exec(b.name);
+  if (!m) return b.name;
+  return `${m[3]}.${m[2]}.${m[1]}${m[4] ? `, ${m[4]}:${m[5]} UTC` : ''}`;
+}
+
 function SettingsTab() {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
   const toast = useToast();
   const [org, setOrg] = useState(null);
   useEffect(() => { api.get('/org').then((d) => setOrg(d.org)); }, []);
@@ -720,10 +777,11 @@ function SettingsTab() {
           ))}
           <div className="flex gap-2 flex-wrap">
             <Button type="submit">Speichern</Button>
-            <Button as="a" href="/api/admin/backup.json" variant="outline" type="button"><Download size={18} /> Backup herunterladen</Button>
           </div>
         </form>
       </Card>
+
+      {isSuperAdmin && <BackupsCard />}
 
       <GradeWeightsCard weights={org.gradeWeights} onChange={(w) => setOrg({ ...org, gradeWeights: w })} onSave={saveWeights} />
     </div>
