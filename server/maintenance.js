@@ -5,26 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db, UPLOAD_DIR } from './store.js';
 import { deleteFile } from './files.js';
+import { ensureDailyBackup } from './backup.js';
 
-const KEEP_BACKUPS = 14;
-
-/** Schreibt eine Momentaufnahme der Datenbank in data/backups/ und behält die letzten N. */
-export function backupNow() {
-  try {
-    const dir = path.join(db.dir, 'backups');
-    fs.mkdirSync(dir, { recursive: true });
-    const ts = new Date().toISOString().replace(/[:.]/g, '-');
-    fs.writeFileSync(path.join(dir, `db-${ts}.json`), JSON.stringify(db.snapshot()));
-    const files = fs.readdirSync(dir).filter((f) => f.startsWith('db-') && f.endsWith('.json')).sort();
-    for (const old of files.slice(0, Math.max(0, files.length - KEEP_BACKUPS))) {
-      fs.rmSync(path.join(dir, old), { force: true });
-    }
-    return { ok: true, kept: Math.min(files.length, KEEP_BACKUPS) };
-  } catch (err) {
-    console.error('[backup] fehlgeschlagen:', err.message);
-    return { ok: false, error: err.message };
-  }
-}
 
 /**
  * Löscht Audio-Dateien von Abgaben, die älter als die konfigurierte Aufbewahrungs-
@@ -59,13 +41,13 @@ export function runAudioRetention() {
   return { ok: true, deleted };
 }
 
-/** Plant Backups und Retention (täglich) und führt sie einmal beim Start aus. */
+/** Plant Sicherung (stündlich prüfen, einmal täglich schreiben) und Retention (täglich). */
 export function scheduleMaintenance() {
-  const daily = 24 * 60 * 60 * 1000;
-  backupNow();
+  const hour = 60 * 60 * 1000;
+  ensureDailyBackup();
   runAudioRetention();
-  const t1 = setInterval(backupNow, daily);
-  const t2 = setInterval(runAudioRetention, daily);
+  const t1 = setInterval(ensureDailyBackup, hour);
+  const t2 = setInterval(runAudioRetention, 24 * hour);
   t1.unref?.();
   t2.unref?.();
 }

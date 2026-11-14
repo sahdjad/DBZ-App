@@ -22,6 +22,12 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// Letztes Netz: ein vergessenes Promise oder ein Fehler in einem Hintergrund-
+// Job darf den Server nicht beenden (alle Nutzer wären abgemeldet, ungespeicherte
+// Änderungen verloren). Protokollieren und weiterlaufen.
+process.on('unhandledRejection', (err) => console.error('[unhandledRejection]', err?.stack || err));
+process.on('uncaughtException', (err) => console.error('[uncaughtException]', err?.stack || err));
+
 // Datenbestand aus dem aktiven Backend (Supabase oder lokale Datei) laden,
 // bevor irgendein Code darauf zugreift.
 await initStore();

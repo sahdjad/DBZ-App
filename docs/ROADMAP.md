@@ -15,16 +15,19 @@ Status: ⬜ offen · 🟨 in Arbeit · ✅ erledigt
 
 ---
 
-## Stufe 1 – Härtung (zuerst, rund 1 Woche)
+## Stufe 1 – Härtung (erledigt am 14.11.2026)
 
 | | Aufgabe | Erfolgskriterium |
 |---|---|---|
-| ⬜ | Gemeinsame Fehlerbehandlung für alle asynchronen Routen, Typ- und Längenprüfung an allen öffentlichen Eingaben | Falsche Eingaben ergeben 400, der Prozess läuft weiter |
-| ⬜ | Konten-Verknüpfung und Kontowechsel an die Rollenregeln binden | Niemand erreicht eine höhere Rolle als die eigene |
-| ⬜ | Ziele für Push-Benachrichtigungen auf die bekannten Push-Dienste begrenzen | Fremde Adressen werden abgelehnt |
-| ⬜ | Tägliche, versionierte Sicherung nach Supabase Storage (30 Stände), zusätzlich vor jeder Massenlöschung; Wiederherstellung dokumentiert | Stand von gestern lässt sich einspielen |
-| ⬜ | Abhängigkeiten aktualisieren (`npm audit fix`, Server und Client) | Keine hohen Meldungen im Server |
-| ⬜ | Abwesenheitsmeldung nur an die eigene Klasse | Fremde Klasse ergibt 403 |
+| ✅ | Gemeinsame Fehlerbehandlung für alle asynchronen Routen, Typ- und Längenprüfung an allen öffentlichen Eingaben | Falsche Eingaben ergeben 400, der Prozess läuft weiter |
+| ✅ | Konten-Verknüpfung und Kontowechsel an die Rollenregeln binden | Niemand erreicht eine höhere Rolle als die eigene |
+| ✅ | Ziele für Push-Benachrichtigungen auf die bekannten Push-Dienste begrenzen | Fremde Adressen werden abgelehnt |
+| ✅ | Tägliche, versionierte Sicherung nach Supabase Storage (30 Stände), zusätzlich vor jeder Massenlöschung; Wiederherstellung dokumentiert | Stand von gestern lässt sich einspielen |
+| ✅ | Abhängigkeiten aktualisieren (`npm audit fix`, Server und Client) | Keine hohen Meldungen im Server |
+| ✅ | Abwesenheitsmeldung nur an die eigene Klasse | Fremde Klasse ergibt 403 |
+
+Tests: `server/test/hardening.test.js`, `server/test/backup-supabase.test.js`. Anleitung: `docs/SICHERUNG.md`.
+Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, `vite`, `react-router`) einen Versionssprung mit Umbauten – eigener Schritt.
 
 ## Stufe 2 – Stabilisierung (2 bis 3 Wochen)
 
@@ -32,7 +35,7 @@ Status: ⬜ offen · 🟨 in Arbeit · ✅ erledigt
 |---|---|
 | ⬜ | Sitzungen widerrufbar (Passwortwechsel, „überall abmelden") |
 | ⬜ | Drosselung für Registrierung, Passwort vergessen, Familien-Code; Familien-Code länger und aus sicherem Zufall |
-| ⬜ | Datenabzug nur für den System-Administrator und ohne Geheimnisse |
+| ✅ | Datenabzug nur für den System-Administrator und ohne Geheimnisse |
 | ⬜ | Upload-Fehler an den Nutzer melden; Dateien beim Löschen mitlöschen; abgelehnte Uploads aufräumen |
 | ⬜ | Wachstum begrenzen: Benachrichtigungen und Audit-Log kürzen, PDF-Notizen aus dem Hauptdokument auslagern |
 | ⬜ | Schutz gegen leeres Überschreiben (beschädigte Datei, Supabase beim Start nicht erreichbar) |
