@@ -1,0 +1,118 @@
+# DBZ-App – Roadmap
+
+Stand: 14.11.2026. Grundlage ist das vollständige Audit vom selben Tag
+(Gesamtnote 5,8/10: Funktion und Oberfläche 7–8, Sicherheit, Stabilität und Architektur 4–5).
+Der ausführliche Audit-Bericht wird erst nach Abschluss von Stufe 1 hier abgelegt,
+weil das Repository öffentlich ist.
+
+Produktion: Render Free + Supabase (bestätigt über `/api/health`).
+
+**Grundsatz:** Erst verlässlich, dann tiefer, dann größer. Keine großen neuen Funktionen,
+bevor Stufe 1 und 2 erledigt sind. Jede Korrektur bekommt einen Test, der vorher
+fehlschlägt und danach besteht.
+
+Status: ⬜ offen · 🟨 in Arbeit · ✅ erledigt
+
+---
+
+## Stufe 1 – Härtung (zuerst, rund 1 Woche)
+
+| | Aufgabe | Erfolgskriterium |
+|---|---|---|
+| ⬜ | Gemeinsame Fehlerbehandlung für alle asynchronen Routen, Typ- und Längenprüfung an allen öffentlichen Eingaben | Falsche Eingaben ergeben 400, der Prozess läuft weiter |
+| ⬜ | Konten-Verknüpfung und Kontowechsel an die Rollenregeln binden | Niemand erreicht eine höhere Rolle als die eigene |
+| ⬜ | Ziele für Push-Benachrichtigungen auf die bekannten Push-Dienste begrenzen | Fremde Adressen werden abgelehnt |
+| ⬜ | Tägliche, versionierte Sicherung nach Supabase Storage (30 Stände), zusätzlich vor jeder Massenlöschung; Wiederherstellung dokumentiert | Stand von gestern lässt sich einspielen |
+| ⬜ | Abhängigkeiten aktualisieren (`npm audit fix`, Server und Client) | Keine hohen Meldungen im Server |
+| ⬜ | Abwesenheitsmeldung nur an die eigene Klasse | Fremde Klasse ergibt 403 |
+
+## Stufe 2 – Stabilisierung (2 bis 3 Wochen)
+
+| | Aufgabe |
+|---|---|
+| ⬜ | Sitzungen widerrufbar (Passwortwechsel, „überall abmelden") |
+| ⬜ | Drosselung für Registrierung, Passwort vergessen, Familien-Code; Familien-Code länger und aus sicherem Zufall |
+| ⬜ | Datenabzug nur für den System-Administrator und ohne Geheimnisse |
+| ⬜ | Upload-Fehler an den Nutzer melden; Dateien beim Löschen mitlöschen; abgelehnte Uploads aufräumen |
+| ⬜ | Wachstum begrenzen: Benachrichtigungen und Audit-Log kürzen, PDF-Notizen aus dem Hauptdokument auslagern |
+| ⬜ | Schutz gegen leeres Überschreiben (beschädigte Datei, Supabase beim Start nicht erreichbar) |
+| ⬜ | CI (Tests, Build, Audit bei jedem Push), Linter, Fehlergrenze im Frontend |
+| ⬜ | `APP_URL` und E-Mail-Dienst einrichten und dokumentieren, `.env.example` anlegen |
+
+## Stufe 3 – Oberfläche und Barrierefreiheit (1 bis 2 Wochen)
+
+- ⬜ Beschriftungen für alle Felder und Symbol-Knöpfe (26 Felder, 2 Knöpfe)
+- ⬜ Touch-Ziele auf dem Handy mindestens 44 px
+- ⬜ Kontraste für Gold, Orange und Grün auf mindestens 4,5:1
+- ⬜ Seite „Kein Zugriff" statt stummer Umleitung
+
+## Stufe 4 – Bestehendes vervollständigen (2 bis 3 Wochen)
+
+- ⬜ Vertretungslehrer: eingeschränkte Rechte und Ablaufdatum (Vorgabe aus `BACKLOG.md`)
+- ⬜ Vier-Augen-Prinzip der Leitung einheitlich (auch Rollenänderung und Einladungen)
+- ⬜ Prüfungen: Zielgruppe und Status prüfen, Zeitfenster, Sicht für Eltern
+- ⬜ Eingabeprüfung bei Hausaufgaben und Bewertung
+- ⬜ README, `PROJECT_STATUS.md`, `BACKLOG.md` auf den tatsächlichen Stand bringen
+
+## Stufe 5 – Neue Funktionen (4 bis 8 Wochen, in dieser Reihenfolge)
+
+1. ⬜ Wochenübersicht für Eltern
+2. ⬜ Automatische Erinnerungen (Frist morgen, unentschuldigt gefehlt)
+3. ⬜ Hifz nach Sabaq / Sabqi / Manzil mit Fehlerhistorie je Ayah
+4. ⬜ Übersetzung von Nachrichten und Ankündigungen (Datenschutz und Kosten vorher klären)
+5. ⬜ Datenexport je Person (Auskunft nach DSGVO)
+
+## Stufe 6 – Professionalisierung (4 bis 6 Wochen)
+
+- ⬜ **Tabellen statt eines Dokuments:** in `server/store.js` Sammlung für Sammlung auf
+  Supabase-Tabellen umstellen – zuerst Benachrichtigungen, Audit-Log, Notizen, zuletzt Nutzer.
+- ⬜ `server/api.js` nach Bereichen aufteilen, ohne Verhalten zu ändern
+- ⬜ Rechtlicher Rahmen: Datenschutzerklärung, Auftragsverarbeitung (Supabase, Render), Löschfristen
+
+---
+
+## Stufe 7 – iOS-App im App Store
+
+Empfohlener Weg: **Capacitor-Hülle** um die vorhandene React-App (kein Neubau).
+Voraussetzung sind Stufe 1, 2 und der rechtliche Teil aus Stufe 6.
+Die Richtlinien ändern sich; vor der Einreichung die aktuellen
+[App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) prüfen.
+
+### Was schon passt
+
+- ✅ Konto in der App löschbar (`DELETE /api/me`) – Pflicht nach Richtlinie 5.1.1(v)
+- ✅ Demo-Zugänge für die Prüfer vorhanden (Richtlinie 2.1)
+- ✅ Spracherkennung auf dem Gerät, kein Audio verlässt das Handy
+- ✅ Web-Manifest, Icons, Hell/Dunkel, eigene Layouts für iPhone und iPad
+- ✅ Keine Käufe in der App, also kein In-App-Purchase nötig
+
+### Was fehlt
+
+| | Aufgabe | Warum |
+|---|---|---|
+| ⬜ | Datenschutzerklärung und Impressum als Seite in der App und öffentlich im Web | Pflicht (5.1.1), auch für App Store Connect |
+| ⬜ | Nachrichten und Inhalte melden, Nutzer blockieren, Kontaktadresse für Beschwerden | Pflicht bei nutzererzeugten Inhalten (1.2) |
+| ⬜ | Einwilligung der Eltern für Minderjährige sauber dokumentiert | Daten von Kindern (5.1.4, DSGVO) |
+| ⬜ | Anmeldung ohne Cookie-Abhängigkeit für die native Hülle (Token im sicheren Gerätespeicher) | Cookies sind in der iOS-WebView unzuverlässig |
+| ⬜ | Push über Apple (APNs) mit nativem Plugin | Web-Push funktioniert in der Hülle nicht |
+| ⬜ | Native Mehrwerte: Push, Kamera für QR-Check-in, Mikrofon, Offline-Qur'an | Reine Web-Hüllen werden abgelehnt (4.2) |
+| ⬜ | Berechtigungstexte (Mikrofon, Kamera, Mitteilungen) und `PrivacyInfo.xcprivacy` | Pflichtangaben |
+| ⬜ | Datenschutz-Angaben („Privacy Nutrition Labels"), Altersfreigabe, Screenshots, Beschreibung | App Store Connect |
+| ⬜ | Fremde Inhalte klären: Lizenz und Quellenangabe für Qur'an-Text, Schrift, Audio, Tafsir | Rechte an Inhalten (5.2) |
+| ⬜ | Server, der nicht einschläft | Prüfer brechen bei langen Ladezeiten ab |
+| ⬜ | Test über TestFlight mit echten Lehrkräften und Eltern | vor der Einreichung |
+
+### Entscheidungen, die nur der Betreiber treffen kann
+
+- **Apple Developer Program:** 99 US-Dollar pro Jahr. Für gemeinnützige Organisationen gibt es
+  eine Gebührenbefreiung, die beantragt werden muss. Ein Konto auf den Verein braucht eine D-U-N-S-Nummer.
+- **Mac mit Xcode** zum Bauen und Hochladen (oder ein Build-Dienst).
+- **Öffentlich im Store oder nur für die eigene Schule** (nicht gelistete App): Die zweite
+  Variante passt besser zu einer App für eine einzelne Einrichtung.
+
+---
+
+## Nicht anfassen
+
+Qur'an-Bereich (Muṣḥaf, Blättern, Spracherkennung), Designsystem, Rechteschicht zwischen
+Klassen, Technik-Stack (React, Vite, Tailwind, Express).
