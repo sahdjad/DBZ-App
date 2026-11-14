@@ -77,13 +77,13 @@ for (const method of ['use', 'get', 'post', 'put', 'patch', 'delete']) {
   router[method] = (...args) => orig(...args.map((a) => (Array.isArray(a) ? a.map(guarded) : guarded(a))));
 }
 
-// Eingaben an der Tür prüfen: Diese Felder sind überall in der API Text. Kommt
-// stattdessen eine Zahl, Liste oder ein Objekt, wird die Anfrage abgelehnt,
-// bevor ein Handler damit rechnet (z. B. `.trim()` aufruft).
+// Eingaben an der Tür prüfen: Anmelde-, Konto- und Profilfelder sind überall
+// in der API Text. Kommt stattdessen eine Zahl, Liste oder ein Objekt, wird die
+// Anfrage abgelehnt, bevor ein Handler damit rechnet (z. B. `.trim()` aufruft).
+// Bewusst nur diese Felder: andere Namen (code, text, body …) haben je nach
+// Route verschiedene Formen; dort greift der Fehler-Handler (TypeError -> 400).
 const TEXT_FIELDS = [
-  'name', 'email', 'emailA', 'emailB', 'password', 'newPassword', 'currentPassword', 'oldPassword',
-  'token', 'code', 'title', 'body', 'text', 'comment', 'description', 'note', 'reason', 'message',
-  'studentId', 'classId', 'id', 'phone', 'endpoint',
+  'name', 'email', 'emailA', 'emailB', 'password', 'newPassword', 'currentPassword', 'oldPassword', 'token', 'phone',
   'firstName', 'lastName', 'birthDate', 'gender', 'street', 'houseNumber', 'zip', 'city', 'desiredLevel', 'siblings', 'notes',
 ];
 const MAX_TEXT = 20000;
