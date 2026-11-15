@@ -12,6 +12,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dbz-test-'));
 process.env.DBZ_DATA_DIR = TMP;
 process.env.JWT_SECRET = 'test-secret';
 process.env.EXPOSE_RESET_LINK = '1'; // nur für Tests: Reset-Link in der Antwort
+process.env.DBZ_TEST_NO_LIMITS = '1'; // Mengenbegrenzung hat eigene Tests (hardening.test.js)
 process.env.PUSH_ALLOWED_HOSTS = 'example.com,push.example.invalid'; // Test-Zustelldienste
 
 let server;

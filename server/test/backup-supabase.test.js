@@ -8,69 +8,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import http from 'node:http';
+import { startFakeSupabase } from './helpers/fake-supabase.js';
 import zlib from 'node:zlib';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dbz-sbbackup-'));
-const fake = { row: null, buckets: {}, calls: [] };
-let supa;
+let fake;
 
 before(async () => {
-  supa = http.createServer((req, res) => {
-    const chunks = [];
-    req.on('data', (c) => chunks.push(c));
-    req.on('end', () => {
-      const body = Buffer.concat(chunks);
-      const url = new URL(req.url, 'http://x');
-      const p = decodeURIComponent(url.pathname);
-      fake.calls.push(`${req.method} ${p}`);
-      const json = (code, data) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(data)); };
-      if (req.headers.authorization !== 'Bearer service-key') return json(401, { message: 'unauthorized' });
-      if (p === '/rest/v1/app_state') {
-        if (req.method === 'GET') return json(200, fake.row ? [{ data: fake.row }] : []);
-        fake.row = JSON.parse(body.toString()).data;
-        return json(201, {});
-      }
-      if (p === '/storage/v1/bucket' && req.method === 'POST') {
-        const b = JSON.parse(body.toString());
-        if (fake.buckets[b.id]) return json(409, { message: 'The resource already exists' });
-        fake.buckets[b.id] = { public: b.public, objects: {} };
-        return json(200, { name: b.id });
-      }
-      let m = /^\/storage\/v1\/object\/list\/([^/]+)$/.exec(p);
-      if (m && req.method === 'POST') {
-        const b = fake.buckets[m[1]];
-        if (!b) return json(404, {});
-        return json(200, Object.keys(b.objects).sort().map((name) => ({ name, updated_at: '2026-01-01T00:00:00Z', metadata: { size: b.objects[name].length } })));
-      }
-      m = /^\/storage\/v1\/object\/([^/]+)$/.exec(p);
-      if (m && req.method === 'DELETE') {
-        for (const n of JSON.parse(body.toString()).prefixes) delete fake.buckets[m[1]]?.objects[n];
-        return json(200, []);
-      }
-      m = /^\/storage\/v1\/object\/([^/]+)\/(.+)$/.exec(p);
-      if (m) {
-        const b = fake.buckets[m[1]];
-        if (!b) return json(404, {});
-        if (req.method === 'POST') { b.objects[m[2]] = body; return json(200, { Key: m[2] }); }
-        if (req.method === 'GET') {
-          if (!b.objects[m[2]]) return json(404, {});
-          res.writeHead(200, { 'content-type': 'application/gzip' });
-          return res.end(b.objects[m[2]]);
-        }
-      }
-      json(404, { message: 'not found' });
-    });
-  });
-  await new Promise((r) => supa.listen(0, '127.0.0.1', r));
+  fake = await startFakeSupabase();
   process.env.DBZ_DATA_DIR = TMP;
   process.env.JWT_SECRET = 'test-secret-backup-supabase-0123456789';
-  process.env.SUPABASE_URL = `http://127.0.0.1:${supa.address().port}`;
+  process.env.SUPABASE_URL = fake.url;
   process.env.SUPABASE_SERVICE_KEY = 'service-key';
 });
 
 after(() => {
-  supa?.close();
+  fake?.close();
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
@@ -114,4 +67,43 @@ test('Supabase: Sicherung im eigenen privaten Bucket, einmal täglich, wiederher
   assert.equal((await listBackups()).filter((b) => b.kind === 'daily').length, 30);
   // Uploads der Nutzer werden nie angefasst (anderer Bucket).
   assert.equal(fake.calls.some((c) => c.includes('/object/uploads')), false);
+});
+
+test('Supabase: Upload-Fehler wird gemeldet, nichts wird als abgegeben gespeichert', async () => {
+  const { db, UPLOAD_DIR } = await import('../store.js');
+  const { ensureFileBucket } = await import('../files.js');
+  const { createApp } = await import('../app.js');
+  const { hashPassword } = await import('../auth.js');
+  await ensureFileBucket();
+  db.insert('users', { id: 's1', name: 'Kind', email: 'kind@example.org', role: 'schueler', classIds: ['c1'], status: 'active', passwordHash: await hashPassword('geheim12') });
+  db.insert('assignments', { id: 'a1', classId: 'c1', title: 'Audio', type: 'audio', status: 'published', createdAt: new Date().toISOString() });
+  const srv = createApp().listen(0);
+  const base = `http://127.0.0.1:${srv.address().port}/api`;
+  try {
+    const login = await fetch(base + '/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'kind@example.org', password: 'geheim12' }) });
+    assert.equal(login.status, 200);
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const form = () => { const f = new FormData(); f.append('files', new Blob([Buffer.from('RIFFxxxxWAVE')], { type: 'audio/wav' }), 'a.wav'); return f; };
+
+    fake.failUploads = true;
+    const bad = await fetch(base + '/assignments/a1/submit', { method: 'POST', headers: { cookie }, body: form() });
+    assert.equal(bad.status, 503);
+    assert.match((await bad.json()).error, /nicht gespeichert/);
+    assert.equal(db.all('submissions').length, 0, 'keine Abgabe ohne dauerhaft gespeicherte Datei');
+    await new Promise((r) => setTimeout(r, 150));
+    assert.deepEqual(fs.readdirSync(UPLOAD_DIR), [], 'auch lokal bleibt nichts liegen');
+
+    fake.failUploads = false;
+    const ok = await fetch(base + '/assignments/a1/submit', { method: 'POST', headers: { cookie }, body: form() });
+    assert.equal(ok.status, 200);
+    const name = db.all('submissions')[0].files[0].filename;
+    assert.ok(fake.buckets.uploads.objects[name], 'Datei liegt dauerhaft in Supabase');
+
+    // Abgelehnte Anfrage: die schon hochgeladene Datei wird auch in Supabase wieder entfernt.
+    const count = Object.keys(fake.buckets.uploads.objects).length;
+    const rej = await fetch(base + '/assignments/gibt-es-nicht/submit', { method: 'POST', headers: { cookie }, body: form() });
+    assert.ok(rej.status >= 400);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(Object.keys(fake.buckets.uploads.objects).length, count);
+  } finally { srv.close(); }
 });

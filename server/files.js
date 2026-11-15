@@ -53,25 +53,37 @@ export async function ensureFileBucket() {
 
 /**
  * Lädt eine gerade per Multer gespeicherte Datei dauerhaft nach Supabase hoch.
- * `file` ist das Multer-File-Objekt (filename, mimetype). Best-effort: Fehler
- * werden geloggt, brechen den Upload-Vorgang aber nicht ab (lokale Kopie bleibt).
+ * `file` ist das Multer-File-Objekt (filename, mimetype). Schlägt das Ablegen
+ * fehl, wird ein Fehler geworfen -- der Nutzer darf nie „gespeichert" sehen,
+ * wenn die Datei nur auf der flüchtigen Platte des Servers liegt.
  */
 export async function persistUpload(file) {
   // Demo-Sandkasten: Dateien bleiben nur lokal/flüchtig, nie im echten Speicher.
-  if (!useSupabaseFiles || !file || inSandbox()) return;
+  if (!useSupabaseFiles || !file || file.persisted || inSandbox()) return;
+  const fail = (detail) => {
+    console.error('[files] Upload zu Supabase fehlgeschlagen:', detail);
+    throw Object.assign(new Error('Die Datei konnte nicht gespeichert werden. Bitte erneut versuchen.'), { status: 503 });
+  };
+  let res;
   try {
     const bytes = fs.readFileSync(path.join(UPLOAD_DIR, file.filename));
-    const res = await fetch(objectUrl(file.filename), {
+    res = await fetch(objectUrl(file.filename), {
       method: 'POST',
       headers: headers({ 'Content-Type': file.mimetype || 'application/octet-stream', 'x-upsert': 'true' }),
       body: bytes,
     });
-    if (!res.ok) {
-      console.error('[files] Upload zu Supabase fehlgeschlagen:', res.status, await res.text().catch(() => ''));
-    }
   } catch (err) {
-    console.error('[files] Upload zu Supabase fehlgeschlagen:', err.message);
+    fail(err.message);
   }
+  if (!res.ok) fail(`${res.status} ${await res.text().catch(() => '')}`);
+  file.persisted = true;
+}
+
+/** Entfernt eine Datei überall (Supabase + lokale Kopie). Nie werfen. */
+export async function discardFile(filename) {
+  if (!filename || !/^[\w.-]+$/.test(filename)) return;
+  fs.promises.unlink(path.join(UPLOAD_DIR, filename)).catch(() => {});
+  if (!inSandbox()) await deleteFile(filename);
 }
 
 /**

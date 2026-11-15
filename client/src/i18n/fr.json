@@ -1,6 +1,11 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Passwort geändert – andere Geräte wurden abgemeldet": "Mot de passe modifié – les autres appareils ont été déconnectés",
+"Alle anderen Geräte wurden abgemeldet": "Tous les autres appareils ont été déconnectés",
+"Gerät verloren oder an einem fremden Gerät angemeldet? Hier beendest du alle anderen Anmeldungen. Auf diesem Gerät bleibst du angemeldet.": "Appareil perdu ou connexion sur un appareil d’autrui ? Terminez ici toutes les autres sessions. Vous restez connecté sur cet appareil.",
+"Auf allen anderen Geräten abmelden": "Se déconnecter sur tous les autres appareils",
+"Zu viele Versuche. Bitte später erneut versuchen.": "Trop de tentatives. Veuillez réessayer plus tard.",
 "Datensicherung": "Sauvegardes",
 "Täglich automatisch, zusätzlich vor jeder Massenlöschung": "Automatique chaque jour, et avant chaque suppression en masse",
 "Jetzt sichern": "Sauvegarder maintenant",

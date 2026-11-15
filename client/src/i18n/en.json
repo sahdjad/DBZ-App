@@ -1,6 +1,11 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Passwort geändert – andere Geräte wurden abgemeldet": "Password changed – other devices were signed out",
+"Alle anderen Geräte wurden abgemeldet": "All other devices were signed out",
+"Gerät verloren oder an einem fremden Gerät angemeldet? Hier beendest du alle anderen Anmeldungen. Auf diesem Gerät bleibst du angemeldet.": "Lost a device or signed in on someone else’s? End all other sessions here. You stay signed in on this device.",
+"Auf allen anderen Geräten abmelden": "Sign out on all other devices",
+"Zu viele Versuche. Bitte später erneut versuchen.": "Too many attempts. Please try again later.",
 "Datensicherung": "Backups",
 "Täglich automatisch, zusätzlich vor jeder Massenlöschung": "Automatically every day, and before every bulk deletion",
 "Jetzt sichern": "Back up now",

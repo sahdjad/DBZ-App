@@ -114,7 +114,17 @@ async function sbLoad() {
   return null;
 }
 
+// Schutz gegen leeres Überschreiben: Hatte der geladene Bestand Nutzer und
+// der zu speichernde hat keine mehr, stimmt etwas nicht (Programmfehler) --
+// dann wird NICHT gespeichert. Eine gewollte Wiederherstellung setzt den Wert neu.
+let knownUsers = 0;
 async function sbSave(data) {
+  const users = Array.isArray(data?.users) ? data.users.length : 0;
+  if (knownUsers > 0 && users === 0) {
+    console.error('[store] SCHUTZ: leerer Bestand würde vorhandene Daten überschreiben – Speichern verweigert.');
+    return;
+  }
+  knownUsers = Math.max(knownUsers, users);
   const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`;
   const res = await fetch(url, {
     method: 'POST',
@@ -175,7 +185,11 @@ function fileLoad() {
   if (fs.existsSync(DB_FILE)) {
     try {
       return { ...emptyDb(), ...JSON.parse(fs.readFileSync(DB_FILE, 'utf-8')) };
-    } catch {
+    } catch (err) {
+      // Beschädigte Datei NICHT stillschweigend überschreiben: Kopie aufheben.
+      const keep = `${DB_FILE}.beschaedigt-${Date.now()}`;
+      try { fs.copyFileSync(DB_FILE, keep); } catch { /* best effort */ }
+      console.error(`[store] WARNUNG: ${DB_FILE} ist nicht lesbar (${err.message}). Kopie: ${keep}. Start mit leerem Bestand.`);
       return emptyDb();
     }
   }
@@ -261,6 +275,7 @@ export async function initStore() {
     if (loaded) {
       if (data) {
         cache = { ...emptyDb(), ...data };
+        knownUsers = cache.users.length;
       } else {
         cache = emptyDb();
         scheduleSbFlush(); // ersten Datensatz anlegen
@@ -271,7 +286,8 @@ export async function initStore() {
       // NICHT abstürzen – im Notmodus lokal weiterlaufen. Es wird bewusst NICHT
       // nach Supabase geschrieben, damit dort vorhandene Daten erhalten bleiben.
       supabaseDegraded = true;
-      cache = fileLoad();
+      cache = emptyDb(); // bewusst leer: im Notmodus werden keine echten Anfragen bedient
+      scheduleRecovery();
       console.error(
         '[store] WARNUNG: Supabase nicht erreichbar – Server startet im NOTMODUS ' +
           '(lokale, nicht dauerhafte Speicherung). Bitte das Supabase-Projekt ' +
@@ -283,6 +299,31 @@ export async function initStore() {
     console.log('[store] Persistenz: lokale Datei');
   }
   return cache;
+}
+
+// Notmodus verlassen: regelmäßig erneut laden. Sobald Supabase antwortet, wird
+// der echte Bestand übernommen und der Server arbeitet normal weiter -- ohne
+// Neustart. Was im Notmodus im Speicher stand (nichts Echtes), wird verworfen.
+const RECOVERY_EVERY_MS = Number(process.env.DBZ_RECOVERY_MS) || 20000;
+let recoveryTimer = null;
+function scheduleRecovery() {
+  if (recoveryTimer) return;
+  recoveryTimer = setInterval(async () => {
+    try {
+      const data = await sbLoad();
+      const local = cache;
+      cache = data ? { ...emptyDb(), ...data } : { ...emptyDb(), ...local };
+      knownUsers = cache.users.length;
+      supabaseDegraded = false;
+      clearInterval(recoveryTimer);
+      recoveryTimer = null;
+      console.log('[store] Supabase wieder erreichbar – Notmodus beendet, Persistenz: Supabase');
+      if (!data) scheduleSbFlush();
+    } catch {
+      /* weiter warten */
+    }
+  }, RECOVERY_EVERY_MS);
+  recoveryTimer.unref?.();
 }
 
 /** Schreibt ausstehende Änderungen und wartet, bis alles gespeichert ist. */
@@ -334,6 +375,7 @@ export const db = {
     if (!data || typeof data !== 'object' || !Array.isArray(data.users) || !data.users.length)
       throw new Error('Sicherung ist leer oder beschädigt');
     cache = { ...emptyDb(), ...JSON.parse(JSON.stringify(data)) };
+    knownUsers = 0; // gewollter Ersatz des Bestands
     persist();
   },
   /** Speicher-Backend als Text (für Diagnose/Health). */

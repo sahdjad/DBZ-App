@@ -1,37 +1,34 @@
 // Prüft die Demo/Produktions-Trennung, wenn Supabase konfiguriert ist
 // (IS_PRODUCTION=true): kein Demo-Seeding in der echten Datenbank; Demo-
-// Zugänge landen ausschließlich im abgeschotteten Sandkasten. Läuft bewusst in einer eigenen Datei (eigener
-// Prozess unter `node --test`), damit die Supabase-Umgebungsvariablen nicht
-// die restliche (Datei-Backend-)Testsuite verfälschen.
-//
-// Die konfigurierte Supabase-URL ist absichtlich nicht erreichbar (kein
-// echtes Projekt) -- initStore() fällt dabei nach den eingebauten
-// Wiederholungsversuchen automatisch in den "supabase-degraded"-Notmodus
-// (lokales Datei-Backup), OHNE dass useSupabase/IS_PRODUCTION dadurch
-// falsch würden: die Sperre hängt an der KONFIGURATION, nicht am
-// tatsächlichen Verbindungserfolg. Das dauert durch die eingebauten
-// Wiederholungsversuche ca. 20s (siehe initStore() in store.js).
+// Zugänge landen ausschließlich im abgeschotteten Sandkasten. Läuft bewusst in
+// einer eigenen Datei (eigener Prozess unter `node --test`), damit die
+// Supabase-Umgebungsvariablen nicht die restliche (Datei-Backend-)Testsuite
+// verfälschen. Supabase ist hier ein nachgebauter Dienst (helpers/fake-supabase.js);
+// das Verhalten bei einem Ausfall prüft notmodus.test.js.
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { startFakeSupabase } from './helpers/fake-supabase.js';
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dbz-prodtest-'));
 process.env.DBZ_DATA_DIR = TMP;
 process.env.JWT_SECRET = 'test-secret-production-mode-check-not-real';
-process.env.SUPABASE_URL = 'https://fake-nonexistent-project.supabase.co';
-process.env.SUPABASE_SERVICE_KEY = 'fake-service-role-key-for-test-only';
+process.env.SUPABASE_SERVICE_KEY = 'service-key';
 
 let server;
 let base;
+let fake;
 
 before(async () => {
+  fake = await startFakeSupabase();
+  process.env.SUPABASE_URL = fake.url;
   const { initStore } = await import('../store.js');
   const { seed } = await import('../seed.js');
   const { createApp } = await import('../app.js');
-  await initStore(); // fällt nach Wiederholungsversuchen in den Notmodus (~20s)
+  await initStore();
   await seed();
   const app = createApp();
   await new Promise((resolve) => {
@@ -42,6 +39,7 @@ before(async () => {
 
 after(() => {
   server?.close();
+  fake?.close();
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
@@ -67,7 +65,8 @@ test('Health meldet Produktionsmodus, wenn Supabase konfiguriert ist', async () 
   const c = client();
   const health = await c('GET', '/health');
   assert.equal(health.status, 200);
-  assert.equal(health.data.mode, 'production', 'IS_PRODUCTION folgt der Supabase-Konfiguration, nicht dem Verbindungserfolg');
+  assert.equal(health.data.mode, 'production', 'IS_PRODUCTION folgt der Supabase-Konfiguration');
+  assert.equal(health.data.storage, 'supabase');
 });
 
 test('Seeding legt in Produktion KEINE Demo-Konten in der echten Datenbank an', async () => {

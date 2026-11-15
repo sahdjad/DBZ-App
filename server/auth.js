@@ -23,7 +23,9 @@ export async function verifyPassword(plain, hash) {
 
 export function issueToken(res, user, extra = {}) {
   // extra.sb: Demo-Sandkasten-Sitzung (siehe api.js) -- nur Demo-Daten.
-  const token = jwt.sign({ id: user.id, role: user.role, ...(extra.sb ? { sb: true } : {}) }, JWT_SECRET, { expiresIn: TOKEN_TTL });
+  // v: Sitzungs-Version der Person. Wird sie erhöht (Passwort geändert, „überall
+  // abmelden"), sind alle älteren Tokens sofort ungültig (siehe sessionValid).
+  const token = jwt.sign({ id: user.id, role: user.role, v: user.sessionVersion || 0, ...(extra.sb ? { sb: true } : {}) }, JWT_SECRET, { expiresIn: TOKEN_TTL });
   res.cookie(COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -44,4 +46,9 @@ export function readToken(req) {
   } catch {
     return null;
   }
+}
+
+/** Gehört dieses Token noch zur aktuellen Sitzungs-Version des Kontos? */
+export function sessionValid(payload, user) {
+  return Boolean(payload && user) && (payload.v || 0) === (user.sessionVersion || 0);
 }

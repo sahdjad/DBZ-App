@@ -33,12 +33,13 @@ Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, 
 
 | | Aufgabe |
 |---|---|
-| ⬜ | Sitzungen widerrufbar (Passwortwechsel, „überall abmelden") |
-| ⬜ | Drosselung für Registrierung, Passwort vergessen, Familien-Code; Familien-Code länger und aus sicherem Zufall |
+| ✅ | Sitzungen widerrufbar (Passwortwechsel, „überall abmelden") |
+| ✅ | Drosselung für Registrierung, Passwort vergessen, Familien-Code; Familien-Code länger und aus sicherem Zufall |
 | ✅ | Datenabzug nur für den System-Administrator und ohne Geheimnisse |
-| ⬜ | Upload-Fehler an den Nutzer melden; Dateien beim Löschen mitlöschen; abgelehnte Uploads aufräumen |
-| ⬜ | Wachstum begrenzen: Benachrichtigungen und Audit-Log kürzen, PDF-Notizen aus dem Hauptdokument auslagern |
-| ⬜ | Schutz gegen leeres Überschreiben (beschädigte Datei, Supabase beim Start nicht erreichbar) |
+| ✅ | Upload-Fehler an den Nutzer melden; Dateien beim Löschen mitlöschen; abgelehnte Uploads aufräumen |
+| ✅ | Wachstum begrenzen: Benachrichtigungen und Audit-Log werden täglich gekürzt |
+| ⬜ | PDF-Notizen aus dem Hauptdokument auslagern (gehört zum Umstieg auf Tabellen, Stufe 6) |
+| ✅ | Schutz gegen leeres Überschreiben (beschädigte Datei, Supabase beim Start nicht erreichbar) |
 | ⬜ | CI (Tests, Build, Audit bei jedem Push), Linter, Fehlergrenze im Frontend |
 | ⬜ | `APP_URL` und E-Mail-Dienst einrichten und dokumentieren, `.env.example` anlegen |
 

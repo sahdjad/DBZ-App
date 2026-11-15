@@ -66,3 +66,29 @@ export function createLoginThrottle({ max = 8, windowMs = 10 * 60 * 1000 } = {})
     },
   };
 }
+
+/**
+ * Einfache Mengenbegrenzung je Schlüssel (z. B. Absender-Adresse oder Konto):
+ * höchstens `max` Aufrufe je Zeitfenster. `hit(key)` zählt und meldet, ob der
+ * Aufruf noch erlaubt ist. Speicherbasiert (eine Instanz), räumt sich selbst auf.
+ */
+export function createRateLimit({ max, windowMs }) {
+  const hits = new Map();
+  const sweep = () => { const now = Date.now(); for (const [k, r] of hits) if (now > r.reset) hits.delete(k); };
+  return {
+    hit(key) {
+      const now = Date.now();
+      if (hits.size > 5000) sweep();
+      const rec = hits.get(key);
+      if (!rec || now > rec.reset) { hits.set(key, { count: 1, reset: now + windowMs }); return true; }
+      rec.count += 1;
+      return rec.count <= max;
+    },
+    /** Sekunden bis zum Ende des Fensters (für Retry-After). */
+    retryAfter(key) {
+      const rec = hits.get(key);
+      return rec ? Math.max(1, Math.ceil((rec.reset - Date.now()) / 1000)) : 1;
+    },
+    reset(key) { hits.delete(key); },
+  };
+}
