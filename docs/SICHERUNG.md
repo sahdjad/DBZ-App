@@ -15,8 +15,24 @@ Alles, was nach der gewählten Sicherung eingetragen wurde, ist danach nicht meh
 
 ## Wenn die App selbst nicht mehr startet
 
-Die Dateien liegen im Supabase-Dashboard unter *Storage → dbz-backups*. Eine Datei herunterladen, entpacken (`gunzip`) und den Inhalt als Wert der Spalte `data` in der Tabelle `app_state` (Zeile `dbz`) eintragen, dann den Server neu starten.
+Die Dateien liegen im Supabase-Dashboard unter *Storage → dbz-backups*. Eine Datei herunterladen, entpacken (`gunzip`) und den Inhalt als Wert der Spalte `data` in der Tabelle `app_state` (Zeile `dbz`) eintragen, die Zeile `dbz:_manifest` löschen, dann den Server neu starten (siehe unten „Ablage in Supabase").
 
 ## Abzug herunterladen
 
 „Abzug herunterladen" liefert den Bestand als JSON **ohne** Passwort-Hashes, Familien-Codes, Kalender- und Push-Schlüssel. Er ist zum Ansehen und Archivieren gedacht, nicht zum Wiedereinspielen.
+
+## Ablage in Supabase (seit 15.11.2026: aufgeteilt)
+
+Der Bestand liegt nicht mehr als ein Dokument in der Tabelle `app_state`, sondern in vielen Zeilen
+(`dbz:<sammlung>:<nr>`, je bis zu 500 Einträge). Gespeichert werden nur die Zeilen, die sich geändert haben.
+`/api/health` zeigt `"layout":"chunks"`.
+
+- Die Umstellung passiert einmalig beim ersten Start: schreiben, zurücklesen, vergleichen, erst dann gilt sie.
+  Schlägt die Kontrolle fehl, arbeitet die App mit dem alten Dokument weiter und versucht es beim nächsten Start erneut.
+- Die alte Zeile `dbz` bleibt als Stand vom Umstellungstag stehen und wird nicht mehr geschrieben.
+- **Rückweg im Notfall:** bei Render `DBZ_STORE_LAYOUT=single` setzen. Die App lädt dann die alte Zeile `dbz`
+  (Stand vom Umstellungstag!) und schreibt wieder dorthin. Neuere Daten holst du danach über
+  „Wiederherstellen" aus der letzten täglichen Sicherung zurück. Wird die Variable später entfernt,
+  stellt die App frisch vom Dokument um.
+- Beim Wiederherstellen von Hand (App startet nicht): den entpackten Inhalt der Sicherung in die Zeile `dbz`
+  eintragen **und** die Zeile `dbz:_manifest` löschen; die App teilt beim Start neu auf.

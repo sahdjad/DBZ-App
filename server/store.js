@@ -15,6 +15,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 // zur Laufzeit; `persist()` schreibt ihn in das aktive Backend zurück.
 
 import fs from 'fs';
+import { createChunker, CHUNK_VERSION } from './chunkstore.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -137,6 +138,121 @@ async function sbSave(data) {
   }
 }
 
+// --- Aufgeteilte Ablage (siehe chunkstore.js) ---------------------------------
+// Standard. Mit DBZ_STORE_LAYOUT=single bleibt es beim alten Ein-Dokument-
+// Verfahren (Rückweg im Notfall; die alte Zeile wird nach der Umstellung nicht
+// mehr geschrieben und bleibt als Stand vom Umstellungstag stehen).
+const LAYOUT_SINGLE = process.env.DBZ_STORE_LAYOUT === 'single';
+const chunker = createChunker({ prefix: `${ROW_ID}:` });
+let chunked = false; // true, sobald der aufgeteilte Bestand geladen oder angelegt ist
+const BATCH_BYTES = 3_000_000;
+const PAGE = 200;
+
+async function sbLoadRows() {
+  const rows = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const url = `${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}?id=like.${encodeURIComponent(`${ROW_ID}:*`)}&select=id,data&order=id&limit=${PAGE}&offset=${offset}`;
+    const res = await fetch(url, { headers: sbHeaders({ Accept: 'application/json' }) });
+    if (!res.ok) throw new Error(`Supabase-Laden fehlgeschlagen (HTTP ${res.status}). ${await res.text().catch(() => '')}`);
+    const page = await res.json();
+    if (!Array.isArray(page)) throw new Error('Supabase-Laden fehlgeschlagen (unerwartete Antwort)');
+    rows.push(...page);
+    if (page.length < PAGE) break;
+  }
+  return rows;
+}
+
+/** Speichert Zeilen ({ id, json }) in Paketen; jedes Paket ist eine Transaktion. */
+async function sbUpsertRows(rows) {
+  const stamp = JSON.stringify(new Date().toISOString());
+  let batch = [];
+  let size = 0;
+  const send = async () => {
+    if (!batch.length) return;
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${SUPABASE_TABLE}`, {
+      method: 'POST',
+      headers: sbHeaders({ Prefer: 'resolution=merge-duplicates,return=minimal' }),
+      body: `[${batch.join(',')}]`,
+    });
+    if (!res.ok) throw new Error(`Supabase-Speichern fehlgeschlagen (HTTP ${res.status}). ${await res.text().catch(() => '')}`);
+    batch = [];
+    size = 0;
+  };
+  for (const { id, json } of rows) {
+    const row = `{"id":${JSON.stringify(id)},"data":${json},"updated_at":${stamp}}`;
+    if (size + row.length > BATCH_BYTES) await send();
+    batch.push(row);
+    size += row.length;
+  }
+  await send();
+}
+
+/** Speichert nur die geänderten Blöcke. */
+async function sbSaveChunks(data) {
+  const users = Array.isArray(data?.users) ? data.users.length : 0;
+  if (knownUsers > 0 && users === 0) {
+    console.error('[store] SCHUTZ: leerer Bestand würde vorhandene Daten überschreiben – Speichern verweigert.');
+    return;
+  }
+  knownUsers = Math.max(knownUsers, users);
+  const p = chunker.plan(data);
+  if (!p.changed.length) return;
+  await sbUpsertRows(p.changed);
+  chunker.commit(p);
+}
+
+/**
+ * Einmalige Umstellung: Bestand in Blöcke schreiben, zurücklesen, vergleichen
+ * und ERST DANN als "aufgeteilt" kennzeichnen. Die alte Ein-Dokument-Zeile
+ * wird dabei nicht angefasst. Schlägt etwas fehl, bleibt es für diesen Lauf
+ * beim alten Verfahren; beim nächsten Start wird es erneut versucht.
+ */
+async function migrateToChunks() {
+  if (LAYOUT_SINGLE || chunked || !cache) return false;
+  try {
+    const p = chunker.plan(cache);
+    await sbUpsertRows(p.changed);
+    // Reste eines früheren, abgebrochenen Versuchs leeren.
+    let back = await sbLoadRows();
+    const stale = back.filter((r) => !p.hashes.has(r.id) && r.id !== chunker.manifestId).map((r) => ({ id: r.id, json: '{"items":[]}' }));
+    if (stale.length) { await sbUpsertRows(stale); back = await sbLoadRows(); }
+    // Kontrolle mit einem eigenen Rechner, damit der Zustand des echten unberührt bleibt.
+    const check = createChunker({ prefix: `${ROW_ID}:` }).assemble(back, { requireManifest: false }) || {};
+    for (const [name, n] of Object.entries(p.counts)) {
+      const got = Array.isArray(check[name]) ? check[name].length : -1;
+      if (got !== n) throw new Error(`Kontrolle fehlgeschlagen: ${name} hat ${got} statt ${n} Einträge`);
+      const ids = new Set(check[name].map((r) => r.id));
+      if (cache[name].some((r) => r.id !== undefined && !ids.has(r.id))) throw new Error(`Kontrolle fehlgeschlagen: Einträge fehlen in ${name}`);
+    }
+    await sbUpsertRows([{ id: chunker.manifestId, json: JSON.stringify({ version: CHUNK_VERSION, chunkSize: chunker.chunkSize, migratedAt: new Date().toISOString(), counts: p.counts }) }]);
+    chunker.commit(p);
+    chunked = true;
+    console.log(`[store] Ablage umgestellt: ${p.changed.length} Blöcke (alte Ein-Dokument-Zeile bleibt unverändert als Stand von heute)`);
+    return true;
+  } catch (err) {
+    console.error('[store] Umstellung auf Blöcke nicht abgeschlossen – weiter mit einem Dokument:', err.message);
+    return false;
+  }
+}
+
+/** Lädt den Bestand: aufgeteilt, falls vorhanden, sonst das alte Dokument. */
+async function loadRemote() {
+  if (!LAYOUT_SINGLE) {
+    const data = chunker.assemble(await sbLoadRows());
+    if (data) { chunked = true; return data; }
+  }
+  chunked = false;
+  const legacy = await sbLoad();
+  // Rückweg aktiv: Die Blöcke gelten ab jetzt nicht mehr (Kennzeichen auf 0).
+  // So lädt ein späterer normaler Start nie einen veralteten Block-Stand,
+  // sondern stellt frisch vom Dokument um.
+  if (LAYOUT_SINGLE) {
+    await sbUpsertRows([{ id: chunker.manifestId, json: JSON.stringify({ version: 0, disabledAt: new Date().toISOString() }) }])
+      .catch((err) => console.error('[store] Kennzeichen konnte nicht zurückgesetzt werden:', err.message));
+  }
+  return legacy;
+}
+
 // Single-Flight-Writer: Es läuft immer nur EIN Schreibvorgang gleichzeitig.
 // Kommen währenddessen weitere Änderungen, wird nach Abschluss genau einmal
 // nachgespeichert (dirty-Flag). So geht nie ein Stand verloren und die Aufrufer
@@ -147,6 +263,11 @@ export let lastPersistError = null;
 
 // Der laufende Schreibvorgang als Promise: wer wirklich warten muss (Herunter-
 // fahren, Sicherung), wartet darauf -- auch wenn der Vorgang schon unterwegs ist.
+const FLUSH_GAP_MS = 750;
+// Wartezeit, die einen Prozess nicht am Beenden hindert (der Server läuft
+// ohnehin weiter; beim Herunterfahren wird ausdrücklich gespeichert).
+const pause = (ms) => new Promise((r) => { setTimeout(r, ms).unref?.(); });
+let urgent = false;
 let draining = null;
 function drainWrites() {
   if (draining) return draining;
@@ -156,13 +277,17 @@ function drainWrites() {
       while (dirty) {
         dirty = false;
         try {
-          await sbSave(cache);
+          await (chunked ? sbSaveChunks(cache) : sbSave(cache));
           lastPersistError = null;
+          // Unter Last Änderungen bündeln: nach einem Speichervorgang kurz
+          // warten, bevor der nächste beginnt (außer es wird ausdrücklich
+          // gewartet, z. B. beim Herunterfahren).
+          if (dirty && !urgent) await pause(FLUSH_GAP_MS);
         } catch (err) {
           lastPersistError = err;
           dirty = true; // erneut versuchen
           console.error('[store]', err.message, '– neuer Versuch in 3s');
-          await new Promise((r) => setTimeout(r, 3000));
+          await pause(3000);
         }
       }
     } finally {
@@ -264,7 +389,7 @@ export async function initStore() {
     const MAX_TRIES = 5;
     for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
       try {
-        data = await sbLoad();
+        data = await loadRemote();
         loaded = true;
         break;
       } catch (err) {
@@ -278,9 +403,10 @@ export async function initStore() {
         knownUsers = cache.users.length;
       } else {
         cache = emptyDb();
-        scheduleSbFlush(); // ersten Datensatz anlegen
       }
-      console.log('[store] Persistenz: Supabase');
+      await migrateToChunks(); // einmalig; danach werden nur geänderte Blöcke gespeichert
+      if (!data && !chunked) scheduleSbFlush(); // ersten Datensatz anlegen
+      console.log(`[store] Persistenz: Supabase (${chunked ? 'aufgeteilt' : 'ein Dokument'})`);
     } else {
       // Supabase dauerhaft nicht erreichbar (häufig: pausiertes Free-Projekt).
       // NICHT abstürzen – im Notmodus lokal weiterlaufen. Es wird bewusst NICHT
@@ -310,7 +436,7 @@ function scheduleRecovery() {
   if (recoveryTimer) return;
   recoveryTimer = setInterval(async () => {
     try {
-      const data = await sbLoad();
+      const data = await loadRemote();
       const local = cache;
       cache = data ? { ...emptyDb(), ...data } : { ...emptyDb(), ...local };
       knownUsers = cache.users.length;
@@ -318,7 +444,8 @@ function scheduleRecovery() {
       clearInterval(recoveryTimer);
       recoveryTimer = null;
       console.log('[store] Supabase wieder erreichbar – Notmodus beendet, Persistenz: Supabase');
-      if (!data) scheduleSbFlush();
+      await migrateToChunks();
+      if (!data && !chunked) scheduleSbFlush();
     } catch {
       /* weiter warten */
     }
@@ -339,7 +466,14 @@ export async function flushStore() {
     return;
   }
   dirty = true;
-  await drainWrites();
+  urgent = true;
+  try {
+    await drainWrites();
+    // Lief beim Aufruf schon ein Vorgang, kann danach noch etwas offen sein.
+    while (dirty) await drainWrites();
+  } finally {
+    urgent = false;
+  }
 }
 
 export const db = {
@@ -382,6 +516,10 @@ export const db = {
   get backend() {
     if (useSupabase) return supabaseDegraded ? 'supabase-degraded' : 'supabase';
     return 'file';
+  },
+  /** Ablageform in Supabase: 'chunks' (aufgeteilt) oder 'single' (ein Dokument). */
+  get layout() {
+    return useSupabase ? (chunked ? 'chunks' : 'single') : 'file';
   },
   /** Pfad der Datenbankdatei (für Backups). */
   get file() {

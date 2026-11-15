@@ -56,10 +56,10 @@ test('Supabase: Sicherung im eigenen privaten Bucket, einmal täglich, wiederher
   db.all('classes').length = 0;
   db.commit();
   await flushStore();
-  assert.equal(fake.row.classes.length, 0);
+  assert.equal(fake.state().classes.length, 0);
   db.restore(await loadBackup(ev.name));
   await flushStore();
-  assert.equal(fake.row.classes[0].name, 'Klasse 1', 'wiederhergestellter Stand ist dauerhaft gespeichert');
+  assert.equal(fake.state().classes[0].name, 'Klasse 1', 'wiederhergestellter Stand ist dauerhaft gespeichert');
 
   // Begrenzung auch im Bucket.
   for (let i = 1; i <= 35; i++) fake.buckets['dbz-backups'].objects[`daily-2025-02-${String(i).padStart(2, '0')}.json.gz`] = stored;

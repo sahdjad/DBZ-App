@@ -36,7 +36,7 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 |---|---|
 | Server-Einstieg | `server/index.js`, `server/app.js` |
 | Alle API-Routen (eine Datei, >7.500 Zeilen) | `server/api.js` |
-| Datenspeicher (ein JSON-Dokument: Datei oder Supabase-Zeile `app_state`) | `server/store.js` |
+| Datenspeicher (im Arbeitsspeicher; lokal eine Datei, in Supabase aufgeteilt in Blöcke je Sammlung) | `server/store.js`, `server/chunkstore.js` |
 | Rechte und Rollen | `server/rbac.js`, `server/auth.js` |
 | Dateien / Uploads | `server/files.js` |
 | Seiten | `client/src/pages/` |
