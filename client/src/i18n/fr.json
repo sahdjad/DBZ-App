@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Hier ist etwas schiefgelaufen": "Une erreur s’est produite",
+"Diese Seite konnte nicht angezeigt werden. Deine Daten sind davon nicht betroffen.": "Cette page n’a pas pu être affichée. Vos données ne sont pas concernées.",
+"Neu laden": "Recharger",
+"Zur Startseite": "Aller à l’accueil",
+"Die App ist gerade nicht erreichbar (Wartung). Deine Daten sind sicher – bitte in einigen Minuten erneut versuchen.": "L’application est momentanément indisponible (maintenance). Vos données sont en sécurité – veuillez réessayer dans quelques minutes.",
+"Die Datei konnte nicht gespeichert werden. Bitte erneut versuchen.": "Le fichier n’a pas pu être enregistré. Veuillez réessayer.",
 "Passwort geändert – andere Geräte wurden abgemeldet": "Mot de passe modifié – les autres appareils ont été déconnectés",
 "Alle anderen Geräte wurden abgemeldet": "Tous les autres appareils ont été déconnectés",
 "Gerät verloren oder an einem fremden Gerät angemeldet? Hier beendest du alle anderen Anmeldungen. Auf diesem Gerät bleibst du angemeldet.": "Appareil perdu ou connexion sur un appareil d’autrui ? Terminez ici toutes les autres sessions. Vous restez connecté sur cet appareil.",

@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Hier ist etwas schiefgelaufen": "Something went wrong here",
+"Diese Seite konnte nicht angezeigt werden. Deine Daten sind davon nicht betroffen.": "This page could not be displayed. Your data is not affected.",
+"Neu laden": "Reload",
+"Zur Startseite": "Go to home",
+"Die App ist gerade nicht erreichbar (Wartung). Deine Daten sind sicher – bitte in einigen Minuten erneut versuchen.": "The app is currently unavailable (maintenance). Your data is safe – please try again in a few minutes.",
+"Die Datei konnte nicht gespeichert werden. Bitte erneut versuchen.": "The file could not be saved. Please try again.",
 "Passwort geändert – andere Geräte wurden abgemeldet": "Password changed – other devices were signed out",
 "Alle anderen Geräte wurden abgemeldet": "All other devices were signed out",
 "Gerät verloren oder an einem fremden Gerät angemeldet? Hier beendest du alle anderen Anmeldungen. Auf diesem Gerät bleibst du angemeldet.": "Lost a device or signed in on someone else’s? End all other sessions here. You stay signed in on this device.",
