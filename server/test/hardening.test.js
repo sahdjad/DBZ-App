@@ -514,7 +514,7 @@ test('Eingaben: Hausaufgabe, Bewertung, CSV-Export, Tadschwid-HTML, Verhaltensve
     const cookie = (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'lehrer@dbz.de', password: 'demo1234' }) })).headers.get('set-cookie').split(';')[0];
     const csv = await (await fetch(base + '/api/export/attendance.csv?classId=class_3', { headers: { cookie } })).text();
     assert.ok(csv.includes(`"'=HYPERLINK(`), 'Formel als Text gekennzeichnet');
-    assert.equal(/(^|;|\n)=/.test(csv.replace(/^﻿/, '')), false, 'keine Zelle beginnt mit =');
+    assert.equal(/(^|;|\n)=/.test(csv.replace(/^\uFEFF/, '')), false, 'keine Zelle beginnt mit =');
   } finally { yusuf.name = realName; }
 
   // Tadschwid: nur bekannte Markierungen kommen durch.
