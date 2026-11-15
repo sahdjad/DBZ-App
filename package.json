@@ -13,6 +13,7 @@
     "build": "npm --prefix client install && npm --prefix client run build",
     "start": "cross-env NODE_ENV=production node server/index.js",
     "test": "node --test server/test/*.test.js client/src/lib/test/*.test.js",
+    "lint": "eslint . --quiet",
     "postinstall": "npm --prefix client install"
   },
   "dependencies": {
@@ -24,7 +25,12 @@
     "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^17.14.0"
   }
 }

@@ -848,7 +848,9 @@ router.post('/auth/forgot-password', async (req, res) => {
   // Je Adresse höchstens 3 Links pro Stunde -- danach still nichts mehr tun
   // (gleiche Antwort, damit nicht erkennbar ist, ob es das Konto gibt).
   const user = (LIMITS_OFF || limits.forgotEmail.hit(String(email || '').trim().toLowerCase())) ? findUserByEmail(email || '') : null;
-  const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
+  // Feste Adresse der App: APP_URL, sonst die von Render gesetzte öffentliche
+  // Adresse. Die Adresszeile der Anfrage nur als letzter Ausweg (lokale Entwicklung).
+  const appUrl = (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
   let devLink;
   if (user && user.status !== 'disabled') {
     const token = crypto.randomBytes(24).toString('base64url');

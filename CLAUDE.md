@@ -16,7 +16,7 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 - **Demo-Sandkasten** darf nie echte Daten berühren.
 - **Sensible Daten** nie über Rollen- oder Benutzergrenzen hinweg zwischenspeichern.
 - **Nur Testdaten** verwenden, sobald personenbezogene Daten sichtbar sein könnten.
-- **Render-Deploy nicht brechen:** vor jedem Merge `npm test` und `npm run build`.
+- **Render-Deploy nicht brechen:** vor jedem Merge `npm run lint`, `npm test` und `npm run build`.
 - Keine destruktiven Tests, Migrationen oder Änderungen an Produktionsdaten ohne Freigabe.
 - Die App wird weiterentwickelt, nicht neu gebaut.
 - Das Speicher-Thema (Dateigrößen, Kontingente) ist zurückgestellt, bis der Nutzer es aufruft.
@@ -25,7 +25,7 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 ## Ablauf je Aufgabe
 
 1. Umsetzen auf dem Arbeitszweig, mit Test (bei Fehlern: Test, der vorher fehlschlägt).
-2. `npm test` und `npm run build`.
+2. `npm run lint`, `npm test` und `npm run build`.
 3. PR nach `main`, Squash-Merge, Zweig auf `origin/main` zurücksetzen.
 4. Bericht auf Deutsch – ehrlich benennen, was **nicht** geprüft wurde
    (Produktion, echte Geräte, Supabase-Betrieb sind aus der Cloud-Sitzung meist nicht erreichbar).
@@ -46,7 +46,10 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 
 - Lokal starten: `npm install && npm run dev` (Datei-Modus, Demo-Konten `…@dbz.de` / `demo1234`).
 - Tests: `npm test` (Node-Testläufer, Server- und Client-Bibliotheken).
-- Kein TypeScript, kein Linter, kein CI (Stand November 2026).
+- Linter: `npm run lint` (ESLint, nur fehlerfindende Regeln). CI: `.github/workflows/ci.yml`. Kein TypeScript.
+- Supabase-Betrieb und Ausfälle lassen sich in Tests gegen `server/test/helpers/fake-supabase.js` durchspielen.
+- Das Repository ist **öffentlich**: keine Anleitungen zum Ausnutzen noch offener Lücken ablegen.
+- Sicherung/Wiederherstellung: `docs/SICHERUNG.md`. Umgebungsvariablen: `.env.example`.
 
 ## Wo es weitergeht
 

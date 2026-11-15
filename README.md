@@ -116,8 +116,9 @@ zur Erstladung einer Sure Internet; danach greift der Cache.
 
 Kein separates Setup nötig: Der Datastore wird beim ersten Start unter `server/data`
 (oder `DBZ_DATA_DIR`) angelegt und mit Demo-Daten befüllt (`server/seed.js`).
-Für den Produktivbetrieb ist ein Umstieg auf Supabase/Postgres vorgesehen – dafür muss
-nur `server/store.js` neu implementiert werden.
+In der Produktion speichert die App dauerhaft in Supabase, sobald `SUPABASE_URL` und
+`SUPABASE_SERVICE_KEY` gesetzt sind (Einrichtung: `docs/DATENBANK-SETUP.md`,
+Sicherung und Wiederherstellung: `docs/SICHERUNG.md`).
 
 ## Tests
 
@@ -254,7 +255,7 @@ nie mit Ersatzschrift; bei Fehlern gibt es „Erneut versuchen".
 
 **Ein-Klick-Deploy auf Render** (kostenlos, erzeugt eine `*.onrender.com`-Adresse):
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/y6sy94pz7g-sudo/global/tree/claude/chatgpt-chat-readability-v1kv6v)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/sahdjad/DBZ-App)
 
 Der Button öffnet Render, liest `render.yaml`, erzeugt `JWT_SECRET` automatisch und baut die
 App. Beim ersten Mal einmalig mit dem GitHub-Konto anmelden und den Repo-Zugriff bestätigen.
@@ -287,7 +288,7 @@ Die App ist ein einzelner Web-Service. Manuelle 0-€-/Free-Tier-Wege:
 | (später) Supabase | Postgres/Auth/Storage | großzügiger Free-Tier                | ab Pro-Plan                | Neon, eigenes Postgres |
 
 Keine bezahlten SaaS-Abos nötig. Audio-Uploads sind auf 25 MB begrenzt; für den
-Dauerbetrieb ist eine Retention-Strategie vorgesehen (`docs/DATA_RETENTION.md`).
+Dauerbetrieb lässt sich eine Aufbewahrungsfrist einstellen (Verwaltung → Einstellungen).
 
 ## Bekannte Einschränkungen
 
@@ -308,8 +309,8 @@ und (in Produktion) HSTS, Brute-Force-Schutz am Login, und ein Fail-Safe, der de
 Produktion mit fehlendem/schwachem `JWT_SECRET` verhindert. Es werden **keine externen Schrift-/CDN-Dienste** eingebunden
 (keine Datenübertragung an Dritte beim Seitenaufruf, DSGVO-freundlich, offline-fähig).
 Der Qur'an-Reader lädt Inhalte nur auf ausdrückliche Nutzung über den konfigurierbaren
-Provider. Vor echtem Einsatz sind die organisatorischen Punkte in
-`docs/SECURITY_PRIVACY.md` (§15 Production Gate) zu klären.
+Provider. Vor echtem Einsatz sind die organisatorischen und rechtlichen Punkte aus
+`docs/ROADMAP.md` (Stufe 6 und 7) zu klären.
 
 ## Lizenz / Träger
 

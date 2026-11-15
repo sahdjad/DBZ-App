@@ -5,6 +5,7 @@ import App from './App.jsx';
 import { AuthProvider } from './lib/AuthContext.jsx';
 import { ToastProvider } from './components/ui.jsx';
 import ServerWakeNotice from './components/ServerWakeNotice.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import { initTheme } from './lib/theme.js';
 import { initDisplay } from './lib/display.js';
 import { installHaptics } from './lib/haptics.js';
@@ -25,7 +26,9 @@ initI18n().finally(() => {
       <HashRouter>
         <AuthProvider>
           <ToastProvider>
-            <App />
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
             <ServerWakeNotice />
           </ToastProvider>
         </AuthProvider>

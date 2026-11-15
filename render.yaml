@@ -6,11 +6,9 @@
 #   3. Render liest diese Datei, erzeugt JWT_SECRET automatisch, klick "Apply"
 #   4. Nach ein paar Minuten ist die App unter einer *.onrender.com-Adresse live
 #
-# Hinweis zur Persistenz: Der kostenlose Tarif hat KEINE dauerhafte Festplatte.
-# Für eine Live-Demo genügt das – Demo-Konten werden bei jedem Start neu angelegt,
-# neu eingegebene Daten gehen bei einem Neustart aber verloren. Für Dauerbetrieb:
-# entweder eine bezahlte Instanz + Disk (siehe auskommentierten Block unten), oder
-# der geplante Umstieg auf Supabase/Postgres (nur server/store.js betroffen).
+# Dauerhafte Speicherung: SUPABASE_URL und SUPABASE_SERVICE_KEY im Render-Dashboard
+# eintragen (docs/DATENBANK-SETUP.md). Ohne sie liegen Daten nur auf der flüchtigen
+# Platte und gehen bei jedem Neustart verloren. Alle Variablen: .env.example
 services:
   - type: web
     name: dbz-app

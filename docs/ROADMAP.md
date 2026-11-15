@@ -29,7 +29,7 @@ Status: ⬜ offen · 🟨 in Arbeit · ✅ erledigt
 Tests: `server/test/hardening.test.js`, `server/test/backup-supabase.test.js`. Anleitung: `docs/SICHERUNG.md`.
 Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, `vite`, `react-router`) einen Versionssprung mit Umbauten – eigener Schritt.
 
-## Stufe 2 – Stabilisierung (2 bis 3 Wochen)
+## Stufe 2 – Stabilisierung (erledigt am 15.11.2026, zwei Punkte offen)
 
 | | Aufgabe |
 |---|---|
@@ -40,8 +40,9 @@ Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, 
 | ✅ | Wachstum begrenzen: Benachrichtigungen und Audit-Log werden täglich gekürzt |
 | ⬜ | PDF-Notizen aus dem Hauptdokument auslagern (gehört zum Umstieg auf Tabellen, Stufe 6) |
 | ✅ | Schutz gegen leeres Überschreiben (beschädigte Datei, Supabase beim Start nicht erreichbar) |
-| ⬜ | CI (Tests, Build, Audit bei jedem Push), Linter, Fehlergrenze im Frontend |
-| ⬜ | `APP_URL` und E-Mail-Dienst einrichten und dokumentieren, `.env.example` anlegen |
+| ✅ | CI (Linter, Tests, Build, Audit bei jedem Push), Linter, Fehlergrenze im Frontend |
+| ✅ | Adresse der App für E-Mail-Links fest (auf Render automatisch), `.env.example` angelegt |
+| ⬜ | **Betreiber:** E-Mail-Dienst wählen und `EMAIL_API_URL` bei Render eintragen – bis dahin kommt „Passwort vergessen" nicht per E-Mail an |
 
 ## Stufe 3 – Oberfläche und Barrierefreiheit (1 bis 2 Wochen)
 
