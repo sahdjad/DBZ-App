@@ -38,13 +38,16 @@ export function createApp() {
   });
 
   app.use('/api', api);
+  // Unbekannte API-Pfade: klare 404-Antwort (nicht die Startseite der App).
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'Nicht gefunden' }));
   app.use('/api', (err, _req, res, _next) => {
     if (res.headersSent) return;
     // Erwartete Fehler (kaputtes JSON, zu große Anfrage, abgelehnter Upload)
     // bringen einen 4xx-Status oder einen Multer-Code mit -> Meldung weitergeben.
     // Alles andere ist ein Programmfehler: protokollieren, nach außen neutral.
     const status = Number(err?.status || err?.statusCode) || (err?.name === 'MulterError' ? 400 : 0);
-    if (status >= 400 && status < 500) {
+    // 503 setzen wir selbst (z. B. Datei-Ablage nicht erreichbar) -- mit eigener, verständlicher Meldung.
+    if ((status >= 400 && status < 500) || status === 503) {
       return res.status(status).json({ error: err.type === 'entity.parse.failed' ? 'Ungültige Anfrage' : err.message || 'Ungültige Anfrage' });
     }
     console.error('[api error]', err?.stack || err);

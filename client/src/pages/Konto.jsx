@@ -468,9 +468,22 @@ function PasswordCard() {
     setBusy(true);
     try {
       await api.patch('/me/password', { currentPassword: current, newPassword: next });
-      toast.push('Passwort geändert', 'success');
+      toast.push('Passwort geändert – andere Geräte wurden abgemeldet', 'success');
       setCurrent('');
       setNext('');
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Verlorenes Handy o. Ä.: alle anderen Anmeldungen sofort beenden.
+  const logoutEverywhere = async () => {
+    setBusy(true);
+    try {
+      await api.post('/me/logout-everywhere', {});
+      toast.push('Alle anderen Geräte wurden abgemeldet', 'success');
     } catch (err) {
       toast.push(err.message, 'error');
     } finally {
@@ -492,6 +505,10 @@ function PasswordCard() {
         </label>
         <Button type="submit" disabled={busy}><KeyRound size={18} /> Passwort ändern</Button>
       </form>
+      <div className="mt-4 pt-4 border-t border-line/70 space-y-2">
+        <p className="text-sm text-sage">Gerät verloren oder an einem fremden Gerät angemeldet? Hier beendest du alle anderen Anmeldungen. Auf diesem Gerät bleibst du angemeldet.</p>
+        <Button type="button" variant="outline" disabled={busy} onClick={logoutEverywhere}>Auf allen anderen Geräten abmelden</Button>
+      </div>
     </Card>
   );
 }

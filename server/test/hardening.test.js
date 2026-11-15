@@ -210,3 +210,178 @@ test('Sicherungen werden begrenzt: höchstens 30 tägliche und 20 anlassbezogene
   assert.ok(all.some((b) => /-test\.json\.gz$/.test(b.name)), 'neue Sicherung bleibt, Name bereinigt');
   assert.equal(all.some((b) => b.name.includes('2025-01-01')), false, 'älteste entfernt');
 });
+
+// ---- Stufe 2 -------------------------------------------------------------------
+
+test('Sitzungen: Passwortwechsel und „überall abmelden" beenden andere Anmeldungen', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const email = `sitzung-${Date.now()}@dbz.de`;
+  const u = (await admin('POST', '/admin/users', { name: 'Sitzung Test', email, password: 'demo1234', role: 'klassenlehrer', classIds: ['class_3'] })).data.user;
+  const role = (await admin('POST', `/admin/users/${u.id}/roles`, { role: 'schueler' })).data.account;
+
+  const handy = await loginAs(email);
+  const laptop = await loginAs(email);
+  const tablet = await loginAs(email);
+  assert.equal((await tablet('POST', `/me/switch/${role.id}`)).status, 200); // andere Rolle derselben Person
+  assert.equal((await handy('GET', '/push/status')).status, 200);
+
+  // Passwort am Laptop ändern: Laptop bleibt angemeldet, Handy und Tablet fliegen raus.
+  assert.equal((await laptop('PATCH', '/me/password', { currentPassword: 'demo1234', newPassword: 'neuesPasswort1' })).status, 200);
+  assert.equal((await laptop('GET', '/push/status')).status, 200, 'dieses Gerät bleibt angemeldet');
+  assert.equal((await handy('GET', '/push/status')).status, 401, 'altes Token ist ungültig');
+  assert.equal((await handy('GET', '/auth/me')).data.user, null);
+  assert.equal((await tablet('GET', '/push/status')).status, 401, 'gilt für alle Rollen der Person');
+
+  // Neu anmelden, dann „überall abmelden".
+  const neu = client();
+  assert.equal((await neu('POST', '/auth/login', { email, password: 'neuesPasswort1' })).status, 200);
+  assert.equal((await laptop('POST', '/me/logout-everywhere', {})).status, 200);
+  assert.equal((await laptop('GET', '/push/status')).status, 200);
+  assert.equal((await neu('GET', '/push/status')).status, 401);
+
+  // Zurücksetzen durch die Verwaltung meldet die Person ebenfalls überall ab.
+  assert.equal((await admin('POST', `/admin/users/${u.id}/reset-password`, { newPassword: 'vonAdmin123' })).status, 200);
+  assert.equal((await laptop('GET', '/push/status')).status, 401);
+  // Andere Personen sind nicht betroffen; die Sitzungs-Version wird nicht ausgegeben.
+  const me = await admin('GET', '/auth/me');
+  assert.equal(me.data.user.role, 'super_admin');
+  assert.equal('sessionVersion' in me.data.user, false);
+});
+
+test('Drosselung: Registrierung, Passwort vergessen, Anmeldung je Konto, Familien-Code', async () => {
+  const from = (ip) => async (route, body) => {
+    const res = await fetch(base + '/api' + route, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': ip }, body: JSON.stringify(body) });
+    return res.status;
+  };
+  // Offene Registrierung: 10 je Stunde und Absender, dann 429 (hier absichtlich unvollständige Angaben).
+  const reg = from('203.0.113.7');
+  const seen = [];
+  for (let i = 0; i < 12; i++) seen.push(await reg('/auth/register-open', { name: 'X', email: `x${i}@example.org`, password: 'abcdef' }));
+  assert.deepEqual(seen.slice(0, 10), Array(10).fill(400));
+  assert.deepEqual(seen.slice(10), [429, 429]);
+  assert.equal(await from('203.0.113.8')('/auth/register-open', { name: 'X', email: 'y@example.org', password: 'abcdef' }), 400, 'anderer Absender ist nicht betroffen');
+
+  // Passwort vergessen: je Adresse höchstens 3 Links pro Stunde -- Antwort bleibt gleich (keine Auskunft).
+  const { db } = await import('../store.js');
+  const before = db.all('password_resets').length;
+  for (let i = 0; i < 6; i++) assert.equal(await from(`198.51.100.${i}`)('/auth/forgot-password', { email: 'lehrer@dbz.de' }), 200);
+  assert.equal(db.all('password_resets').length - before, 3);
+  // je Absender höchstens 10 in 15 Minuten
+  const fp = from('203.0.113.50');
+  const codes = [];
+  for (let i = 0; i < 11; i++) codes.push(await fp('/auth/forgot-password', { email: `niemand${i}@example.org` }));
+  assert.equal(codes[9], 200);
+  assert.equal(codes[10], 429);
+
+  // Anmeldung: Fehlversuche je Konto zählen auch von wechselnden Absendern.
+  let last = 0;
+  for (let i = 0; i < 26; i++) last = await from(`192.0.2.${i}`)('/auth/login', { email: 'sprecher@dbz.de', password: 'falsch' });
+  assert.equal(last, 429);
+  assert.equal(await from('192.0.2.200')('/auth/login', { email: 'sprecher@dbz.de', password: 'demo1234' }), 429, 'Konto vorübergehend gesperrt');
+  assert.equal(await from('192.0.2.200')('/auth/login', { email: 'schueler@dbz.de', password: 'demo1234' }), 200, 'andere Konten nicht betroffen');
+
+  // Familien-Code: nach 5 falschen Codes ist Schluss -- auch der richtige geht dann nicht mehr.
+  const student = await loginAs('amina@dbz.de');
+  const code = (await student('GET', '/me/family-code')).data.code;
+  assert.match(code, /^[A-HJKMNP-Z2-9]{6,8}$/);
+  const fresh = (await student('POST', '/me/family-code/rotate')).data.code;
+  assert.equal(fresh.length, 8, 'neue Codes haben 8 Zeichen');
+  const parent = await loginAs('eltern@dbz.de');
+  for (let i = 0; i < 5; i++) assert.equal((await parent('POST', '/family/link', { code: `FALSCH${i}X` })).status, 404);
+  assert.equal((await parent('POST', '/family/link', { code: fresh })).status, 429);
+});
+
+test('Dateien: abgelehnter Upload bleibt nicht liegen; gelöschte Aufgabe -> Dateien nach 30 Tagen weg', async () => {
+  const { db, UPLOAD_DIR } = await import('../store.js');
+  const { purgeFileTrash } = await import('../maintenance.js');
+  const onDisk = () => fs.readdirSync(UPLOAD_DIR).sort();
+  const cookieOf = async (email) => (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'demo1234' }) })).headers.get('set-cookie').split(';')[0];
+  const audio = (name) => { const f = new FormData(); f.append('files', new Blob([Buffer.from('RIFFxxxxWAVE')], { type: 'audio/wav' }), name); return f; };
+  const teacher = await loginAs('lehrer@dbz.de');
+  const sCookie = await cookieOf('schueler@dbz.de');
+
+  // (1) Abgelehnt: Aufgabe existiert nicht -> Datei wird wieder entfernt.
+  const before = onDisk();
+  const rejected = await fetch(base + '/api/assignments/gibt-es-nicht/submit', { method: 'POST', headers: { cookie: sCookie }, body: audio('a.wav') });
+  assert.ok(rejected.status >= 400);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.deepEqual(onDisk(), before, 'kein verwaister Upload');
+  // Ohne Anmeldung ebenfalls nichts.
+  const anon = await fetch(base + '/api/assignments/x/submit', { method: 'POST', body: audio('b.wav') });
+  assert.equal(anon.status, 401);
+  await new Promise((r) => setTimeout(r, 150));
+  assert.deepEqual(onDisk(), before);
+
+  // (2) Angenommen: Datei liegt da und gehört zur Abgabe.
+  const asg = (await teacher('POST', '/assignments', { classId: 'class_3', title: 'Datei-Test', type: 'audio' })).data.assignment;
+  const ok = await fetch(base + `/api/assignments/${asg.id}/submit`, { method: 'POST', headers: { cookie: sCookie }, body: audio('c.wav') });
+  assert.equal(ok.status, 200);
+  const sub = db.all('submissions').find((s) => s.assignmentId === asg.id);
+  const name = sub.files[0].filename;
+  assert.ok(onDisk().includes(name));
+
+  // (3) Aufgabe löschen: Datei kommt auf die Löschliste, bleibt aber 30 Tage (Wiederherstellung möglich).
+  assert.equal((await teacher('DELETE', `/assignments/${asg.id}`)).status, 200);
+  const entry = db.all('file_trash').find((t) => t.filename === name);
+  assert.ok(entry, 'Datei steht auf der Löschliste');
+  const days = (new Date(entry.deleteAfter) - Date.now()) / 86400000;
+  assert.ok(days > 29 && days <= 30);
+  assert.deepEqual(await purgeFileTrash(), { ok: true, deleted: 0, kept: 0 });
+  assert.ok(onDisk().includes(name), 'vor Ablauf der Frist bleibt die Datei');
+
+  // (4) Nach der Frist: wird wieder auf die Datei verwiesen (z. B. Wiederherstellung), bleibt sie.
+  const later = Date.now() + 31 * 86400000;
+  db.insert('submissions', { id: 'sub_wieder', assignmentId: 'x', studentId: 'user_yusuf', files: [{ filename: name }] });
+  assert.deepEqual(await purgeFileTrash(later), { ok: true, deleted: 0, kept: 1 });
+  assert.ok(onDisk().includes(name));
+  // ... sonst wird sie endgültig gelöscht.
+  const subs = db.all('submissions'); subs.splice(subs.findIndex((s) => s.id === 'sub_wieder'), 1);
+  db.all('file_trash').push({ filename: name, deleteAfter: new Date(Date.now() - 1000).toISOString() });
+  assert.deepEqual(await purgeFileTrash(), { ok: true, deleted: 1, kept: 0 });
+  assert.equal(onDisk().includes(name), false, 'Aufnahme ist wirklich gelöscht');
+  assert.equal(db.all('file_trash').length, 0);
+});
+
+test('Unbekannte API-Pfade: 404 als JSON', async () => {
+  const res = await fetch(base + '/api/gibt/es/nicht');
+  assert.equal(res.status, 404);
+  assert.match(res.headers.get('content-type'), /json/);
+});
+
+test('Verlauf wird begrenzt: alte Benachrichtigungen, Audit-Einträge und Passwort-Links', async () => {
+  const { db } = await import('../store.js');
+  const { trimHistory } = await import('../maintenance.js');
+  const day = 86400000;
+  const iso = (d) => new Date(Date.now() - d * day).toISOString();
+  const notes = db.all('notifications');
+  const audits = db.all('audit_logs');
+  const n0 = notes.length; const a0 = audits.length;
+  const mk = (id, userId, d, read) => notes.push({ id, userId, type: 't', title: 'x', read, createdAt: iso(d) });
+  mk('alt_gelesen', 'uX', 120, true); // weg (gelesen, > 90 Tage)
+  mk('alt_ungelesen', 'uX', 120, false); // bleibt (ungelesen, < 365 Tage)
+  mk('uralt_ungelesen', 'uX', 400, false); // weg
+  mk('neu_gelesen', 'uX', 10, true); // bleibt
+  for (let i = 0; i < 320; i++) mk(`viel_${i}`, 'uViel', i / 100, false); // 320 -> 300
+  audits.push({ id: 'audit_alt', action: 'x', createdAt: iso(500) }, { id: 'audit_neu', action: 'x', createdAt: iso(5) });
+  db.all('password_resets').push(
+    { id: 'pr_alt', used: true, expiresAt: iso(30), createdAt: iso(30) },
+    { id: 'pr_offen', used: false, expiresAt: new Date(Date.now() + day).toISOString(), createdAt: iso(0) },
+  );
+  const r = trimHistory();
+  assert.equal(r.ok, true);
+  const ids = new Set(db.all('notifications').map((n) => n.id));
+  assert.equal(ids.has('alt_gelesen'), false);
+  assert.equal(ids.has('uralt_ungelesen'), false);
+  assert.equal(ids.has('alt_ungelesen'), true);
+  assert.equal(ids.has('neu_gelesen'), true);
+  const viel = db.all('notifications').filter((n) => n.userId === 'uViel');
+  assert.equal(viel.length, 300);
+  assert.equal(viel.some((n) => n.id === 'viel_0'), true, 'die neuesten bleiben');
+  assert.equal(viel.some((n) => n.id === 'viel_319'), false, 'die ältesten gehen');
+  assert.equal(db.all('notifications').length, n0 + 2 + 300, 'bestehende Einträge anderer Personen unberührt');
+  assert.equal(db.all('audit_logs').some((a) => a.id === 'audit_alt'), false);
+  assert.equal(db.all('audit_logs').length, a0 + 1);
+  assert.equal(db.all('password_resets').some((p) => p.id === 'pr_alt'), false);
+  assert.equal(db.all('password_resets').some((p) => p.id === 'pr_offen'), true);
+  assert.deepEqual(trimHistory().removed, { notifications: 0, audit: 0, resets: 0 }, 'zweiter Lauf ändert nichts');
+});

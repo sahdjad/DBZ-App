@@ -8,10 +8,10 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
-import { db, newId, UPLOAD_DIR, isLiveDeployment, runInSandbox, inSandbox, resetSandbox } from './store.js';
+import { db, newId, UPLOAD_DIR, isLiveDeployment, runInSandbox, inSandbox, resetSandbox, isSupabaseDegraded } from './store.js';
 import { seedDemoData } from './seed.js';
-import { persistUpload, readFile, deleteFile } from './files.js';
-import { hashPassword, verifyPassword, issueToken, clearToken, readToken } from './auth.js';
+import { persistUpload, readFile, deleteFile, discardFile } from './files.js';
+import { hashPassword, verifyPassword, issueToken, clearToken, readToken, sessionValid } from './auth.js';
 import {
   ROLES,
   ROLE_LABELS,
@@ -46,12 +46,40 @@ import { getChapterAudio, CHAPTER_RECITERS } from './providers/chapterAudioProvi
 import { getAyahAudio, AYAH_RECITERS } from './providers/ayahAudioProvider.js';
 import { legacyPage, surahStartPage } from './mushaf.js';
 import { getPublicKeyB64, pushConfigured, hasSubscription, saveSubscription, removeSubscription, pushToUser } from './webpush.js';
-import { createLoginThrottle } from './security.js';
+import { createLoginThrottle, createRateLimit } from './security.js';
 import { backupNow, listBackups, loadBackup } from './backup.js';
 import { ASR_FILES, ensureAsrFile } from './asr.js';
 import { sendEmail, emailMode } from './providers/emailProvider.js';
 
 const loginThrottle = createLoginThrottle({ max: 8, windowMs: 10 * 60 * 1000 });
+// Fehlversuche je Konto, unabhängig vom Absender (verteiltes Durchprobieren).
+const accountThrottle = createLoginThrottle({ max: 25, windowMs: 15 * 60 * 1000 });
+// Öffentliche Formulare: je Absender-Adresse großzügig (hinter manchen Netzen
+// teilen sich viele Geräte eine Adresse), je Konto/E-Mail eng.
+const MIN = 60 * 1000;
+const limits = {
+  registerIp: createRateLimit({ max: 10, windowMs: 60 * MIN }),
+  forgotIp: createRateLimit({ max: 10, windowMs: 15 * MIN }),
+  forgotEmail: createRateLimit({ max: 3, windowMs: 60 * MIN }),
+  resetIp: createRateLimit({ max: 15, windowMs: 15 * MIN }),
+  familyUser: createLoginThrottle({ max: 5, windowMs: 15 * MIN }),
+};
+const TOO_MANY = 'Zu viele Versuche. Bitte später erneut versuchen.';
+// Nur für die Testsuite (viele Registrierungen von einer Adresse); in Produktion wirkungslos.
+const LIMITS_OFF = process.env.DBZ_TEST_NO_LIMITS === '1' && process.env.NODE_ENV !== 'production';
+function limited(res, limiter, key) {
+  if (LIMITS_OFF || limiter.hit(key)) return false;
+  res.set('Retry-After', String(limiter.retryAfter(key)));
+  res.status(429).json({ error: TOO_MANY });
+  return true;
+}
+// Neue Sitzungs-Version für alle Konten der Person -> alle bisherigen
+// Anmeldungen (alle Geräte, alle Rollen) werden ungültig.
+function revokeSessions(user) {
+  const next = Math.max(...personAccounts(user).map((a) => a.sessionVersion || 0)) + 1;
+  personAccounts(user).forEach((a) => { a.sessionVersion = next; });
+  db.commit();
+}
 const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
 const router = express.Router();
@@ -102,6 +130,29 @@ router.use((req, res, next) => {
   next();
 });
 
+// --- Dateien gelöschter Einträge -------------------------------------------------
+// Wird ein Eintrag gelöscht (Hausaufgabe samt Abgaben, Material …), kommen
+// seine Dateien auf eine Löschliste und werden nach 30 Tagen endgültig
+// entfernt (server/maintenance.js). So lange lässt sich eine Sicherung noch
+// vollständig zurückholen; danach sind z. B. Aufnahmen von Kindern wirklich weg.
+const FILE_NAME_RE = /^file_[0-9a-z]+_[0-9a-z]{1,8}(\.[A-Za-z0-9]{1,8})?$/;
+const FILE_TRASH_DAYS = 30;
+/** Alle Upload-Dateinamen, die irgendwo in einem Objekt stehen. */
+function filenamesIn(value, out = new Set()) {
+  if (typeof value === 'string') { if (FILE_NAME_RE.test(value)) out.add(value); }
+  else if (Array.isArray(value)) value.forEach((v) => filenamesIn(v, out));
+  else if (value && typeof value === 'object') Object.values(value).forEach((v) => filenamesIn(v, out));
+  return out;
+}
+function trashFilesOf(...removed) {
+  const names = [...filenamesIn(removed)];
+  if (!names.length) return;
+  if (inSandbox()) { names.forEach((n) => discardFile(n)); return; }
+  const deleteAfter = new Date(Date.now() + FILE_TRASH_DAYS * 86400000).toISOString();
+  const trash = db.all('file_trash');
+  for (const filename of names) if (!trash.some((t) => t.filename === filename)) trash.push({ filename, deleteAfter });
+}
+
 // Vor jeder Massenlöschung: erst sichern. Schlägt die Sicherung fehl, wird
 // NICHT gelöscht. Im Demo-Sandkasten gibt es nichts zu sichern.
 const BACKUP_FAILED = 'Die Sicherung vor diesem Schritt ist fehlgeschlagen – es wurde nichts verändert. Bitte später erneut versuchen.';
@@ -146,6 +197,19 @@ router.use((req, res, next) => {
   runInSandbox(() => { ensureSandbox().then(() => next(), next); });
 });
 
+// Notmodus: Die Datenbank (Supabase) war beim Start nicht erreichbar. Der
+// Server hat dann KEINE echten Daten im Speicher. Statt eine leere Schule zu
+// zeigen und Eingaben anzunehmen, die später verloren wären, antworten alle
+// echten Anfragen mit einer Wartungsmeldung, bis die Verbindung wieder steht
+// (server/store.js versucht es selbst weiter). Der Demo-Sandkasten ist davon
+// unabhängig und läuft normal.
+const MAINTENANCE = 'Die App ist gerade nicht erreichbar (Wartung). Deine Daten sind sicher – bitte in einigen Minuten erneut versuchen.';
+const OPEN_IN_MAINTENANCE = new Set(['/health', '/auth/login', '/auth/logout', '/auth/me']);
+router.use((req, res, next) => {
+  if (!isSupabaseDegraded() || inSandbox() || OPEN_IN_MAINTENANCE.has(req.path)) return next();
+  res.set('Retry-After', '60').status(503).json({ error: MAINTENANCE, maintenance: true });
+});
+
 // Öffentlicher Health-/Diagnose-Endpunkt: zeigt an, ob der Server läuft und
 // welches Speicher-Backend aktiv ist ("supabase" = dauerhaft, "file" = lokal)
 // UND ob Demo-Zugänge grundsätzlich erreichbar sind (mode). Enthält bewusst
@@ -181,7 +245,7 @@ function publicUser(u) {
   // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
   // lastSeenAt ("zuletzt online") ebenfalls nie pauschal -- nur Mitarbeitende
   // bekommen es gezielt (Klassenliste, Verwaltung, Nachrichten).
-  const { passwordHash, familyCode, probation, lastSeenAt, ...rest } = u;
+  const { passwordHash, familyCode, probation, lastSeenAt, sessionVersion, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role, ...(inSandbox() ? { demo: true } : {}) };
 }
 
@@ -326,7 +390,7 @@ function requireAuth(req, res, next) {
   // interne ID haben, z. B. "user_admin").
   if (Boolean(payload.sb) !== inSandbox()) return res.status(401).json({ error: 'Sitzung ungültig' });
   const user = findUserById(payload.id);
-  if (!user) return res.status(401).json({ error: 'Sitzung ungültig' });
+  if (!user || !sessionValid(payload, user)) return res.status(401).json({ error: 'Sitzung ungültig' });
   if (user.status === 'disabled' || (user.roleOf && findUserById(user.roleOf)?.status === 'disabled'))
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   req.user = user;
@@ -422,7 +486,29 @@ const rawUpload = multer({
 // Sandkasten-Kontext (AsyncLocalStorage) verloren gehen. Deshalb nach dem
 // Upload ausdrücklich wieder in den Sandkasten wechseln -- sonst könnte eine
 // Demo-Anfrage mit Datei in die ECHTE Datenbank schreiben.
-const keepSandbox = (mw) => (req, res, next) => mw(req, res, (err) => (req.sandbox ? runInSandbox(() => next(err)) : next(err)));
+const uploadedOf = (req) => [
+  ...(req.file ? [req.file] : []),
+  ...(Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat()),
+];
+// Nach dem Empfang: (1) Dateien SOFORT dauerhaft ablegen -- schlägt das fehl,
+// endet die Anfrage mit einer klaren Meldung, bevor irgendetwas gespeichert
+// wird. (2) Lehnt die Route die Anfrage danach ab (Frist vorbei, kein Zugriff,
+// Eingabefehler), werden die gerade hochgeladenen Dateien wieder entfernt --
+// es bleibt nichts liegen, worauf kein Eintrag zeigt.
+async function afterUpload(req, res, next, err) {
+  const files = uploadedOf(req);
+  const discard = () => files.forEach((f) => discardFile(f.filename));
+  if (err) { discard(); return next(err); }
+  if (!files.length) return next();
+  res.on('finish', () => { if (res.statusCode >= 400) discard(); });
+  try {
+    await Promise.all(files.map((f) => persistUpload(f)));
+  } catch (e) {
+    return next(e);
+  }
+  next();
+}
+const keepSandbox = (mw) => (req, res, next) => mw(req, res, (err) => (req.sandbox ? runInSandbox(() => afterUpload(req, res, next, err)) : afterUpload(req, res, next, err)));
 const upload = {
   single: (...a) => keepSandbox(rawUpload.single(...a)),
   array: (...a) => keepSandbox(rawUpload.array(...a)),
@@ -437,11 +523,12 @@ const upload = {
 
 router.post('/auth/login', async (req, res) => {
   const { email, password } = req.body || {};
-  const key = `${(email || '').toLowerCase()}|${req.ip}`;
-  if (loginThrottle.blocked(key))
+  const normEmail = String(email || '').trim().toLowerCase();
+  const key = `${normEmail}|${req.ip}`;
+  const failed = () => { loginThrottle.fail(key); accountThrottle.fail(normEmail); };
+  if (loginThrottle.blocked(key) || accountThrottle.blocked(normEmail))
     return res.status(429).json({ error: 'Zu viele Fehlversuche. Bitte in einigen Minuten erneut versuchen.' });
 
-  const normEmail = String(email || '').trim().toLowerCase();
   const realUser = findUserByEmail(email);
   if (DEMO_ACCOUNT_EMAILS.has(normEmail) && (!realUser || realUser.isDemo)) {
     // Demo-Zugang -> Anmeldung im abgeschotteten Sandkasten.
@@ -449,7 +536,7 @@ router.post('/auth/login', async (req, res) => {
       await ensureSandbox();
       const demoUser = findUserByEmail(normEmail);
       if (!demoUser || !(await verifyPassword(password || '', demoUser.passwordHash))) {
-        loginThrottle.fail(key);
+        failed();
         return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
       }
       loginThrottle.succeed(key);
@@ -457,9 +544,10 @@ router.post('/auth/login', async (req, res) => {
       res.json({ user: publicUser(demoUser) });
     });
   }
+  if (isSupabaseDegraded()) return res.set('Retry-After', '60').status(503).json({ error: MAINTENANCE, maintenance: true });
   const user = realUser;
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
-    loginThrottle.fail(key);
+    failed();
     return res.status(401).json({ error: 'E-Mail oder Passwort ist falsch' });
   }
   if (user.status === 'pending')
@@ -467,6 +555,7 @@ router.post('/auth/login', async (req, res) => {
   if (user.status === 'disabled')
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
   loginThrottle.succeed(key);
+  accountThrottle.succeed(normEmail);
   // Mehrere Rollen: dort weitermachen, wo die Person zuletzt war.
   const last = user.lastActiveAccountId && (user.linkedAccountIds || []).includes(user.lastActiveAccountId)
     ? findUserById(user.lastActiveAccountId) : null;
@@ -480,10 +569,21 @@ router.post('/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
+// „Auf allen Geräten abmelden": macht jede bestehende Anmeldung der Person
+// ungültig (z. B. Handy verloren). Dieses Gerät bleibt angemeldet.
+router.post('/me/logout-everywhere', requireAuth, (req, res) => {
+  revokeSessions(req.user);
+  issueToken(res, req.user, { sb: inSandbox() });
+  audit(req.user.id, 'user.logout_everywhere', 'user', req.user.id);
+  res.json({ ok: true });
+});
+
 router.get('/auth/me', (req, res) => {
   const payload = readToken(req);
   if (!payload || Boolean(payload.sb) !== inSandbox()) return res.json({ user: null });
-  res.json({ user: publicUser(findUserById(payload.id)) });
+  const me = findUserById(payload.id);
+  if (!sessionValid(payload, me)) return res.json({ user: null });
+  res.json({ user: publicUser(me) });
 });
 
 router.patch('/me', requireAuth, (req, res) => {
@@ -531,7 +631,9 @@ router.patch('/me/password', requireAuth, async (req, res) => {
   if (!newPassword || newPassword.length < 6)
     return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
   target.passwordHash = await hashPassword(newPassword);
-  db.commit();
+  // Alle anderen Geräte abmelden; dieses Gerät bekommt ein frisches Token.
+  revokeSessions(target);
+  issueToken(res, req.user, { sb: inSandbox() });
   audit(req.user.id, 'user.password_change', 'user', target.id);
   res.json({ ok: true });
 });
@@ -705,6 +807,7 @@ router.post('/auth/register', async (req, res) => {
 // Konto bleibt "pending", bis Leitung/Admin eine Klasse zuweist -> kein Login
 // möglich, bevor das passiert ist (siehe /auth/login).
 router.post('/auth/register-open', async (req, res) => {
+  if (limited(res, limits.registerIp, req.ip)) return;
   const { name, email, password } = req.body || {};
   if (!name || !name.trim() || !email || !email.trim() || !password)
     return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich' });
@@ -741,7 +844,10 @@ router.post('/auth/register-open', async (req, res) => {
 // wird der Link zurückgegeben, damit die DBZ ihn manuell weitergeben kann.
 router.post('/auth/forgot-password', async (req, res) => {
   const { email } = req.body || {};
-  const user = findUserByEmail(email || '');
+  if (limited(res, limits.forgotIp, req.ip)) return;
+  // Je Adresse höchstens 3 Links pro Stunde -- danach still nichts mehr tun
+  // (gleiche Antwort, damit nicht erkennbar ist, ob es das Konto gibt).
+  const user = (LIMITS_OFF || limits.forgotEmail.hit(String(email || '').trim().toLowerCase())) ? findUserByEmail(email || '') : null;
   const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
   let devLink;
   if (user && user.status !== 'disabled') {
@@ -775,6 +881,7 @@ router.get('/auth/reset/:token', (req, res) => {
 });
 
 router.post('/auth/reset-password', async (req, res) => {
+  if (limited(res, limits.resetIp, req.ip)) return;
   const { token, newPassword } = req.body || {};
   const pr = db.all('password_resets').find((p) => p.tokenHash === sha256(token || ''));
   if (!pr || pr.used || new Date(pr.expiresAt).getTime() < Date.now())
@@ -785,7 +892,7 @@ router.post('/auth/reset-password', async (req, res) => {
   if (!user) return res.status(400).json({ error: 'Konto nicht gefunden' });
   user.passwordHash = await hashPassword(newPassword);
   pr.used = true;
-  db.commit();
+  revokeSessions(user); // wer das alte Passwort kannte, ist damit abgemeldet
   audit(user.id, 'user.password_reset', 'user', user.id, null, { via: 'self-service' });
   res.json({ ok: true });
 });
@@ -1485,7 +1592,7 @@ router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS),
   const drop = (collection, pred) => {
     const list = db.all(collection);
     let n = 0;
-    for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) { list.splice(i, 1); n++; }
+    for (let i = list.length - 1; i >= 0; i--) if (pred(list[i])) { trashFilesOf(list[i]); list.splice(i, 1); n++; }
     return n;
   };
   const counts = {};
@@ -2573,15 +2680,17 @@ function deleteAssignmentCascade(a) {
   const list = db.all('assignments');
   const idx = list.findIndex((x) => x.id === a.id);
   if (idx >= 0) list.splice(idx, 1);
+  trashFilesOf(a);
   const subs = db.all('submissions');
   const removedSubIds = new Set();
   for (let i = subs.length - 1; i >= 0; i--) {
     if (subs[i].assignmentId !== a.id) continue;
     removedSubIds.add(subs[i].id);
+    trashFilesOf(subs[i]);
     subs.splice(i, 1);
   }
   const reviews = db.all('reviews');
-  for (let i = reviews.length - 1; i >= 0; i--) if (removedSubIds.has(reviews[i].submissionId)) reviews.splice(i, 1);
+  for (let i = reviews.length - 1; i >= 0; i--) if (removedSubIds.has(reviews[i].submissionId)) { trashFilesOf(reviews[i]); reviews.splice(i, 1); }
   const exts = db.all('extensions');
   for (let i = exts.length - 1; i >= 0; i--) if (exts[i].assignmentId === a.id) exts.splice(i, 1);
   const notes = db.all('notifications');
@@ -5589,7 +5698,7 @@ router.delete('/materials/:id/files/:fileId', requireAuth, (req, res) => {
   const idx = files.findIndex((f) => f.id === req.params.fileId);
   if (idx < 0) return res.status(404).json({ error: 'Datei nicht gefunden' });
   if (files.length === 1 && !m.url && !m.body) return res.status(400).json({ error: 'Das ist die letzte Datei – lösche stattdessen den ganzen Block' });
-  files.splice(idx, 1);
+  trashFilesOf(files.splice(idx, 1));
   removeAnnotations(m.id, req.params.fileId);
   m.materialType = files.length ? 'file' : m.url ? 'link' : 'note';
   m.updatedAt = new Date().toISOString();
@@ -5619,6 +5728,7 @@ router.delete('/materials/:id', requireAuth, (req, res) => {
   if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
   if (!canEditMaterial(req.user, list[idx])) return res.status(403).json({ error: 'Kein Zugriff' });
   const [removed] = list.splice(idx, 1);
+  trashFilesOf(removed);
   removeAnnotations(removed.id);
   db.commit();
   audit(req.user.id, 'material.delete', 'material', removed.id);
@@ -6067,9 +6177,11 @@ router.delete('/penalties/:id', requireAuth, (req, res) => {
 const FAMILY_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // ohne 0/O/1/I/L
 const LINKABLE_ROLES = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER];
 
+// 8 Zeichen aus sicherem Zufall (rund 850 Milliarden Möglichkeiten). Ältere
+// 6-stellige Codes bleiben gültig, bis sie neu erzeugt werden.
 function genFamilyCode() {
   let c = '';
-  for (let i = 0; i < 6; i++) c += FAMILY_ALPHABET[Math.floor(Math.random() * FAMILY_ALPHABET.length)];
+  for (let i = 0; i < 8; i++) c += FAMILY_ALPHABET[crypto.randomInt(FAMILY_ALPHABET.length)];
   return c;
 }
 function ensureFamilyCode(student) {
@@ -6120,12 +6232,17 @@ router.get('/family/children', requireAuth, requireRole(ROLES.ELTERN), (req, res
 
 // Eltern: mit einem Kind per Code verknüpfen.
 router.post('/family/link', requireAuth, requireRole(ROLES.ELTERN), (req, res) => {
+  // Schutz gegen Durchprobieren: nach 5 falschen Codes 15 Minuten Pause.
+  if (limits.familyUser.blocked(req.user.id)) return res.status(429).json({ error: TOO_MANY });
   const code = String(req.body?.code || '').trim().toUpperCase();
   if (code.length < 4) return res.status(400).json({ error: 'Bitte einen gültigen Familien-Code eingeben' });
   const student = db
     .all('users')
     .find((u) => LINKABLE_ROLES.includes(u.role) && u.familyCode && u.familyCode.toUpperCase() === code);
-  if (!student) return res.status(404).json({ error: 'Familien-Code ungültig' });
+  if (!student) {
+    limits.familyUser.fail(req.user.id);
+    return res.status(404).json({ error: 'Familien-Code ungültig' });
+  }
 
   req.user.childIds = req.user.childIds || [];
   if (req.user.childIds.includes(student.id))
@@ -6596,7 +6713,8 @@ router.get('/notifications', requireAuth, (req, res) => {
     .all('notifications')
     .filter((n) => n.userId === req.user.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  res.json({ items, unread: items.filter((n) => !n.read).length });
+  // Höchstens die 200 neuesten ausliefern (die Zahl der ungelesenen bleibt vollständig).
+  res.json({ items: items.slice(0, 200), unread: items.filter((n) => !n.read).length });
 });
 
 router.post('/notifications/read', requireAuth, (req, res) => {
@@ -7311,7 +7429,7 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole(ROLES.SU
   if (!newPassword || newPassword.length < 6)
     return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
   u.passwordHash = await hashPassword(newPassword);
-  db.commit();
+  revokeSessions(u);
   audit(req.user.id, 'user.reset_password', 'user', u.id);
   res.json({ ok: true });
 });
