@@ -179,7 +179,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted" />
-          <input className="input pl-10 rounded-xl" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input pl-10 rounded-xl" type="search" aria-label="Sure suchen" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
         <Link to="/tadschwid" className="shrink-0 inline-flex items-center gap-2 text-sm px-3.5 py-2.5 rounded-xl border border-line bg-card text-ivory hover:bg-hover">
           <Palette size={17} /> <span className="hidden sm:inline">Tadschwid</span>

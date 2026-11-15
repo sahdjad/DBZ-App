@@ -84,6 +84,7 @@ export default function Checkin() {
               </div>
               <input
                 className="input text-center font-mono text-lg tracking-widest uppercase"
+                aria-label="Code der Lehrkraft"
                 placeholder="CODE"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}

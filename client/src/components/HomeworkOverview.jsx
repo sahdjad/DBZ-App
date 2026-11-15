@@ -66,7 +66,7 @@ export default function HomeworkOverview({ renderSubmission }) {
         ) : <div className="text-title3 font-semibold text-ivory" data-noi18n>{data.classes[0]?.name}</div>}
         <div className="flex items-center gap-0.5 rounded-full bg-card border border-line/70 shadow-card p-0.5">
           <button type="button" aria-label="Vorige Woche" onClick={() => { setWeek(addDays(data.weekStart, -7)); setOpenId(null); }} className="grid place-items-center h-9 w-9 rounded-full hover:bg-hover text-mint-light dark:text-mint"><ChevronLeft size={18} /></button>
-          <button type="button" onClick={() => { setWeek(''); setOpenId(null); }} className="text-subhead font-medium text-ivory px-2 min-w-[10rem] text-center" title="Zur aktuellen Woche">
+          <button type="button" onClick={() => { setWeek(''); setOpenId(null); }} className="text-subhead font-medium text-ivory px-2 min-w-[10rem] min-h-11 text-center" title="Zur aktuellen Woche">
             {isThisWeek ? 'Diese Woche' : 'Woche'} · {fmtDay(data.weekStart)}–{fmtDay(data.weekEnd)}
           </button>
           <button type="button" aria-label="Nächste Woche" onClick={() => { setWeek(addDays(data.weekStart, 7)); setOpenId(null); }} className="grid place-items-center h-9 w-9 rounded-full hover:bg-hover text-mint-light dark:text-mint"><ChevronRight size={18} /></button>
@@ -94,7 +94,7 @@ export default function HomeworkOverview({ renderSubmission }) {
 
           {s.missedStudents > 0 && (
             <label className="flex items-center gap-2 text-subhead text-sage px-1 cursor-pointer select-none">
-              <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="h-4 w-4 accent-[rgb(var(--c-mint))]" />
+              <input type="checkbox" checked={onlyMissing} onChange={(e) => setOnlyMissing(e.target.checked)} className="accent-[rgb(var(--c-mint))]" />
               Nur zeigen, wer nicht abgegeben hat ({s.missedStudents})
             </label>
           )}

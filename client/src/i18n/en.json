@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Diese Seite ist für deine Rolle nicht freigegeben": "This page is not available for your role",
+"Hast du mehrere Rollen, kannst du oben im Menü wechseln.": "If you have several roles, you can switch at the top of the menu.",
+"Termin hinzufügen": "Add event",
+"Schüler suchen": "Search students",
+"Sure suchen": "Search surah",
+"Zeitraum": "Period",
 "Hier ist etwas schiefgelaufen": "Something went wrong here",
 "Diese Seite konnte nicht angezeigt werden. Deine Daten sind davon nicht betroffen.": "This page could not be displayed. Your data is not affected.",
 "Neu laden": "Reload",
@@ -2240,6 +2246,7 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "You are signed in as “{1}”. If you have several roles, you can switch at the top of the menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
 ["Seiten {}–{}", "Pages {1}–{2}"],
 ["Juzʼ {} · Seite {}", "Juzʼ {1} · Page {2}"],

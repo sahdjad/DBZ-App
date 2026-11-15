@@ -15,6 +15,7 @@ const Registrieren = lazy(() => import('./pages/Registrieren.jsx'));
 const PasswortVergessen = lazy(() => import('./pages/PasswortVergessen.jsx'));
 const PasswortNeu = lazy(() => import('./pages/PasswortNeu.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
+const KeinZugriff = lazy(() => import('./pages/KeinZugriff.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Aufgaben = lazy(() => import('./pages/Aufgaben.jsx'));
 const AufgabeDetail = lazy(() => import('./pages/AufgabeDetail.jsx'));
@@ -86,7 +87,7 @@ function Protected({ children, roles }) {
   const location = useLocation();
   if (loading) return <Splash />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
-  if (roles && !roles.includes(user.role)) return <Navigate to="/dashboard" replace />;
+  if (roles && !roles.includes(user.role)) return <KeinZugriff />;
   return children;
 }
 

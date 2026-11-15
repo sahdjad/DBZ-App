@@ -165,7 +165,7 @@ function ManagerView() {
     <div>
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         {classes.length > 1 ? (
-          <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         ) : <span />}
@@ -195,7 +195,7 @@ function ManagerView() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-b border-line">
-                    <td className="p-3"><Link to={`/profil/${r.id}`} className="text-ivory hover:text-mint-light hover:underline">{r.name}</Link></td>
+                    <td className="p-3"><Link to={`/profil/${r.id}`} className="inline-flex items-center min-h-8 -my-1.5 text-ivory hover:text-mint-light hover:underline">{r.name}</Link></td>
                     <td className="p-3 font-mono">{rate(r)}%</td>
                     <td className="p-3">{r.present}</td>
                     <td className="p-3">{r.late}</td>

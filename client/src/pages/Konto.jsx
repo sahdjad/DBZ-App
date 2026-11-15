@@ -261,7 +261,7 @@ function ThemeCard() {
 
         <label className="flex items-center justify-between gap-3 text-body text-ivory">
           <span>Haptisches Feedback<span className="block text-footnote text-sage-muted">Kurzes Ticken beim Tippen (Android; iPhone ab iOS 18)</span></span>
-          <Switch checked={haptics} onChange={(v) => { setHapticsEnabled(v); setHaptics(v); if (v) haptic(); }} />
+          <Switch label="Haptisches Feedback" checked={haptics} onChange={(v) => { setHapticsEnabled(v); setHaptics(v); if (v) haptic(); }} />
         </label>
       </div>
     </Card>

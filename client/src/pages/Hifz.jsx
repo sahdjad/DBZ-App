@@ -238,11 +238,11 @@ function ManagerView({ surahs }) {
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap">
         {classes.length > 1 && (
-          <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
-        <select className="input w-auto" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
+        <select aria-label="Schüler" className="input w-auto" value={studentId} onChange={(e) => setStudentId(e.target.value)}>
           {students.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
       </div>
@@ -372,7 +372,7 @@ function ReadView({ role }) {
   return (
     <div className="space-y-4">
       {role === 'eltern' && children.length > 0 && (
-        <select className="input w-auto" value={childId} onChange={(e) => setChildId(e.target.value)}>
+        <select aria-label="Kind" className="input w-auto" value={childId} onChange={(e) => setChildId(e.target.value)}>
           {children.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}

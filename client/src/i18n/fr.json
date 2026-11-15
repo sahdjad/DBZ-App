@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Diese Seite ist für deine Rolle nicht freigegeben": "Cette page n’est pas disponible pour votre rôle",
+"Hast du mehrere Rollen, kannst du oben im Menü wechseln.": "Si vous avez plusieurs rôles, vous pouvez changer en haut du menu.",
+"Termin hinzufügen": "Ajouter un événement",
+"Schüler suchen": "Rechercher des élèves",
+"Sure suchen": "Rechercher une sourate",
+"Zeitraum": "Période",
 "Hier ist etwas schiefgelaufen": "Une erreur s’est produite",
 "Diese Seite konnte nicht angezeigt werden. Deine Daten sind davon nicht betroffen.": "Cette page n’a pas pu être affichée. Vos données ne sont pas concernées.",
 "Neu laden": "Recharger",
@@ -2241,6 +2247,7 @@
 "Audio": "Audio"
 },
 "patterns": [
+["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "Vous êtes connecté en tant que « {1} ». Si vous avez plusieurs rôles, vous pouvez changer en haut du menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
 ["Seiten {}–{}", "Pages {1}–{2}"],
 ["Juzʼ {} · Seite {}", "Juzʼ {1} · Page {2}"],
