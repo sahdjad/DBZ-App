@@ -2,8 +2,7 @@
 
 Stand: 14.11.2026. Grundlage ist das vollständige Audit vom selben Tag
 (Gesamtnote 5,8/10: Funktion und Oberfläche 7–8, Sicherheit, Stabilität und Architektur 4–5).
-Der ausführliche Audit-Bericht wird erst nach Abschluss von Stufe 1 hier abgelegt,
-weil das Repository öffentlich ist.
+Der ausführliche Bericht mit Stand der Behebung: `docs/AUDIT-2026-11-14.md`.
 
 Produktion: Render Free + Supabase (bestätigt über `/api/health`).
 
