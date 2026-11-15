@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Mindestens ein ausgewählter Schüler gehört nicht zu dieser Klasse": "At least one selected student does not belong to this class",
+"Ungültige Auswahl der Schüler": "Invalid student selection",
+"Ungültige Bewertung": "Invalid rating",
+"Ungültige Fehlerzahl": "Invalid number of mistakes",
+"Öffne die App, um die Rückmeldung zu lesen.": "Open the app to read the feedback.",
+"Vertretung endet am (leer = ohne Enddatum)": "Substitution ends on (empty = no end date)",
+"Danach ist die Klasse für diese Person gesperrt. Vertretungen ändern weder Klassenliste noch Einstellungen und geben Berichte und Strafen nicht frei.": "After that the class is locked for this person. Substitutes do not change the class list or settings and do not release reports or penalties.",
+"Das ist der Klassenleitung vorbehalten – als Vertretung nicht möglich.": "Reserved for the class teacher – not possible as a substitute.",
+"Ungültiges Enddatum": "Invalid end date",
 "Diese Seite ist für deine Rolle nicht freigegeben": "This page is not available for your role",
 "Hast du mehrere Rollen, kannst du oben im Menü wechseln.": "If you have several roles, you can switch at the top of the menu.",
 "Termin hinzufügen": "Add event",
@@ -2246,6 +2255,7 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["Deine Vertretung ist am {} abgelaufen. Bitte wende dich an die Leitung.", "Your substitution ended on {1}. Please contact the administration."],
 ["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "You are signed in as “{1}”. If you have several roles, you can switch at the top of the menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
 ["Seiten {}–{}", "Pages {1}–{2}"],

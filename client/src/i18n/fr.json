@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Mindestens ein ausgewählter Schüler gehört nicht zu dieser Klasse": "Au moins un élève sélectionné n’appartient pas à cette classe",
+"Ungültige Auswahl der Schüler": "Sélection d’élèves invalide",
+"Ungültige Bewertung": "Évaluation invalide",
+"Ungültige Fehlerzahl": "Nombre d’erreurs invalide",
+"Öffne die App, um die Rückmeldung zu lesen.": "Ouvrez l’application pour lire le retour.",
+"Vertretung endet am (leer = ohne Enddatum)": "La suppléance se termine le (vide = sans date de fin)",
+"Danach ist die Klasse für diese Person gesperrt. Vertretungen ändern weder Klassenliste noch Einstellungen und geben Berichte und Strafen nicht frei.": "Ensuite, la classe est verrouillée pour cette personne. Les suppléants ne modifient ni la liste de classe ni les réglages et ne valident ni bulletins ni sanctions.",
+"Das ist der Klassenleitung vorbehalten – als Vertretung nicht möglich.": "Réservé au professeur principal – impossible en tant que suppléant.",
+"Ungültiges Enddatum": "Date de fin invalide",
 "Diese Seite ist für deine Rolle nicht freigegeben": "Cette page n’est pas disponible pour votre rôle",
 "Hast du mehrere Rollen, kannst du oben im Menü wechseln.": "Si vous avez plusieurs rôles, vous pouvez changer en haut du menu.",
 "Termin hinzufügen": "Ajouter un événement",
@@ -2247,6 +2256,7 @@
 "Audio": "Audio"
 },
 "patterns": [
+["Deine Vertretung ist am {} abgelaufen. Bitte wende dich an die Leitung.", "Votre suppléance a pris fin le {1}. Veuillez contacter la direction."],
 ["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "Vous êtes connecté en tant que « {1} ». Si vous avez plusieurs rôles, vous pouvez changer en haut du menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
 ["Seiten {}–{}", "Pages {1}–{2}"],
