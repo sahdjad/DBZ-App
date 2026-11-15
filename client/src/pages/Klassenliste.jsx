@@ -187,7 +187,7 @@ function SchoolRoster({ onBack }) {
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-muted" />
           <input className="input pl-9" placeholder="Name oder Klasse …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
-        <select className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter">
+        <select aria-label="Art" className="input w-auto" value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter">
           <option value="">Alle</option>
           <option value="presence">Nur Präsenz</option>
           <option value="online">Nur Online</option>
@@ -353,13 +353,13 @@ export default function Klassenliste() {
         )}
         <div className="flex flex-wrap items-center gap-3">
           {!isLeadership && classes && classes.length > 1 && (
-            <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+            <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
               {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           )}
           <div className="relative flex-1 min-w-[180px] max-w-xs">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-sage-muted" />
-            <input className="input pl-9" placeholder="Schüler suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input pl-9" type="search" aria-label="Schüler suchen" placeholder="Schüler suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
           {data && <span className="text-sm text-sage-muted">{rows.length} Schüler</span>}
         </div>
@@ -399,7 +399,7 @@ export default function Klassenliste() {
                         <Link
                           to={`/profil/${r.id}`}
                           onClick={(e) => e.stopPropagation()}
-                          className="hover:underline rounded"
+                          className="inline-flex items-center min-h-8 -my-1.5 hover:underline rounded"
                         >
                           {r.name}
                         </Link>

@@ -112,7 +112,7 @@ function ManagerView() {
   return (
     <div className="space-y-4">
       {classes.length > 1 && (
-        <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+        <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}
@@ -216,7 +216,7 @@ function ReadView({ role }) {
   return (
     <div className="space-y-4">
       {role === 'eltern' && children.length > 0 && (
-        <select className="input w-auto" value={childId} onChange={(e) => setChildId(e.target.value)}>
+        <select aria-label="Kind" className="input w-auto" value={childId} onChange={(e) => setChildId(e.target.value)}>
           {children.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       )}

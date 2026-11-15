@@ -21,7 +21,7 @@ export default function Regeln() {
     <AppLayout title="Regeln & Strafen" wide>
       <div className="space-y-4">
         {data.classes?.length > 1 && (
-          <select className="input w-auto" value={classId} onChange={(e) => { setClassId(e.target.value); setData(null); load(e.target.value); }}>
+          <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => { setClassId(e.target.value); setData(null); load(e.target.value); }}>
             {data.classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}

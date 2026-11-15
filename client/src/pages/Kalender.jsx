@@ -153,7 +153,7 @@ export default function Kalender() {
         <Card className="p-4 sm:p-5 mt-4 lg:mt-0 lg:sticky lg:top-0">
           <div className="flex items-center justify-between">
             <CardHeader title={selected.toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' })} icon={CalendarDays} />
-            <Button size="sm" variant="outline" onClick={() => openNew(selected)}><Plus size={16} /></Button>
+            <Button size="sm" variant="outline" aria-label="Termin hinzufügen" onClick={() => openNew(selected)}><Plus size={16} /></Button>
           </div>
           {events ? <DayAgenda events={byDate[key(selected)] || []} onEvent={openEdit} onDecide={decide} /> : <SkeletonRows rows={2} className="mt-1" />}
         </Card>

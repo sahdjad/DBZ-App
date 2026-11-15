@@ -44,12 +44,17 @@ Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, 
 | ✅ | Adresse der App für E-Mail-Links fest (auf Render automatisch), `.env.example` angelegt |
 | ⬜ | **Betreiber:** E-Mail-Dienst wählen und `EMAIL_API_URL` bei Render eintragen – bis dahin kommt „Passwort vergessen" nicht per E-Mail an |
 
-## Stufe 3 – Oberfläche und Barrierefreiheit (1 bis 2 Wochen)
+## Stufe 3 – Oberfläche und Barrierefreiheit (erledigt am 15.11.2026)
 
-- ⬜ Beschriftungen für alle Felder und Symbol-Knöpfe (26 Felder, 2 Knöpfe)
-- ⬜ Touch-Ziele auf dem Handy mindestens 44 px
-- ⬜ Kontraste für Gold, Orange und Grün auf mindestens 4,5:1
-- ⬜ Seite „Kein Zugriff" statt stummer Umleitung
+- ✅ Beschriftungen für alle Felder und Symbol-Knöpfe
+- ✅ Tippflächen: keine unter 24 px (WCAG 2.2 AA); Abschnitts-Aktionen („Alle", „Details") 44 px
+- ✅ Kontraste für Gold, Orange, Grün, Gelb-Braun und Rot im hellen Design auf mindestens 4,5:1 – auch auf Feldern
+- ✅ Seite „Kein Zugriff" statt stummer Umleitung
+
+Nachweis: automatischer Durchlauf über 32 Seiten × 6 Rollen auf Handybreite (192 Aufrufe):
+0 unbeschriftete Felder, 0 unbenannte Knöpfe, 0 Tippflächen unter 24 px, kein Überlauf, keine Skriptfehler.
+Offen: Prüfung mit echtem Screenreader (VoiceOver) und auf echten Geräten; durchgehend 44 px für
+kleine Textlinks in Tabellen (aktuell 32 px).
 
 ## Stufe 4 – Bestehendes vervollständigen (2 bis 3 Wochen)
 

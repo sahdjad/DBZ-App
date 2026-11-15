@@ -110,7 +110,7 @@ export default function Materialien() {
               {group.items.length > 3 && (
                 <button
                   onClick={() => document.getElementById('mat-end')?.scrollIntoView({ behavior: scrollBehavior(), block: 'end' })}
-                  className="inline-flex items-center gap-1 text-xs text-mint hover:underline"
+                  className="inline-flex items-center gap-1 min-h-8 text-xs text-mint hover:underline"
                 >
                   <ArrowDown size={14} /> Zum Neuesten
                 </button>

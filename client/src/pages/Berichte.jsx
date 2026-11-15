@@ -285,16 +285,16 @@ function ManagerView() {
   return (
     <div className="space-y-4">
       <div className="flex gap-2 flex-wrap items-center">
-        <select className="input w-auto" value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
+        <select aria-label="Zeitraum" className="input w-auto" value={periodId} onChange={(e) => setPeriodId(e.target.value)}>
           {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
         {classes.length > 1 && (
-          <select className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         )}
         {tab === 'overview' && (
-          <select className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} title="Auswertungszeitraum">
+          <select aria-label="Monat" className="input w-auto" value={month} onChange={(e) => setMonth(e.target.value)} title="Auswertungszeitraum">
             {MONTHS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>
         )}

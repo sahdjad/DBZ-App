@@ -129,8 +129,8 @@ function LinkAccountsAdminCard() {
     <Card className="p-4 sm:p-5">
       <CardHeader title="Konten verknüpfen" subtitle="Dieselbe Person mit mehreren Rollen zusammenführen (z. B. Schüler + Klassenlehrer + Leitung)" icon={Link2} />
       <form onSubmit={link} className="grid gap-2 sm:grid-cols-2">
-        <input className="input" type="email" placeholder="E-Mail Konto 1" value={f.emailA} onChange={(e) => setF({ ...f, emailA: e.target.value })} required />
-        <input className="input" type="email" placeholder="E-Mail Konto 2" value={f.emailB} onChange={(e) => setF({ ...f, emailB: e.target.value })} required />
+        <input className="input" type="email" aria-label="E-Mail Konto 1" placeholder="E-Mail Konto 1" value={f.emailA} onChange={(e) => setF({ ...f, emailA: e.target.value })} required />
+        <input className="input" type="email" aria-label="E-Mail Konto 2" placeholder="E-Mail Konto 2" value={f.emailB} onChange={(e) => setF({ ...f, emailB: e.target.value })} required />
         <div className="sm:col-span-2"><Button type="submit" disabled={busy}><Link2 size={16} /> Verknüpfen</Button></div>
       </form>
     </Card>
@@ -517,7 +517,7 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                 <thead>
                   <tr className="text-left text-footnote text-sage-muted border-b border-line/70 bg-subtle/50">
                     <th className="py-2.5 pl-4 pr-1 w-8">
-                      <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--c-mint))]" aria-label="Alle auswählen" checked={allOn}
+                      <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label="Alle auswählen" checked={allOn}
                         onChange={() => setSelected(allOn ? selected.filter((id) => !selectable.includes(id)) : [...new Set([...selected, ...selectable])])} />
                     </th>
                     {th('name', 'Name')}
@@ -531,7 +531,7 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                   {list.map((u) => (
                     <tr key={u.id} aria-selected={detailId === u.id} className={`group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer ${detailId === u.id ? 'bg-mint/[0.08]' : ''}`} onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
                       <td className="py-2.5 pl-4 pr-1">
-                        {u.id !== me?.id && <input type="checkbox" className="h-4 w-4 accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
+                        {u.id !== me?.id && <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
                       </td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-3 min-w-0">

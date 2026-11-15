@@ -39,16 +39,16 @@
   --c-onaccent: 255 255 255;  /* Text auf Primärgrün */
   --c-mint: 7 56 46;          /* #07382E Primär */
   --c-mint-light: 36 101 80;  /* #246550 Links / Akzent auf Hell */
-  --c-gold: 132 112 70;       /* #847046 Gold (Text-tauglich) */
+  --c-gold: 122 103 62;       /* #7A673E Gold (Text ≥ 4.5:1 auch auf Feldern) */
   --c-ivory: 23 35 30;        /* #17231E Primärtext / Titel */
   --c-sage: 52 64 58;         /* #34403A Fließtext */
   --c-sage-muted: 96 107 101;/* #606B65 Sekundärtext (≥ 4.5:1 auch auf Feldern) */
-  --c-present: 30 128 80;
-  --c-late: 150 98 8;
-  --c-partial: 194 86 12;     /* #C2560C Orange (zwischen Rot und Gelb) */
+  --c-present: 24 116 72;     /* Statusfarben: als Text ≥ 4.5:1 auf allen hellen Flächen */
+  --c-late: 140 90 6;
+  --c-partial: 176 74 6;      /* #B04A06 Orange (zwischen Rot und Gelb) */
   --c-half: 226 172 16;       /* #E2AC10 Gelb für Balken/Punkte (Text: --c-late) */
   --c-excused: 44 98 156;
-  --c-absent: 192 60 44;
+  --c-absent: 180 52 38;
   --shadow-card: 0 1px 2px rgb(23 35 30 / 0.04), 0 1px 1px rgb(23 35 30 / 0.02);
   --shadow-float: 0 12px 32px -8px rgb(23 35 30 / 0.18), 0 2px 6px rgb(23 35 30 / 0.06);
   --header-bg: 7 56 46;
@@ -145,6 +145,16 @@ html {
 @layer base {
   html {
     scroll-behavior: smooth;
+  }
+
+  /* Kontrollkästchen und Auswahlpunkte: einheitlich 24 px (Mindest-Tippfläche
+     nach WCAG 2.2), in der Markenfarbe. Eigene Größenklassen haben Vorrang. */
+  input[type='checkbox'],
+  input[type='radio'] {
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    accent-color: rgb(var(--c-mint));
   }
 
   body {

@@ -44,7 +44,7 @@ export default function Hilfe() {
                 <div className="min-w-0">
                   <div className="text-ivory font-medium">{s.title}</div>
                   <p className="text-sm text-sage leading-relaxed">{s.text}</p>
-                  {s.to && key === own && <Link to={s.to} className="text-xs text-mint hover:underline">Öffnen →</Link>}
+                  {s.to && key === own && <Link to={s.to} className="inline-flex items-center min-h-8 text-xs text-mint hover:underline">Öffnen →</Link>}
                 </div>
               </li>
             ))}
