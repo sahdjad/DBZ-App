@@ -26,7 +26,7 @@ Status: ⬜ offen · 🟨 in Arbeit · ✅ erledigt
 | ✅ | Abwesenheitsmeldung nur an die eigene Klasse | Fremde Klasse ergibt 403 |
 
 Tests: `server/test/hardening.test.js`, `server/test/backup-supabase.test.js`. Anleitung: `docs/SICHERUNG.md`.
-Offen aus diesem Paket: Im Client verlangen drei Abhängigkeiten (`pdfjs-dist`, `vite`, `react-router`) einen Versionssprung mit Umbauten – eigener Schritt.
+`pdfjs-dist` ist auf Version 6 aktualisiert (die einzige Meldung der Stufe „hoch"). Offen: `vite` (betrifft nur den Entwicklungsserver) und `react-router` (Stufe „mittel") verlangen einen Versionssprung mit Umbauten.
 
 ## Stufe 2 – Stabilisierung (erledigt am 15.11.2026, zwei Punkte offen)
 
