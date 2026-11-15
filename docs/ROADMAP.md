@@ -80,7 +80,14 @@ kleine Textlinks in Tabellen (aktuell 32 px).
 
 ## Stufe 6 – Professionalisierung (4 bis 6 Wochen)
 
-- ⬜ **Tabellen statt eines Dokuments:** in `server/store.js` Sammlung für Sammlung auf
+- ✅ **Speichern in Blöcken statt als ein Dokument** (15.11.2026): je Sammlung Zeilen zu 500 Einträgen, nur
+  Geändertes wird hochgeladen. Gemessen mit 500 Schülern / 20 Klassen / 30 Wochen (51 MB): je Änderung
+  0–165 KB statt 51 MB. Keine Änderung an der Tabelle nötig, alte Zeile bleibt als Rückweg (`docs/SICHERUNG.md`).
+  Grenzen, die bleiben: der ganze Bestand liegt im Arbeitsspeicher (350 MB bei 500 Schülern; Render Free hat 512 MB),
+  und jede Speicherung prüft alle Blöcke (rund 0,4 s Rechenzeit bei dieser Größe).
+- ⬜ Nächster Schritt bei Bedarf: nur geänderte Sammlungen prüfen; danach echte Tabellen mit Abfragen
+  (löst auch die Arbeitsspeicher-Grenze), beginnend mit Benachrichtigungen, Audit-Log, Notizen.
+- ⬜ ~~Tabellen statt eines Dokuments~~ (ersetzt durch die beiden Punkte oben): in `server/store.js` Sammlung für Sammlung auf
   Supabase-Tabellen umstellen – zuerst Benachrichtigungen, Audit-Log, Notizen, zuletzt Nutzer.
 - ⬜ `server/api.js` nach Bereichen aufteilen, ohne Verhalten zu ändern
 - ⬜ Rechtlicher Rahmen: Datenschutzerklärung, Auftragsverarbeitung (Supabase, Render), Löschfristen

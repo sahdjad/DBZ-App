@@ -216,7 +216,7 @@ router.use((req, res, next) => {
 // keine sensiblen Daten -- die Login-Seite blendet die Demo-Kacheln danach
 // aus, das eigentliche Verbot erzwingt aber /auth/login serverseitig.
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, storage: db.backend, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
+  res.json({ ok: true, storage: db.backend, layout: db.layout, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
 });
 
 // --- Datensatz-Helfer --------------------------------------------------------

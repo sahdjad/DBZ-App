@@ -88,8 +88,9 @@ test('Notmodus endet von selbst, sobald Supabase wieder antwortet -- mit dem ech
   const { db, flushStore } = await import('../store.js');
   assert.equal(db.all('classes')[0].name, 'Echte Klasse');
   await flushStore();
-  assert.equal(fake.row.classes[0].name, 'Echte Klasse', 'echter Bestand steht weiterhin in Supabase');
-  assert.equal(fake.row.users.some((u) => u.id === 'u_echt'), true);
+  assert.equal(fake.state().classes[0].name, 'Echte Klasse', 'echter Bestand steht weiterhin in Supabase');
+  assert.equal(fake.state().users.some((u) => u.id === 'u_echt'), true);
+  assert.equal(fake.row.users[0].id, 'u_echt', 'die alte Zeile bleibt unverändert stehen');
 });
 
 test('Schutz: ein leerer Bestand überschreibt nie vorhandene Daten', async () => {
@@ -97,5 +98,5 @@ test('Schutz: ein leerer Bestand überschreibt nie vorhandene Daten', async () =
   db.all('users').length = 0; // simulierter Programmfehler
   db.commit();
   await flushStore();
-  assert.equal(fake.row.users.some((u) => u.id === 'u_echt'), true, 'Supabase behält die Nutzer');
+  assert.equal(fake.state().users.some((u) => u.id === 'u_echt'), true, 'Supabase behält die Nutzer');
 });
