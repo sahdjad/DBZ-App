@@ -43,19 +43,20 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
   const toast = useToast();
   const [role, setRole] = useState(user.role);
   const [cls, setCls] = useState(user.classIds || []);
+  const [until, setUntil] = useState(user.validUntil || '');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setRole(user.role); setCls(user.classIds || []); }, [user.id, user.role, (user.classIds || []).join(',')]);
+  useEffect(() => { setRole(user.role); setCls(user.classIds || []); setUntil(user.validUntil || ''); }, [user.id, user.role, user.validUntil, (user.classIds || []).join(',')]);
   const options = ROLES.filter(([v]) => isSuperAdmin || v !== 'super_admin');
   const sameClasses = [...cls].sort().join(',') === [...(user.classIds || [])].sort().join(',');
-  const changed = role !== user.role || (CLASS_ROLES.includes(role) && !sameClasses);
+  const changed = role !== user.role || (CLASS_ROLES.includes(role) && !sameClasses) || (role === 'vertretung' && until !== (user.validUntil || ''));
   const promote = async () => {
     if (CLASS_ROLES.includes(role) && !MULTI_CLASS.includes(role) && cls.length !== 1) return toast.push('Bitte genau eine Klasse wählen', 'error');
     const msg = role !== user.role ? `${user.name}: ${roleLabel(user.role)} → ${roleLabel(role)}?` : `Klassen von ${user.name} ändern?`;
     if (!window.confirm(msg)) return;
     setBusy(true);
     try {
-      const r = await api.patch(`/admin/users/${user.id}`, { role, classIds: CLASS_ROLES.includes(role) ? cls : [] });
-      toast.push(r.pending ? 'Zur Bestätigung an den Administrator gesendet' : role !== user.role ? `Befördert: ${roleLabel(role)}` : 'Klassen gespeichert', 'success');
+      const r = await api.patch(`/admin/users/${user.id}`, { role, classIds: CLASS_ROLES.includes(role) ? cls : [], ...(role === 'vertretung' ? { validUntil: until || null } : {}) });
+      toast.push(r.pending ? 'Zur Bestätigung an den Administrator gesendet' : role !== user.role ? `Befördert: ${roleLabel(role)}` : 'Gespeichert', 'success');
       onChanged?.();
     } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
   };
@@ -79,7 +80,14 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
             <ClassChips classes={classes} value={cls} onChange={setCls} multi={MULTI_CLASS.includes(role)} />
           </div>
         )}
-        <Button onClick={promote} disabled={!changed || busy}>{role !== user.role ? `Zu ${roleLabel(role)} befördern` : 'Klassen speichern'}</Button>
+        {role === 'vertretung' && (
+          <label className="block">
+            <span className="text-xs text-sage-muted">Vertretung endet am (leer = ohne Enddatum)</span>
+            <input type="date" className="input mt-1" value={until} onChange={(e) => setUntil(e.target.value)} />
+            <span className="block text-caption text-sage-muted mt-1">Danach ist die Klasse für diese Person gesperrt. Vertretungen ändern weder Klassenliste noch Einstellungen und geben Berichte und Strafen nicht frei.</span>
+          </label>
+        )}
+        <Button onClick={promote} disabled={!changed || busy}>{role !== user.role ? `Zu ${roleLabel(role)} befördern` : 'Speichern'}</Button>
         <p className="text-caption text-sage-muted">Die bisherige Rolle wird ersetzt. Soll sie bleiben, unten „Zusätzliche Rolle“ nutzen.</p>
       </div>
     </div>

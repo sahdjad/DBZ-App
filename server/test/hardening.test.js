@@ -385,3 +385,153 @@ test('Verlauf wird begrenzt: alte Benachrichtigungen, Audit-Einträge und Passwo
   assert.equal(db.all('password_resets').some((p) => p.id === 'pr_offen'), true);
   assert.deepEqual(trimHistory().removed, { notifications: 0, audit: 0, resets: 0 }, 'zweiter Lauf ändert nichts');
 });
+
+// ---- Stufe 4 -------------------------------------------------------------------
+
+test('Vertretung: unterrichtet, ändert aber nichts Dauerhaftes; Enddatum sperrt die Klasse', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const email = `vertretung-${Date.now()}@dbz.de`;
+  const made = await admin('POST', '/admin/users', { name: 'Vertretung Test', email, password: 'demo1234', role: 'vertretung', classIds: ['class_3'], validUntil: '2099-12-31' });
+  assert.equal(made.status, 200);
+  assert.equal(made.data.user.validUntil, '2099-12-31');
+  const v = await loginAs(email);
+
+  // Erlaubt: Unterrichtsalltag.
+  assert.equal((await v('GET', '/classes/class_3/students')).status, 200);
+  const asg = await v('POST', '/assignments', { classId: 'class_3', title: 'Von der Vertretung', type: 'text' });
+  assert.equal(asg.status, 200);
+  const pen = await v('POST', '/penalties', { classId: 'class_3', studentId: 'user_yusuf', type: 'pages', amount: 1, reason: 'Test' });
+  assert.equal(pen.status, 200, 'erfassen darf sie');
+
+  // Nicht erlaubt: Klassenliste, Einstellungen, Regeln, Rollen, Einladungen, Freigaben.
+  const denied = [
+    ['DELETE', '/classes/class_3/students/user_yusuf'],
+    ['PATCH', '/classes/class_3/settings', { startTime: '09:00' }],
+    ['PATCH', '/classes/class_3/homework-rules', {}],
+    ['POST', '/classes/class_3/reset-data', { scopes: ['attendance'], confirmName: 'Klasse 3' }],
+    ['POST', '/students/user_yusuf/klassensprecher', { promote: true }],
+    ['POST', '/students/user_yusuf/probation', { probation: true }],
+    ['POST', '/admin/invites', { role: 'schueler', classId: 'class_3' }],
+    ['PUT', '/rules/text/class_3', { text: 'x' }],
+    ['PUT', '/rules/catalog/class_3', { items: [] }],
+    ['POST', `/penalties/${pen.data.penalty.id}/settle`, {}],
+    ['POST', `/penalties/${pen.data.penalty.id}/approve`, {}],
+  ];
+  for (const [m, p, b] of denied) {
+    const r = await v(m, p, b);
+    assert.equal(r.status, 403, `${m} ${p} -> ${r.status}`);
+    assert.match(r.data.error, /Klassenleitung/);
+  }
+  const { db } = await import('../store.js');
+  assert.ok(db.all('users').find((u) => u.id === 'user_yusuf').classIds.includes('class_3'), 'Schüler ist noch in der Klasse');
+
+  // Die Klassenleitung darf das weiterhin.
+  const teacher = await loginAs('lehrer@dbz.de');
+  assert.equal((await teacher('POST', `/penalties/${pen.data.penalty.id}/settle`, {})).status, 200);
+
+  // Enddatum in der Vergangenheit: Klasse gesperrt, eigenes Konto bleibt erreichbar.
+  assert.equal((await admin('PATCH', `/admin/users/${made.data.user.id}`, { validUntil: 'morgen' })).status, 400);
+  assert.equal((await admin('PATCH', `/admin/users/${made.data.user.id}`, { validUntil: '2020-01-01' })).status, 200);
+  const blocked = await v('GET', '/classes/class_3/students');
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.data.expired, true);
+  assert.match(blocked.data.error, /01\.01\.2020/);
+  assert.equal((await v('POST', '/assignments', { classId: 'class_3', title: 'x', type: 'text' })).status, 403);
+  assert.equal((await v('GET', '/auth/me')).data.user.role, 'vertretung');
+  assert.equal((await v('GET', '/notifications')).status, 200);
+  assert.equal((await v('POST', '/auth/logout')).status, 200);
+  // Enddatum entfernen -> wieder aktiv. Rollenwechsel entfernt es ganz.
+  assert.equal((await admin('PATCH', `/admin/users/${made.data.user.id}`, { validUntil: null })).status, 200);
+  const again = await loginAs(email);
+  assert.equal((await again('GET', '/classes/class_3/students')).status, 200);
+  await admin('PATCH', `/admin/users/${made.data.user.id}`, { validUntil: '2099-01-01' });
+  const promoted = await admin('PATCH', `/admin/users/${made.data.user.id}`, { role: 'klassenlehrer' });
+  assert.equal(promoted.data.user.validUntil, undefined);
+});
+
+test('Prüfungen: Versuch und Abgabe nur für zugewiesene Schüler; Eltern sehen Stand und Ergebnis ohne Inhalte', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  const q = [{ type: 'single', prompt: 'Frage', options: [{ text: 'a' }, { text: 'b' }], correct: [0], points: 1 }];
+  // Nur Yusuf zugewiesen.
+  const exam = (await teacher('POST', '/exams', { classId: 'class_3', title: 'Nur für Yusuf', questions: q, targetStudentIds: ['user_yusuf'] })).data.exam;
+  assert.equal((await teacher('POST', `/exams/${exam.id}/publish`)).status, 200);
+
+  const other = await loginAs('amina@dbz.de'); // gleiche Klasse, nicht zugewiesen
+  assert.equal((await other('GET', `/exams/${exam.id}`)).status, 403);
+  assert.equal((await other('POST', `/exams/${exam.id}/attempt`)).status, 403);
+  assert.equal((await other('POST', `/exams/${exam.id}/submit`, { answers: [] })).status, 403);
+  const { db } = await import('../store.js');
+  assert.equal(db.all('exam_attempts').filter((a) => a.examId === exam.id).length, 0);
+
+  const yusuf = await loginAs('schueler@dbz.de');
+  assert.equal((await yusuf('POST', `/exams/${exam.id}/attempt`)).status, 200);
+
+  // Eltern von Yusuf: sehen die Prüfung als „in Arbeit", ohne Fragen; öffnen können sie sie nicht.
+  const parent = await loginAs('eltern@dbz.de');
+  const seen = (await parent('GET', '/exams')).data.exams.find((e) => e.id === exam.id);
+  assert.ok(seen);
+  assert.equal(seen.childName, 'Yusuf');
+  assert.equal(seen.studentStatus, 'in_progress');
+  assert.equal(seen.result, null);
+  assert.equal(seen.readOnly, true);
+  assert.equal('questions' in seen, false);
+  assert.equal((await parent('GET', `/exams/${exam.id}`)).status, 403);
+  assert.equal((await parent('POST', `/exams/${exam.id}/attempt`)).status, 403);
+
+  const qid = db.all('exams').find((e) => e.id === exam.id).questions[0].id;
+  assert.equal((await yusuf('POST', `/exams/${exam.id}/submit`, { answers: [{ questionId: qid, selected: [0] }] })).status, 200);
+  assert.equal((await parent('GET', '/exams')).data.exams.find((e) => e.id === exam.id).studentStatus, 'submitted');
+});
+
+test('Eingaben: Hausaufgabe, Bewertung, CSV-Export, Tadschwid-HTML, Verhaltensvermerk', async () => {
+  const teacher = await loginAs('lehrer@dbz.de');
+  // Hausaufgabe: Frist und Zielschüler werden geprüft.
+  assert.equal((await teacher('POST', '/assignments', { classId: 'class_3', title: 'A', type: 'text', dueAt: 'irgendwann' })).status, 400);
+  assert.equal((await teacher('POST', '/assignments', { classId: 'class_3', title: 'A', type: 'text', targetStudentIds: ['user_gibt_es_nicht'] })).status, 400);
+  assert.equal((await teacher('POST', '/assignments', { classId: 'class_3', title: 'A', type: 'text', targetStudentIds: 'user_yusuf' })).status, 400);
+  const asg = await teacher('POST', '/assignments', { classId: 'class_3', title: 'Bewertungstest', type: 'text', targetStudentIds: ['user_yusuf'], dueAt: new Date(Date.now() + 86400000).toISOString() });
+  assert.equal(asg.status, 200);
+
+  // Bewertung: nur bekannte Ergebnisse und plausible Zahlen.
+  const login = await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'schueler@dbz.de', password: 'demo1234' }) });
+  const form = new FormData(); form.set('text', 'Meine Antwort');
+  const sub = await (await fetch(base + `/api/assignments/${asg.data.assignment.id}/submit`, { method: 'POST', headers: { cookie: login.headers.get('set-cookie').split(';')[0] }, body: form })).json();
+  const rev = (body) => teacher('POST', `/submissions/${sub.submission.id}/review`, body);
+  assert.equal((await rev({ outcome: 'egal' })).status, 400);
+  assert.equal((await rev({})).status, 400);
+  assert.equal((await rev({ outcome: 'passed', tajwid: -5 })).status, 400);
+  assert.equal((await rev({ outcome: 'passed', fluency: 'sehr gut' })).status, 400);
+  assert.equal((await rev({ outcome: 'passed', errorCount: 1.5 })).status, 400);
+  assert.equal((await rev({ outcome: 'revision', feedbackText: 'Bitte nochmal' })).status, 200, 'Wert der App');
+  assert.equal((await rev({ outcome: 'passed', tajwid: 8, errorCount: 2 })).status, 200);
+
+  // CSV: Formel-Anfänge werden entschärft, Zahlen bleiben Zahlen.
+  const { db } = await import('../store.js');
+  const yusuf = db.all('users').find((u) => u.id === 'user_yusuf');
+  const realName = yusuf.name;
+  yusuf.name = '=HYPERLINK("http://boese.example";"Klick")';
+  try {
+    const cookie = (await fetch(base + '/api/auth/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'lehrer@dbz.de', password: 'demo1234' }) })).headers.get('set-cookie').split(';')[0];
+    const csv = await (await fetch(base + '/api/export/attendance.csv?classId=class_3', { headers: { cookie } })).text();
+    assert.ok(csv.includes(`"'=HYPERLINK(`), 'Formel als Text gekennzeichnet');
+    assert.equal(/(^|;|\n)=/.test(csv.replace(/^\uFEFF/, '')), false, 'keine Zelle beginnt mit =');
+  } finally { yusuf.name = realName; }
+
+  // Tadschwid: nur bekannte Markierungen kommen durch.
+  const { safeTajweedHtml } = await import('../providers/tajweedProvider.js');
+  const ok = 'بِسْمِ <tajweed class=ham_wasl>ٱ</tajweed>للَّهِ <span class=end>١</span>';
+  assert.equal(safeTajweedHtml(ok), ok, 'echter Text bleibt unverändert');
+  assert.equal(safeTajweedHtml('<tajweed class="ghunnah">نّ</tajweed>'), '<tajweed class=ghunnah>نّ</tajweed>');
+  const evil = safeTajweedHtml('<img src=x onerror=alert(1)><script>x</script><span onclick="x">a</span><tajweed class=x onmouseover=y>b</tajweed><a href="javascript:1">c</a>');
+  assert.equal(/<(img|script|a|span onclick|tajweed class=x on)/i.test(evil), false);
+  assert.ok(evil.includes('&lt;img'));
+
+  // Verhaltensvermerk: der Wortlaut bleibt in der App vollständig; der neutrale
+  // Ersatztext für den Sperrbildschirm wird nicht mitgespeichert.
+  const cats = (await teacher('GET', '/behavior-categories')).data.categories;
+  const beh = await teacher('POST', '/behavior', { studentId: 'user_yusuf', classId: 'class_3', category: cats[0].id, note: 'Vertraulicher Wortlaut 4711', tone: 'negative', visibleToStudent: true });
+  assert.equal(beh.status, 200);
+  const note = db.all('notifications').filter((n) => n.userId === 'user_yusuf' && n.type === 'behavior_new').pop();
+  assert.equal(note.body, 'Vertraulicher Wortlaut 4711', 'in der App vollständig');
+  assert.equal('pushBody' in note, false, 'Ersatztext wird nicht gespeichert');
+});

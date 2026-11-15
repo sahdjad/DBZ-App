@@ -55,13 +55,20 @@ Nachweis: automatischer Durchlauf über 32 Seiten × 6 Rollen auf Handybreite (1
 Offen: Prüfung mit echtem Screenreader (VoiceOver) und auf echten Geräten; durchgehend 44 px für
 kleine Textlinks in Tabellen (aktuell 32 px).
 
-## Stufe 4 – Bestehendes vervollständigen (2 bis 3 Wochen)
+## Stufe 4 – Bestehendes vervollständigen (15.11.2026, ein Punkt wartet auf eine Entscheidung)
 
-- ⬜ Vertretungslehrer: eingeschränkte Rechte und Ablaufdatum (Vorgabe aus `BACKLOG.md`)
-- ⬜ Vier-Augen-Prinzip der Leitung einheitlich (auch Rollenänderung und Einladungen)
-- ⬜ Prüfungen: Zielgruppe und Status prüfen, Zeitfenster, Sicht für Eltern
-- ⬜ Eingabeprüfung bei Hausaufgaben und Bewertung
-- ⬜ README, `PROJECT_STATUS.md`, `BACKLOG.md` auf den tatsächlichen Stand bringen
+- ✅ Vertretungslehrer: unterrichtet und betreut, ändert aber weder Klassenliste, Einstellungen, Regeln, Rollen
+  noch Einladungen und gibt Berichte und Strafen nicht frei; optionales Enddatum (Verwaltung → Person → Rolle)
+- ✅ Prüfungen: Versuch und Abgabe nur für zugewiesene Schüler und nur, solange die Prüfung veröffentlicht ist;
+  Eltern sehen Stand und freigegebenes Ergebnis ihrer Kinder (ohne Fragen und Lösungen)
+- ✅ Eingabeprüfung bei Hausaufgaben (Frist, Zielschüler) und Bewertung (Ergebnis, Zahlenbereiche)
+- ✅ CSV-Export gegen Formeln geschützt; Tadschwid-Text der fremden Quelle wird am Server entschärft;
+  Verhaltensvermerke erscheinen im Push ohne Wortlaut
+- ✅ README, `CLAUDE.md`, `.env.example` auf Stand (`PROJECT_STATUS.md` und `BACKLOG.md` bleiben als Archiv)
+- ❓ **Entscheidung des Betreibers:** Soll die Leitung Rollen ändern und Einladungen für Lehrkräfte ausstellen
+  dürfen, ohne dass der System-Administrator bestätigt? Heute geht das (bewusst so gebaut: „höchstens Leitung");
+  nur das Anlegen von Konten und Klassen braucht eine Bestätigung.
+- ⬜ Prüfungen mit Zeitfenster; Eltern-Sicht auf Übungsverläufe; Mindestlänge für Passwörter über 6 Zeichen
 
 ## Stufe 5 – Neue Funktionen (4 bis 8 Wochen, in dieser Reihenfolge)
 

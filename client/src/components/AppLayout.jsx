@@ -128,7 +128,7 @@ function navForRole(role) {
         'dashboard',
         'ankuendigungen', 'nachrichten', 'benachrichtigungen',
         'kalender', 'abwesenheit',
-        'quran', 'hifz', 'materialien', 'berichte', 'aktivitaeten',
+        'quran', 'hifz', 'pruefungen', 'materialien', 'berichte', 'aktivitaeten',
         'verhalten', 'strafen', 'regeln',
         'dbzonline', 'hilfe', 'konto',
       );

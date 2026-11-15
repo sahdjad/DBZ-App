@@ -35,6 +35,27 @@ function writeDisk(key, data) {
   }
 }
 
+// Der Text stammt von einem fremden Dienst und wird im Browser als HTML
+// eingesetzt. Durchgelassen werden deshalb NUR die bekannten Markierungen
+// (<tajweed class=regel>, </tajweed>, <span class=end>, </span>); jedes andere
+// Zeichen, das HTML bedeuten könnte, wird entschärft.
+const ALLOWED_TAG = /^<(?:tajweed class=["']?([a-z_]{1,40})["']?|(\/tajweed)|span class=["']?(end)["']?|(\/span))>$/;
+const escapeHtml = (t) => t.replace(/&(?!(?:amp|lt|gt|quot|#\d{1,6});)/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export function safeTajweedHtml(html) {
+  return String(html || '')
+    .split(/(<[^<>]*>)/)
+    .map((part) => {
+      const m = ALLOWED_TAG.exec(part);
+      if (!m) return escapeHtml(part);
+      if (m[1]) return `<tajweed class=${m[1]}>`;
+      if (m[2]) return '</tajweed>';
+      if (m[3]) return '<span class=end>';
+      return '</span>';
+    })
+    .join('');
+}
+const safeSurah = (data) => ({ ...data, ayahs: (data.ayahs || []).map((a) => ({ ...a, html: safeTajweedHtml(a.html) })) });
+
 async function fetchPage(n, page) {
   const url = `${BASE}/verses/by_chapter/${n}?fields=text_uthmani_tajweed,page_number,juz_number&per_page=50&page=${page}`;
   return fetchJson(url);
@@ -55,8 +76,9 @@ export async function getTajweedSurah(n) {
   if (memo.has(key)) return memo.get(key);
   const disk = readDisk(key);
   if (disk) {
-    memo.set(key, disk);
-    return disk;
+    const safe = safeSurah(disk); // auch früher zwischengespeicherte Fassungen entschärfen
+    memo.set(key, safe);
+    return safe;
   }
 
   const ayahs = [];
@@ -84,7 +106,7 @@ export async function getTajweedSurah(n) {
     throw e;
   }
 
-  const data = { number: num, ayahs };
+  const data = safeSurah({ number: num, ayahs });
   memo.set(key, data);
   writeDisk(key, data);
   return data;

@@ -382,6 +382,21 @@ function doorCheckinOpen(session) {
 
 // --- Auth-Middleware ---------------------------------------------------------
 
+// Vertretungslehrer: unterrichten und betreuen die Klasse (Anwesenheit,
+// Hausaufgaben, Korrektur, Hifz, Nachrichten), ändern aber nichts Dauerhaftes
+// an ihr -- Klassenliste, Einstellungen, Regeln, Rollen, Einladungen sowie die
+// endgültige Freigabe von Berichten und Strafen bleiben der Klassenleitung.
+const SUBSTITUTE_DENIED = 'Das ist der Klassenleitung vorbehalten – als Vertretung nicht möglich.';
+function noSubstitute(req, res, next) {
+  if (req.user?.role === ROLES.VERTRETUNG) return res.status(403).json({ error: SUBSTITUTE_DENIED });
+  next();
+}
+// Vertretung mit Enddatum: danach bleibt nur noch das eigene Konto erreichbar
+// (Rolle wechseln, abmelden, Benachrichtigungen lesen).
+const todayIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: process.env.SCHOOL_TZ || 'Europe/Berlin' });
+const substituteExpired = (u) => u.role === ROLES.VERTRETUNG && Boolean(u.validUntil) && u.validUntil < todayIso();
+const OPEN_WHEN_EXPIRED = /^\/(me(\/|$)|auth\/|notifications|push\/|org$)/;
+
 function requireAuth(req, res, next) {
   const payload = readToken(req);
   if (!payload) return res.status(401).json({ error: 'Nicht angemeldet' });
@@ -393,6 +408,8 @@ function requireAuth(req, res, next) {
   if (!user || !sessionValid(payload, user)) return res.status(401).json({ error: 'Sitzung ungültig' });
   if (user.status === 'disabled' || (user.roleOf && findUserById(user.roleOf)?.status === 'disabled'))
     return res.status(403).json({ error: 'Konto ist deaktiviert' });
+  if (substituteExpired(user) && !OPEN_WHEN_EXPIRED.test(req.path))
+    return res.status(403).json({ error: `Deine Vertretung ist am ${user.validUntil.split('-').reverse().join('.')} abgelaufen. Bitte wende dich an die Leitung.`, expired: true });
   req.user = user;
   touchLastSeen(user);
   next();
@@ -990,7 +1007,7 @@ router.get('/classes/:id/students', requireAuth, (req, res) => {
 // Schüler der EIGENEN Klasse machen – braucht keine Admin-Bestätigung, weil
 // Klassensprecher fachlich ein Schüler mit Zusatzrechten bleibt, kein
 // Rollenwechsel mit neuen Systemrechten.
-router.post('/students/:id/klassensprecher', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/students/:id/klassensprecher', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const target = findUserById(req.params.id);
   if (!target || !STUDENT_ROLES.includes(target.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(target.classIds || []).some((c) => canManageClass(req.user, c)))
@@ -1423,7 +1440,7 @@ router.post('/sessions/:id/reset', requireAuth, requireRole(CLASS_MANAGERS), (re
 // freitags 18:45) und eigene Pünktlichkeitsregeln. Die Lehrkraft der Klasse
 // stellt das selbst ein -- unabhängig von Leitung und anderen Klassen.
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-router.patch('/classes/:id/settings', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.patch('/classes/:id/settings', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1582,7 +1599,7 @@ router.get('/school/today', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
 // Regeln und Einstellungen bleiben unangetastet. Vorher wird automatisch eine
 // Sicherung angelegt. Nur Lehrkräfte der Klasse sowie Leitung/Admin.
 const CLASS_RESET_SCOPES = ['attendance', 'absences', 'assignments', 'behavior', 'penalties', 'protocols'];
-router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {
+router.post('/classes/:id/reset-data', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, async (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1823,7 +1840,7 @@ router.get('/school/roster', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.L
 // löschen -- nur die Klassenmitgliedschaft). Bisher konnte nur Admin/Leitung
 // Klassenmitgliedschaften ändern; die Klassenlehrkraft sollte das für die
 // eigene Klasse direkt können, ohne den Umweg über die Verwaltung.
-router.delete('/classes/:id/students/:studentId', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.delete('/classes/:id/students/:studentId', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -1841,7 +1858,7 @@ router.delete('/classes/:id/students/:studentId', requireAuth, requireRole(CLASS
 // Probezeit markieren/entfernen – NUR die Klassenlehrkraft/Vertretung der
 // eigenen Klasse, nicht Admin/Leitung (soll bewusst nur in der Lehreransicht
 // sichtbar/steuerbar sein, nicht in der allgemeinen Schülerliste).
-router.post('/students/:id/probation', requireAuth, requireRole(TEACHING_ROLES), (req, res) => {
+router.post('/students/:id/probation', requireAuth, requireRole(TEACHING_ROLES), noSubstitute, (req, res) => {
   const target = findUserById(req.params.id);
   if (!target || !STUDENT_ROLES.includes(target.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(target.classIds || []).some((c) => canManageClass(req.user, c)))
@@ -2500,6 +2517,13 @@ router.post('/assignments', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
   const body = req.body || {};
   if (!canManageClass(req.user, body.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!body.title || !body.title.trim()) return res.status(400).json({ error: 'Titel ist erforderlich' });
+  if (body.dueAt && Number.isNaN(new Date(body.dueAt).getTime())) return res.status(400).json({ error: 'Ungültige Frist' });
+  // Einzelne Zielschüler müssen zur Klasse gehören.
+  if (body.targetStudentIds !== undefined && body.targetStudentIds !== null) {
+    if (!Array.isArray(body.targetStudentIds)) return res.status(400).json({ error: 'Ungültige Auswahl der Schüler' });
+    const inClass = new Set(db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(body.classId)).map((u) => u.id));
+    if (body.targetStudentIds.some((id) => !inClass.has(id))) return res.status(400).json({ error: 'Mindestens ein ausgewählter Schüler gehört nicht zu dieser Klasse' });
+  }
   res.json({ assignment: createAssignment(req.user, body) });
 });
 
@@ -2811,7 +2835,7 @@ router.get('/classes/:id/homework-rules', requireAuth, (req, res) => {
   res.json({ rule: AUDIO_DAY_RULES.includes(k.audioDayRule) ? k.audioDayRule : 'mark', students });
 });
 
-router.patch('/classes/:id/homework-rules', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.patch('/classes/:id/homework-rules', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const k = findClass(req.params.id);
   if (!k) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, k.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -3223,6 +3247,15 @@ router.post('/submissions/:id/review', requireAuth, (req, res) => {
   if (!canManageClass(req.user, sub.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
   const { gradeLabel, feedbackText, outcome, tajwid, pronunciation, fluency, memorization, errorCount } =
     req.body || {};
+  if (!['passed', 'revision', 'revision_required'].includes(outcome)) return res.status(400).json({ error: 'Bitte „bestanden" oder „überarbeiten" wählen' });
+  // Teilbewertungen sind Zahlen von 0 bis 100, die Fehlerzahl 0 bis 999.
+  const scores = { tajwid, pronunciation, fluency, memorization };
+  for (const v of Object.values(scores)) {
+    const n = num(v);
+    if (n !== null && !(Number.isFinite(n) && n >= 0 && n <= 100)) return res.status(400).json({ error: 'Ungültige Bewertung' });
+  }
+  const errs = num(errorCount);
+  if (errs !== null && !(Number.isInteger(errs) && errs >= 0 && errs <= 999)) return res.status(400).json({ error: 'Ungültige Fehlerzahl' });
   const passed = outcome === 'passed';
   let review = db.all('reviews').find((r) => r.submissionId === sub.id);
   const payload = {
@@ -3519,6 +3552,7 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), upload.single
       level: rec.tone === 'negative' ? 'warning' : 'info',
       title: rec.tone === 'negative' ? 'Neuer Hinweis' : 'Positive Rückmeldung',
       body: rec.note,
+      pushBody: 'Öffne die App, um die Rückmeldung zu lesen.', // Wortlaut nie auf dem Sperrbildschirm
       deepLink: '/verhalten',
     });
   if (rec.visibleToParent)
@@ -3530,6 +3564,7 @@ router.post('/behavior', requireAuth, requireRole(CLASS_MANAGERS), upload.single
           level: rec.tone === 'negative' ? 'warning' : 'info',
           title: `Rückmeldung zu ${student.name}`,
           body: rec.note,
+          pushBody: 'Öffne die App, um die Rückmeldung zu lesen.',
           deepLink: '/verhalten',
         }),
       );
@@ -4239,6 +4274,23 @@ router.get('/exams', requireAuth, (req, res) => {
       });
     return res.json({ exams: list });
   }
+  // Eltern: Prüfungen ihrer Kinder mit Stand und freigegebenem Ergebnis -- nur
+  // zum Ansehen, ohne Fragen, Antworten oder Lösungen.
+  if (req.user.role === ROLES.ELTERN) {
+    const list = [];
+    for (const childId of req.user.childIds || []) {
+      const child = findUserById(childId);
+      if (!child) continue;
+      for (const e of db.all('exams')) {
+        if (e.status !== 'published' || !(child.classIds || []).includes(e.classId) || !examTargetsStudent(e, child.id)) continue;
+        const att = db.all('exam_attempts').find((a) => a.examId === e.id && a.studentId === child.id);
+        const studentStatus = !att ? 'open' : att.status === 'released' ? 'released' : att.status === 'submitted' ? 'submitted' : 'in_progress';
+        const result = att?.status === 'released' ? { total: att.total, max: att.max, percent: att.percent, passed: att.percent >= e.passPercentage } : null;
+        list.push({ id: e.id, title: e.title, subjectName: findSubject(e.subjectId)?.name || null, questionCount: e.questions.length, linkOnly: !!e.link && e.questions.length === 0, studentStatus, result, childId: child.id, childName: child.name, readOnly: true });
+      }
+    }
+    return res.json({ exams: list });
+  }
   res.json({ exams: [] });
 });
 
@@ -4272,7 +4324,7 @@ router.get('/exams/:id', requireAuth, (req, res) => {
 // Versuch starten
 router.post('/exams/:id/attempt', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const exam = byId('exams', req.params.id);
-  if (!exam || exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId))
+  if (!exam || exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
     return res.status(403).json({ error: 'Kein Zugriff' });
   let att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
   if (!att) {
@@ -4300,6 +4352,9 @@ router.post('/exams/:id/attempt', requireAuth, requireRole(STUDENT_ROLES), (req,
 router.post('/exams/:id/submit', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
   const exam = byId('exams', req.params.id);
   if (!exam) return res.status(404).json({ error: 'Prüfung nicht gefunden' });
+  // Abgeben nur, solange die Prüfung veröffentlicht und dem Schüler zugewiesen ist.
+  if (exam.status !== 'published' || !(req.user.classIds || []).includes(exam.classId) || !examTargetsStudent(exam, req.user.id))
+    return res.status(403).json({ error: 'Kein Zugriff' });
   const att = db.all('exam_attempts').find((a) => a.examId === exam.id && a.studentId === req.user.id);
   if (!att) return res.status(400).json({ error: 'Kein aktiver Versuch' });
   if (att.status !== 'in_progress') return res.status(400).json({ error: 'Bereits abgegeben' });
@@ -4626,6 +4681,7 @@ router.patch('/reports/:id', requireAuth, requireRole(CLASS_MANAGERS), (req, res
       ? null : Math.min(6, Math.max(1, Math.round(num * 100) / 100));
   }
   if (status === 'draft' || status === 'released') {
+    if (req.user.role === ROLES.VERTRETUNG && status !== r.status) return res.status(403).json({ error: SUBSTITUTE_DENIED });
     const wasReleased = r.status === 'released';
     r.status = status;
     if (status === 'released' && !wasReleased) {
@@ -6015,7 +6071,7 @@ router.get('/penalties/summary', requireAuth, requireRole(CLASS_MANAGERS), (req,
 });
 
 // Genehmigen (Verwalter).
-router.post('/penalties/:id/approve', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/penalties/:id/approve', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (p.status !== 'pending') return res.status(400).json({ error: 'Nur offene Einträge können genehmigt werden' });
@@ -6036,7 +6092,7 @@ router.post('/penalties/:id/approve', requireAuth, requireRole(CLASS_MANAGERS), 
 });
 
 // Ablehnen (Verwalter).
-router.post('/penalties/:id/reject', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/penalties/:id/reject', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (p.status !== 'pending') return res.status(400).json({ error: 'Nur offene Einträge können abgelehnt werden' });
@@ -6059,7 +6115,7 @@ router.post('/penalties/:id/reject', requireAuth, requireRole(CLASS_MANAGERS), (
 });
 
 // Als erledigt verbuchen (bezahlt / Seiten abgegeben) – Verwalter/Leitung.
-router.post('/penalties/:id/settle', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/penalties/:id/settle', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (p.status !== 'approved')
@@ -6122,7 +6178,7 @@ router.post('/penalties/:id/request-payment', requireAuth, (req, res) => {
 });
 
 // Lehrkraft bestätigt die gemeldete Zahlung -> offiziell erledigt.
-router.post('/penalties/:id/confirm-payment', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/penalties/:id/confirm-payment', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (p.status !== 'payment_pending') return res.status(400).json({ error: 'Keine offene Zahlungsmeldung' });
@@ -6137,7 +6193,7 @@ router.post('/penalties/:id/confirm-payment', requireAuth, requireRole(CLASS_MAN
 });
 
 // Lehrkraft lehnt die gemeldete Zahlung ab -> zurück auf offen.
-router.post('/penalties/:id/decline-payment', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/penalties/:id/decline-payment', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const p = penaltyForManager(req, res);
   if (!p) return;
   if (p.status !== 'payment_pending') return res.status(400).json({ error: 'Keine offene Zahlungsmeldung' });
@@ -6157,7 +6213,7 @@ router.delete('/penalties/:id', requireAuth, (req, res) => {
   if (idx < 0) return res.status(404).json({ error: 'Nicht gefunden' });
   const p = list[idx];
   const own = p.createdBy === req.user.id && p.status === 'pending';
-  if (!own && !isAdmin(req.user) && !(TEACHING_ROLES.includes(req.user.role) && canManageClass(req.user, p.classId)))
+  if (!own && !isAdmin(req.user) && !(req.user.role === ROLES.KLASSENLEHRER && canManageClass(req.user, p.classId)))
     return res.status(403).json({ error: 'Kein Zugriff' });
   list.splice(idx, 1);
   db.commit();
@@ -6994,6 +7050,7 @@ function applyChangeRequest(cr) {
       id: newId('user'), name: cr.payload.name, email: cr.payload.email,
       passwordHash: cr.payload.passwordHash, role: cr.payload.role,
       classIds: cr.payload.classIds || [], childIds: cr.payload.childIds || [],
+      ...(cr.payload.validUntil ? { validUntil: cr.payload.validUntil } : {}),
       status: 'active', createdAt: new Date().toISOString(),
     };
     db.insert('users', u);
@@ -7157,12 +7214,15 @@ router.get('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const { name, email, password, role, classIds, childIds } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: 'Name, E-Mail, Passwort erforderlich' });
+  if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
+  const validUntil = parseValidUntil(req.body?.validUntil);
+  if (validUntil === false) return res.status(400).json({ error: 'Ungültiges Enddatum' });
   if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
   if (role === ROLES.SUPER_ADMIN && req.user.role !== ROLES.SUPER_ADMIN)
     return res.status(403).json({ error: 'Nur der System-Administrator kann diese Rolle vergeben' });
   if (findUserByEmail(email)) return res.status(409).json({ error: 'E-Mail bereits vergeben' });
   const passwordHash = await hashPassword(password);
-  const payload = { name: name.trim(), email: email.trim(), passwordHash, role, classIds: classIds || [], childIds: childIds || [] };
+  const payload = { name: name.trim(), email: email.trim(), passwordHash, role, classIds: classIds || [], childIds: childIds || [], ...(role === ROLES.VERTRETUNG && validUntil ? { validUntil } : {}) };
 
   // Leitung: erst nach Bestätigung durch den System-Administrator wirksam.
   if (needsApproval(req.user)) {
@@ -7173,12 +7233,20 @@ router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
   const user = {
     id: newId('user'), name: payload.name, email: payload.email, passwordHash,
     role, classIds: payload.classIds, childIds: payload.childIds,
+    ...(payload.validUntil ? { validUntil: payload.validUntil } : {}),
     status: 'active', isDemo: Boolean(req.user.isDemo), createdAt: new Date().toISOString(),
   };
   db.insert('users', user);
   audit(req.user.id, 'user.create', 'user', user.id, null, { role });
   res.json({ user: publicUser(user) });
 });
+
+/** Enddatum prüfen: gültiges JJJJ-MM-TT -> Text, leer/null -> null, sonst false. */
+function parseValidUntil(v) {
+  if (v === undefined || v === null || v === '') return null;
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(new Date(`${v}T00:00:00Z`).getTime())) return false;
+  return v;
+}
 
 // Nutzer nachträglich verwalten: Name, Rolle, Klassen, Eltern-Kind, Status.
 router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
@@ -7208,6 +7276,13 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
     u.role = role;
   }
 
+  // Enddatum der Vertretung (JJJJ-MM-TT) setzen oder mit null/'' entfernen.
+  if (req.body?.validUntil !== undefined) {
+    const until = parseValidUntil(req.body.validUntil);
+    if (until === false) return res.status(400).json({ error: 'Ungültiges Enddatum' });
+    if (until) u.validUntil = until; else delete u.validUntil;
+  }
+  if (u.role !== ROLES.VERTRETUNG) delete u.validUntil;
   if (Array.isArray(classIds)) u.classIds = classIds.filter((c) => findClass(c));
   if (Array.isArray(childIds))
     u.childIds = childIds.filter((id) => STUDENT_ROLES.includes(findUserById(id)?.role));
@@ -7442,7 +7517,7 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole(ROLES.SU
 
 const INVITE_ROLES_FOR_MANAGER = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER, ROLES.ELTERN];
 
-router.post('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const { role, classId, expiresInDays, maxUses, childId } = req.body || {};
   if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
 
@@ -7486,7 +7561,7 @@ router.get('/admin/invites', requireAuth, requireRole(CLASS_MANAGERS), (req, res
   res.json({ invites: list.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(inviteView) });
 });
 
-router.post('/admin/invites/:id/revoke', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+router.post('/admin/invites/:id/revoke', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
   const inv = byId('invites', req.params.id);
   if (!inv) return res.status(404).json({ error: 'Einladung nicht gefunden' });
   if (inv.createdBy !== req.user.id && !isAdmin(req.user)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -7500,8 +7575,12 @@ router.post('/admin/invites/:id/revoke', requireAuth, requireRole(CLASS_MANAGERS
 // CSV-Export (Verwaltung)
 // =============================================================================
 
+// Zellen, die mit = + - @ beginnen, würde Excel als Formel ausführen. Namen
+// kommen aus der Registrierung -> solche Zellen als Text kennzeichnen (').
+// Reine Zahlen (auch negative) bleiben Zahlen.
 const csvCell = (v) => {
-  const s = String(v ?? '');
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+([.,]\d+)?$/.test(s)) s = `'${s}`;
   return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 const toCsv = (rows) => '﻿' + rows.map((r) => r.map(csvCell).join(';')).join('\r\n');
@@ -7707,7 +7786,7 @@ router.put('/rules/catalog', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.L
 });
 
 // Konsequenzen NUR für eine Klasse (Klassenlehrer/Vertretung/Klassensprecher/Admin).
-router.put('/rules/catalog/:classId', requireAuth, (req, res) => {
+router.put('/rules/catalog/:classId', requireAuth, noSubstitute, (req, res) => {
   const c = findClass(req.params.classId);
   if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canEditClassRules(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });
@@ -7725,7 +7804,7 @@ router.put('/rules/text', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEIT
   res.json({ rules: rulesTextFor(resolveRulesClass(req)) });
 });
 
-router.put('/rules/text/:classId', requireAuth, (req, res) => {
+router.put('/rules/text/:classId', requireAuth, noSubstitute, (req, res) => {
   const c = findClass(req.params.classId);
   if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canEditClassRules(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });

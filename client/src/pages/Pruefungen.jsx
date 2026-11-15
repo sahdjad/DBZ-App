@@ -21,12 +21,12 @@ function StudentView() {
   if (!list.length) return <Card className="p-6 text-sage-muted">Aktuell sind keine Prüfungen verfügbar.</Card>;
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 items-start">
-      {list.map((e) => (
-        <Link key={e.id} to={`/pruefung/${e.id}`} className="block">
-          <Card className="p-4 hover:bg-hover transition flex items-center justify-between gap-3">
+      {list.map((e) => {
+        const card = (
+          <Card className={`p-4 flex items-center justify-between gap-3 ${e.readOnly ? '' : 'hover:bg-hover transition'}`}>
             <div className="min-w-0">
               <div className="text-ivory truncate">{e.title}</div>
-              <div className="text-xs text-sage-muted">{e.subjectName || 'Prüfung'} · {e.linkOnly ? 'Externe Prüfung (Link)' : `${e.questionCount} Fragen`}</div>
+              <div className="text-xs text-sage-muted">{e.childName ? <span data-noi18n>{e.childName} · </span> : null}{e.subjectName || 'Prüfung'} · {e.linkOnly ? 'Externe Prüfung (Link)' : `${e.questionCount} Fragen`}</div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               {e.link && <Badge tone="neutral">Link</Badge>}
@@ -34,8 +34,12 @@ function StudentView() {
               <StatusBadge status={e.studentStatus === 'open' ? 'not_opened' : e.studentStatus} />
             </div>
           </Card>
-        </Link>
-      ))}
+        );
+        // Eltern sehen Stand und Ergebnis, öffnen die Prüfung aber nicht.
+        return e.readOnly
+          ? <div key={`${e.childId}-${e.id}`}>{card}</div>
+          : <Link key={e.id} to={`/pruefung/${e.id}`} className="block">{card}</Link>;
+      })}
     </div>
   );
 }
