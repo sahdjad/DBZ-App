@@ -12,6 +12,8 @@ import Login from './pages/Login.jsx';
 // Das verkleinert das Start-Bündel deutlich -> spürbar schnellerer App-Start,
 // besonders auf dem Handy und im umfangreichen Lehrer-Bereich.
 const Registrieren = lazy(() => import('./pages/Registrieren.jsx'));
+const Ausweis = lazy(() => import('./pages/Ausweis.jsx'));
+const AusweisPruefen = lazy(() => import('./pages/Ausweis.jsx').then((m) => ({ default: m.AusweisPruefen })));
 const PasswortVergessen = lazy(() => import('./pages/PasswortVergessen.jsx'));
 const PasswortNeu = lazy(() => import('./pages/PasswortNeu.jsx'));
 const NotFound = lazy(() => import('./pages/NotFound.jsx'));
@@ -159,6 +161,7 @@ export default function App() {
       <Routes key={user?.id || 'anon'}>
         <Route path="/login" element={<Login />} />
         <Route path="/registrieren" element={<Registrieren />} />
+        <Route path="/ausweis/pruefen/:token" element={<AusweisPruefen />} />
         <Route path="/passwort-vergessen" element={<PasswortVergessen />} />
         <Route path="/passwort-neu" element={<PasswortNeu />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -199,6 +202,7 @@ export default function App() {
         <Route path="/mehr" element={<Protected><Mehr /></Protected>} />
         <Route path="/dbz-online" element={<Protected><DbzOnline /></Protected>} />
         <Route path="/konto" element={<Protected><Konto /></Protected>} />
+        <Route path="/ausweis" element={<Protected roles={['schueler', 'klassensprecher']}><Ausweis /></Protected>} />
         <Route path="/hilfe" element={<Protected><Hilfe /></Protected>} />
         <Route path="/admin" element={<Protected roles={ADMINS}><Admin /></Protected>} />
 

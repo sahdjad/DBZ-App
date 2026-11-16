@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"QR-Code zur Prüfung des Ausweises": "QR code pour vérifier la carte",
+"Schülerausweis": "Carte d'élève",
+"Schülernummer": "Numéro d'élève",
+"Schuljahr": "Année scolaire",
+"QR-Code scannen, um den Ausweis zu prüfen": "Scannez le QR code pour vérifier la carte",
+"Gültiger Schülerausweis": "Carte d'élève valide",
+"Ausweis nicht gültig": "Carte non valide",
+"Dieser Ausweis ist unbekannt oder nicht mehr aktiv.": "Cette carte est inconnue ou n'est plus active.",
+"Den Ausweis gibt es für Schülerinnen und Schüler": "La carte est réservée aux élèves",
 "Speicher": "Stockage",
 "Abgaben je Klasse": "Rendus par classe",
 "Bewertete Aufnahmen aufräumen": "Nettoyer les enregistrements évalués",

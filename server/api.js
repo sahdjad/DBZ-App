@@ -323,9 +323,36 @@ function publicUser(u) {
   // gezielt gesetzte Felder dort, siehe /classes/:id/roster).
   // lastSeenAt ("zuletzt online") ebenfalls nie pauschal -- nur Mitarbeitende
   // bekommen es gezielt (Klassenliste, Verwaltung, Nachrichten).
-  const { passwordHash, familyCode, probation, lastSeenAt, sessionVersion, ...rest } = u;
+  const { passwordHash, familyCode, probation, lastSeenAt, sessionVersion, passToken, ...rest } = u;
   return { ...rest, roleLabel: ROLE_LABELS[u.role] || u.role, ...(inSandbox() ? { demo: true } : {}) };
 }
+
+// --- Schülernummer und Schülerausweis ----------------------------------------
+// Jede Schülerin / jeder Schüler bekommt einmalig eine feste Nummer
+// „DBZ-<Jahr des Einstiegs>-<laufende Nummer>“. Die laufende Nummer wird nie
+// wiederverwendet (Zähler in der Organisation). Ältere zuerst.
+const STUDENT_NO_RE = /^DBZ-\d{4}-(\d{4,})$/;
+function assignMissingStudentNumbers() {
+  const users = db.all('users');
+  const missing = users.filter((u) => STUDENT_ROLES.includes(u.role) && !u.studentNumber && u.status !== 'pending');
+  if (!missing.length) return false;
+  const o = db.all('organizations')[0];
+  let seq = Math.max(o?.studentNumberSeq || 0, ...users.map((u) => Number(STUDENT_NO_RE.exec(u.studentNumber || '')?.[1] || 0)));
+  missing.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+  for (const u of missing) {
+    const since = enrollmentsOf(u)[0]?.from || String(u.createdAt || todayIso()).slice(0, 10);
+    const [y, m] = since.split('-').map(Number);
+    seq += 1;
+    u.studentNumber = `DBZ-${m >= 9 ? y : y - 1}-${String(seq).padStart(4, '0')}`;
+  }
+  if (o) o.studentNumberSeq = seq;
+  db.commit();
+  return true;
+}
+const shortName = (name = '') => {
+  const parts = String(name).trim().split(/\s+/);
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+};
 
 /** Minimaler Klassenlisten-Eintrag (docs/SECURITY_PRIVACY.md §8). */
 function minimalStudent(u) {
@@ -666,6 +693,31 @@ router.post('/auth/logout', (_req, res) => {
 
 // „Auf allen Geräten abmelden": macht jede bestehende Anmeldung der Person
 // ungültig (z. B. Handy verloren). Dieses Gerät bleibt angemeldet.
+// Digitaler Schülerausweis (eigenes Schüler-Konto).
+router.get('/me/pass', requireAuth, (req, res) => {
+  const u = req.user;
+  if (!STUDENT_ROLES.includes(u.role)) return res.status(403).json({ error: 'Den Ausweis gibt es für Schülerinnen und Schüler' });
+  assignMissingStudentNumbers();
+  if (!u.passToken) { u.passToken = crypto.randomBytes(18).toString('base64url'); db.commit(); }
+  const start = schoolYearStart();
+  const y = Number(start.slice(0, 4));
+  res.json({
+    name: u.name, studentNumber: u.studentNumber, className: findClass(homeClassId(u))?.name || null,
+    orgName: org().name, schoolYear: `${y}/${String(y + 1).slice(2)}`, validUntil: `${y + 1}-08-31`, token: u.passToken,
+  });
+});
+// Öffentliche Prüfung eines Ausweises (QR-Code): nur gültig/ungültig, Kurzname,
+// Nummer und Schuljahr -- keine weiteren Daten.
+router.get('/pass/:token', (req, res) => {
+  const t = String(req.params.token || '');
+  const u = t.length >= 20 ? db.all('users').find((x) => x.passToken === t) : null;
+  if (!u) return res.status(404).json({ valid: false });
+  const y = Number(schoolYearStart().slice(0, 4));
+  res.json({
+    valid: u.status === 'active' && STUDENT_ROLES.includes(u.role),
+    name: shortName(u.name), studentNumber: u.studentNumber || null, orgName: org().name, schoolYear: `${y}/${String(y + 1).slice(2)}`,
+  });
+});
 router.post('/me/logout-everywhere', requireAuth, (req, res) => {
   revokeSessions(req.user);
   issueToken(res, req.user, { sb: inSandbox() });
@@ -7614,6 +7666,7 @@ router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.
 });
 
 router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  if (!req.user.isDemo) assignMissingStudentNumbers();
   const list = req.user.isDemo ? db.all('users').filter((u) => u.isDemo) : db.all('users');
   res.json({
     users: list.map((u) => {
