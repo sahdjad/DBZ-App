@@ -659,3 +659,54 @@ test('Klassenwechsel: nur Leitung/Administrator, mit Verlauf; alte Einträge ble
   assert.equal((await t2('DELETE', `/classes/${kurs.id}/students/${s.id}`)).status, 200);
   assert.deepEqual(db.all('users').find((u) => u.id === s.id).classIds, [k5.id]);
 });
+
+test('Schuljahr: Auswertungen gelten fürs laufende Jahr; Schüler und Eltern sehen keine Klassendaten aus dem Vorjahr', async () => {
+  const { db } = await import('../store.js');
+  const health = await (await fetch(base + '/api/health')).json();
+  assert.match(health.schoolYear, /^\d{4}\/\d{2}$/);
+  const startYear = Number(health.schoolYear.slice(0, 4));
+  const lastYear = `${startYear}-03-15`; // liegt sicher vor dem 1. September des laufenden Schuljahres
+  const old = `${lastYear}T10:00:00.000Z`;
+
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const parent = await loginAs('eltern@dbz.de');
+  const before = (await teacher('GET', '/students/user_yusuf/standing')).data.data;
+  const attBefore = (await student('GET', '/me/attendance')).data.stats.sessions;
+  assert.ok(attBefore > 0, 'Demo-Daten liegen im laufenden Schuljahr');
+
+  // Einträge aus dem Vorjahr (direkt im Bestand, wie sie nach einem Jahreswechsel dalägen).
+  db.insert('sessions', { id: 'sess_alt', classId: 'class_3', date: lastYear, status: 'ended' });
+  db.insert('attendance', { id: 'att_alt', sessionId: 'sess_alt', classId: 'class_3', studentId: 'user_yusuf', status: 'unexcused', updatedAt: old });
+  db.insert('assignments', { id: 'asg_alt', classId: 'class_3', title: 'Vorjahr-Aufgabe', type: 'text', targetType: 'class', targetStudentIds: [], dueAt: old, createdAt: old, createdBy: 'user_lehrer' });
+  db.insert('behavior_records', { id: 'beh_alt', studentId: 'user_yusuf', classId: 'class_3', tone: 'negative', note: 'Vorjahr', visibleToStudent: true, visibleToParent: true, createdAt: old });
+  db.insert('penalties', { id: 'pen_alt_offen', studentId: 'user_yusuf', classId: 'class_3', type: 'money', amount: 5, reason: 'offen', status: 'approved', createdAt: old });
+  db.insert('penalties', { id: 'pen_alt_erledigt', studentId: 'user_yusuf', classId: 'class_3', type: 'pages', amount: 1, reason: 'erledigt', status: 'settled', createdAt: old });
+  db.insert('announcements', { id: 'ann_alt', title: 'Vorjahr', body: 'alt', audience: { type: 'class', classId: 'class_3' }, authorId: 'user_lehrer', createdAt: old });
+
+  // Auswertung fürs laufende Schuljahr bleibt unverändert.
+  const after = (await teacher('GET', '/students/user_yusuf/standing')).data.data;
+  assert.deepEqual(after.attendance, before.attendance);
+  assert.deepEqual(after.homework, before.homework);
+  assert.deepEqual(after.behavior, before.behavior);
+  // Mit ausdrücklichem Zeitraum kommt die Lehrkraft weiterhin an das Vorjahr.
+  const win = (await teacher('GET', `/students/user_yusuf/standing?from=${startYear}-01-01&to=${startYear}-08-31`)).data.data;
+  assert.equal(win.attendance.unexcused, 1);
+  assert.equal(win.behavior.hinweis, 1);
+
+  // Schüler: Vorjahr unsichtbar, Offenes (unbezahlte Strafe) bleibt.
+  assert.equal((await student('GET', '/me/attendance')).data.stats.sessions, attBefore);
+  assert.equal((await student('GET', '/assignments')).data.assignments.some((a) => a.id === 'asg_alt'), false);
+  assert.equal((await student('GET', '/behavior')).data.records.some((r) => r.id === 'beh_alt'), false);
+  assert.equal((await student('GET', '/announcements')).data.announcements.some((a) => a.id === 'ann_alt'), false);
+  const pens = (await student('GET', '/penalties')).data.penalties.map((p) => p.id);
+  assert.equal(pens.includes('pen_alt_offen'), true, 'offene Strafe bleibt sichtbar');
+  assert.equal(pens.includes('pen_alt_erledigt'), false);
+  // Eltern ebenso.
+  assert.equal((await parent('GET', '/behavior')).data.records.some((r) => r.id === 'beh_alt'), false);
+  // Lehrkraft sieht alles weiterhin.
+  assert.equal((await teacher('GET', '/behavior?studentId=user_yusuf')).data.records.some((r) => r.id === 'beh_alt'), true);
+  assert.equal((await teacher('GET', '/assignments')).data.assignments.some((a) => a.id === 'asg_alt'), true);
+  assert.equal((await teacher('GET', '/penalties')).data.penalties.some((p) => p.id === 'pen_alt_erledigt'), true);
+  assert.equal((await teacher('GET', '/announcements')).data.announcements.some((a) => a.id === 'ann_alt'), true);
+});
