@@ -118,6 +118,7 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
 // Alle Rollen einer Person an einem Ort: hinzufügen, Klassen anpassen, entziehen.
 export function PersonRolesCard({ userId, classes, onChanged }) {
   const toast = useToast();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [role, setRole] = useState('');
   const [cls, setCls] = useState([]);
@@ -154,6 +155,7 @@ export function PersonRolesCard({ userId, classes, onChanged }) {
           <li key={a.id} className={`flex items-center gap-2 text-sm ${a.status === 'disabled' ? 'opacity-50' : ''}`}>
             <Badge tone={a.status === 'disabled' ? 'neutral' : 'mint'}>{a.roleLabel}</Badge>
             <span className="text-sage-muted truncate flex-1">{a.classNames.join(', ') || (['schueler', 'klassensprecher'].includes(a.role) ? 'noch ohne Klasse' : '')}{a.status === 'disabled' ? ' · entzogen' : ''}</span>
+            {a.id !== userId && a.status !== 'disabled' && <Button size="sm" variant="ghost" onClick={() => navigate(`/person/${a.id}`)}>Öffnen</Button>}
             {!a.login && a.status !== 'disabled' && <Button size="sm" variant="ghost" onClick={() => remove(a)}>Entziehen</Button>}
           </li>
         ))}

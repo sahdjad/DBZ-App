@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Nach Klasse filtern": "Filter by class",
+"Niemand in dieser Gruppe": "Nobody in this group",
+"Nach Klasse": "By class",
+"Nach Rolle": "By role",
+"Mitarbeitende": "Staff",
+"Deaktivierte Personen anzeigen (": "Show deactivated people (",
 "Aus dem Kurs austragen": "Remove from course",
 "Grund des Klassenwechsels": "Reason for the class change",
 "Aufstieg": "Moved up",
@@ -2285,6 +2291,8 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["{} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.", "Permanently delete {1} person(s) with all their roles? This cannot be undone."],
+["{} Person(en) endgültig gelöscht", "{1} person(s) permanently deleted"],
 ["Deine Vertretung ist am {} abgelaufen. Bitte wende dich an die Leitung.", "Your substitution ended on {1}. Please contact the administration."],
 ["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "You are signed in as “{1}”. If you have several roles, you can switch at the top of the menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],
