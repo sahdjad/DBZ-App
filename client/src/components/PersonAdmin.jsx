@@ -18,6 +18,8 @@ export const ROLES = [
   ['super_admin', 'Administrator'],
 ];
 const roleLabel = (r) => ROLES.find(([v]) => v === r)?.[1] || r;
+const ENROLL_LABEL = { start: 'Beginn', joined: 'Einstieg', promotion: 'Aufstieg', demotion: 'Abstieg', transfer: 'Wechsel', left: 'Austritt' };
+const deDate = (iso) => String(iso || '').split('-').reverse().join('.');
 const CLASS_ROLES = ['schueler', 'klassensprecher', 'klassenlehrer', 'vertretung'];
 const MULTI_CLASS = ['klassenlehrer', 'vertretung'];
 
@@ -48,18 +50,22 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
   const forRole = (r, ids) => (MULTI_CLASS.includes(r) ? ids : ids.filter((id) => !extraIds.has(id)));
   const [cls, setCls] = useState(forRole(user.role, user.classIds || []));
   const [until, setUntil] = useState(user.validUntil || '');
+  const [reason, setReason] = useState('transfer');
   const [busy, setBusy] = useState(false);
   useEffect(() => { setRole(user.role); setCls(forRole(user.role, user.classIds || [])); setUntil(user.validUntil || ''); }, [user.id, user.role, user.validUntil, (user.classIds || []).join(','), classes.length]);
   const options = ROLES.filter(([v]) => isSuperAdmin || v !== 'super_admin');
   const sameClasses = [...cls].sort().join(',') === [...forRole(role, user.classIds || [])].sort().join(',');
   const changed = role !== user.role || (CLASS_ROLES.includes(role) && !sameClasses) || (role === 'vertretung' && until !== (user.validUntil || ''));
+  // Schüler bleibt Schüler, bekommt aber eine andere Stammklasse -> Grund festhalten.
+  const isStudentRole = (r) => ['schueler', 'klassensprecher'].includes(r);
+  const classMove = isStudentRole(role) && isStudentRole(user.role) && !sameClasses && forRole(user.role, user.classIds || []).length > 0;
   const promote = async () => {
     if (CLASS_ROLES.includes(role) && !MULTI_CLASS.includes(role) && cls.length !== 1) return toast.push('Bitte genau eine Klasse wählen', 'error');
     const msg = role !== user.role ? `${user.name}: ${roleLabel(user.role)} → ${roleLabel(role)}?` : `Klassen von ${user.name} ändern?`;
     if (!window.confirm(msg)) return;
     setBusy(true);
     try {
-      const r = await api.patch(`/admin/users/${user.id}`, { role, classIds: CLASS_ROLES.includes(role) ? cls : [], ...(role === 'vertretung' ? { validUntil: until || null } : {}) });
+      const r = await api.patch(`/admin/users/${user.id}`, { role, classIds: CLASS_ROLES.includes(role) ? cls : [], ...(role === 'vertretung' ? { validUntil: until || null } : {}), ...(classMove ? { classChangeReason: reason } : {}) });
       toast.push(r.pending ? 'Zur Bestätigung an den Administrator gesendet' : role !== user.role ? `Befördert: ${roleLabel(role)}` : 'Gespeichert', 'success');
       onChanged?.();
     } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
@@ -83,6 +89,17 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
             <div className="text-xs text-sage-muted mb-1.5">{MULTI_CLASS.includes(role) ? 'Unterrichtet in:' : 'Stammklasse:'}</div>
             <ClassChips classes={MULTI_CLASS.includes(role) ? classes : classes.filter((c) => c.kind !== 'extra')} value={cls} onChange={setCls} multi={MULTI_CLASS.includes(role)} />
           </div>
+        )}
+        {classMove && (
+          <label className="block">
+            <span className="text-xs text-sage-muted">Grund des Klassenwechsels</span>
+            <select className="input mt-1" value={reason} onChange={(e) => setReason(e.target.value)}>
+              <option value="promotion">Aufstieg</option>
+              <option value="demotion">Abstieg</option>
+              <option value="transfer">Wechsel (anderer Grund)</option>
+            </select>
+            <span className="block text-caption text-sage-muted mt-1">Der Wechsel wird mit heutigem Datum im Klassenverlauf festgehalten. Bisherige Einträge bleiben bei der alten Klasse.</span>
+          </label>
         )}
         {role === 'vertretung' && (
           <label className="block">
@@ -248,6 +265,23 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
           <PersonRolesCard userId={u.id} classes={classes} onChanged={changed} />
         </div>
       </Card>
+
+      {u.enrollments?.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <CardHeader title="Klassenverlauf" subtitle="Stammklasse mit Datum – neueste zuerst" icon={ShieldCheck} />
+          <ul className="divide-y divide-line text-sm">
+            {u.enrollments.map((e) => (
+              <li key={e.id} className="py-2 flex items-center justify-between gap-3">
+                <span className="min-w-0">
+                  <span className="block text-ivory truncate" data-noi18n>{e.className}</span>
+                  <span className="block text-xs text-sage-muted">{ENROLL_LABEL[e.reason] || 'Wechsel'}{e.byName ? <span data-noi18n> · {e.byName}</span> : null}</span>
+                </span>
+                <span className="text-xs text-sage-muted shrink-0" data-noi18n>{deDate(e.from)} – {e.to ? deDate(e.to) : 'heute'}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card className="p-4 sm:p-5">
         <CardHeader title="Konto" icon={KeyRound} />

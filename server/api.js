@@ -241,6 +241,45 @@ function homeClassId(user) {
   const ids = user?.classIds || [];
   return ids.find((id) => !isExtraClass(id)) ?? ids[0] ?? null;
 }
+
+// --- Klassenverlauf ---------------------------------------------------------------
+// Wann war ein Schüler in welcher Stammklasse? Jeder Wechsel (Aufstieg, Abstieg,
+// Einstieg mitten im Jahr) wird mit Datum festgehalten. Einträge wie Anwesenheit
+// oder Abgaben bleiben bei der Klasse, in der sie entstanden sind.
+const ENROLL_REASONS = ['start', 'joined', 'promotion', 'demotion', 'transfer', 'left'];
+function enrollmentsOf(student) {
+  const list = db.all('enrollments').filter((e) => e.studentId === student.id);
+  // Für Schüler aus der Zeit vor dem Verlauf: den heutigen Stand als Anfang eintragen.
+  if (!list.length && STUDENT_ROLES.includes(student.role)) {
+    const cid = homeClassId(student);
+    if (cid && !isExtraClass(cid)) {
+      const first = { id: newId('enr'), studentId: student.id, classId: cid, from: String(student.createdAt || new Date().toISOString()).slice(0, 10), to: null, reason: 'start', by: null };
+      db.insert('enrollments', first);
+      list.push(first);
+    }
+  }
+  return list.sort((a, b) => String(a.from).localeCompare(String(b.from)));
+}
+/** Stammklasse setzen (oder mit null entfernen) und den Wechsel festhalten. Zusatzkurse bleiben. */
+function setHomeClass(student, classId, { by = null, reason = 'transfer' } = {}) {
+  const current = homeClassId(student);
+  const currentRegular = current && !isExtraClass(current) ? current : null;
+  if (currentRegular === (classId || null)) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  const history = enrollmentsOf(student);
+  history.filter((e) => !e.to).forEach((e) => { e.to = today; });
+  const extras = (student.classIds || []).filter(isExtraClass);
+  student.classIds = classId ? [classId, ...extras] : extras;
+  if (classId) {
+    db.insert('enrollments', {
+      id: newId('enr'), studentId: student.id, classId, from: today, to: null,
+      reason: ENROLL_REASONS.includes(reason) ? reason : 'transfer', by,
+    });
+  }
+  // Klassensprecher ist man für eine bestimmte Klasse -- beim Wechsel endet das Amt.
+  if (student.role === ROLES.KLASSENSPRECHER && currentRegular) student.role = ROLES.SCHUELER;
+  return { from: currentRegular, to: classId || null };
+}
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
 // Gewichte für den Notenvorschlag: nur bekannte, positive Werte übernehmen,
 // sonst Standard. Normalisierung übernimmt die Engine (proportional).
@@ -1865,9 +1904,13 @@ router.delete('/classes/:id/students/:studentId', requireAuth, requireRole(CLASS
   const student = findUserById(req.params.studentId);
   if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
   if (!(student.classIds || []).includes(klass.id)) return res.status(400).json({ error: 'Nicht Mitglied dieser Klasse' });
-  student.classIds = student.classIds.filter((c) => c !== klass.id);
-  // Klassensprecher ohne verbleibende Klasse ergibt keinen Sinn -- zurück auf Schüler.
-  if (student.role === ROLES.KLASSENSPRECHER && !student.classIds.length) student.role = ROLES.SCHUELER;
+  if (isExtraClass(klass.id)) {
+    student.classIds = student.classIds.filter((c) => c !== klass.id);
+  } else {
+    // Stammklasse: Wechsel und Austritt entscheiden nur Leitung und Administrator.
+    if (!isAdmin(req.user)) return res.status(403).json({ error: 'Einen Schüler aus der Stammklasse nehmen oder versetzen können nur Leitung und Administrator.' });
+    setHomeClass(student, null, { by: req.user.id, reason: 'left' });
+  }
   db.commit();
   audit(req.user.id, 'class.student.remove', 'class', klass.id, { studentId: student.id, name: student.name }, null);
   res.json({ ok: true });
@@ -7227,6 +7270,10 @@ router.get('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES
       otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
       loginEmail: main?.email || null,
       canEditRole: canGrantRole(req.user, u.role),
+      // Klassenverlauf (nur Schüler): neueste zuerst.
+      enrollments: STUDENT_ROLES.includes(u.role)
+        ? enrollmentsOf(u).map((e) => ({ id: e.id, className: findClass(e.classId)?.name || 'Gelöschte Klasse', from: e.from, to: e.to, reason: e.reason, byName: e.by ? findUserById(e.by)?.name || null : null })).reverse()
+        : [],
     },
   });
 });
@@ -7309,8 +7356,19 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
       // Schüler: höchstens eine Stammklasse; bestehende Zusatzkurse bleiben erhalten.
       const regular = valid.filter((c) => !isExtraClass(c));
       if (regular.length > 1) return res.status(400).json({ error: 'Ein Schüler kann nur eine Stammklasse haben' });
+      const reason = req.body?.classChangeReason;
+      if (reason !== undefined && !ENROLL_REASONS.includes(reason)) return res.status(400).json({ error: 'Ungültiger Grund für den Klassenwechsel' });
+      const hadClass = Boolean(homeClassId(u)) && !isExtraClass(homeClassId(u));
+      const moved = setHomeClass(u, regular[0] || null, { by: req.user.id, reason: reason || (hadClass ? 'transfer' : 'joined') });
       const extras = [...new Set([...(u.classIds || []).filter(isExtraClass), ...valid.filter(isExtraClass)])];
-      u.classIds = [...regular, ...extras];
+      u.classIds = [...(u.classIds || []).filter((c) => !isExtraClass(c)), ...extras];
+      if (moved && moved.to) {
+        const name = findClass(moved.to)?.name || 'neue Klasse';
+        const who = [u.id, ...db.all('users').filter((p) => (p.childIds || []).includes(u.id)).map((p) => p.id)];
+        who.forEach((id) => notify(id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: id === u.id ? `Du bist jetzt in „${name}".` : `${u.name} ist jetzt in „${name}".`, deepLink: '/dashboard' }));
+        db.all('users').filter((t) => t.role === ROLES.KLASSENLEHRER && t.status === 'active' && [moved.from, moved.to].some((c) => c && (t.classIds || []).includes(c)))
+          .forEach((t) => notify(t.id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: `${u.name}: ${findClass(moved.from)?.name || 'ohne Klasse'} → ${name}`, deepLink: '/klassenliste' }));
+      }
     } else {
       u.classIds = valid;
     }

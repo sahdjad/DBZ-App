@@ -461,7 +461,11 @@ export default function Klassenliste() {
               { key: 'sprecher', label: menuFor.role === 'klassensprecher' ? 'Als Klassensprecher entfernen' : 'Zum Klassensprecher ernennen' },
               ...(isTeacher ? [
                 { key: 'probation', label: menuFor.probation ? 'Probezeit beenden' : 'Probezeit markieren' },
-                { key: 'remove', label: 'Aus der Klasse entfernen', description: 'Das Konto selbst bleibt bestehen.', variant: 'danger' },
+              ] : []),
+              // Stammklasse: Austritt und Wechsel entscheidet die Leitung. Aus einem
+              // Zusatzkurs darf auch die Lehrkraft des Kurses austragen.
+              ...(isLeadership || (isTeacher && currentClass?.kind === 'extra') ? [
+                { key: 'remove', label: currentClass?.kind === 'extra' ? 'Aus dem Kurs austragen' : 'Aus der Klasse entfernen', description: 'Das Konto selbst bleibt bestehen.', variant: 'danger' },
               ] : []),
             ]}
             onClose={() => setMenuFor(null)}

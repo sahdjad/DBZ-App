@@ -325,7 +325,7 @@ test('Klassensprecher: Lehrer ernennt/entfernt direkt (eigene Klasse), fremde Kl
   assert.equal(demote.data.user.role, 'schueler');
 });
 
-test('Lehrer kann Schüler aus der eigenen Klasse entfernen (Konto bleibt bestehen), fremde Klasse geht nicht', async () => {
+test('Aus der Stammklasse nimmt nur Leitung/Administrator (Konto bleibt bestehen); Lehrkräfte nicht', async () => {
   const teacher = await loginAs('lehrer@dbz.de');
   const admin = await loginAs('admin@dbz.de');
   const email = `kick-test-${Date.now()}@dbz.de`;
@@ -343,7 +343,11 @@ test('Lehrer kann Schüler aus der eigenen Klasse entfernen (Konto bleibt besteh
   const before = await teacher('GET', '/classes/class_3/roster');
   assert.ok(before.data.rows.some((r) => r.id === kickId), 'Testkonto ist zunächst in der Klasse');
 
-  const kick = await teacher('DELETE', `/classes/class_3/students/${kickId}`);
+  // Auch die eigene Klassenlehrkraft darf das nicht mehr: Wechsel und Austritt entscheidet die Leitung.
+  const byTeacher = await teacher('DELETE', `/classes/class_3/students/${kickId}`);
+  assert.equal(byTeacher.status, 403);
+  assert.match(byTeacher.data.error, /Leitung und Administrator/);
+  const kick = await admin('DELETE', `/classes/class_3/students/${kickId}`);
   assert.equal(kick.status, 200);
 
   const after = await teacher('GET', '/classes/class_3/roster');
@@ -354,6 +358,11 @@ test('Lehrer kann Schüler aus der eigenen Klasse entfernen (Konto bleibt besteh
   const me = await stillLogsIn('GET', '/auth/me');
   assert.equal(me.status, 200);
   assert.equal(me.data.user.classIds.includes('class_3'), false);
+  // Der Austritt steht im Klassenverlauf.
+  const hist = (await admin('GET', `/admin/users/${kickId}`)).data.user.enrollments;
+  assert.equal(hist.length, 1);
+  assert.equal(hist[0].className, 'Klasse 3');
+  assert.ok(hist[0].to, 'Zeitraum ist abgeschlossen');
 });
 
 test('Aufgabe löschen: nur erstellende Lehrkraft/Admin, zählt danach nicht mehr bei Schülern, Abgaben werden mitgelöscht', async () => {
