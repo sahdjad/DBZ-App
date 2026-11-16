@@ -107,11 +107,21 @@ export async function seedDemoData() {
   [admin, leitung, lehrer, student, student2, sprecher, eltern].forEach((u) => db.insert('users', u));
 
   // Beispielhafte vergangene Sitzungen + Anwesenheit für aussagekräftige Statistik.
+  // Daten relativ zu heute (letzte vier Wochen), aber nie vor Beginn des
+  // laufenden Schuljahres (1. September) -- sonst wären sie für Schüler und
+  // Eltern nicht mehr sichtbar und die Demo zeigte leere Statistiken.
+  const today = new Date();
+  const yearStart = new Date(Date.UTC(today.getUTCMonth() >= 8 ? today.getUTCFullYear() : today.getUTCFullYear() - 1, 8, 1));
+  const weeksAgo = (w, i) => {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 7 * w));
+    const min = new Date(yearStart.getTime() + (4 - i) * 86400000);
+    return (d < min ? min : d).toISOString().slice(0, 10);
+  };
   const past = [
-    { date: '2026-08-01', checkin: '14:02' }, // present
-    { date: '2026-07-25', checkin: '14:12' }, // late
-    { date: '2026-07-18', checkin: null, manual: 'excused' },
-    { date: '2026-07-11', checkin: '14:01' }, // present
+    { date: weeksAgo(1, 1), checkin: '14:02' }, // present
+    { date: weeksAgo(2, 2), checkin: '14:12' }, // late
+    { date: weeksAgo(3, 3), checkin: null, manual: 'excused' },
+    { date: weeksAgo(4, 4), checkin: '14:01' }, // present
   ];
   for (const p of past) {
     const s = {
@@ -244,7 +254,7 @@ export async function seedDemoData() {
     surahTo: 114,
     ayahTo: 6,
     ayatCount: 15,
-    dueAt: '2026-08-23T18:00:00.000Z',
+    dueAt: new Date(Date.now() + 14 * 86400000).toISOString(),
     status: 'open',
     assignedBy: lehrer.id,
     createdAt: now,

@@ -80,7 +80,12 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   beliebig viele Zusatzkurse (z. B. Umra-Kurs). Einträge aus Zusatzkursen sind dort sichtbar, zählen aber nicht
   in Anwesenheitsquote, Bericht und Notenvorschlag. Verwaltung → Klassen: Art wählen/umstellen, Teilnehmer
   aufnehmen und austragen. Die Stammklasse wird weiterhin bei der Person geändert; Zusatzkurse bleiben dabei erhalten.
-- ⬜ **Schuljahr:** Einträge einem Schuljahr zuordnen; Jahreswechsel archiviert statt zu löschen
+- ✅ **Schuljahr (1. September bis 31. August):** Quoten, Bericht und Notenvorschlag gelten ohne andere Angabe
+  für das laufende Schuljahr. Klassendaten aus früheren Jahren (Anwesenheit, Hausaufgaben, Vermerke, Prüfungen,
+  Berichte, Protokolle, Ankündigungen, erledigte Strafen) sehen nur Lehrkräfte und Leitung; Schüler und Eltern
+  nicht mehr. Offene Strafen bleiben sichtbar. Eigenes (Lesezeichen, eigene Übungen, Nachrichten) bleibt.
+  Es wird nichts gelöscht – die Zuordnung folgt dem Datum des Eintrags. `/api/health` zeigt das Schuljahr.
+- ⬜ Schuljahr für Lehrkräfte auswählbar machen (heute: laufendes Jahr als Standard, ältere über Zeitraum/Monat)
 - ✅ **Klassenwechsel mit Verlauf:** Stammklasse ändern nur Leitung und Administrator (Verwaltung → Person),
   mit Grund (Aufstieg, Abstieg, Wechsel) und Datum im Klassenverlauf. Alte Einträge bleiben bei der alten Klasse,
   Zusatzkurse bleiben erhalten, das Amt des Klassensprechers endet. Lehrkräfte tragen nur aus Zusatzkursen aus.

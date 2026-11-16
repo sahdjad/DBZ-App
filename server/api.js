@@ -216,7 +216,7 @@ router.use((req, res, next) => {
 // keine sensiblen Daten -- die Login-Seite blendet die Demo-Kacheln danach
 // aus, das eigentliche Verbot erzwingt aber /auth/login serverseitig.
 router.get('/health', (_req, res) => {
-  res.json({ ok: true, storage: db.backend, layout: db.layout, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
+  res.json({ ok: true, schoolYear: schoolYearLabel(), storage: db.backend, layout: db.layout, mode: IS_PRODUCTION ? 'production' : 'demo', time: new Date().toISOString() });
 });
 
 // --- Datensatz-Helfer --------------------------------------------------------
@@ -240,6 +240,30 @@ const countsForGrade = (classId) => !classId || !isExtraClass(classId);
 function homeClassId(user) {
   const ids = user?.classIds || [];
   return ids.find((id) => !isExtraClass(id)) ?? ids[0] ?? null;
+}
+
+// --- Schuljahr ---------------------------------------------------------------------
+// Das Schuljahr läuft vom 1. September bis 31. August. Auswertungen (Quoten,
+// Bericht, Notenvorschlag) gelten ohne andere Angabe für das LAUFENDE Schuljahr.
+// Klassendaten aus früheren Schuljahren sehen nur Lehrkräfte und Leitung;
+// Schüler und Eltern sehen sie nicht mehr. Was sich jemand selbst gespeichert
+// hat (Lesezeichen, eigene Übungen, Nachrichten), bleibt davon unberührt.
+// Es wird nichts gelöscht -- die Zuordnung ergibt sich aus dem Datum des Eintrags.
+function schoolYearStart() {
+  const [y, m] = todayIso().split('-').map(Number);
+  return `${m >= 9 ? y : y - 1}-09-01`;
+}
+function schoolYearLabel() {
+  const y = Number(schoolYearStart().slice(0, 4));
+  return `${y}/${String(y + 1).slice(2)}`;
+}
+const yearWin = () => ({ from: schoolYearStart(), to: null });
+const isLearner = (user) => STUDENT_ROLES.includes(user.role) || user.role === ROLES.ELTERN;
+/** Für Schüler/Eltern: nur Einträge des laufenden Schuljahres (ohne Datum: bleibt). */
+function thisYearFor(user, list, dateOf) {
+  if (!isLearner(user)) return list;
+  const from = schoolYearStart();
+  return list.filter((x) => { const d = dateOf(x); return !d || String(d).slice(0, 10) >= from; });
 }
 
 // --- Klassenverlauf ---------------------------------------------------------------
@@ -1425,7 +1449,8 @@ function inWindow(iso, win) {
   return true;
 }
 
-function attendanceStats(studentId, win, opts = {}) {
+function attendanceStats(studentId, givenWin, opts = {}) {
+  const win = givenWin || (opts.allTime ? null : yearWin()); // Standard: laufendes Schuljahr
   const sdateMap = new Map(db.all('sessions').map((s) => [s.id, s.date]));
   const dateOf = (a) => sdateMap.get(a.sessionId) || String(a.checkInAt || a.updatedAt || '').slice(0, 10);
   // Zusatzkurse zählen nicht in die Quote (opts.includeExtra: alles zeigen).
@@ -2438,9 +2463,9 @@ router.post('/absence-requests', requireAuth, (req, res) => {
 router.get('/absence-requests', requireAuth, (req, res) => {
   let list = db.all('absence_requests');
   if (STUDENT_ROLES.includes(req.user.role)) {
-    list = list.filter((r) => r.studentId === req.user.id);
+    list = thisYearFor(req.user, list.filter((r) => r.studentId === req.user.id), (r) => r.createdAt);
   } else if (req.user.role === ROLES.ELTERN) {
-    list = list.filter((r) => (req.user.childIds || []).includes(r.studentId));
+    list = thisYearFor(req.user, list.filter((r) => (req.user.childIds || []).includes(r.studentId)), (r) => r.createdAt);
   } else if (isClassManager(req.user)) {
     list = list.filter((r) => canManageClass(req.user, r.classId));
     // Zähler: wie oft war der Schüler insgesamt schon abwesend – Kontext für die Entscheidung.
@@ -2921,9 +2946,7 @@ router.patch('/classes/:id/homework-rules', requireAuth, requireRole(CLASS_MANAG
 
 router.get('/assignments', requireAuth, (req, res) => {
   if (STUDENT_ROLES.includes(req.user.role)) {
-    const list = db
-      .all('assignments')
-      .filter((a) => targetsFor(a).includes(req.user.id))
+    const list = thisYearFor(req.user, db.all('assignments').filter((a) => targetsFor(a).includes(req.user.id)), (a) => a.dueAt || a.createdAt)
       .map((a) => decorateForStudent(a, req.user.id));
     return res.json({ assignments: list.sort(byDueThenNew) });
   }
@@ -3405,6 +3428,7 @@ router.get('/protocols', requireAuth, (req, res) => {
     list = list.filter((p) => (req.user.classIds || []).includes(p.classId));
     // Reine Schüler sehen Protokolle erst, nachdem die Lehrkraft sie freigegeben hat.
     if (req.user.role === ROLES.SCHUELER) list = list.filter((p) => p.status === 'approved');
+    list = thisYearFor(req.user, list, (p) => protocolDate(p));
   } else if (isClassManager(req.user)) {
     list = list.filter((p) => canManageClass(req.user, p.classId));
   } else if (!isAdmin(req.user)) {
@@ -3637,13 +3661,13 @@ router.get('/behavior', requireAuth, (req, res) => {
   const all = db.all('behavior_records');
   let list;
   if (STUDENT_ROLES.includes(req.user.role)) {
-    list = all.filter((r) => r.studentId === req.user.id && r.visibleToStudent);
+    list = thisYearFor(req.user, all.filter((r) => r.studentId === req.user.id && r.visibleToStudent), (r) => r.createdAt);
   } else if (req.user.role === ROLES.ELTERN) {
     const childId = req.query.studentId;
     if (childId && !(req.user.childIds || []).includes(childId))
       return res.status(403).json({ error: 'Kein verknüpftes Kind' });
     const ids = childId ? [childId] : req.user.childIds || [];
-    list = all.filter((r) => ids.includes(r.studentId) && r.visibleToParent);
+    list = thisYearFor(req.user, all.filter((r) => ids.includes(r.studentId) && r.visibleToParent), (r) => r.createdAt);
   } else if (isClassManager(req.user)) {
     list = all.filter((r) => canManageClass(req.user, r.classId));
     if (req.query.studentId) list = list.filter((r) => r.studentId === req.query.studentId);
@@ -3956,12 +3980,12 @@ router.post('/quran-goals', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
 
 router.get('/quran-goals', requireAuth, (req, res) => {
   let list = db.all('quran_goals');
-  if (STUDENT_ROLES.includes(req.user.role)) list = list.filter((g) => g.studentId === req.user.id);
+  if (STUDENT_ROLES.includes(req.user.role)) list = thisYearFor(req.user, list.filter((g) => g.studentId === req.user.id), (g) => g.createdAt);
   else if (req.user.role === ROLES.ELTERN) {
     const sid = req.query.studentId;
     if (sid && !(req.user.childIds || []).includes(sid)) return res.status(403).json({ error: 'Kein verknüpftes Kind' });
     const ids = sid ? [sid] : req.user.childIds || [];
-    list = list.filter((g) => ids.includes(g.studentId));
+    list = thisYearFor(req.user, list.filter((g) => ids.includes(g.studentId)), (g) => g.createdAt);
   } else if (isClassManager(req.user)) {
     list = list.filter((g) => canManageClass(req.user, g.classId));
     if (req.query.studentId) list = list.filter((g) => g.studentId === req.query.studentId);
@@ -4301,9 +4325,7 @@ function examTargetsStudent(exam, studentId) {
 
 router.get('/exams', requireAuth, (req, res) => {
   if (STUDENT_ROLES.includes(req.user.role)) {
-    const list = db
-      .all('exams')
-      .filter((e) => e.status === 'published' && (req.user.classIds || []).includes(e.classId) && examTargetsStudent(e, req.user.id))
+    const list = thisYearFor(req.user, db.all('exams').filter((e) => e.status === 'published' && (req.user.classIds || []).includes(e.classId) && examTargetsStudent(e, req.user.id)), (e) => e.createdAt)
       .map((e) => {
         const att = db.all('exam_attempts').find((a) => a.examId === e.id && a.studentId === req.user.id);
         let studentStatus = 'open';
@@ -4344,6 +4366,7 @@ router.get('/exams', requireAuth, (req, res) => {
       if (!child) continue;
       for (const e of db.all('exams')) {
         if (e.status !== 'published' || !(child.classIds || []).includes(e.classId) || !examTargetsStudent(e, child.id)) continue;
+        if (e.createdAt && String(e.createdAt).slice(0, 10) < schoolYearStart()) continue; // nur laufendes Schuljahr
         const att = db.all('exam_attempts').find((a) => a.examId === e.id && a.studentId === child.id);
         const studentStatus = !att ? 'open' : att.status === 'released' ? 'released' : att.status === 'submitted' ? 'submitted' : 'in_progress';
         const result = att?.status === 'released' ? { total: att.total, max: att.max, percent: att.percent, passed: att.percent >= e.passPercentage } : null;
@@ -4581,7 +4604,8 @@ router.post('/attempts/:id/return', requireAuth, requireRole(CLASS_MANAGERS), up
 
 // Aggregiert Kennzahlen eines Schülers – optional für ein Zeitfenster
 // { from, to } (z. B. Monatsauswertung). Ohne Fenster: gesamter Zeitraum.
-function reportData(studentId, win) {
+function reportData(studentId, givenWin) {
+  const win = givenWin || yearWin(); // Standard: laufendes Schuljahr
   // Nur die Stammklasse zählt; Einträge aus Zusatzkursen bleiben außen vor.
   const asgs = studentAssignments(studentId).filter((a) => countsForGrade(a.classId ?? byId('assignments', a.id)?.classId) && (!win || inWindow(a.dueAt, win)));
   const hw = { total: asgs.length, passed: 0, submitted: 0, revision: 0, missed: 0, open: 0 };
@@ -4781,6 +4805,7 @@ router.get('/reports', requireAuth, (req, res) => {
   else if (req.user.role === ROLES.ELTERN)
     list = list.filter((r) => (req.user.childIds || []).includes(r.studentId) && r.status === 'released');
   else list = [];
+  list = thisYearFor(req.user, list, (r) => r.createdAt);
   list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   res.json({ reports: list.map(reportView) });
 });
@@ -4878,6 +4903,7 @@ router.get('/activities', requireAuth, (req, res) => {
   } else {
     list = [];
   }
+  list = thisYearFor(req.user, list, (a) => a.createdAt);
   list = list.filter((a) => inWindow(a.createdAt, win)).sort((x, y) => y.createdAt.localeCompare(x.createdAt));
   res.json({ activities: list.map(activityView) });
 });
@@ -6100,6 +6126,8 @@ router.get('/penalties', requireAuth, (req, res) => {
     list = all.filter((p) => (u.childIds || []).includes(p.studentId) && ['approved', 'payment_pending', 'settled'].includes(p.status));
   else list = [];
 
+  // Schüler/Eltern: Erledigtes aus früheren Schuljahren verschwindet; Offenes bleibt, bis es beglichen ist.
+  if (isLearner(u)) list = list.filter((p) => p.status !== 'settled' || !p.createdAt || String(p.createdAt).slice(0, 10) >= schoolYearStart());
   if (req.query.classId) list = list.filter((p) => p.classId === req.query.classId);
   if (req.query.studentId) list = list.filter((p) => p.studentId === req.query.studentId);
   list = [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -6766,9 +6794,7 @@ router.post('/announcements', requireAuth, requireRole(CLASS_MANAGERS), (req, re
 router.get('/announcements', requireAuth, (req, res) => {
   const now = new Date().toISOString();
   let touched = false;
-  const visible = db
-    .all('announcements')
-    .filter((a) => canSeeAnnouncement(req.user, a))
+  const visible = thisYearFor(req.user, db.all('announcements').filter((a) => canSeeAnnouncement(req.user, a)), (a) => a.createdAt)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   // Lesebestätigung: beim Öffnen der Liste gilt jede sichtbare Ankündigung als gelesen.
   visible.forEach((a) => {
