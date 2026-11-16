@@ -624,7 +624,7 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
                         {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
                       </span>
                       <RoleBadges u={u} max={3} />
-                      {u.classNames?.length > 0 && <span className="block text-footnote text-sage-muted truncate" data-noi18n>{u.classNames.join(' · ')}</span>}
+                      {(u.classNames?.length > 0 || u.studentNumber) && <span className="block text-footnote text-sage-muted truncate" data-noi18n>{[...(u.classNames || []), u.studentNumber].filter(Boolean).join(' · ')}</span>}
                     </span>
                     {!selecting && <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />}
                   </button>
@@ -665,7 +665,7 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
                                 <button type="button" onClick={() => tap(u)} className="font-semibold text-ivory truncate hover:underline text-left" data-noi18n>{u.name}</button>
                                 {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
                               </div>
-                              <div className="text-footnote text-sage-muted truncate" data-noi18n>{u.email || u.loginEmail || ''}</div>
+                              <div className="text-footnote text-sage-muted truncate" data-noi18n>{[u.email || u.loginEmail, u.studentNumber].filter(Boolean).join(' · ')}</div>
                             </div>
                           </div>
                         </td>

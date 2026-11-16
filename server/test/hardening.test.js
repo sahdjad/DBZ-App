@@ -939,3 +939,37 @@ test('Aufnahmen: Lehrkraft behält, Speicherübersicht nur für Admin, Aufräume
   assert.equal(db.all('submissions').find((x) => x.id === 'sub_store_b').files[0].deleted, undefined, 'unbewertete bleibt');
   assert.equal(db.all('submissions').find((x) => x.id === 'sub_store_c').files[0].deleted, undefined, 'frisch bewertete bleibt');
 });
+
+test('Schülernummer und Ausweis: feste Nummer, Prüfung per QR zeigt nur das Nötigste', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+
+  assert.equal((await teacher('GET', '/me/pass')).status, 403, 'nur für Schüler');
+  const pass = (await student('GET', '/me/pass')).data;
+  assert.match(pass.studentNumber, /^DBZ-\d{4}-\d{4}$/);
+  assert.ok(pass.token.length >= 20);
+  assert.match(pass.schoolYear, /^\d{4}\/\d{2}$/);
+  // Nummer bleibt fest.
+  assert.equal((await student('GET', '/me/pass')).data.studentNumber, pass.studentNumber);
+  // Alle Schüler haben eine Nummer, keine doppelt.
+  await admin('GET', '/admin/users');
+  const nums = db.all('users').filter((u) => ['schueler', 'klassensprecher'].includes(u.role) && u.status === 'active').map((u) => u.studentNumber);
+  assert.ok(nums.every(Boolean));
+  assert.equal(new Set(nums).size, nums.length);
+  // Der Prüf-Schlüssel geht nie über die Nutzerlisten hinaus.
+  assert.doesNotMatch(JSON.stringify((await admin('GET', '/admin/users')).data), new RegExp(pass.token));
+
+  // Öffentliche Prüfung: nur gültig, Kurzname, Nummer, Schuljahr.
+  const res = await fetch(`${base}/api/pass/${pass.token}`);
+  const v = await res.json();
+  assert.equal(v.valid, true);
+  assert.deepEqual(Object.keys(v).sort(), ['name', 'orgName', 'schoolYear', 'studentNumber', 'valid']);
+  assert.equal((await fetch(`${base}/api/pass/falsch-falsch-falsch-falsch`)).status, 404);
+  // Deaktiviert -> ungültig.
+  const u = db.all('users').find((x) => x.passToken === pass.token);
+  u.status = 'disabled';
+  assert.equal((await (await fetch(`${base}/api/pass/${pass.token}`)).json()).valid, false);
+  u.status = 'active';
+});

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2, Languages } from 'lucide-react';
+import { UserCog, Save, KeyRound, Users, Link2, Unlink, RefreshCw, Copy, Monitor, Sun, Moon, Bell, BellOff, Trash2, Languages, Contact as IdCard } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Avatar, Spinner, Segmented, Switch, useToast } from '../components/ui.jsx';
@@ -53,7 +53,11 @@ export default function Konto() {
             <div className="min-w-0 flex-1">
               <div className="text-title2 font-bold text-ivory truncate" data-noi18n>{user.name}</div>
               <div className="text-subhead text-sage-muted">{user.roleLabel} · {user.email}</div>
+              {user.studentNumber && <div className="text-footnote text-sage-muted">Schülernummer <span className="font-mono" data-noi18n>{user.studentNumber}</span></div>}
             </div>
+            {['schueler', 'klassensprecher'].includes(user.role) && (
+              <a href="#/ausweis" className="inline-flex items-center gap-2 rounded-full bg-mint/10 px-4 h-10 text-subhead font-semibold text-mint-light dark:text-mint"><IdCard size={17} /> Schülerausweis</a>
+            )}
           </div>
           <form onSubmit={save} className="mt-5 flex flex-col sm:flex-row gap-2 sm:items-end">
             <label className="block flex-1">

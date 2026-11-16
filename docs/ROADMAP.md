@@ -106,6 +106,8 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
 - ✅ **Aufnahmen (16.11.2026):** Aufbewahrungsfrist zählt ab der Bewertung; Lehrkraft kann einzelne Aufnahmen
   „behalten“; Schüler speichern Aufnahmen auf dem eigenen Gerät; Speicherübersicht und Aufräumen (mit
   Bestätigung, Sicherung, 30 Tage Löschliste) für den Systemadministrator. Frist einschalten: Einstellungen.
+- ✅ **Schülernummer und Ausweis (16.11.2026):** feste Nummer `DBZ-<Einstiegsjahr>-<lfd. Nr.>`, digitaler
+  Schülerausweis im Konto mit QR-Code; öffentliche Prüfseite zeigt nur gültig/ungültig, Kurzname, Nummer, Schuljahr.
 - ⬜ **Kostenloser Zusatzspeicher** (offen): Supabase Free hat 1 GB Dateispeicher; Alternativen mit größerem
   Gratis-Kontingent prüfen, bevor die Grenze erreicht ist.
 - ✅ Entschieden (16.11.2026): Aufnahmen dürfen nach der Bewertung weg; die Frist stellt der Administrator ein.

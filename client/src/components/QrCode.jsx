@@ -6,7 +6,7 @@ import jsQR from 'jsqr';
  * Rendert einen scanbaren QR-Code für einen Textwert (hier: den Check-in-Token).
  * Dunkle Module auf hellem Grund für beste Scanbarkeit; im DBZ-Grün gehalten.
  */
-export function QrImage({ value, size = 220 }) {
+export function QrImage({ value, size = 220, alt = 'QR-Code zum Einchecken' }) {
   const [src, setSrc] = useState('');
   useEffect(() => {
     let alive = true;
@@ -25,7 +25,7 @@ export function QrImage({ value, size = 220 }) {
     };
   }, [value, size]);
   if (!src) return <div style={{ width: size, height: size }} className="rounded-lg bg-subtle animate-pulse" />;
-  return <img src={src} style={{ width: size, height: size }} alt="QR-Code zum Einchecken" className="rounded-lg" />;
+  return <img src={src} style={{ width: size, height: size }} alt={alt} className="rounded-lg" />;
 }
 
 // Mittig gesetzter QR-Code auf DBZ-grünem Muster-Hintergrund (Tür-QR,

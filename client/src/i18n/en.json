@@ -1,6 +1,15 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"QR-Code zur Prüfung des Ausweises": "QR code to verify the ID",
+"Schülerausweis": "Student ID",
+"Schülernummer": "Student number",
+"Schuljahr": "School year",
+"QR-Code scannen, um den Ausweis zu prüfen": "Scan the QR code to verify this ID",
+"Gültiger Schülerausweis": "Valid student ID",
+"Ausweis nicht gültig": "ID not valid",
+"Dieser Ausweis ist unbekannt oder nicht mehr aktiv.": "This ID is unknown or no longer active.",
+"Den Ausweis gibt es für Schülerinnen und Schüler": "The ID is available for students",
 "Speicher": "Storage",
 "Abgaben je Klasse": "Submissions per class",
 "Bewertete Aufnahmen aufräumen": "Clean up graded recordings",
