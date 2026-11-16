@@ -7394,10 +7394,18 @@ router.get('/admin/pending-registrations', requireAuth, requireRole(ROLES.SUPER_
 
 // Offene Registrierung freischalten: als Schüler einer Klasse (Standard) oder
 // direkt mit einer anderen Rolle (Lehrkraft, Leitung, ...).
-function activatePending(target, role, classIds) {
+function activatePending(target, role, classIds, by = null) {
   target.role = role;
-  target.classIds = classIds;
   target.status = 'active';
+  if (STUDENT_ROLES.includes(role)) {
+    // Stammklasse mit Eintrag im Klassenverlauf („Einstieg“, mit Datum).
+    target.classIds = classIds.filter(isExtraClass);
+    const home = classIds.find((c) => !isExtraClass(c));
+    if (home) setHomeClass(target, home, { by, reason: 'joined' });
+    else target.classIds = classIds;
+  } else {
+    target.classIds = classIds;
+  }
   const names = classIds.map((id) => findClass(id)?.name).filter(Boolean);
   const body = STUDENT_ROLES.includes(role)
     ? `Du bist jetzt Klasse „${names[0]}" zugeteilt.`
@@ -7427,10 +7435,34 @@ router.post('/admin/pending-registrations/:id/assign', requireAuth, requireRole(
     return res.json({ pending: true, changeRequest: crView(cr) });
   }
 
-  activatePending(target, role, classIds);
+  activatePending(target, role, classIds, req.user.id);
   db.commit();
   audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classIds, role });
   informAdmins(req.user, `Freischalten: ${target.name} → ${label}${klassNames ? ` (${klassNames})` : ''}`);
+  res.json({ ok: true });
+});
+
+// Klassenlehrkraft: offene Schüler-Anmeldungen (allgemeiner Link) sehen und in die
+// eigene Klasse aufnehmen -- z. B. nach dem Probeunterricht. Nur Name und Datum
+// (keine Adresse/Telefonnummer); Ablehnen und andere Rollen bleiben bei Leitung/Admin.
+router.get('/classes/pending-students', requireAuth, requireRole(ROLES.KLASSENLEHRER, ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const list = db.all('users').filter((u) => u.status === 'pending' && STUDENT_ROLES.includes(u.role) && Boolean(u.isDemo) === Boolean(req.user.isDemo));
+  res.json({ students: list.map((u) => ({ id: u.id, name: u.name, createdAt: u.createdAt || null })) });
+});
+router.post('/classes/:id/take-pending/:userId', requireAuth, requireRole(ROLES.KLASSENLEHRER, ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!isAdmin(req.user) && !canDecideForClass(req.user, klass.id)) return res.status(403).json({ error: 'Nur in die eigene Klasse' });
+  if (klass.kind === 'extra') return res.status(400).json({ error: 'Aufnahme in eine Stammklasse – Zusatzkurse werden danach im Kurs belegt' });
+  const target = findUserById(req.params.userId);
+  if (!target || target.status !== 'pending' || !STUDENT_ROLES.includes(target.role)) return res.status(404).json({ error: 'Anmeldung nicht gefunden' });
+  if (Boolean(target.isDemo) !== Boolean(req.user.isDemo)) return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  activatePending(target, ROLES.SCHUELER, [klass.id], req.user.id);
+  db.commit();
+  audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classIds: [klass.id], role: ROLES.SCHUELER });
+  if (!isAdmin(req.user)) [...new Set([...superAdminIds(), ...leitungIds()])].forEach((id) => notify(id, {
+    type: 'approval', level: 'info', title: 'Neuer Schüler aufgenommen', body: `${req.user.name} hat ${target.name} in „${klass.name}" aufgenommen.`, deepLink: '/admin',
+  }));
   res.json({ ok: true });
 });
 

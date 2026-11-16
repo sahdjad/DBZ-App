@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, RotateCcw, MoreHorizontal } from 'lucide-react';
+import { Search, Star, CircleDot, Link2, Copy, XCircle, ChevronDown, ChevronUp, UserMinus, UserPlus, RotateCcw, MoreHorizontal } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { Card, Button, Spinner, useToast, ClassFolders, ChoiceDialog } from '../components/ui.jsx';
@@ -14,6 +14,42 @@ const INVITE_ROLE_LABELS = { schueler: 'Schüler', klassensprecher: 'Klassenspre
 // Registrierungslink für die eigene Klasse erzeugen (Schüler/Klassensprecher/
 // Eltern). Der Server erzwingt ohnehin, dass Lehrkräfte nur für ihre eigene
 // Klasse einladen dürfen (siehe /admin/invites in api.js).
+// Offene Anmeldungen über den allgemeinen Link (z. B. Probeunterricht): die
+// Klassenlehrkraft nimmt Schüler direkt in die eigene Klasse auf. Nur Name und
+// Datum sichtbar; Ablehnen erledigen Leitung/Administrator.
+function PendingStudentsCard({ classId, className, onTaken }) {
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const load = () => api.get('/classes/pending-students').then((d) => setList(d.students)).catch(() => setList([]));
+  useEffect(() => { load(); }, [classId]);
+  if (!list || list.length === 0) return null;
+  const take = async (s) => {
+    if (!window.confirm(`${s.name} in „${className}" aufnehmen? Die Anmeldung wird damit freigeschaltet.`)) return;
+    try {
+      await api.post(`/classes/${classId}/take-pending/${s.id}`);
+      toast.push(`${s.name} ist jetzt in ${className}`, 'success');
+      load(); onTaken?.();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2 text-ivory font-medium"><UserPlus size={17} /> Neue Anmeldungen ohne Klasse</div>
+      <p className="mt-1 text-footnote text-sage-muted">Über den allgemeinen Link angemeldet – z. B. nach dem Probeunterricht in deine Klasse aufnehmen.</p>
+      <ul className="mt-3 divide-y divide-line">
+        {list.map((s) => (
+          <li key={s.id} className="flex items-center gap-3 py-2">
+            <span className="flex-1 min-w-0">
+              <span className="block text-sm text-ivory truncate" data-noi18n>{s.name}</span>
+              {s.createdAt && <span className="block text-caption text-sage-muted">angemeldet am {new Date(s.createdAt).toLocaleDateString('de-DE')}</span>}
+            </span>
+            <Button size="sm" onClick={() => take(s)}>Aufnehmen</Button>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function ClassInviteCard({ classId, className }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -348,6 +384,7 @@ export default function Klassenliste() {
       <div className="space-y-4">
         {isLeadership && <ClassFolders groups={(classes || []).map((c) => ({ id: c.id, name: c.name }))} selected={classId} onSelect={(id) => { setClassId(id || ''); setData(null); }} />}
         {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}
+        {user.role === 'klassenlehrer' && currentClass && currentClass.kind !== 'extra' && <PendingStudentsCard classId={classId} className={currentClass.name} onTaken={load} />}
         {currentClass && ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'].includes(user.role) && (
           <ClassResetCard classId={classId} className={currentClass.name} onDone={load} />
         )}

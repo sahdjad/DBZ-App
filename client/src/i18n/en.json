@@ -1,6 +1,9 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Neue Anmeldungen ohne Klasse": "New sign-ups without a class",
+"Über den allgemeinen Link angemeldet – z. B. nach dem Probeunterricht in deine Klasse aufnehmen.": "Signed up via the general link – e.g. add them to your class after a trial lesson.",
+"Neuer Schüler aufgenommen": "New student added",
 "Viele Tage auf einmal nachtragen": "Fill in many days at once",
 "Tage, an denen noch niemand eingetragen ist, bleiben offen – sonst stünde die ganze Klasse als unentschuldigt da.": "Days with no entries at all stay open – otherwise the whole class would be marked unexcused.",
 "Bestätigte Entschuldigungen werden immer übernommen. Verspätungen werden noch nicht nachgetragen.": "Confirmed excuses are always applied. Lateness is not filled in yet.",
@@ -2323,6 +2326,9 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["angemeldet am {}", "signed up on {1}"],
+["{} in „{}\" aufnehmen? Die Anmeldung wird damit freigeschaltet.", "Add {1} to “{2}”? This activates the sign-up."],
+["{} ist jetzt in {}", "{1} is now in {2}"],
 ["Jeder {} im Zeitraum gilt als Unterrichtstag", "Every {1} in the period counts as a lesson day"],
 ["{} von {} Tagen ausgewählt – Ferien oder ausgefallene Tage einfach abwählen.", "{1} of {2} days selected – just deselect holidays or cancelled days."],
 ["{} Tag(e) nachtragen", "Fill in {1} day(s)"],
