@@ -3415,7 +3415,7 @@ router.get('/review-queue', requireAuth, requireRole(CLASS_MANAGERS), (req, res)
         className: findClass(s.classId)?.name,
         studentName: s.studentName,
         text: s.text,
-        files: s.files,
+        files: (s.files || []).filter((f) => !f.deleted),
         status: s.status,
         submittedAt: s.submittedAt,
         review: review || null,
@@ -3552,6 +3552,7 @@ router.post('/submissions/:id/review', requireAuth, (req, res) => {
     db.commit();
   }
   sub.status = passed ? 'passed' : 'revision_required';
+  sub.reviewedAt = new Date().toISOString(); // ab hier zählt die Aufbewahrungsfrist für Aufnahmen
   db.commit();
   audit(req.user.id, 'submission.review', 'submission', sub.id, null, { outcome: sub.status });
   notify(sub.studentId, {
@@ -3565,6 +3566,106 @@ router.post('/submissions/:id/review', requireAuth, (req, res) => {
 });
 
 const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
+
+// Lehrkraft: eine Aufnahme dauerhaft behalten (fällt nicht unter die Aufbewahrungsfrist).
+router.post('/submissions/:id/file/:fileId/keep', requireAuth, (req, res) => {
+  const sub = byId('submissions', req.params.id);
+  if (!sub) return res.status(404).json({ error: 'Abgabe nicht gefunden' });
+  if (!canManageClass(req.user, sub.classId)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const f = (sub.files || []).find((x) => x.id === req.params.fileId && !x.deleted);
+  if (!f) return res.status(404).json({ error: 'Datei nicht gefunden' });
+  const keep = req.body?.keep === true;
+  if (keep) { f.retainPermanently = true; f.keptBy = req.user.id; } else { delete f.retainPermanently; delete f.keptBy; }
+  db.commit();
+  audit(req.user.id, keep ? 'file.keep' : 'file.unkeep', 'submission', sub.id, null, { fileId: f.id });
+  res.json({ ok: true, keep });
+});
+
+// --- Speicherübersicht (nur Systemadministrator) ------------------------------
+// Zählt alle hochgeladenen Dateien im Bestand nach Bereich und Art. Aufräumen
+// betrifft nur bewertete Audio-Abgaben, die niemand behalten will; die Dateien
+// gehen in die Löschliste (30 Tage), vorher wird der Bestand gesichert.
+const STORAGE_AREAS = {
+  submissions: 'Hausaufgaben-Abgaben', messages: 'Nachrichten', quran_goals: 'Hifz-Ziele', exams: 'Prüfungen',
+  exam_attempts: 'Prüfungsabgaben', materials: 'Materialien', announcements: 'Ankündigungen', recitations: 'Rezitationen',
+};
+const fileKind = (t = '') => (t.startsWith('audio') ? 'audio' : t.startsWith('image') ? 'image' : t === 'application/pdf' ? 'pdf' : 'other');
+function storageFiles() {
+  const out = [];
+  const visit = (v, area, owner) => {
+    if (Array.isArray(v)) { v.forEach((x) => visit(x, area, owner)); return; }
+    if (!v || typeof v !== 'object') return;
+    if (typeof v.filename === 'string' && FILE_NAME_RE.test(v.filename)) {
+      if (!v.deleted) out.push({ area, owner, file: v, size: Number(v.size) || 0, kind: fileKind(v.mediaType || '') });
+      return;
+    }
+    Object.values(v).forEach((x) => visit(x, area, owner));
+  };
+  for (const name of db.collectionNames()) {
+    if (['file_trash', 'audit', 'audit_log', 'notifications'].includes(name)) continue;
+    db.all(name).forEach((rec) => visit(rec, name, rec));
+  }
+  return out;
+}
+function cleanableAudio(olderThanDays) {
+  const cutoff = Date.now() - olderThanDays * 86400000;
+  const list = [];
+  for (const sub of db.all('submissions')) {
+    if (!['passed', 'revision_required'].includes(sub.status)) continue;
+    const since = sub.reviewedAt || sub.submittedAt;
+    if (!since || new Date(since).getTime() > cutoff) continue;
+    for (const f of sub.files || []) {
+      if (!f.deleted && !f.retainPermanently && (f.mediaType || '').startsWith('audio')) list.push({ sub, f });
+    }
+  }
+  return list;
+}
+router.get('/admin/storage', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
+  const files = storageFiles();
+  const areas = {};
+  for (const x of files) {
+    const a = areas[x.area] || (areas[x.area] = { area: x.area, label: STORAGE_AREAS[x.area] || x.area, count: 0, bytes: 0, kinds: {} });
+    a.count++; a.bytes += x.size;
+    const k = a.kinds[x.kind] || (a.kinds[x.kind] = { count: 0, bytes: 0 });
+    k.count++; k.bytes += x.size;
+  }
+  const byClass = {};
+  for (const x of files.filter((y) => y.area === 'submissions')) {
+    const cid = x.owner.classId || 'none';
+    const c = byClass[cid] || (byClass[cid] = { classId: cid, name: findClass(cid)?.name || 'ohne Klasse', count: 0, bytes: 0 });
+    c.count++; c.bytes += x.size;
+  }
+  const days = Math.max(0, Math.min(3650, parseInt(req.query.days, 10) || 30));
+  const cleanable = cleanableAudio(days);
+  res.json({
+    totalBytes: files.reduce((t, x) => t + x.size, 0),
+    totalCount: files.length,
+    areas: Object.values(areas).sort((a, b) => b.bytes - a.bytes),
+    classes: Object.values(byClass).sort((a, b) => b.bytes - a.bytes),
+    kept: files.filter((x) => x.file.retainPermanently).length,
+    cleanable: { days, count: cleanable.length, bytes: cleanable.reduce((t, x) => t + (Number(x.f.size) || 0), 0) },
+    retentionDays: org().audioRetentionDays || 0,
+    trash: db.all('file_trash').length,
+  });
+});
+router.post('/admin/storage/cleanup', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (req, res) => {
+  if (req.user.isDemo) return res.status(403).json({ error: 'Im Demo-Modus nicht möglich' });
+  if (req.body?.confirm !== 'AUFRÄUMEN') return res.status(400).json({ error: 'Zur Bestätigung AUFRÄUMEN eingeben' });
+  const days = parseInt(req.body?.olderThanDays, 10);
+  if (!Number.isInteger(days) || days < 0 || days > 3650) return res.status(400).json({ error: 'Ungültige Frist' });
+  const list = cleanableAudio(days);
+  if (!list.length) return res.json({ ok: true, count: 0, bytes: 0 });
+  if (!(await safeguard('aufnahmen-aufraeumen'))) return res.status(503).json({ error: BACKUP_FAILED });
+  const now = new Date().toISOString();
+  let bytes = 0;
+  trashFilesOf(list.map(({ f }) => ({ filename: f.filename })));
+  // Dateiname aus dem Eintrag nehmen -- sonst hielte die Löschliste die Datei für
+  // noch benutzt und gäbe den Platz nie frei. Bewertung, Name und Größe bleiben.
+  for (const { f } of list) { f.deleted = true; f.deletedAt = now; f.removedBy = 'cleanup'; delete f.filename; bytes += Number(f.size) || 0; }
+  db.commit();
+  audit(req.user.id, 'storage.cleanup', 'submission', null, null, { days, count: list.length, bytes });
+  res.json({ ok: true, count: list.length, bytes });
+});
 
 // =============================================================================
 // Protokolle (Klassensprecher-Entwurf -> Lehrer-Freigabe)

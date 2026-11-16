@@ -904,3 +904,38 @@ test('Allgemeiner Link: Klassenlehrkraft nimmt offene Anmeldung in die eigene Kl
   assert.equal(enr?.reason, 'joined');
   assert.equal((await teacher('POST', '/classes/class_3/take-pending/user_probe')).status, 404, 'nicht doppelt');
 });
+
+test('Aufnahmen: Lehrkraft behält, Speicherübersicht nur für Admin, Aufräumen nur bewertete und nicht behaltene', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const old = new Date(Date.now() - 40 * 86400000).toISOString();
+  const mkFile = (id, extra = {}) => ({ id, filename: `file_${id}_ab12.webm`, originalName: `${id}.webm`, mediaType: 'audio/webm', size: 1000, ...extra });
+  db.insert('submissions', { id: 'sub_store_a', assignmentId: 'x', classId: 'class_3', studentId: 'user_yusuf', status: 'passed', submittedAt: old, reviewedAt: old, files: [mkFile('keepme'), mkFile('dropme')] });
+  db.insert('submissions', { id: 'sub_store_b', assignmentId: 'x', classId: 'class_3', studentId: 'user_yusuf', status: 'submitted', submittedAt: old, files: [mkFile('ungraded')] });
+  db.insert('submissions', { id: 'sub_store_c', assignmentId: 'x', classId: 'class_3', studentId: 'user_yusuf', status: 'passed', submittedAt: old, reviewedAt: new Date().toISOString(), files: [mkFile('fresh')] });
+
+  // Lehrkraft der Klasse behält eine Aufnahme.
+  assert.equal((await teacher('POST', '/submissions/sub_store_a/file/keepme/keep', { keep: true })).status, 200);
+  assert.equal(db.all('submissions').find((x) => x.id === 'sub_store_a').files[0].retainPermanently, true);
+
+  // Übersicht: nur Systemadministrator.
+  assert.equal((await leitung('GET', '/admin/storage')).status, 403);
+  const st = (await admin('GET', '/admin/storage?days=30')).data;
+  assert.ok(st.totalCount >= 4);
+  assert.ok(st.areas.some((a) => a.area === 'submissions' && a.kinds.audio.count >= 4));
+  assert.equal(st.cleanable.count, 1, 'nur die bewertete, nicht behaltene, ältere Aufnahme');
+
+  // Aufräumen: Bestätigung nötig, dann nur „dropme“.
+  assert.equal((await admin('POST', '/admin/storage/cleanup', { olderThanDays: 30, confirm: 'ja' })).status, 400);
+  const r = (await admin('POST', '/admin/storage/cleanup', { olderThanDays: 30, confirm: 'AUFRÄUMEN' })).data;
+  assert.equal(r.count, 1);
+  const a = db.all('submissions').find((x) => x.id === 'sub_store_a');
+  assert.equal(a.files.find((f) => f.id === 'dropme').deleted, true);
+  assert.equal(a.files.find((f) => f.id === 'dropme').filename, undefined, 'Name entfernt, damit die Löschliste den Platz freigibt');
+  assert.equal(a.files.find((f) => f.id === 'keepme').deleted, undefined, 'behaltene bleibt');
+  assert.ok(db.all('file_trash').some((t) => t.filename === 'file_dropme_ab12.webm'), 'Datei liegt 30 Tage in der Löschliste');
+  assert.equal(db.all('submissions').find((x) => x.id === 'sub_store_b').files[0].deleted, undefined, 'unbewertete bleibt');
+  assert.equal(db.all('submissions').find((x) => x.id === 'sub_store_c').files[0].deleted, undefined, 'frisch bewertete bleibt');
+});

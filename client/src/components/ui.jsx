@@ -574,7 +574,14 @@ export function FileAttachment({ url, name, mediaType = '', className = '', icon
   const [open, setOpen] = useState(false);
   const type = String(mediaType || '');
   if (type.startsWith('image')) return <ImageAttachment url={url} alt={name} className={className} />;
-  if (type.startsWith('audio')) return <audio controls preload="none" src={url} className={cx('w-full max-w-sm h-10', className)} />;
+  if (type.startsWith('audio')) {
+    return (
+      <span className={cx('block w-full max-w-sm', className)}>
+        <audio controls preload="none" src={url} className="w-full h-10" />
+        <a href={url} download={name || true} className="mt-1 inline-flex items-center gap-1 text-caption text-sage-muted hover:text-ivory"><Download size={13} /> Auf dem Gerät speichern</a>
+      </span>
+    );
+  }
   const isPdf = type === 'application/pdf' || /\.pdf$/i.test(name || '');
   const close = () => setOpen(false);
   return (

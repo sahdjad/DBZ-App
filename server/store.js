@@ -496,6 +496,11 @@ export const db = {
   get meta() {
     return load().meta;
   },
+  /** Namen aller Listen im Bestand (z. B. für die Speicherübersicht). */
+  collectionNames() {
+    const data = load();
+    return Object.keys(data).filter((k) => Array.isArray(data[k]));
+  },
   /** Vollständige Kopie des Datenbestands (für Backups/Export). */
   snapshot() {
     return JSON.parse(JSON.stringify(load()));

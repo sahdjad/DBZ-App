@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight, Check } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight, Check, Database } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -860,6 +860,68 @@ function ClassTeachers({ classId }) {
 
 // Datensicherung (nur System-Administrator): täglich automatisch, vor jeder
 // Massenlöschung zusätzlich. Hier: Liste, sofort sichern, Stand zurückholen.
+// Speicherübersicht (nur Systemadministrator): was belegt wie viel Platz, und
+// bewertete Aufnahmen aufräumen (Sicherung vorher, Dateien 30 Tage in der Löschliste).
+const fmtBytes = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(2)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.round(b / 1e3)} KB`);
+const KIND_LABEL = { audio: 'Audio', pdf: 'PDF', image: 'Bilder', other: 'Sonstiges' };
+function StorageCard() {
+  const toast = useToast();
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState(null);
+  const [confirm, setConfirm] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const load = (d = days) => api.get(`/admin/storage?days=${d}`).then(setData).catch((e) => toast.push(e.message, 'error'));
+  useEffect(() => { load(); }, []);
+  const cleanup = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post('/admin/storage/cleanup', { olderThanDays: Number(days), confirm: confirm.trim().toUpperCase() });
+      toast.push(`${r.count} Aufnahme(n) entfernt (${fmtBytes(r.bytes)})`, 'success');
+      setConfirm(null); load();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  if (!data) return <Card className="p-4 sm:p-5"><Spinner /></Card>;
+  const max = Math.max(1, ...data.areas.map((a) => a.bytes));
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Speicher" subtitle={`${fmtBytes(data.totalBytes)} in ${data.totalCount} Dateien`} icon={Database} />
+      <ul className="space-y-2.5">
+        {data.areas.map((a) => (
+          <li key={a.area}>
+            <div className="flex items-baseline justify-between gap-2 text-sm"><span className="text-ivory">{a.label}</span><span className="font-mono text-caption text-sage-muted">{fmtBytes(a.bytes)} · {a.count}</span></div>
+            <div className="mt-1 h-1.5 rounded-full bg-subtle overflow-hidden"><div className="h-full rounded-full bg-mint" style={{ width: `${Math.max(2, (a.bytes / max) * 100)}%` }} /></div>
+            <div className="mt-0.5 text-caption text-sage-muted">{Object.entries(a.kinds).map(([k, v]) => `${KIND_LABEL[k] || k} ${fmtBytes(v.bytes)}`).join(' · ')}</div>
+          </li>
+        ))}
+      </ul>
+      {data.classes.length > 0 && (
+        <div className="mt-4 text-sm">
+          <div className="text-ivory mb-1">Abgaben je Klasse</div>
+          <ul className="text-sage-muted space-y-0.5">{data.classes.map((c) => <li key={c.classId} className="flex justify-between gap-2"><span data-noi18n>{c.name}</span><span className="font-mono text-caption">{fmtBytes(c.bytes)}</span></li>)}</ul>
+        </div>
+      )}
+      <div className="mt-4 border-t border-line pt-3 space-y-2 text-sm">
+        <div className="text-ivory">Bewertete Aufnahmen aufräumen</div>
+        <p className="text-caption text-sage-muted">Betrifft nur Audio-Abgaben, die bewertet sind und die keine Lehrkraft „behalten“ hat ({data.kept} behalten). Bewertung und Feedback bleiben. Automatisch: Einstellung „Audio-Aufbewahrung“ ({data.retentionDays ? `${data.retentionDays} Tage` : 'aus'}).</p>
+        <label className="flex items-center gap-2 text-sage">Älter als
+          <input type="number" min="0" className="input w-20" value={days} onChange={(e) => setDays(e.target.value)} onBlur={() => load(Number(days) || 0)} aria-label="Tage seit der Bewertung" /> Tage seit der Bewertung
+        </label>
+        <p className="text-sage">Jetzt löschbar: <b className="text-ivory">{data.cleanable.count}</b> Aufnahme(n), <b className="text-ivory">{fmtBytes(data.cleanable.bytes)}</b></p>
+        {data.cleanable.count > 0 && (confirm === null
+          ? <Button variant="outline" onClick={() => setConfirm('')}>Aufräumen …</Button>
+          : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="w-full text-caption text-sage">Zum Bestätigen <b>AUFRÄUMEN</b> eingeben. Vorher wird gesichert; die Dateien bleiben noch 30 Tage wiederherstellbar.</span>
+              <input className="input w-40" aria-label="Bestätigung" value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="off" />
+              <Button variant="danger" onClick={cleanup} disabled={busy || confirm.trim().toUpperCase() !== 'AUFRÄUMEN'}>Aufräumen</Button>
+              <Button variant="ghost" onClick={() => setConfirm(null)}>Abbrechen</Button>
+            </div>
+          ))}
+      </div>
+    </Card>
+  );
+}
+
 function BackupsCard() {
   const toast = useToast();
   const [list, setList] = useState(null);
@@ -945,9 +1007,9 @@ function SettingsTab() {
           <Input label="Verspätungsgrenze (Minuten)" type="number" value={org.lateAfterMinutes} onChange={(v) => setOrg({ ...org, lateAfterMinutes: v })} />
           <Input label="Check-in schließt automatisch um (HH:MM)" type="time" value={org.checkinAutoClose || '16:00'} onChange={(v) => setOrg({ ...org, checkinAutoClose: v })} />
           <label className="block">
-            <span className="text-sm text-sage">Audio-Aufbewahrung (Tage, 0 = deaktiviert)</span>
+            <span className="text-sm text-sage">Audio-Aufbewahrung (Tage nach der Bewertung, 0 = aus)</span>
             <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />
-            <span className="text-xs text-sage-muted">Audio-Abgaben werden nach dieser Frist automatisch gelöscht (Bewertung bleibt). 0 lässt alles unangetastet.</span>
+            <span className="text-xs text-sage-muted">Bewertete Audio-Abgaben werden so viele Tage nach der Bewertung automatisch gelöscht (Bewertung und Feedback bleiben). Was eine Lehrkraft „behalten“ hat, bleibt. 0 lässt alles unangetastet.</span>
           </label>
           {isSuperAdmin && (
             <label className="flex items-start gap-3 pt-2 border-t border-line">
@@ -982,6 +1044,7 @@ function SettingsTab() {
       </Card>
 
       {isSuperAdmin && <BackupsCard />}
+      {isSuperAdmin && <StorageCard />}
 
       <GradeWeightsCard weights={org.gradeWeights} onChange={(w) => setOrg({ ...org, gradeWeights: w })} onSave={saveWeights} />
     </div>
