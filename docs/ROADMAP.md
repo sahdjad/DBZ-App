@@ -100,6 +100,9 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   1.9.2025), Vorschau je Tag, Ferien abwählbar; Entschuldigungen werden übernommen, unentschuldigt nur an Tagen
   mit Einträgen; Sicherung vorher, Nachtrag rücknehmbar. Mitglied ab Klassenverlauf bzw. erstem eigenen Nachweis.
   Verspätungen werden bewusst noch nicht nachgetragen.
+- ✅ **Einladen (16.11.2026):** Klassenlink (Lehrkraft) und allgemeiner Link bestehen; neu: die Klassenlehrkraft
+  sieht offene Schüler-Anmeldungen (nur Name, Datum) und nimmt sie in die eigene Klasse auf (z. B. nach dem
+  Probeunterricht). Freischalten legt jetzt einen Eintrag „Einstieg“ im Klassenverlauf an.
 - ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
 
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);

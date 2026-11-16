@@ -878,3 +878,29 @@ test('Anwesenheit nachtragen: Mitglied ab erstem eigenen Eintrag, auch wenn das 
   assert.equal(byDate['2025-10-04'].counts.unexcused, 0, '„Anderer" war am 4.10. noch nicht nachweisbar dabei');
   assert.equal(byDate['2025-09-27'].open, 0, 'vor dem ersten Eintrag gehört niemand dazu');
 });
+
+test('Allgemeiner Link: Klassenlehrkraft nimmt offene Anmeldung in die eigene Klasse auf (mit Klassenverlauf)', async () => {
+  const { db } = await import('../store.js');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const admin = await loginAs('admin@dbz.de');
+  const fremd = (await admin('POST', '/admin/classes', { name: 'Fremde Klasse' })).data.class;
+  const isDemoTeacher = Boolean(db.all('users').find((u) => u.email === 'lehrer@dbz.de').isDemo);
+  db.insert('users', { id: 'user_probe', name: 'Probe Schüler', email: 'probe@example.org', role: 'schueler', status: 'pending', classIds: [], isDemo: isDemoTeacher, createdAt: new Date().toISOString(), profile: { street: 'Geheimweg', phone: '0170' } });
+
+  assert.equal((await student('GET', '/classes/pending-students')).status, 403);
+  const list = (await teacher('GET', '/classes/pending-students')).data.students;
+  const row = list.find((x) => x.id === 'user_probe');
+  assert.ok(row);
+  assert.deepEqual(Object.keys(row).sort(), ['createdAt', 'id', 'name'], 'keine Adresse/Telefon für Lehrkräfte');
+
+  assert.equal((await teacher('POST', `/classes/${fremd.id}/take-pending/user_probe`)).status, 403, 'nur eigene Klasse');
+  const ok = await teacher('POST', '/classes/class_3/take-pending/user_probe');
+  assert.equal(ok.status, 200);
+  const u = db.all('users').find((x) => x.id === 'user_probe');
+  assert.equal(u.status, 'active');
+  assert.deepEqual(u.classIds, ['class_3']);
+  const enr = db.all('enrollments').find((e) => e.studentId === 'user_probe');
+  assert.equal(enr?.reason, 'joined');
+  assert.equal((await teacher('POST', '/classes/class_3/take-pending/user_probe')).status, 404, 'nicht doppelt');
+});

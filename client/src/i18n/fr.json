@@ -1,6 +1,9 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Neue Anmeldungen ohne Klasse": "Nouvelles inscriptions sans classe",
+"Über den allgemeinen Link angemeldet – z. B. nach dem Probeunterricht in deine Klasse aufnehmen.": "Inscrits via le lien général – par ex. à ajouter à votre classe après le cours d'essai.",
+"Neuer Schüler aufgenommen": "Nouvel élève ajouté",
 "Viele Tage auf einmal nachtragen": "Compléter plusieurs jours d'un coup",
 "Tage, an denen noch niemand eingetragen ist, bleiben offen – sonst stünde die ganze Klasse als unentschuldigt da.": "Les jours sans aucune saisie restent ouverts – sinon toute la classe serait marquée absente sans excuse.",
 "Bestätigte Entschuldigungen werden immer übernommen. Verspätungen werden noch nicht nachgetragen.": "Les excuses confirmées sont toujours reprises. Les retards ne sont pas encore complétés.",
@@ -2324,6 +2327,9 @@
 "Audio": "Audio"
 },
 "patterns": [
+["angemeldet am {}", "inscrit le {1}"],
+["{} in „{}\" aufnehmen? Die Anmeldung wird damit freigeschaltet.", "Ajouter {1} à « {2} » ? L'inscription sera activée."],
+["{} ist jetzt in {}", "{1} est maintenant en {2}"],
 ["Jeder {} im Zeitraum gilt als Unterrichtstag", "Chaque {1} de la période compte comme jour de cours"],
 ["{} von {} Tagen ausgewählt – Ferien oder ausgefallene Tage einfach abwählen.", "{1} jours sur {2} sélectionnés – désélectionnez les vacances ou jours annulés."],
 ["{} Tag(e) nachtragen", "Compléter {1} jour(s)"],
