@@ -573,7 +573,7 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
 function ClassesTab() {
   const toast = useToast();
   const [classes, setClasses] = useState(null);
-  const [form, setForm] = useState({ name: '', weekday: 6, startTime: '14:00', endTime: '18:00' });
+  const [form, setForm] = useState({ name: '', kind: 'regular', weekday: 6, startTime: '14:00', endTime: '18:00' });
   const load = () => api.get('/classes').then((d) => setClasses(d.classes));
   useEffect(() => { load(); }, []);
   const create = async (e) => {
@@ -581,7 +581,7 @@ function ClassesTab() {
     try {
       const res = await api.post('/admin/classes', { ...form, weekday: Number(form.weekday) });
       toast.push(res.pending ? 'Zur Bestätigung an den Administrator gesendet' : 'Klasse erstellt', 'success');
-      setForm({ name: '', weekday: 6, startTime: '14:00', endTime: '18:00' });
+      setForm({ name: '', kind: 'regular', weekday: 6, startTime: '14:00', endTime: '18:00' });
       load();
     } catch (err) { toast.push(err.message, 'error'); }
   };
@@ -593,6 +593,13 @@ function ClassesTab() {
         <CardHeader title="Neue Klasse" icon={School} />
         <form onSubmit={create} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
           <Input label="Name" value={form.name} onChange={(v) => setForm({ ...form, name: v })} required />
+          <label className="block sm:col-span-3">
+            <span className="text-sm text-sage">Art</span>
+            <select className="input mt-1" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value })}>
+              <option value="regular">Stammklasse – feste Schüler, zählt für Bericht und Note</option>
+              <option value="extra">Zusatzkurs – freiwillig, zählt nicht (z. B. Umra-Kurs)</option>
+            </select>
+          </label>
           <label className="block">
             <span className="text-sm text-sage">Wochentag</span>
             <select className="input mt-1" value={form.weekday} onChange={(e) => setForm({ ...form, weekday: e.target.value })}>
@@ -605,23 +612,35 @@ function ClassesTab() {
         </form>
       </Card>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {classes.map((c) => <ClassCard key={c.id} c={c} days={days} />)}
+        {classes.map((c) => <ClassCard key={c.id} c={c} days={days} onChanged={load} />)}
       </div>
     </div>
   );
 }
 
-function ClassCard({ c, days }) {
+function ClassCard({ c, days, onChanged }) {
   const toast = useToast();
   const [openTeachers, setOpenTeachers] = useState(false);
+  const [openMembers, setOpenMembers] = useState(false);
+  const extra = c.kind === 'extra';
+  const switchKind = async () => {
+    const to = extra ? 'regular' : 'extra';
+    const msg = extra
+      ? `„${c.name}" zur Stammklasse machen? Was dort passiert, zählt dann für Bericht und Note.`
+      : `„${c.name}" zum Zusatzkurs machen? Was dort passiert, zählt dann NICHT mehr für Bericht und Note.`;
+    if (!window.confirm(msg)) return;
+    try { await api.patch(`/admin/classes/${c.id}`, { kind: to }); toast.push('Gespeichert', 'success'); onChanged?.(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
   return (
     <Card className="p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-ivory">{c.name}</div>
-          <div className="text-xs text-sage-muted">{days[c.weekday]} · {c.startTime}–{c.endTime} · {c.studentCount} Schüler · {c.type === 'online' ? 'Online' : 'Präsenz'}</div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+        <div className="min-w-0">
+          <div className="text-ivory flex items-center gap-2 flex-wrap"><span data-noi18n>{c.name}</span>{extra && <Badge tone="gold">Zusatzkurs</Badge>}</div>
+          <div className="text-xs text-sage-muted">{days[c.weekday]} · {c.startTime}–{c.endTime} · {c.studentCount} {extra ? 'Teilnehmer' : 'Schüler'} · {c.type === 'online' ? 'Online' : 'Präsenz'}</div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1 flex-wrap -ml-3 sm:ml-0 sm:shrink-0 sm:justify-end">
+          {extra && <Button variant="ghost" size="sm" onClick={() => setOpenMembers((o) => !o)}><UserCheck size={16} /> Teilnehmer</Button>}
           <Button variant="ghost" size="sm" onClick={() => setOpenTeachers((o) => !o)}><Users2 size={16} /> Lehrkräfte</Button>
           <Button variant="ghost" size="sm" title="Klassenliste als CSV"
             onClick={() => api.download(`/export/roster.csv?classId=${c.id}`, `klassenliste_${c.id}.csv`).catch((e) => toast.push(e.message, 'error'))}>
@@ -630,7 +649,50 @@ function ClassCard({ c, days }) {
         </div>
       </div>
       {openTeachers && <ClassTeachers classId={c.id} />}
+      {openMembers && <CourseMembers classId={c.id} onChanged={onChanged} />}
+      <div className="mt-3 pt-3 border-t border-line flex items-center justify-between gap-2">
+        <span className="text-xs text-sage-muted">{extra ? 'Freiwillig – zählt nicht für Bericht und Note.' : 'Stammklasse – zählt für Bericht und Note.'}</span>
+        <Button variant="ghost" size="sm" onClick={switchKind}>{extra ? 'Zur Stammklasse machen' : 'Zum Zusatzkurs machen'}</Button>
+      </div>
     </Card>
+  );
+}
+
+// Teilnehmer eines Zusatzkurses: aufnehmen und austragen (Stammklasse bleibt).
+function CourseMembers({ classId, onChanged }) {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+  const [pick, setPick] = useState('');
+  const load = () => api.get(`/classes/${classId}/members`).then((d) => { setData(d); setPick(''); }).catch((e) => toast.push(e.message, 'error'));
+  useEffect(() => { load(); }, [classId]);
+  const add = async () => {
+    if (!pick) return;
+    try { await api.post(`/classes/${classId}/members`, { studentId: pick }); toast.push('Teilnehmer aufgenommen', 'success'); load(); onChanged?.(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  const remove = async (id) => {
+    try { await api.del(`/classes/${classId}/students/${id}`); toast.push('Ausgetragen', 'success'); load(); onChanged?.(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (!data) return <div className="mt-3"><Spinner /></div>;
+  return (
+    <div className="mt-3 border-t border-line pt-3 space-y-2">
+      {data.members.length === 0 ? (
+        <p className="text-xs text-sage-muted">Noch keine Teilnehmer.</p>
+      ) : data.members.map((m) => (
+        <div key={m.id} className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-sage" data-noi18n>{m.name}{m.className ? <span className="text-sage-muted"> · {m.className}</span> : null}</span>
+          <Button variant="ghost" size="sm" onClick={() => remove(m.id)}><XCircle size={15} /> Austragen</Button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <select className="input py-1 text-sm w-auto flex-1" aria-label="Schüler" value={pick} onChange={(e) => setPick(e.target.value)}>
+          <option value="">– Schüler wählen –</option>
+          {data.available.map((m) => <option key={m.id} value={m.id}>{m.name}{m.className ? ` (${m.className})` : ''}</option>)}
+        </select>
+        <Button size="sm" onClick={add} disabled={!pick}><Plus size={15} /> Aufnehmen</Button>
+      </div>
+    </div>
   );
 }
 
