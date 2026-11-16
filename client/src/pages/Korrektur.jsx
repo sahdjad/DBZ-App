@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckSquare, EyeOff, ListChecks } from 'lucide-react';
+import { CheckSquare, EyeOff, ListChecks, Pin } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import SameDayWarning from '../components/SameDayWarning.jsx';
 import HomeworkOverview from '../components/HomeworkOverview.jsx';
@@ -10,6 +10,22 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('de-DE', { dateStyle: '
 
 // Standard: Übersicht nach Schülern ("x von y" pro Woche). Die bisherige Liste
 // aller Abgaben (mit Ausblenden) bleibt als zweiter Reiter erhalten.
+
+// Aufnahme dauerhaft behalten (sonst gilt nach der Bewertung die Aufbewahrungsfrist).
+function KeepToggle({ subId, file }) {
+  const toast = useToast();
+  const [on, setOn] = useState(Boolean(file.retainPermanently));
+  const toggle = async () => {
+    try { await api.post(`/submissions/${subId}/file/${file.id}/keep`, { keep: !on }); setOn(!on); toast.push(!on ? 'Aufnahme wird behalten' : 'Aufnahme folgt wieder der Aufbewahrungsfrist', 'success'); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  return (
+    <button type="button" onClick={toggle} aria-pressed={on} className={`mt-1 ml-3 inline-flex items-center gap-1 text-caption ${on ? 'text-mint-light dark:text-mint font-semibold' : 'text-sage-muted hover:text-ivory'}`}>
+      <Pin size={13} /> {on ? 'Wird behalten' : 'Behalten'}
+    </button>
+  );
+}
+
 export default function Korrektur() {
   const [view, setView] = useState('students');
   return (
@@ -125,7 +141,10 @@ function ReviewCard({ sub, onDone, compact = false }) {
       {sub.files?.length > 0 && (
         <div className="mt-3 space-y-2">
           {sub.files.map((f) => (
-            <div key={f.id}><FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} /></div>
+            <div key={f.id}>
+              <FileAttachment url={`/api/submissions/${sub.id}/file/${f.id}`} name={f.originalName} mediaType={f.mediaType} />
+              {String(f.mediaType || '').startsWith('audio') && <KeepToggle subId={sub.id} file={f} />}
+            </div>
           ))}
         </div>
       )}

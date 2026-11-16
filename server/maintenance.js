@@ -21,7 +21,9 @@ export function runAudioRetention() {
   const cutoff = Date.now() - days * 86400000;
   let deleted = 0;
   for (const sub of db.all('submissions')) {
-    if (!sub.submittedAt || new Date(sub.submittedAt).getTime() > cutoff) continue;
+    // Frist zählt ab der Bewertung (ältere Abgaben ohne Zeitpunkt: ab Abgabe).
+    const since = sub.reviewedAt || sub.submittedAt;
+    if (!since || new Date(since).getTime() > cutoff) continue;
     if (!['passed', 'revision_required'].includes(sub.status)) continue; // erst nach Korrektur
     for (const f of sub.files || []) {
       if (f.deleted || f.retainPermanently) continue;

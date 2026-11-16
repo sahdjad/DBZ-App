@@ -103,7 +103,12 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
 - ✅ **Einladen (16.11.2026):** Klassenlink (Lehrkraft) und allgemeiner Link bestehen; neu: die Klassenlehrkraft
   sieht offene Schüler-Anmeldungen (nur Name, Datum) und nimmt sie in die eigene Klasse auf (z. B. nach dem
   Probeunterricht). Freischalten legt jetzt einen Eintrag „Einstieg“ im Klassenverlauf an.
-- ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
+- ✅ **Aufnahmen (16.11.2026):** Aufbewahrungsfrist zählt ab der Bewertung; Lehrkraft kann einzelne Aufnahmen
+  „behalten“; Schüler speichern Aufnahmen auf dem eigenen Gerät; Speicherübersicht und Aufräumen (mit
+  Bestätigung, Sicherung, 30 Tage Löschliste) für den Systemadministrator. Frist einschalten: Einstellungen.
+- ⬜ **Kostenloser Zusatzspeicher** (offen): Supabase Free hat 1 GB Dateispeicher; Alternativen mit größerem
+  Gratis-Kontingent prüfen, bevor die Grenze erreicht ist.
+- ⬜ **Speicher für Aufnahmen (alt):** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
 
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);
 für Umra braucht es keine Klasse; versetzen nur Leitung/Administrator; Klassendaten aus dem alten Schuljahr sehen nur
