@@ -7360,6 +7360,42 @@ function parseValidUntil(v) {
 }
 
 // Nutzer nachträglich verwalten: Name, Rolle, Klassen, Eltern-Kind, Status.
+/** Klassenwechsel mitteilen: Schüler, Eltern und die Lehrkräfte der alten und neuen Klasse. */
+function announceMove(u, moved) {
+  if (!moved || !moved.to) return;
+  const name = findClass(moved.to)?.name || 'neue Klasse';
+  const who = [u.id, ...db.all('users').filter((p) => (p.childIds || []).includes(u.id)).map((p) => p.id)];
+  who.forEach((id) => notify(id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: id === u.id ? `Du bist jetzt in „${name}".` : `${u.name} ist jetzt in „${name}".`, deepLink: '/dashboard' }));
+  db.all('users').filter((t) => t.role === ROLES.KLASSENLEHRER && t.status === 'active' && [moved.from, moved.to].some((c) => c && (t.classIds || []).includes(c)))
+    .forEach((t) => notify(t.id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: `${u.name}: ${findClass(moved.from)?.name || 'ohne Klasse'} → ${name}`, deepLink: '/klassenliste' }));
+}
+
+// Mehrere Schüler auf einmal in eine Stammklasse versetzen (Schuljahresbeginn,
+// Halbjahr). Nur Leitung/Administrator; jeder Wechsel steht im Klassenverlauf.
+router.post('/admin/users/bulk-class', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const { ids, classId, reason } = req.body || {};
+  if (!Array.isArray(ids) || !ids.length || ids.length > 500) return res.status(400).json({ error: 'Keine Nutzer ausgewählt' });
+  const cls = typeof classId === 'string' ? findClass(classId) : null;
+  if (!cls) return res.status(400).json({ error: 'Klasse nicht gefunden' });
+  if (cls.kind === 'extra') return res.status(400).json({ error: 'Zusatzkurse werden in der Klasse selbst belegt – hier geht es um die Stammklasse' });
+  if (reason !== undefined && !ENROLL_REASONS.includes(reason)) return res.status(400).json({ error: 'Ungültiger Grund für den Klassenwechsel' });
+  const results = [...new Set(ids.map(String))].map((id) => {
+    const u = findUserById(id);
+    if (!u) return { id, ok: false, error: 'Nicht gefunden' };
+    if (req.user.isDemo && !u.isDemo) return { id, ok: false, error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' };
+    if (!STUDENT_ROLES.includes(u.role)) return { id, ok: false, error: 'Kein Schüler' };
+    const had = homeClassId(u);
+    const hadClass = Boolean(had) && !isExtraClass(had);
+    const moved = setHomeClass(u, cls.id, { by: req.user.id, reason: reason || (hadClass ? 'transfer' : 'joined') });
+    if (!moved) return { id, ok: true, unchanged: true };
+    announceMove(u, moved);
+    audit(req.user.id, 'user.class_move', 'user', u.id, { classId: moved.from }, { classId: moved.to, reason: reason || null });
+    return { id, ok: true };
+  });
+  db.commit();
+  res.json({ results });
+});
+
 router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
@@ -7406,13 +7442,7 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
       const moved = setHomeClass(u, regular[0] || null, { by: req.user.id, reason: reason || (hadClass ? 'transfer' : 'joined') });
       const extras = [...new Set([...(u.classIds || []).filter(isExtraClass), ...valid.filter(isExtraClass)])];
       u.classIds = [...(u.classIds || []).filter((c) => !isExtraClass(c)), ...extras];
-      if (moved && moved.to) {
-        const name = findClass(moved.to)?.name || 'neue Klasse';
-        const who = [u.id, ...db.all('users').filter((p) => (p.childIds || []).includes(u.id)).map((p) => p.id)];
-        who.forEach((id) => notify(id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: id === u.id ? `Du bist jetzt in „${name}".` : `${u.name} ist jetzt in „${name}".`, deepLink: '/dashboard' }));
-        db.all('users').filter((t) => t.role === ROLES.KLASSENLEHRER && t.status === 'active' && [moved.from, moved.to].some((c) => c && (t.classIds || []).includes(c)))
-          .forEach((t) => notify(t.id, { type: 'class_assigned', level: 'info', title: 'Klassenwechsel', body: `${u.name}: ${findClass(moved.from)?.name || 'ohne Klasse'} → ${name}`, deepLink: '/klassenliste' }));
-      }
+      announceMove(u, moved);
     } else {
       u.classIds = valid;
     }
