@@ -6543,6 +6543,15 @@ function personAccounts(u) {
   }
   return [...ids].map(findUserById).filter(Boolean);
 }
+/** Das Anmelde-Konto einer Person -- stabil, egal von welchem ihrer Konten man ausgeht. */
+function personMain(u) {
+  if (!u.roleOf && !(u.linkedAccountIds || []).length) return u;
+  const accounts = personAccounts(u);
+  const withLogin = accounts.filter((a) => a.email && a.status !== 'disabled');
+  const pool = withLogin.length ? withLogin : accounts.filter((a) => a.email);
+  const sorted = (pool.length ? pool : accounts).sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')) || String(a.id).localeCompare(String(b.id)));
+  return sorted[0] || u;
+}
 function linkAllAccounts(accounts) {
   accounts.forEach((a) => {
     a.linkedAccountIds = a.linkedAccountIds || [];
@@ -6644,7 +6653,15 @@ router.patch('/admin/users/:id/roles/:accountId', requireAuth, requireRole(ROLES
   if (blockDemoOnRealTarget(req, res, acc)) return;
   if (!canGrantRole(req.user, acc.role)) return res.status(403).json({ error: 'Keine Berechtigung für diese Rolle' });
   const before = { classIds: acc.classIds };
-  acc.classIds = cleanRoleClassIds(acc.role, req.body?.classIds);
+  const wanted = cleanRoleClassIds(acc.role, req.body?.classIds);
+  if (STUDENT_ROLES.includes(acc.role)) {
+    // Schüler-Rolle: Stammklasse wie überall mit Verlauf wechseln; Zusatzkurse bleiben.
+    const target = wanted.find((c) => !isExtraClass(c)) || null;
+    const had = homeClassId(acc);
+    setHomeClass(acc, target, { by: req.user.id, reason: had && !isExtraClass(had) ? 'transfer' : 'joined' });
+  } else {
+    acc.classIds = wanted;
+  }
   db.commit();
   audit(req.user.id, 'user.role_classes', 'user', acc.id, before, { classIds: acc.classIds });
   res.json({ account: roleAccountView(acc) });
@@ -7272,6 +7289,7 @@ router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEI
       return {
         ...publicUser(u),
         lastSeenAt: u.lastSeenAt || null,
+        personId: personMain(u).id,
         classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
         otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
         loginEmail: main?.email || null,
@@ -7434,6 +7452,16 @@ function hardDeleteUser(u) {
 // Der letzte verbleibende System-Administrator darf nie gelöscht werden –
 // sonst hat niemand mehr Zugriff auf die Verwaltung.
 const isLastSuperAdmin = (u) => u.role === ROLES.SUPER_ADMIN && db.all('users').filter((x) => x.role === ROLES.SUPER_ADMIN).length <= 1;
+// Rollenkonten ohne eigene Anmeldung werden mit dem Anmelde-Konto gelöscht --
+// die Schutzregeln (eigenes Konto, letzter Administrator) gelten auch für sie.
+const roleAccountsOf = (u) => db.all('users').filter((x) => x.roleOf === u.id && !x.email);
+function deleteBlocker(actor, u) {
+  const all = [u, ...roleAccountsOf(u)];
+  if (all.some((x) => x.id === actor.id)) return 'Eigenes Konto kann nicht gelöscht werden';
+  const admins = db.all('users').filter((x) => x.role === ROLES.SUPER_ADMIN);
+  if (admins.length && admins.every((x) => all.includes(x))) return 'Letzter System-Administrator kann nicht gelöscht werden';
+  return null;
+}
 
 // Endgültiges Löschen (nicht nur deaktivieren) – z. B. wenn ein Schüler sich
 // komplett abmeldet. Zweistufig als Sicherheitsnetz: das Konto muss zuerst
@@ -7447,6 +7475,8 @@ router.delete('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, RO
     return res.status(400).json({ error: 'Konto muss zuerst deaktiviert werden, bevor es gelöscht werden kann' });
   if (isLastSuperAdmin(u))
     return res.status(400).json({ error: 'Der letzte System-Administrator kann nicht gelöscht werden' });
+  const blocked = deleteBlocker(req.user, u);
+  if (blocked) return res.status(400).json({ error: blocked });
 
   hardDeleteUser(u);
   db.commit();
@@ -7465,14 +7495,20 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
   if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ error: 'Keine Nutzer ausgewählt' });
   if (!(await safeguard('nutzer-loeschen'))) return res.status(503).json({ error: BACKUP_FAILED });
 
+  // Eine Person = mehrere Konten: Rollenkonten verschwinden mit dem Anmelde-Konto.
+  const gone = new Set();
   const results = ids.map((id) => {
     const u = findUserById(id);
+    if (!u && gone.has(id)) return { id, ok: true };
     if (!u) return { id, ok: false, error: 'Nicht gefunden' };
     if (req.user.isDemo && !u.isDemo) return { id, ok: false, error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' };
     if (u.id === req.user.id) return { id, ok: false, error: 'Eigenes Konto kann nicht gelöscht werden' };
     if (isLastSuperAdmin(u)) return { id, ok: false, error: 'Letzter System-Administrator kann nicht gelöscht werden' };
+    const blocked = deleteBlocker(req.user, u);
+    if (blocked) return { id, ok: false, error: blocked };
 
     const before = { name: u.name, email: u.email, role: u.role };
+    roleAccountsOf(u).forEach((x) => gone.add(x.id));
     hardDeleteUser(u);
     audit(req.user.id, 'user.delete', 'user', u.id, before, null);
     return { id, ok: true };

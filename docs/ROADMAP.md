@@ -89,8 +89,10 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
 - ✅ **Klassenwechsel mit Verlauf:** Stammklasse ändern nur Leitung und Administrator (Verwaltung → Person),
   mit Grund (Aufstieg, Abstieg, Wechsel) und Datum im Klassenverlauf. Alte Einträge bleiben bei der alten Klasse,
   Zusatzkurse bleiben erhalten, das Amt des Klassensprechers endet. Lehrkräfte tragen nur aus Zusatzkursen aus.
-- ⬜ **Eine Person, mehrere Rollen:** in der Verwaltung eine Zeile je Person statt je Rollenkonto
-- ⬜ **Verwaltung für viele Klassen:** Nutzerliste nach Klasse gruppiert, Suche, Sammelaktionen, Import
+- ✅ **Eine Person, mehrere Rollen:** in der Verwaltung eine Zeile je Person mit allen Rollen; Löschen schützt auch
+  Rollenkonten (eigene Person, letzter Administrator); die Klasse einer Schüler-Rolle wechselt mit Verlauf.
+- ◐ **Verwaltung für viele Klassen:** ✅ Nutzerliste nach Klasse oder Rolle, Suche · ⬜ Sammelaktionen (mehrere
+  Schüler auf einmal versetzen), Import von Schülern per Tabelle
 - ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
 
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);

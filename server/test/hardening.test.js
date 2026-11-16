@@ -710,3 +710,46 @@ test('Schuljahr: Auswertungen gelten fürs laufende Jahr; Schüler und Eltern se
   assert.equal((await teacher('GET', '/penalties')).data.penalties.some((p) => p.id === 'pen_alt_erledigt'), true);
   assert.equal((await teacher('GET', '/announcements')).data.announcements.some((a) => a.id === 'ann_alt'), true);
 });
+
+test('Eine Person, mehrere Rollen: gleiche personId, Klassenwechsel der Schüler-Rolle mit Verlauf, Löschen samt Rollen', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const users = () => admin('GET', '/admin/users').then((r) => r.data.users);
+
+  // Eine neue Person bekommt zwei zusätzliche Rollen.
+  const made = await admin('POST', '/admin/users', { name: 'Mehrfach Person', email: 'mehrfach@example.org', password: 'demo1234', role: 'klassenlehrer', classIds: ['class_3'] });
+  assert.equal(made.status, 200);
+  const mainId = (await users()).find((u) => u.email === 'mehrfach@example.org').id;
+  const asStudent = (await admin('POST', `/admin/users/${mainId}/roles`, { role: 'schueler', classIds: [] })).data.account;
+  const asLead = (await admin('POST', `/admin/users/${mainId}/roles`, { role: 'leitung' })).data.account;
+
+  // Alle drei Konten gehören zur selben Person -- egal, von welchem Konto man ausgeht.
+  const mine = (await users()).filter((u) => [mainId, asStudent.id, asLead.id].includes(u.id));
+  assert.equal(mine.length, 3);
+  assert.deepEqual([...new Set(mine.map((u) => u.personId))], [mainId]);
+  // Ein gewöhnliches Konto ist seine eigene Person.
+  const yusuf = (await users()).find((u) => u.id === 'user_yusuf');
+  assert.equal(yusuf.personId, 'user_yusuf');
+
+  // Klasse der Schüler-Rolle: läuft über den Klassenwechsel mit Verlauf, Zusatzkurse bleiben.
+  const kurs = (await admin('POST', '/admin/classes', { name: 'Kurs Rollen-Test', kind: 'extra' })).data.class;
+  db.all('users').find((u) => u.id === asStudent.id).classIds = [kurs.id];
+  const patched = await admin('PATCH', `/admin/users/${mainId}/roles/${asStudent.id}`, { classIds: ['class_3'] });
+  assert.equal(patched.status, 200);
+  assert.deepEqual(patched.data.account.classIds.sort(), ['class_3', kurs.id].sort(), 'Zusatzkurs bleibt erhalten');
+  const history = db.all('enrollments').filter((e) => e.studentId === asStudent.id);
+  assert.equal(history.filter((e) => e.classId === 'class_3' && !e.to).length, 1, 'Wechsel steht im Klassenverlauf');
+
+  // Wer in einer seiner Rollen angemeldet ist, kann die eigene Person nicht löschen.
+  const self = await loginAs('mehrfach@example.org');
+  assert.equal((await self('POST', `/me/switch/${asLead.id}`)).status, 200);
+  const own = await self('POST', '/admin/users/bulk-delete', { ids: [mainId] });
+  assert.equal(own.data.results[0].ok, false, 'eigene Person bleibt geschützt');
+  assert.ok(db.all('users').some((u) => u.id === mainId));
+
+  // Löschen der Person: alle Konten auf einmal gemeldet, keines bleibt zurück, kein Fehler.
+  const del = await admin('POST', '/admin/users/bulk-delete', { ids: [mainId, asStudent.id, asLead.id] });
+  assert.equal(del.status, 200);
+  assert.deepEqual(del.data.results.map((r) => r.ok), [true, true, true]);
+  assert.equal(db.all('users').some((u) => [mainId, asStudent.id, asLead.id].includes(u.id)), false);
+});

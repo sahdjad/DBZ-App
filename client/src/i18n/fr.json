@@ -1,6 +1,12 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Nach Klasse filtern": "Filtrer par classe",
+"Niemand in dieser Gruppe": "Personne dans ce groupe",
+"Nach Klasse": "Par classe",
+"Nach Rolle": "Par rôle",
+"Mitarbeitende": "Personnel",
+"Deaktivierte Personen anzeigen (": "Afficher les personnes désactivées (",
 "Aus dem Kurs austragen": "Retirer du cours",
 "Grund des Klassenwechsels": "Motif du changement de classe",
 "Aufstieg": "Passage au niveau supérieur",
@@ -2286,6 +2292,8 @@
 "Audio": "Audio"
 },
 "patterns": [
+["{} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.", "Supprimer définitivement {1} personne(s) avec tous leurs rôles ? C'est irréversible."],
+["{} Person(en) endgültig gelöscht", "{1} personne(s) supprimée(s) définitivement"],
 ["Deine Vertretung ist am {} abgelaufen. Bitte wende dich an die Leitung.", "Votre suppléance a pris fin le {1}. Veuillez contacter la direction."],
 ["Du bist als „{}\" angemeldet. Hast du mehrere Rollen, kannst du oben im Menü wechseln.", "Vous êtes connecté en tant que « {1} ». Si vous avez plusieurs rôles, vous pouvez changer en haut du menu."],
 ["Juzʼ {} · Seiten {}–{}", "Juzʼ {1} · Pages {2}–{3}"],

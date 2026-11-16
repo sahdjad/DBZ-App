@@ -4,7 +4,8 @@ import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRo
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
-import { Card, CardHeader, Button, Badge, Spinner, Avatar, ListGroup, EmptyState, useToast } from '../components/ui.jsx';
+import { Card, CardHeader, Button, Badge, Spinner, Avatar, ListGroup, EmptyState, Segmented, useToast } from '../components/ui.jsx';
+import { mergePeople, classFilters } from '../lib/people.js';
 import { lastSeenLabel } from '../lib/format.js';
 import { PersonAdminPanel } from '../components/PersonAdmin.jsx';
 
@@ -277,6 +278,9 @@ function UsersTab() {
   const focusRole = params.get('rolle');
   const onlyUnassigned = params.get('ohneKlasse') === '1';
   const [roleFilter, setRoleFilter] = useState(() => (focusRole === 'klassenlehrer' ? 'teachers' : focusRole || 'all'));
+  // Gruppierung der Liste: nach Klasse (Standard) oder nach Rolle.
+  const [groupBy, setGroupBy] = useState(() => (focusRole ? 'role' : 'class'));
+  const [classFilter, setClassFilter] = useState('all');
   const [sort, setSort] = useState({ key: 'name', dir: 1 });
   const [detailId, setDetailId] = useState(null);
   useEffect(() => {
@@ -307,16 +311,20 @@ function UsersTab() {
 
   const bulkDelete = async () => {
     if (!selected.length) return;
-    if (!window.confirm(`${selected.length} Konto(en) endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+    if (!window.confirm(`${selected.length} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
     setBulkBusy(true);
     try {
-      const { results } = await api.post('/admin/users/bulk-delete', { ids: selected });
-      const okCount = results.filter((r) => r.ok).length;
-      const failed = results.filter((r) => !r.ok);
+      // Je Person alle Konten (Anmelde-Konto zuerst, die Rollenkonten gehen mit).
+      const chosen = mergePeople(users).filter((p) => selected.includes(p.id));
+      const { results } = await api.post('/admin/users/bulk-delete', { ids: chosen.flatMap((p) => p.accountIds) });
+      const bad = new Map(results.filter((r) => !r.ok).map((r) => [r.id, r.error]));
+      const failed = chosen.filter((p) => p.accountIds.some((id) => bad.has(id)));
+      const okCount = chosen.length - failed.length;
       if (failed.length) {
-        toast.push(`${okCount} gelöscht, ${failed.length} nicht möglich (${failed[0].error}${failed.length > 1 ? ' u. a.' : ''})`, okCount > 0 ? 'success' : 'error');
+        const why = bad.get(failed[0].accountIds.find((id) => bad.has(id)));
+        toast.push(`${okCount} gelöscht, ${failed.length} nicht möglich (${why}${failed.length > 1 ? ' u. a.' : ''})`, okCount > 0 ? 'success' : 'error');
       } else {
-        toast.push(`${okCount} Konto(en) endgültig gelöscht`, 'success');
+        toast.push(`${okCount} Person(en) endgültig gelöscht`, 'success');
       }
       setSelected([]);
       load();
@@ -329,11 +337,15 @@ function UsersTab() {
 
   if (!users) return <Spinner />;
   const needle = q.trim().toLowerCase();
-  const visible = users.filter((u) => (showDisabled || u.status !== 'disabled')
-    && (!onlyUnassigned || ((u.role === 'schueler' || u.role === 'klassensprecher') && !(u.classIds || []).length))
-    && (!needle || [u.name, u.email, u.loginEmail, ...(u.classNames || [])].some((x) => String(x || '').toLowerCase().includes(needle))));
-  const byName = (a, b) => a.name.localeCompare(b.name, 'de');
-  const disabledCount = users.filter((u) => u.status === 'disabled').length;
+  // Eine Zeile je Person: alle Rollen-Konten derselben Person zusammengefasst.
+  const people = mergePeople(users);
+  const isStudent = (p) => p.roleSet.has('schueler') || p.roleSet.has('klassensprecher');
+  const visible = people.filter((p) => (showDisabled || p.status !== 'disabled')
+    && (!onlyUnassigned || (isStudent(p) && p.studentClassIds.length === 0))
+    && (!needle || p.searchText.includes(needle)));
+  const disabledCount = people.filter((p) => p.status === 'disabled').length;
+  const filters = groupBy === 'class' ? classFilters(classes, visible) : FILTERS;
+  const activeFilter = groupBy === 'class' ? classFilter : roleFilter;
   return (
     <div className="space-y-4">
       {onlyUnassigned && (
@@ -355,6 +367,7 @@ function UsersTab() {
         )}
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
+      <Segmented size="sm" value={groupBy} onChange={setGroupBy} options={[['class', 'Nach Klasse'], ['role', 'Nach Rolle']]} />
       {show && (
         <Card className="p-4 sm:p-5">
           <CardHeader title="Neuer Nutzer" icon={Users2} />
@@ -383,8 +396,10 @@ function UsersTab() {
       <UserDirectory
         users={visible}
         me={me}
-        roleFilter={roleFilter}
-        setRoleFilter={setRoleFilter}
+        filters={filters}
+        byClass={groupBy === 'class'}
+        roleFilter={activeFilter}
+        setRoleFilter={groupBy === 'class' ? setClassFilter : setRoleFilter}
         sort={sort}
         setSort={setSort}
         selected={selected}
@@ -400,7 +415,7 @@ function UsersTab() {
         detail={detailId ? (
           <div className="person-compact">
             <div className="flex items-center justify-between gap-2 mb-3">
-              <h2 className="text-title3 text-ivory truncate" data-noi18n>{users.find((x) => x.id === detailId)?.name}</h2>
+              <h2 className="text-title3 text-ivory truncate" data-noi18n>{people.find((x) => x.id === detailId)?.name}</h2>
               <div className="flex items-center gap-1 shrink-0">
                 <Button size="sm" variant="ghost" onClick={() => navigate(`/person/${detailId}`)}>Ganze Seite</Button>
                 <button type="button" onClick={() => setDetailId(null)} className="grid place-items-center h-8 w-8 rounded-full bg-subtle text-sage-muted hover:text-ivory" aria-label="Schließen"><XCircle size={16} /></button>
@@ -423,7 +438,7 @@ function UsersTab() {
       {disabledCount > 0 && (
         <label className="flex items-center gap-2 text-sm text-sage-muted">
           <input type="checkbox" checked={showDisabled} onChange={(e) => setShowDisabled(e.target.checked)} />
-          Deaktivierte Konten / entzogene Rollen anzeigen ({disabledCount})
+          Deaktivierte Personen anzeigen ({disabledCount})
         </label>
       )}
       <details className="rounded-2xl border border-line bg-card">
@@ -437,31 +452,31 @@ function UsersTab() {
 const ROLE_LABEL = Object.fromEntries(ROLES);
 const FILTERS = [
   ['all', 'Alle', () => true],
-  ['super_admin', 'Systembetreuung', (u) => u.role === 'super_admin'],
-  ['leitung', 'DBZ-Leitung', (u) => u.role === 'leitung'],
-  ['teachers', 'Lehrkräfte', (u) => u.role === 'klassenlehrer' || u.role === 'vertretung'],
-  ['klassensprecher', 'Klassensprecher', (u) => u.role === 'klassensprecher'],
-  ['schueler', 'Schüler', (u) => u.role === 'schueler'],
-  ['eltern', 'Eltern', (u) => u.role === 'eltern'],
+  ['super_admin', 'Systembetreuung', (u) => u.roleSet.has('super_admin')],
+  ['leitung', 'DBZ-Leitung', (u) => u.roleSet.has('leitung')],
+  ['teachers', 'Lehrkräfte', (u) => u.roleSet.has('klassenlehrer') || u.roleSet.has('vertretung')],
+  ['klassensprecher', 'Klassensprecher', (u) => u.roleSet.has('klassensprecher')],
+  ['schueler', 'Schüler', (u) => u.roleSet.has('schueler')],
+  ['eltern', 'Eltern', (u) => u.roleSet.has('eltern')],
 ];
 const STATUS_LABEL = { pending: 'Wartet', disabled: 'Inaktiv' };
 
 // Personenverzeichnis: Handy/iPad = gruppierte Liste mit Filter-Pillen,
 // Mac/iPad quer = Filterspalte + sortierbare Tabelle.
-function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen, detailId, detail }) {
-  const filter = FILTERS.find((f) => f[0] === roleFilter) || FILTERS[0];
-  const counts = Object.fromEntries(FILTERS.map(([k, , fn]) => [k, users.filter(fn).length]));
+function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen, detailId, detail }) {
+  const filter = filters.find((f) => f[0] === roleFilter) || filters[0];
+  const counts = Object.fromEntries(filters.map(([k, , fn]) => [k, users.filter(fn).length]));
+  // Alle (aktiven) Rollen einer Person, wichtigste zuerst.
+  const rolesOf = (u) => u.roles.filter((r) => r.status !== 'disabled' || u.status === 'disabled').map((r) => ROLE_LABEL[r.role] || r.role);
+  const isMe = (u) => u.accountIds.includes(me?.id);
   const list = users.filter(filter[2]).sort((a, b) => {
     if (sort.key === 'seen') return sort.dir * String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || ''));
     if (sort.key === 'role') return sort.dir * String(ROLE_LABEL[a.role] || '').localeCompare(String(ROLE_LABEL[b.role] || ''), 'de') || a.name.localeCompare(b.name, 'de');
     return sort.dir * a.name.localeCompare(b.name, 'de');
   });
-  const selectable = list.filter((u) => u.id !== me?.id).map((u) => u.id);
+  const selectable = list.filter((u) => !isMe(u)).map((u) => u.id);
   const allOn = selectable.length > 0 && selectable.every((id) => selected.includes(id));
-  const sub = (u) => [
-    u.classNames?.length ? u.classNames.join(', ') : null,
-    u.otherRoles?.length ? `auch: ${u.otherRoles.join(', ')}` : null,
-  ].filter(Boolean).join(' · ');
+  const sub = (u) => (u.classNames?.length ? u.classNames.join(', ') : '');
   const th = (key, label, cls = '') => (
     <th className={`py-2.5 px-3 font-medium ${cls}`} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))} className="inline-flex items-center gap-1 hover:text-ivory">
@@ -472,13 +487,13 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
   return (
     <div className={`lg:grid lg:gap-6 items-start ${detail ? 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_27rem]' : 'lg:grid-cols-[13rem_minmax(0,1fr)]'}`}>
       {/* Filter: Pillen (Handy/iPad hochkant bzw. bei offenem Steckbrief), Spalte (iPad quer/Mac) */}
-      <div className={`no-scrollbar flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 ${detail ? 'lg:col-span-full' : 'lg:flex-col lg:mb-0 lg:sticky lg:top-0'}`} role="tablist" aria-label="Nach Rolle filtern">
-        {FILTERS.map(([k, label]) => (
+      <div className={`no-scrollbar flex gap-1.5 overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0 mb-4 ${detail ? 'lg:col-span-full' : 'lg:flex-col lg:mb-0 lg:sticky lg:top-0'}`} role="tablist" aria-label={byClass ? 'Nach Klasse filtern' : 'Nach Rolle filtern'}>
+        {filters.map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={roleFilter === k} onClick={() => setRoleFilter(k)}
             className={detail
               ? `shrink-0 inline-flex items-center gap-2 rounded-full px-3.5 h-9 text-footnote font-semibold transition-colors ${roleFilter === k ? 'bg-mint text-onaccent' : 'bg-card border border-line/70 text-sage hover:bg-hover'}`
               : `shrink-0 inline-flex items-center justify-between gap-2 rounded-full lg:rounded-lg px-3.5 lg:px-3 h-9 text-footnote lg:text-subhead font-semibold lg:font-medium transition-colors ${roleFilter === k ? 'bg-mint text-onaccent lg:bg-mint/10 lg:text-mint-light lg:dark:text-mint' : 'bg-card border border-line/70 lg:border-0 lg:bg-transparent text-sage hover:bg-hover'}`}>
-            <span>{label}</span>
+            <span className="truncate" {...(k.startsWith('class:') ? { 'data-noi18n': true } : {})}>{label}</span>
             <span className={`font-mono text-caption ${roleFilter === k ? 'opacity-80' : 'text-sage-muted'}`}>{counts[k]}</span>
           </button>
         ))}
@@ -486,14 +501,14 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
 
       <div className="min-w-0">
         {list.length === 0 ? (
-          <Card><EmptyState icon={Users2} title={searching ? 'Keine Treffer' : 'Niemand in dieser Rolle'} /></Card>
+          <Card><EmptyState icon={Users2} title={searching ? 'Keine Treffer' : 'Niemand in dieser Gruppe'} /></Card>
         ) : (
           <>
             {/* Handy & iPad hochkant: kompakte Liste */}
             <ListGroup className="lg:hidden">
               {list.map((u) => (
                 <div key={u.id} className="flex items-center gap-3 pl-3 pr-2 py-2.5">
-                  {u.id !== me?.id
+                  {!isMe(u)
                     ? <input type="checkbox" className="h-5 w-5 accent-[rgb(var(--c-mint))] shrink-0" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
                     : <span className="w-5 shrink-0" />}
                   <button type="button" onClick={() => onOpen(u)} className="min-w-0 flex-1 flex items-center gap-3 text-left active:opacity-60">
@@ -503,7 +518,7 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                         <span className="text-body font-medium text-ivory truncate" data-noi18n>{u.name}</span>
                         {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
                       </span>
-                      <span className="block text-footnote text-sage-muted truncate"><span>{ROLE_LABEL[u.role]}</span>{sub(u) && <span data-noi18n>{` · ${sub(u)}`}</span>}</span>
+                      <span className="block text-footnote text-sage-muted truncate">{rolesOf(u).map((r, i) => <span key={r}>{i > 0 && ' · '}<span>{r}</span></span>)}{sub(u) && <span data-noi18n>{` · ${sub(u)}`}</span>}</span>
                     </span>
                     <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />
                   </button>
@@ -531,7 +546,7 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                   {list.map((u) => (
                     <tr key={u.id} aria-selected={detailId === u.id} className={`group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer ${detailId === u.id ? 'bg-mint/[0.08]' : ''}`} onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
                       <td className="py-2.5 pl-4 pr-1">
-                        {u.id !== me?.id && <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
+                        {!isMe(u) && <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
                       </td>
                       <td className="py-2.5 px-3">
                         <div className="flex items-center gap-3 min-w-0">
@@ -545,12 +560,13 @@ function UserDirectory({ users, me, roleFilter, setRoleFilter, sort, setSort, se
                           </div>
                         </div>
                       </td>
-                      <td className="py-2.5 px-3 whitespace-nowrap">
-                        <span className="text-sage">{ROLE_LABEL[u.role] || u.role}</span>
-                        {detail && u.classNames?.length > 0 && <div className="text-footnote text-sage-muted">{u.classNames.join(', ')}</div>}
-                        {u.otherRoles?.length > 0 && <div className="text-footnote text-sage-muted">auch: {u.otherRoles.join(', ')}</div>}
+                      <td className="py-2.5 px-3">
+                        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                          {rolesOf(u).map((r, i) => <span key={r} className={i === 0 ? 'text-sage whitespace-nowrap' : 'text-sage-muted whitespace-nowrap'}>{r}</span>)}
+                        </div>
+                        {detail && u.classNames?.length > 0 && <div className="text-footnote text-sage-muted" data-noi18n>{u.classNames.join(', ')}</div>}
                       </td>
-                      {!detail && <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{u.classNames?.length ? u.classNames.join(', ') : '–'}</td>}
+                      {!detail && <td className="py-2.5 px-3 text-sage-muted" data-noi18n>{u.classNames?.length ? <span className="flex flex-wrap gap-x-1.5">{u.classNames.map((c, i) => <span key={c} className="whitespace-nowrap">{c}{i < u.classNames.length - 1 ? ',' : ''}</span>)}</span> : '–'}</td>}
                       {!detail && <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>}
                       <td className="py-2.5 pr-4 text-right"><ChevronRight size={18} className="inline text-sage-muted/50 group-hover:text-sage-muted" /></td>
                     </tr>
