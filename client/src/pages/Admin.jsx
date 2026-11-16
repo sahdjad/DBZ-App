@@ -272,6 +272,8 @@ function UsersTab() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [moveTo, setMoveTo] = useState('');
+  const [moveReason, setMoveReason] = useState('transfer');
   const [q, setQ] = useState('');
   const [params] = useSearchParams();
   // Aus der Leitungs-Übersicht: gewünschte Gruppe direkt aufgeklappt (und ggf. nur ohne Klasse).
@@ -335,6 +337,30 @@ function UsersTab() {
     }
   };
 
+  // Mehrere Schüler auf einmal in eine Stammklasse versetzen (mit Klassenverlauf).
+  const bulkMove = async () => {
+    if (!moveTo || !selected.length) return;
+    const chosen = mergePeople(users).filter((p) => selected.includes(p.id));
+    const ids = chosen.map((p) => p.roles.find((r) => (r.role === 'schueler' || r.role === 'klassensprecher') && r.status !== 'disabled')?.id).filter(Boolean);
+    const skipped = chosen.length - ids.length;
+    if (!ids.length) { toast.push('In der Auswahl ist kein Schüler', 'error'); return; }
+    const target = classes.find((c) => c.id === moveTo)?.name || '';
+    if (!window.confirm(`${ids.length} Schüler nach „${target}" versetzen?`)) return;
+    setBulkBusy(true);
+    try {
+      const { results } = await api.post('/admin/users/bulk-class', { ids, classId: moveTo, reason: moveReason });
+      const failed = results.filter((r) => !r.ok);
+      const moved = results.filter((r) => r.ok && !r.unchanged).length;
+      toast.push(`${moved} versetzt${failed.length ? `, ${failed.length} nicht möglich (${failed[0].error})` : ''}${skipped ? ` · ${skipped} ohne Schüler-Rolle übersprungen` : ''}`, failed.length ? 'error' : 'success');
+      setSelected([]); setMoveTo('');
+      load();
+    } catch (err) {
+      toast.push(err.message, 'error');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   if (!users) return <Spinner />;
   const needle = q.trim().toLowerCase();
   // Eine Zeile je Person: alle Rollen-Konten derselben Person zusammengefasst.
@@ -367,6 +393,22 @@ function UsersTab() {
         )}
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
+      {selected.length > 0 && (
+        <div className="sticky top-2 z-10 shadow-card rounded-xl border border-line/70 bg-card px-3 py-2.5 flex flex-wrap items-center gap-2" role="group" aria-label="Auswahl versetzen">
+          <span className="text-footnote text-sage-muted w-full sm:w-auto">{selected.length} ausgewählt – versetzen nach:</span>
+          <select className="input flex-1 min-w-[9rem] sm:flex-none sm:w-44" aria-label="Zielklasse" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} data-noi18n>
+            <option value="">– Klasse –</option>
+            {classes.filter((c) => c.kind !== 'extra').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select className="input flex-1 min-w-[8rem] sm:flex-none sm:w-36" aria-label="Grund" value={moveReason} onChange={(e) => setMoveReason(e.target.value)}>
+            <option value="transfer">Wechsel</option>
+            <option value="promotion">Aufstieg</option>
+            <option value="demotion">Abstieg</option>
+            <option value="joined">Einstieg</option>
+          </select>
+          <Button onClick={bulkMove} disabled={!moveTo || bulkBusy}>Versetzen</Button>
+        </div>
+      )}
       <Segmented size="sm" value={groupBy} onChange={setGroupBy} options={[['class', 'Nach Klasse'], ['role', 'Nach Rolle']]} />
       {show && (
         <Card className="p-4 sm:p-5">

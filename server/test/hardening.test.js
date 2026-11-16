@@ -753,3 +753,33 @@ test('Eine Person, mehrere Rollen: gleiche personId, Klassenwechsel der Schüler
   assert.deepEqual(del.data.results.map((r) => r.ok), [true, true, true]);
   assert.equal(db.all('users').some((u) => [mainId, asStudent.id, asLead.id].includes(u.id)), false);
 });
+
+test('Sammel-Versetzen: nur Leitung/Administrator, nur Schüler, nur Stammklassen, mit Verlauf', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const ziel = (await admin('POST', '/admin/classes', { name: 'Klasse Sammel' })).data.class;
+  const kurs = (await admin('POST', '/admin/classes', { name: 'Kurs Sammel', kind: 'extra' })).data.class;
+
+  assert.equal((await teacher('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: ziel.id })).status, 403);
+  assert.equal((await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: kurs.id })).status, 400, 'Zusatzkurs ist keine Stammklasse');
+  assert.equal((await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: 'gibt-es-nicht' })).status, 400);
+  assert.equal((await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: ziel.id, reason: 'quatsch' })).status, 400);
+
+  const yusuf = db.all('users').find((u) => u.id === 'user_yusuf');
+  const from = yusuf.classIds.find((c) => c !== kurs.id);
+  yusuf.classIds = [...yusuf.classIds, kurs.id];
+  const r = await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf', 'user_lehrer', 'gibt-es-nicht'], classId: ziel.id, reason: 'promotion' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.results.map((x) => x.ok), [true, false, false], 'Lehrkraft und Unbekanntes werden übersprungen');
+  assert.deepEqual(yusuf.classIds, [ziel.id, kurs.id], 'neue Stammklasse, Zusatzkurs bleibt');
+  const hist = db.all('enrollments').filter((e) => e.studentId === 'user_yusuf');
+  assert.equal(hist.find((e) => e.classId === ziel.id && !e.to)?.reason, 'promotion');
+  assert.ok(hist.find((e) => e.classId === from)?.to, 'alte Klasse ist im Verlauf abgeschlossen');
+  // Zweiter Aufruf ändert nichts und legt keinen weiteren Eintrag an.
+  const again = await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: ziel.id });
+  assert.equal(again.data.results[0].unchanged, true);
+  assert.equal(db.all('enrollments').filter((e) => e.studentId === 'user_yusuf' && e.classId === ziel.id).length, 1);
+  // Aufräumen für nachfolgende Tests.
+  await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: from });
+});
