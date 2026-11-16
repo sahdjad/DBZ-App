@@ -535,3 +535,78 @@ test('Eingaben: Hausaufgabe, Bewertung, CSV-Export, Tadschwid-HTML, Verhaltensve
   assert.equal(note.body, 'Vertraulicher Wortlaut 4711', 'in der App vollständig');
   assert.equal('pushBody' in note, false, 'Ersatztext wird nicht gespeichert');
 });
+
+// ---- Struktur ------------------------------------------------------------------
+
+test('Stammklasse und Zusatzkurs: Kurs ist freiwillig, zählt nicht, Stammklasse bleibt unberührt', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const { db } = await import('../store.js');
+  const yusuf = () => db.all('users').find((u) => u.id === 'user_yusuf');
+
+  // Kurs anlegen (Zusatzkurs) und Lehrkraft zuordnen.
+  assert.equal((await admin('POST', '/admin/classes', { name: 'X', kind: 'irgendwas' })).status, 400);
+  const course = (await admin('POST', '/admin/classes', { name: 'Umra-Kurs', kind: 'extra' })).data.class;
+  assert.equal(course.kind, 'extra');
+  assert.equal((await admin('GET', '/classes')).data.classes.find((c) => c.id === 'class_3').kind, 'regular', 'bestehende Klassen sind Stammklassen');
+  assert.equal((await admin('POST', `/admin/classes/${course.id}/teachers`, { userId: 'user_lehrer' })).status, 200);
+  const teacher = await loginAs('lehrer@dbz.de');
+
+  // Ausgangswerte der Stammklasse.
+  const before = (await teacher('GET', '/students/user_yusuf/standing')).data;
+  assert.ok(before.data.attendance);
+
+  // Teilnehmer aufnehmen: nur bei Zusatzkursen, Stammklasse bleibt vorn.
+  assert.equal((await teacher('POST', '/classes/class_3/members', { studentId: 'user_yusuf' })).status, 400, 'Stammklasse wird nicht so geändert');
+  assert.equal((await teacher('POST', `/classes/${course.id}/members`, { studentId: 'user_yusuf' })).status, 200);
+  assert.equal((await teacher('POST', `/classes/${course.id}/members`, { studentId: 'user_yusuf' })).status, 400);
+  assert.deepEqual(yusuf().classIds, ['class_3', course.id]);
+  const members = (await teacher('GET', `/classes/${course.id}/members`)).data;
+  assert.deepEqual(members.members.map((m) => [m.id, m.className]), [['user_yusuf', 'Klasse 3']]);
+  assert.ok(members.available.length > 0);
+  // Schüler dürfen das nicht selbst.
+  const student = await loginAs('schueler@dbz.de');
+  assert.equal((await student('POST', `/classes/${course.id}/members`, { studentId: 'user_yusuf' })).status, 403);
+
+  // Im Kurs passiert etwas: Fehltag, Hausaufgabe, Verhaltensvermerk.
+  const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const sess = (await teacher('POST', `/classes/${course.id}/days`, { date: day })).data.session;
+  assert.equal((await teacher('POST', `/sessions/${sess.id}/attendance`, { studentId: 'user_yusuf', status: 'unexcused' })).status, 200);
+  const asg = await teacher('POST', '/assignments', { classId: course.id, title: 'Kurs-Aufgabe', type: 'text', dueAt: new Date(Date.now() - 3600000).toISOString() });
+  assert.equal(asg.status, 200);
+  const cats = (await teacher('GET', '/behavior-categories')).data.categories;
+  assert.equal((await teacher('POST', '/behavior', { studentId: 'user_yusuf', classId: course.id, category: cats[0].id, note: 'Im Kurs', tone: 'negative' })).status, 200);
+
+  // Der Schüler sieht die Kurs-Aufgabe ...
+  assert.ok((await student('GET', '/assignments')).data.assignments.some((a) => a.id === asg.data.assignment.id));
+  // ... aber Bericht und Notenvorschlag bleiben exakt wie vorher.
+  const after = (await teacher('GET', '/students/user_yusuf/standing')).data;
+  assert.deepEqual(after.data.attendance, before.data.attendance, 'Fehltag im Kurs zählt nicht');
+  assert.deepEqual(after.data.homework, before.data.homework, 'Kurs-Aufgabe zählt nicht');
+  assert.deepEqual(after.data.behavior, before.data.behavior, 'Vermerk im Kurs zählt nicht');
+  assert.deepEqual(after.standing, before.standing);
+  // Gegenprobe: derselbe Vermerk in der Stammklasse zählt.
+  await teacher('POST', '/behavior', { studentId: 'user_yusuf', classId: 'class_3', category: cats[0].id, note: 'In der Klasse', tone: 'negative' });
+  assert.equal((await teacher('GET', '/students/user_yusuf/standing')).data.data.behavior.hinweis, before.data.behavior.hinweis + 1);
+
+  // Verwaltung ändert die Stammklasse: der Zusatzkurs bleibt erhalten; zwei Stammklassen gehen nicht.
+  const other = (await admin('POST', '/admin/classes', { name: 'Klasse 4' })).data.class;
+  assert.equal((await admin('PATCH', '/admin/users/user_yusuf', { classIds: ['class_3', other.id] })).status, 400);
+  assert.equal((await admin('PATCH', '/admin/users/user_yusuf', { classIds: [other.id] })).status, 200);
+  assert.deepEqual(yusuf().classIds, [other.id, course.id]);
+  assert.equal((await admin('PATCH', '/admin/users/user_yusuf', { classIds: ['class_3'] })).status, 200);
+  assert.deepEqual(yusuf().classIds, ['class_3', course.id]);
+  // Eltern sehen weiterhin die Stammklasse als Klasse des Kindes.
+  const parent = await loginAs('eltern@dbz.de');
+  assert.equal((await parent('GET', '/family/children')).data.children.find((c) => c.id === 'user_yusuf').className, 'Klasse 3');
+
+  // Art umstellen: Stammklasse mit Schülern kann kein Zusatzkurs werden; Kurs mit Teilnehmern, die schon eine Stammklasse haben, keine Stammklasse.
+  const no1 = await admin('PATCH', '/admin/classes/class_3', { kind: 'extra' });
+  assert.equal(no1.status, 400);
+  assert.match(no1.data.error, /keine Stammklasse mehr/);
+  assert.equal((await admin('PATCH', `/admin/classes/${course.id}`, { kind: 'regular' })).status, 400);
+  assert.equal((await admin('PATCH', `/admin/classes/${other.id}`, { kind: 'extra', name: 'Walima-Kurs' })).data.class.kind, 'extra');
+
+  // Austragen aus dem Kurs: Stammklasse bleibt.
+  assert.equal((await teacher('DELETE', `/classes/${course.id}/students/user_yusuf`)).status, 200);
+  assert.deepEqual(yusuf().classIds, ['class_3']);
+});

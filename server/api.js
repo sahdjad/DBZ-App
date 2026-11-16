@@ -226,6 +226,21 @@ const findUserById = (id) => byId('users', id);
 const findUserByEmail = (email) =>
   (email ? db.all('users').find((u) => u.email && u.email.toLowerCase() === String(email).trim().toLowerCase()) : null) || null;
 const findClass = (id) => byId('classes', id);
+
+// --- Stammklasse und Zusatzkurse -------------------------------------------------
+// Jeder Schüler gehört zu genau EINER Stammklasse (Klasse 1–6, Online-Klasse …).
+// Daneben gibt es Zusatzkurse (z. B. Umra-Kurs): freiwillig, beliebig viele.
+// Was dort passiert (Anwesenheit, Hausaufgaben, Prüfungen …), ist im Kurs
+// sichtbar, zählt aber NICHT in Bericht, Notenvorschlag und Quoten.
+const CLASS_KINDS = ['regular', 'extra'];
+const isExtraClass = (classId) => findClass(classId)?.kind === 'extra';
+/** Zählt ein Eintrag dieser Klasse für Bericht und Note? (Ohne Klasse: ja.) */
+const countsForGrade = (classId) => !classId || !isExtraClass(classId);
+/** Die Stammklasse eines Schülers (erste Klasse, die kein Zusatzkurs ist). */
+function homeClassId(user) {
+  const ids = user?.classIds || [];
+  return ids.find((id) => !isExtraClass(id)) ?? ids[0] ?? null;
+}
 const org = () => db.all('organizations')[0] || DEFAULT_ORG;
 // Gewichte für den Notenvorschlag: nur bekannte, positive Werte übernehmen,
 // sonst Standard. Normalisierung übernimmt die Engine (proportional).
@@ -972,6 +987,7 @@ function classView(c, user) {
     id: c.id,
     name: c.name,
     type: c.type,
+    kind: c.kind === 'extra' ? 'extra' : 'regular',
     language: c.language,
     weekday: c.weekday,
     startTime: c.startTime,
@@ -1373,7 +1389,9 @@ function inWindow(iso, win) {
 function attendanceStats(studentId, win, opts = {}) {
   const sdateMap = new Map(db.all('sessions').map((s) => [s.id, s.date]));
   const dateOf = (a) => sdateMap.get(a.sessionId) || String(a.checkInAt || a.updatedAt || '').slice(0, 10);
+  // Zusatzkurse zählen nicht in die Quote (opts.includeExtra: alles zeigen).
   const recs = db.all('attendance').filter((a) => a.studentId === studentId
+    && (opts.includeExtra || countsForGrade(a.classId))
     && (!win || inWindow(dateOf(a), win)));
   const count = (st) => recs.filter((a) => a.status === st).length;
   const lateMinutes = recs.filter((a) => a.status === 'late').map((a) => a.minutesLate || 0);
@@ -2337,7 +2355,7 @@ router.post('/absence-requests', requireAuth, (req, res) => {
   }
   const student = findUserById(targetStudentId);
   if (!student) return res.status(404).json({ error: 'Schüler nicht gefunden' });
-  const cid = classId || (student.classIds || [])[0];
+  const cid = classId || homeClassId(student);
   if (!cid) return res.status(400).json({ error: 'Keine Klasse zugeordnet' });
   // Nur an die EIGENE Klasse: sonst bekämen fremde Lehrkräfte die Meldung.
   if (!(student.classIds || []).includes(cid)) return res.status(403).json({ error: 'Diese Klasse gehört nicht zu diesem Schüler' });
@@ -4521,7 +4539,8 @@ router.post('/attempts/:id/return', requireAuth, requireRole(CLASS_MANAGERS), up
 // Aggregiert Kennzahlen eines Schülers – optional für ein Zeitfenster
 // { from, to } (z. B. Monatsauswertung). Ohne Fenster: gesamter Zeitraum.
 function reportData(studentId, win) {
-  const asgs = studentAssignments(studentId).filter((a) => !win || inWindow(a.dueAt, win));
+  // Nur die Stammklasse zählt; Einträge aus Zusatzkursen bleiben außen vor.
+  const asgs = studentAssignments(studentId).filter((a) => countsForGrade(a.classId ?? byId('assignments', a.id)?.classId) && (!win || inWindow(a.dueAt, win)));
   const hw = { total: asgs.length, passed: 0, submitted: 0, revision: 0, missed: 0, open: 0 };
   asgs.forEach((a) => {
     if (a.status === 'passed') hw.passed++;
@@ -4530,13 +4549,13 @@ function reportData(studentId, win) {
     else if (a.status === 'missed') hw.missed++;
     else hw.open++;
   });
-  const beh = db.all('behavior_records').filter((r) => r.studentId === studentId && (!win || inWindow(r.createdAt, win)));
-  const attempts = db.all('exam_attempts').filter((a) => a.studentId === studentId && a.status === 'released' && typeof a.percent === 'number' && (!win || inWindow(a.releasedAt, win)));
+  const beh = db.all('behavior_records').filter((r) => r.studentId === studentId && countsForGrade(r.classId) && (!win || inWindow(r.createdAt, win)));
+  const attempts = db.all('exam_attempts').filter((a) => a.studentId === studentId && countsForGrade(a.classId) && a.status === 'released' && typeof a.percent === 'number' && (!win || inWindow(a.releasedAt, win)));
   const exams = attempts.length
     ? { count: attempts.length, avgPercent: Math.round(attempts.reduce((s, a) => s + a.percent, 0) / attempts.length) }
     : { count: 0, avgPercent: 0 };
   // Aktivitäten/Spiele & sonstige Rückgaben des Schülers.
-  const acts = db.all('activities').filter((a) => a.studentId === studentId && (!win || inWindow(a.createdAt, win)));
+  const acts = db.all('activities').filter((a) => a.studentId === studentId && countsForGrade(a.classId) && (!win || inWindow(a.createdAt, win)));
   const scored = acts.filter((a) => a.countsForGrade !== false && typeof a.points === 'number' && typeof a.maxPoints === 'number' && a.maxPoints > 0);
   const activities = {
     count: acts.length,
@@ -4544,10 +4563,10 @@ function reportData(studentId, win) {
     avgPercent: scored.length ? Math.round(scored.reduce((s, a) => s + (a.points / a.maxPoints) * 100, 0) / scored.length) : 0,
   };
   // Eingereichte Audios (Sprach-/Rezitations-Abgaben) – eigene Kennzahl.
-  const subs = db.all('submissions').filter((s) => s.studentId === studentId && (!win || inWindow(s.submittedAt, win)));
+  const subs = db.all('submissions').filter((s) => s.studentId === studentId && countsForGrade(s.classId) && (!win || inWindow(s.submittedAt, win)));
   const audios = { count: subs.filter((s) => (s.files || []).some((f) => String(f.mediaType || '').startsWith('audio'))).length };
   // Mitarbeit (Rezitation): bewertete Hifz-/Muraja'ah-Rezitationen (Punkte + Fleiß-Bonus).
-  const recs = db.all('recitation_attempts').filter((a) => a.studentId === studentId && typeof a.points === 'number' && (!win || inWindow(a.attemptedAt, win)));
+  const recs = db.all('recitation_attempts').filter((a) => a.studentId === studentId && countsForGrade(a.classId) && typeof a.points === 'number' && (!win || inWindow(a.attemptedAt, win)));
   const mitarbeit = recs.length
     ? { count: recs.length, avgPercent: Math.round(recs.reduce((s, a) => s + Math.min(100, (a.points / 10) * 100 + (a.bonus || 0) * 4), 0) / recs.length) }
     : { count: 0, avgPercent: 0 };
@@ -4646,7 +4665,7 @@ router.post('/reports', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => 
       id: newId('rep'),
       studentId,
       studentName: student.name,
-      classId: (student.classIds || [])[0],
+      classId: homeClassId(student),
       periodId,
       periodName: period.name,
       data,
@@ -4774,7 +4793,7 @@ router.post('/activities', requireAuth, requireRole(CLASS_MANAGERS), (req, res) 
   const { studentId, title, category, points, maxPoints, countsForGrade, note } = req.body || {};
   const student = findUserById(studentId);
   if (!student || !STUDENT_ROLES.includes(student.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
-  const classId = (student.classIds || [])[0];
+  const classId = (student.classIds || []).find((c) => canManageClass(req.user, c) && !isAdmin(req.user)) || homeClassId(student);
   if (!(student.classIds || []).some((c) => canManageClass(req.user, c))) return res.status(403).json({ error: 'Kein Zugriff' });
   if (!title || !title.trim()) return res.status(400).json({ error: 'Titel erforderlich' });
   const mp = maxPoints === '' || maxPoints == null ? null : Math.max(0, Number(maxPoints) || 0);
@@ -6281,7 +6300,7 @@ router.get('/family/children', requireAuth, requireRole(ROLES.ELTERN), (req, res
     .map((cid) => {
       const c = findUserById(cid);
       if (!c) return null;
-      const klass = findClass((c.classIds || [])[0]);
+      const klass = findClass(homeClassId(c));
       return { id: c.id, name: c.name, className: klass?.name || null };
     })
     .filter(Boolean);
@@ -6317,7 +6336,7 @@ router.post('/family/link', requireAuth, requireRole(ROLES.ELTERN), (req, res) =
     body: `${req.user.name} ist jetzt mit deinem Konto verknüpft.`,
     deepLink: '/konto',
   });
-  const klass = findClass((student.classIds || [])[0]);
+  const klass = findClass(homeClassId(student));
   res.json({ child: { id: student.id, name: student.name, className: klass?.name || null } });
 });
 
@@ -6987,7 +7006,7 @@ function publicOrg() {
 }
 
 function nextSessionFor(user) {
-  const classId = (user.classIds || [])[0];
+  const classId = homeClassId(user);
   const klass = findClass(classId);
   if (!klass) return null;
   const today = db.all('sessions').find((s) => s.classId === classId && s.date === todayKey());
@@ -7059,6 +7078,7 @@ function applyChangeRequest(cr) {
   if (cr.type === 'create_class') {
     const c = {
       id: newId('class'), organizationId: org().id, name: cr.payload.name,
+      kind: cr.payload.kind === 'extra' ? 'extra' : 'regular',
       type: cr.payload.type || 'presence', language: cr.payload.language || 'de',
       weekday: Number.isFinite(cr.payload.weekday) ? cr.payload.weekday : 6,
       startTime: cr.payload.startTime || '14:00', endTime: cr.payload.endTime || '18:00',
@@ -7283,7 +7303,18 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
     if (until) u.validUntil = until; else delete u.validUntil;
   }
   if (u.role !== ROLES.VERTRETUNG) delete u.validUntil;
-  if (Array.isArray(classIds)) u.classIds = classIds.filter((c) => findClass(c));
+  if (Array.isArray(classIds)) {
+    const valid = [...new Set(classIds.filter((c) => findClass(c)))];
+    if (STUDENT_ROLES.includes(u.role)) {
+      // Schüler: höchstens eine Stammklasse; bestehende Zusatzkurse bleiben erhalten.
+      const regular = valid.filter((c) => !isExtraClass(c));
+      if (regular.length > 1) return res.status(400).json({ error: 'Ein Schüler kann nur eine Stammklasse haben' });
+      const extras = [...new Set([...(u.classIds || []).filter(isExtraClass), ...valid.filter(isExtraClass)])];
+      u.classIds = [...regular, ...extras];
+    } else {
+      u.classIds = valid;
+    }
+  }
   if (Array.isArray(childIds))
     u.childIds = childIds.filter((id) => STUDENT_ROLES.includes(findUserById(id)?.role));
 
@@ -7368,9 +7399,10 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
 });
 
 router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
-  const { name, weekday, startTime, endTime, type, language } = req.body || {};
+  const { name, weekday, startTime, endTime, type, language, kind } = req.body || {};
   if (!name) return res.status(400).json({ error: 'Name erforderlich' });
-  const payload = { name: name.trim(), type: type || 'presence', language: language || 'de', weekday: Number.isFinite(weekday) ? weekday : 6, startTime: startTime || '14:00', endTime: endTime || '18:00' };
+  if (kind !== undefined && !CLASS_KINDS.includes(kind)) return res.status(400).json({ error: 'Ungültige Art der Klasse' });
+  const payload = { name: name.trim(), kind: kind === 'extra' ? 'extra' : 'regular', type: type || 'presence', language: language || 'de', weekday: Number.isFinite(weekday) ? weekday : 6, startTime: startTime || '14:00', endTime: endTime || '18:00' };
 
   // Leitung: erst nach Bestätigung durch den System-Administrator wirksam.
   if (needsApproval(req.user)) {
@@ -7382,6 +7414,67 @@ router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.
   db.insert('classes', klass);
   audit(req.user.id, 'class.create', 'class', klass.id);
   res.json({ class: klass });
+});
+
+// Art einer Klasse ändern (Stammklasse <-> Zusatzkurs) und umbenennen.
+// Eine Stammklasse mit Schülern kann nicht zum Zusatzkurs werden -- die
+// Schüler hätten sonst keine Stammklasse mehr.
+router.patch('/admin/classes/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, c)) return;
+  const { name, kind } = req.body || {};
+  const before = { name: c.name, kind: c.kind || 'regular' };
+  if (name !== undefined) {
+    if (!String(name).trim()) return res.status(400).json({ error: 'Name erforderlich' });
+    c.name = String(name).trim();
+  }
+  if (kind !== undefined && kind !== (c.kind || 'regular')) {
+    if (!CLASS_KINDS.includes(kind)) return res.status(400).json({ error: 'Ungültige Art der Klasse' });
+    const members = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(c.id));
+    if (kind === 'extra') {
+      const stranded = members.filter((u) => !(u.classIds || []).some((id) => id !== c.id && !isExtraClass(id)));
+      if (stranded.length) { c.name = before.name; return res.status(400).json({ error: `${stranded.length} Schüler hätten dann keine Stammklasse mehr. Bitte zuerst einer Stammklasse zuordnen.` }); }
+    } else {
+      const doubled = members.filter((u) => (u.classIds || []).some((id) => id !== c.id && !isExtraClass(id)));
+      if (doubled.length) { c.name = before.name; return res.status(400).json({ error: `${doubled.length} Teilnehmer haben schon eine Stammklasse. Ein Schüler kann nur eine Stammklasse haben.` }); }
+    }
+    c.kind = kind;
+  }
+  db.commit();
+  audit(req.user.id, 'class.update', 'class', c.id, before, { name: c.name, kind: c.kind || 'regular' });
+  res.json({ class: classView(c, req.user) });
+});
+
+// Teilnehmer eines ZUSATZKURSES: aufnehmen und austragen. Die Stammklasse
+// bleibt davon unberührt. Erlaubt für Leitung/Admin und die Lehrkraft des Kurses.
+router.get('/classes/:id/members', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const students = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status === 'active' && (!req.user.isDemo || u.isDemo));
+  const mini = (u) => ({ id: u.id, name: u.name, className: findClass(homeClassId(u))?.name || null });
+  const byName = (a, b) => a.name.localeCompare(b.name, 'de');
+  res.json({
+    kind: c.kind === 'extra' ? 'extra' : 'regular',
+    members: students.filter((u) => (u.classIds || []).includes(c.id)).map(mini).sort(byName),
+    available: c.kind === 'extra' ? students.filter((u) => !(u.classIds || []).includes(c.id)).map(mini).sort(byName) : [],
+  });
+});
+router.post('/classes/:id/members', requireAuth, requireRole(CLASS_MANAGERS), noSubstitute, (req, res) => {
+  const c = findClass(req.params.id);
+  if (!c) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canManageClass(req.user, c.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  if (c.kind !== 'extra') return res.status(400).json({ error: 'Nur bei Zusatzkursen. Die Stammklasse wird in der Verwaltung bei der Person geändert.' });
+  const u = findUserById(req.body?.studentId);
+  if (!u || !STUDENT_ROLES.includes(u.role)) return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (blockDemoOnRealTarget(req, res, u)) return;
+  if ((u.classIds || []).includes(c.id)) return res.status(400).json({ error: 'Nimmt schon teil' });
+  u.classIds = [...(u.classIds || []), c.id]; // hinten anhängen: die Stammklasse bleibt vorn
+  db.commit();
+  audit(req.user.id, 'class.member.add', 'class', c.id, null, { studentId: u.id });
+  notify(u.id, { type: 'class_assigned', level: 'info', title: 'Zusatzkurs', body: `Du nimmst jetzt am Kurs „${c.name}" teil.`, deepLink: '/dashboard' });
+  res.json({ ok: true });
 });
 
 // --- Lehrkräfte einer Klasse zuordnen (z. B. Vertretung) --------------------
@@ -7751,10 +7844,10 @@ function canEditClassRules(user, classId) {
 }
 
 function resolveRulesClass(req) {
-  if (req.user.role === ROLES.SCHUELER || req.user.role === ROLES.KLASSENSPRECHER) return (req.user.classIds || [])[0] || null;
+  if (req.user.role === ROLES.SCHUELER || req.user.role === ROLES.KLASSENSPRECHER) return homeClassId(req.user);
   if (req.user.role === ROLES.ELTERN) {
     const child = findUserById((req.user.childIds || [])[0]);
-    return (child?.classIds || [])[0] || null;
+    return homeClassId(child);
   }
   // Verwalter: gewünschte Klasse, falls erlaubt – sonst erste eigene.
   const wanted = req.query.classId;

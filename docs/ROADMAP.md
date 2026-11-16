@@ -70,6 +70,25 @@ kleine Textlinks in Tabellen (aktuell 32 px).
   nur das Anlegen von Konten und Klassen braucht eine Bestätigung.
 - ⬜ Prüfungen mit Zeitfenster; Eltern-Sicht auf Übungsverläufe; Mindestlänge für Passwörter über 6 Zeichen
 
+## Struktur für die ganze Schule (begonnen am 15.11.2026)
+
+Ziel: 500 Schüler, 6–20 Klassen, Schuljahr September bis August, Wechsel zum Halbjahr und Jahresbeginn,
+Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
+
+- ✅ **Speichern in Blöcken** (siehe Stufe 6)
+- ✅ **Stammklasse und Zusatzkurse:** Jede Klasse hat eine Art. Ein Schüler hat genau eine Stammklasse und
+  beliebig viele Zusatzkurse (z. B. Umra-Kurs). Einträge aus Zusatzkursen sind dort sichtbar, zählen aber nicht
+  in Anwesenheitsquote, Bericht und Notenvorschlag. Verwaltung → Klassen: Art wählen/umstellen, Teilnehmer
+  aufnehmen und austragen. Die Stammklasse wird weiterhin bei der Person geändert; Zusatzkurse bleiben dabei erhalten.
+- ⬜ **Schuljahr:** Einträge einem Schuljahr zuordnen; Jahreswechsel archiviert statt zu löschen
+- ⬜ **Klassenwechsel mit Verlauf:** Auf-/Absteigen und Einstieg mit Datum; alte Einträge bleiben bei der alten Klasse
+- ⬜ **Eine Person, mehrere Rollen:** in der Verwaltung eine Zeile je Person statt je Rollenkonto
+- ⬜ **Verwaltung für viele Klassen:** Nutzerliste nach Klasse gruppiert, Suche, Sammelaktionen, Import
+- ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
+
+Offene Fragen an den Betreiber: Ist der Walima-Kurs Stammklasse oder Zusatz? Wer darf versetzen?
+Sehen Schüler und Eltern das Vorjahr?
+
 ## Stufe 5 – Neue Funktionen (4 bis 8 Wochen, in dieser Reihenfolge)
 
 1. ⬜ Wochenübersicht für Eltern

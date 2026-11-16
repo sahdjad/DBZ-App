@@ -42,12 +42,16 @@ function ClassChips({ classes, value, onChange, multi }) {
 export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
   const toast = useToast();
   const [role, setRole] = useState(user.role);
-  const [cls, setCls] = useState(user.classIds || []);
+  // Schüler wählen hier nur ihre STAMMKLASSE; Zusatzkurse werden beim Kurs
+  // selbst verwaltet und bleiben beim Speichern erhalten.
+  const extraIds = new Set(classes.filter((c) => c.kind === 'extra').map((c) => c.id));
+  const forRole = (r, ids) => (MULTI_CLASS.includes(r) ? ids : ids.filter((id) => !extraIds.has(id)));
+  const [cls, setCls] = useState(forRole(user.role, user.classIds || []));
   const [until, setUntil] = useState(user.validUntil || '');
   const [busy, setBusy] = useState(false);
-  useEffect(() => { setRole(user.role); setCls(user.classIds || []); setUntil(user.validUntil || ''); }, [user.id, user.role, user.validUntil, (user.classIds || []).join(',')]);
+  useEffect(() => { setRole(user.role); setCls(forRole(user.role, user.classIds || [])); setUntil(user.validUntil || ''); }, [user.id, user.role, user.validUntil, (user.classIds || []).join(','), classes.length]);
   const options = ROLES.filter(([v]) => isSuperAdmin || v !== 'super_admin');
-  const sameClasses = [...cls].sort().join(',') === [...(user.classIds || [])].sort().join(',');
+  const sameClasses = [...cls].sort().join(',') === [...forRole(role, user.classIds || [])].sort().join(',');
   const changed = role !== user.role || (CLASS_ROLES.includes(role) && !sameClasses) || (role === 'vertretung' && until !== (user.validUntil || ''));
   const promote = async () => {
     if (CLASS_ROLES.includes(role) && !MULTI_CLASS.includes(role) && cls.length !== 1) return toast.push('Bitte genau eine Klasse wählen', 'error');
@@ -76,8 +80,8 @@ export function RoleEditor({ user, classes, isSuperAdmin, onChanged }) {
         </select>
         {CLASS_ROLES.includes(role) && (
           <div>
-            <div className="text-xs text-sage-muted mb-1.5">{MULTI_CLASS.includes(role) ? 'Unterrichtet in:' : 'Klasse:'}</div>
-            <ClassChips classes={classes} value={cls} onChange={setCls} multi={MULTI_CLASS.includes(role)} />
+            <div className="text-xs text-sage-muted mb-1.5">{MULTI_CLASS.includes(role) ? 'Unterrichtet in:' : 'Stammklasse:'}</div>
+            <ClassChips classes={MULTI_CLASS.includes(role) ? classes : classes.filter((c) => c.kind !== 'extra')} value={cls} onChange={setCls} multi={MULTI_CLASS.includes(role)} />
           </div>
         )}
         {role === 'vertretung' && (
