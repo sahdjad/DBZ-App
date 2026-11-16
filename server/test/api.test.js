@@ -187,8 +187,18 @@ test('Genehmigungen: Leitung legt Klasse an -> erst nach Bestätigung des System
   assert.equal(mk.status, 200);
   assert.ok(mk.data.user, 'super_admin legt sofort an (kein pending)');
 
-  // Leitung legt eine Klasse an -> nur ein Antrag (pending), noch keine Klasse.
+  // Standard: Leitung handelt direkt, der Administrator wird informiert.
   const leitung = await loginAs(leitEmail);
+  const direct = await leitung('POST', '/admin/classes', { name: `Direkt ${stamp}`, weekday: 6 });
+  assert.equal(direct.status, 200);
+  assert.ok(direct.data.class, 'Klasse sofort angelegt');
+  const info = (await admin('GET', '/notifications')).data.items;
+  assert.ok(JSON.stringify(info).includes(`Direkt ${stamp}`), 'Administrator wird informiert');
+  // Nur der Administrator schaltet die Bestätigungspflicht.
+  assert.equal((await leitung('PATCH', '/org', { leitungNeedsApproval: false })).status, 403);
+  assert.equal((await admin('PATCH', '/org', { leitungNeedsApproval: true })).status, 200);
+
+  // Mit Bestätigungspflicht: Leitung legt eine Klasse an -> nur ein Antrag (pending), noch keine Klasse.
   const before = (await leitung('GET', '/classes')).data.classes.length;
   const req = await leitung('POST', '/admin/classes', { name: `Testklasse ${stamp}`, weekday: 6 });
   assert.equal(req.status, 200);
@@ -212,6 +222,7 @@ test('Genehmigungen: Leitung legt Klasse an -> erst nach Bestätigung des System
   const cr2 = (await admin('GET', '/admin/change-requests')).data.requests.find((r) => r.summary.includes(`Zweite ${stamp}`));
   const forbidden = await leitung('POST', `/admin/change-requests/${cr2.id}/approve`, {});
   assert.equal(forbidden.status, 403, 'Leitung kann nicht selbst bestätigen');
+  assert.equal((await admin('PATCH', '/org', { leitungNeedsApproval: false })).status, 200);
 });
 
 test('Kalender-Abo: persönlicher iCal-Link liefert gültigen Feed, falsches Token 404', async () => {
@@ -1497,7 +1508,8 @@ test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -
   assert.ok(pendingUser);
   assert.equal(pendingUser.profile.city, 'Musterstadt');
 
-  // Leitung darf zuweisen, braucht aber Admin-Bestätigung.
+  // Mit eingeschalteter Bestätigungspflicht: Leitung darf zuweisen, braucht aber Admin-Bestätigung.
+  assert.equal((await admin('PATCH', '/org', { leitungNeedsApproval: true })).status, 200);
   const leitung = await loginAs('leitung@dbz.de');
   const proposed = await leitung('POST', `/admin/pending-registrations/${pendingUser.id}/assign`, { classId: 'class_3' });
   assert.equal(proposed.status, 200);
@@ -1512,6 +1524,7 @@ test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -
   assert.ok(cr);
   const approve = await admin('POST', `/admin/change-requests/${cr.id}/approve`, {});
   assert.equal(approve.status, 200);
+  assert.equal((await admin('PATCH', '/org', { leitungNeedsApproval: false })).status, 200);
 
   const finalLogin = client();
   const success = await finalLogin('POST', '/auth/login', { email: 'wartend@dbz.de', password: 'passwort1' });
@@ -1914,7 +1927,7 @@ test('Klassen-Zuordnung: Admin fügt Lehrkraft (Vertretung) hinzu und entfernt s
   assert.ok(!t2.data.assigned.some((x) => x.id === v.id), 'entfernt');
 });
 
-test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, schützt eigenes Konto und letzten Admin', async () => {
+test('Nutzer löschen: Sammel-Löschung nur für deaktivierte Konten, schützt eigenes Konto und letzten Admin', async () => {
   const admin = await loginAs('admin@dbz.de');
   const stamp = Date.now();
   const mkA = await admin('POST', '/admin/users', { name: 'Bulk A', email: `bulk-a-${stamp}@dbz.de`, password: 'demo1234', role: 'schueler' });
@@ -1923,7 +1936,13 @@ test('Nutzer löschen: Sammel-Löschung entfernt mehrere aktive Konten direkt, s
   assert.equal(mkB.status, 200);
   const idA = mkA.data.user.id;
   const idB = mkB.data.user.id;
-  assert.equal(mkA.data.user.status, 'active', 'Konten sind sofort aktiv (keine Deaktivierung nötig für Sammel-Löschung)');
+  assert.equal(mkA.data.user.status, 'active');
+
+  // Aktive Konten werden nicht gelöscht -- erst deaktivieren (Schutz vor Fehlgriffen).
+  const early = await admin('POST', '/admin/users/bulk-delete', { ids: [idA, idB] });
+  assert.equal(early.status, 200);
+  assert.ok(early.data.results.every((r) => !r.ok && /deaktivieren/.test(r.error)));
+  for (const id of [idA, idB]) assert.equal((await admin('PATCH', `/admin/users/${id}`, { status: 'disabled' })).status, 200);
 
   const del = await admin('POST', '/admin/users/bulk-delete', { ids: [idA, idB] });
   assert.equal(del.status, 200);

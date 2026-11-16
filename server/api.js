@@ -1013,6 +1013,7 @@ router.get('/org', requireAuth, (_req, res) => {
       penaltyDueDays: o.penaltyDueDays ?? 7,
       penaltySurchargePages: o.penaltySurchargePages ?? 0,
       penaltySurchargeMoney: o.penaltySurchargeMoney ?? 0,
+      leitungNeedsApproval: o.leitungNeedsApproval === true,
     },
   });
 });
@@ -1026,6 +1027,11 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
   if (Number.isFinite(lateAfterMinutes)) o.lateAfterMinutes = Math.max(0, Math.min(60, lateAfterMinutes));
   if (typeof checkinAutoClose === 'string' && /^\d{1,2}:\d{2}$/.test(checkinAutoClose)) o.checkinAutoClose = checkinAutoClose;
   if (Number.isFinite(audioRetentionDays)) o.audioRetentionDays = Math.max(0, Math.min(3650, audioRetentionDays));
+  // Bestätigungspflicht für die Leitung: nur der Administrator schaltet sie.
+  if (typeof req.body?.leitungNeedsApproval === 'boolean') {
+    if (req.user.role !== ROLES.SUPER_ADMIN) return res.status(403).json({ error: 'Nur der System-Administrator kann das ändern' });
+    o.leitungNeedsApproval = req.body.leitungNeedsApproval;
+  }
   if (name && name.trim()) o.name = name.trim();
   const { penaltyDueDays, penaltySurchargePages, penaltySurchargeMoney } = req.body || {};
   if (Number.isFinite(penaltyDueDays)) o.penaltyDueDays = Math.max(0, Math.min(365, penaltyDueDays));
@@ -7114,8 +7120,17 @@ function nextSessionFor(user) {
 // neue Klassen) werden NICHT sofort wirksam, sondern müssen vom
 // System-Administrator bestätigt werden. Der System-Administrator selbst wirkt
 // sofort (er bestätigt nicht sich selbst).
+// Seit 16.11.2026 entschieden: Die Leitung darf Konten anlegen, freischalten und
+// Klassen anlegen, ohne dass der Administrator bestätigt. Er wird weiter
+// informiert. Die Bestätigungspflicht lässt sich in den Einstellungen wieder
+// einschalten (nur Administrator).
 function needsApproval(user) {
-  return user.role === ROLES.LEITUNG;
+  return user.role === ROLES.LEITUNG && org().leitungNeedsApproval === true;
+}
+/** Administrator über eine direkt wirksame Änderung der Leitung informieren. */
+function informAdmins(user, summary) {
+  if (user.role !== ROLES.LEITUNG) return;
+  superAdminIds().forEach((id) => notify(id, { type: 'approval', level: 'info', title: 'Änderung durch die Leitung', body: `${user.name}: ${summary}`, deepLink: '/admin' }));
 }
 function superAdminIds() {
   return db.all('users').filter((u) => u.role === ROLES.SUPER_ADMIN && u.status !== 'disabled').map((u) => u.id);
@@ -7231,6 +7246,7 @@ router.post('/admin/pending-registrations/:id/assign', requireAuth, requireRole(
   activatePending(target, role, classIds);
   db.commit();
   audit(req.user.id, 'user.assign_class', 'user', target.id, null, { classIds, role });
+  informAdmins(req.user, `Freischalten: ${target.name} → ${label}${klassNames ? ` (${klassNames})` : ''}`);
   res.json({ ok: true });
 });
 
@@ -7349,6 +7365,7 @@ router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LE
   };
   db.insert('users', user);
   audit(req.user.id, 'user.create', 'user', user.id, null, { role });
+  informAdmins(req.user, `Neues Konto: ${payload.name} (${ROLE_LABELS[role] || role})`);
   res.json({ user: publicUser(user) });
 });
 
@@ -7534,6 +7551,10 @@ router.post('/admin/users/bulk-delete', requireAuth, requireRole(ROLES.SUPER_ADM
     if (req.user.isDemo && !u.isDemo) return { id, ok: false, error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' };
     if (u.id === req.user.id) return { id, ok: false, error: 'Eigenes Konto kann nicht gelöscht werden' };
     if (isLastSuperAdmin(u)) return { id, ok: false, error: 'Letzter System-Administrator kann nicht gelöscht werden' };
+    // Wie beim Einzel-Löschen: nur, wer vorher deaktiviert wurde (Schutz vor Fehlgriffen).
+    // Rollenkonten zählen über ihr Anmelde-Konto (roleOf).
+    const login = (!u.email && u.roleOf && findUserById(u.roleOf)) || u;
+    if (login.status !== 'disabled') return { id, ok: false, error: 'Erst deaktivieren, dann löschen' };
     const blocked = deleteBlocker(req.user, u);
     if (blocked) return { id, ok: false, error: blocked };
 
@@ -7563,6 +7584,7 @@ router.post('/admin/classes', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.
   const klass = { id: newId('class'), organizationId: org().id, ...payload, active: true, isDemo: Boolean(req.user.isDemo), createdAt: new Date().toISOString() };
   db.insert('classes', klass);
   audit(req.user.id, 'class.create', 'class', klass.id);
+  informAdmins(req.user, `Neue Klasse: ${payload.name}`);
   res.json({ class: klass });
 });
 
