@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight, Check } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -271,6 +271,9 @@ function UsersTab() {
   const [show, setShow] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'schueler', classId: '' });
   const [selected, setSelected] = useState([]);
+  // Auswahl erst nach „Auswählen“ (wie in iOS) -- verhindert Fehlgriffe.
+  const [selecting, setSelecting] = useState(false);
+  const [confirmText, setConfirmText] = useState(null); // null = Lösch-Bestätigung zu
   const [bulkBusy, setBulkBusy] = useState(false);
   const [moveTo, setMoveTo] = useState('');
   const [moveReason, setMoveReason] = useState('transfer');
@@ -311,9 +314,24 @@ function UsersTab() {
 
   const toggleOne = (id) => setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
+  const endSelection = () => { setSelecting(false); setSelected([]); setConfirmText(null); setMoveTo(''); };
+  // Mehrere Personen deaktivieren (Anmeldung gesperrt, Daten bleiben) -- Voraussetzung fürs Löschen.
+  const bulkDisable = async () => {
+    const chosen = mergePeople(users).filter((p) => selected.includes(p.id) && p.status !== 'disabled');
+    if (!chosen.length) return;
+    if (!window.confirm(`${chosen.length} Person(en) deaktivieren? Die Anmeldung ist dann gesperrt, alle Daten bleiben erhalten.`)) return;
+    setBulkBusy(true);
+    let ok = 0; let firstError = null;
+    for (const p of chosen) {
+      try { await api.patch(`/admin/users/${p.id}`, { status: 'disabled' }); ok++; } catch (err) { firstError = firstError || err.message; }
+    }
+    toast.push(firstError ? `${ok} deaktiviert, ${chosen.length - ok} nicht möglich (${firstError})` : `${ok} deaktiviert`, firstError ? 'error' : 'success');
+    setShowDisabled(true); // Ausgewählte bleiben sichtbar (z. B. um sie danach zu löschen)
+    setBulkBusy(false);
+    load();
+  };
   const bulkDelete = async () => {
-    if (!selected.length) return;
-    if (!window.confirm(`${selected.length} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.`)) return;
+    if (!selected.length || confirmText?.trim().toUpperCase() !== 'LÖSCHEN') return;
     setBulkBusy(true);
     try {
       // Je Person alle Konten (Anmelde-Konto zuerst, die Rollenkonten gehen mit).
@@ -328,7 +346,7 @@ function UsersTab() {
       } else {
         toast.push(`${okCount} Person(en) endgültig gelöscht`, 'success');
       }
-      setSelected([]);
+      endSelection();
       load();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -352,7 +370,7 @@ function UsersTab() {
       const failed = results.filter((r) => !r.ok);
       const moved = results.filter((r) => r.ok && !r.unchanged).length;
       toast.push(`${moved} versetzt${failed.length ? `, ${failed.length} nicht möglich (${failed[0].error})` : ''}${skipped ? ` · ${skipped} ohne Schüler-Rolle übersprungen` : ''}`, failed.length ? 'error' : 'success');
-      setSelected([]); setMoveTo('');
+      endSelection();
       load();
     } catch (err) {
       toast.push(err.message, 'error');
@@ -366,11 +384,12 @@ function UsersTab() {
   // Eine Zeile je Person: alle Rollen-Konten derselben Person zusammengefasst.
   const people = mergePeople(users);
   const isStudent = (p) => p.roleSet.has('schueler') || p.roleSet.has('klassensprecher');
-  const visible = people.filter((p) => (showDisabled || p.status !== 'disabled')
+  const visible = people.filter((p) => (showDisabled || p.status !== 'disabled' || selected.includes(p.id))
     && (!onlyUnassigned || (isStudent(p) && p.studentClassIds.length === 0))
     && (!needle || p.searchText.includes(needle)));
   const disabledCount = people.filter((p) => p.status === 'disabled').length;
   const filters = groupBy === 'class' ? classFilters(classes, visible) : FILTERS;
+  const selectedPeople = people.filter((p) => selected.includes(p.id));
   const activeFilter = groupBy === 'class' ? classFilter : roleFilter;
   return (
     <div className="space-y-4">
@@ -386,15 +405,16 @@ function UsersTab() {
           <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted pointer-events-none" aria-hidden="true" />
           <input className="input pl-10" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
-        {selected.length > 0 && (
-          <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy}>
-            <XCircle size={17} /> {selected.length} löschen
-          </Button>
-        )}
+        <Button variant={selecting ? 'outline' : 'ghost'} onClick={() => (selecting ? endSelection() : setSelecting(true))}>{selecting ? 'Fertig' : 'Auswählen'}</Button>
         <Button onClick={() => setShow((s) => !s)}><Plus size={18} /> Nutzer anlegen</Button>
       </div>
-      {selected.length > 0 && (
-        <div className="sticky top-2 z-10 shadow-card rounded-xl border border-line/70 bg-card px-3 py-2.5 flex flex-wrap items-center gap-2" role="group" aria-label="Auswahl versetzen">
+      {selecting && (
+        <div className="sticky top-2 z-10 shadow-card rounded-xl border border-line/70 bg-card px-3 py-2.5 space-y-2.5" role="group" aria-label="Auswahl bearbeiten">
+          {selected.length === 0 ? (
+            <p className="text-footnote text-sage-muted">Personen in der Liste antippen, um sie auszuwählen.</p>
+          ) : (
+          <>
+          <div className="flex flex-wrap items-center gap-2">
           <span className="text-footnote text-sage-muted w-full sm:w-auto">{selected.length} ausgewählt – versetzen nach:</span>
           <select className="input flex-1 min-w-[9rem] sm:flex-none sm:w-44" aria-label="Zielklasse" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} data-noi18n>
             <option value="">– Klasse –</option>
@@ -407,6 +427,28 @@ function UsersTab() {
             <option value="joined">Einstieg</option>
           </select>
           <Button onClick={bulkMove} disabled={!moveTo || bulkBusy}>Versetzen</Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-line/60 pt-2.5">
+            {selectedPeople.some((p) => p.status !== 'disabled') && (
+              <Button variant="outline" onClick={bulkDisable} disabled={bulkBusy}>Deaktivieren</Button>
+            )}
+            {selectedPeople.length > 0 && selectedPeople.every((p) => p.status === 'disabled') ? (
+              confirmText === null
+                ? <Button variant="ghost" className="text-status-absent" onClick={() => setConfirmText('')}><XCircle size={17} /> Endgültig löschen …</Button>
+                : (
+                  <div className="flex flex-wrap items-center gap-2 w-full">
+                    <label className="text-footnote text-sage w-full">Zum Bestätigen <b>LÖSCHEN</b> eingeben – {selected.length} Person(en) mit allen Rollen werden unwiderruflich entfernt.</label>
+                    <input className="input flex-1 min-w-[8rem] sm:flex-none sm:w-40" aria-label="Bestätigung" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
+                    <Button variant="danger" onClick={bulkDelete} disabled={bulkBusy || confirmText.trim().toUpperCase() !== 'LÖSCHEN'}>Löschen</Button>
+                    <Button variant="ghost" onClick={() => setConfirmText(null)}>Abbrechen</Button>
+                  </div>
+                )
+            ) : (
+              <span className="text-footnote text-sage-muted">Löschen ist erst möglich, wenn alle Ausgewählten deaktiviert sind.</span>
+            )}
+          </div>
+          </>
+          )}
         </div>
       )}
       <Segmented size="sm" value={groupBy} onChange={setGroupBy} options={[['class', 'Nach Klasse'], ['role', 'Nach Rolle']]} />
@@ -445,8 +487,8 @@ function UsersTab() {
         sort={sort}
         setSort={setSort}
         selected={selected}
+        selecting={selecting}
         toggleOne={toggleOne}
-        setSelected={setSelected}
         searching={Boolean(needle)}
         onOpen={(u) => {
           // Großer Bildschirm: Steckbrief rechts neben der Tabelle, sonst eigene Seite
@@ -503,29 +545,48 @@ const FILTERS = [
 ];
 const STATUS_LABEL = { pending: 'Wartet', disabled: 'Inaktiv' };
 
-// Personenverzeichnis: Handy/iPad = gruppierte Liste mit Filter-Pillen,
-// Mac/iPad quer = Filterspalte + sortierbare Tabelle.
-function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilter, setRoleFilter, sort, setSort, selected, toggleOne, setSelected, searching, onOpen, detailId, detail }) {
+// Runder Auswahl-Haken (wie in iOS) -- nur im Auswahlmodus sichtbar.
+function SelectMark({ on }) {
+  return (
+    <span aria-hidden="true" className={`grid place-items-center h-6 w-6 shrink-0 rounded-full border-2 transition-colors ${on ? 'bg-mint border-mint text-onaccent' : 'border-line bg-card'}`}>
+      {on && <Check size={14} strokeWidth={3} />}
+    </span>
+  );
+}
+const ROLE_TONE = { super_admin: 'neutral', leitung: 'neutral', klassenlehrer: 'mint', vertretung: 'mint', klassensprecher: 'excused', schueler: 'excused', eltern: 'neutral' };
+function RoleBadges({ u, max = 4 }) {
+  const roles = u.roles.filter((r) => r.status !== 'disabled' || u.status === 'disabled');
+  return (
+    <span className="flex flex-wrap gap-1">
+      {roles.slice(0, max).map((r) => <Badge key={r.id} tone={ROLE_TONE[r.role] || 'neutral'}>{ROLE_LABEL[r.role] || r.role}</Badge>)}
+      {roles.length > max && <Badge tone="neutral">+{roles.length - max}</Badge>}
+    </span>
+  );
+}
+
+// Personenverzeichnis: Handy/iPad = Liste mit Filter-Pillen, Mac/iPad quer =
+// Filterspalte + sortierbare Tabelle. Auswahl nur im Auswahlmodus.
+function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilter, setRoleFilter, sort, setSort, selected, selecting = false, toggleOne, searching, onOpen, detailId, detail }) {
   const filter = filters.find((f) => f[0] === roleFilter) || filters[0];
   const counts = Object.fromEntries(filters.map(([k, , fn]) => [k, users.filter(fn).length]));
-  // Alle (aktiven) Rollen einer Person, wichtigste zuerst.
-  const rolesOf = (u) => u.roles.filter((r) => r.status !== 'disabled' || u.status === 'disabled').map((r) => ROLE_LABEL[r.role] || r.role);
   const isMe = (u) => u.accountIds.includes(me?.id);
   const list = users.filter(filter[2]).sort((a, b) => {
     if (sort.key === 'seen') return sort.dir * String(b.lastSeenAt || '').localeCompare(String(a.lastSeenAt || ''));
     if (sort.key === 'role') return sort.dir * String(ROLE_LABEL[a.role] || '').localeCompare(String(ROLE_LABEL[b.role] || ''), 'de') || a.name.localeCompare(b.name, 'de');
     return sort.dir * a.name.localeCompare(b.name, 'de');
   });
-  const selectable = list.filter((u) => !isMe(u)).map((u) => u.id);
-  const allOn = selectable.length > 0 && selectable.every((id) => selected.includes(id));
-  const sub = (u) => (u.classNames?.length ? u.classNames.join(', ') : '');
+  // Im Auswahlmodus wählt ein Tipp auf die Zeile aus, sonst öffnet er die Person.
+  const tap = (u) => { if (!selecting) onOpen(u); else if (!isMe(u)) toggleOne(u.id); };
   const th = (key, label, cls = '') => (
-    <th className={`py-2.5 px-3 font-medium ${cls}`} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
+    <th className={`py-3 px-3 font-medium ${cls}`} aria-sort={sort.key === key ? (sort.dir > 0 ? 'ascending' : 'descending') : 'none'}>
       <button type="button" onClick={() => setSort((s) => ({ key, dir: s.key === key ? -s.dir : 1 }))} className="inline-flex items-center gap-1 hover:text-ivory">
         {label}{sort.key === key && <span aria-hidden="true">{sort.dir > 0 ? '↑' : '↓'}</span>}
       </button>
     </th>
   );
+  const classChips = (u) => (u.classNames?.length
+    ? <span className="flex flex-wrap gap-1" data-noi18n>{u.classNames.map((c) => <span key={c} className="rounded-md bg-subtle px-1.5 py-0.5 text-caption text-sage whitespace-nowrap">{c}</span>)}</span>
+    : <span className="text-sage-muted/70">–</span>);
   return (
     <div className={`lg:grid lg:gap-6 items-start ${detail ? 'lg:grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(0,1fr)_27rem]' : 'lg:grid-cols-[13rem_minmax(0,1fr)]'}`}>
       {/* Filter: Pillen (Handy/iPad hochkant bzw. bei offenem Steckbrief), Spalte (iPad quer/Mac) */}
@@ -546,73 +607,78 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
           <Card><EmptyState icon={Users2} title={searching ? 'Keine Treffer' : 'Niemand in dieser Gruppe'} /></Card>
         ) : (
           <>
+            <p className="mb-2 px-1 text-footnote text-sage-muted">{list.length === 1 ? '1 Person' : `${list.length} Personen`}</p>
             {/* Handy & iPad hochkant: kompakte Liste */}
             <ListGroup className="lg:hidden">
-              {list.map((u) => (
-                <div key={u.id} className="flex items-center gap-3 pl-3 pr-2 py-2.5">
-                  {!isMe(u)
-                    ? <input type="checkbox" className="h-5 w-5 accent-[rgb(var(--c-mint))] shrink-0" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />
-                    : <span className="w-5 shrink-0" />}
-                  <button type="button" onClick={() => onOpen(u)} className="min-w-0 flex-1 flex items-center gap-3 text-left active:opacity-60">
-                    <Avatar name={u.name} size={36} />
-                    <span className="min-w-0 flex-1">
+              {list.map((u) => {
+                const on = selected.includes(u.id);
+                return (
+                  <button key={u.id} type="button" onClick={() => tap(u)} aria-pressed={selecting ? on : undefined}
+                    aria-label={selecting ? `${u.name} ${on ? 'abwählen' : 'auswählen'}` : undefined}
+                    className={`w-full flex items-center gap-3 px-3.5 py-3 text-left active:bg-hover/60 ${on ? 'bg-mint/[0.06]' : ''} ${selecting && isMe(u) ? 'opacity-50' : ''}`}>
+                    {selecting && (isMe(u) ? <span className="w-6 shrink-0" /> : <SelectMark on={on} />)}
+                    <Avatar name={u.name} size={40} />
+                    <span className="min-w-0 flex-1 space-y-1">
                       <span className="flex items-center gap-2">
-                        <span className="text-body font-medium text-ivory truncate" data-noi18n>{u.name}</span>
+                        <span className="text-body font-semibold text-ivory truncate" data-noi18n>{u.name}</span>
                         {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
                       </span>
-                      <span className="block text-footnote text-sage-muted truncate">{rolesOf(u).map((r, i) => <span key={r}>{i > 0 && ' · '}<span>{r}</span></span>)}{sub(u) && <span data-noi18n>{` · ${sub(u)}`}</span>}</span>
+                      <RoleBadges u={u} max={3} />
+                      {u.classNames?.length > 0 && <span className="block text-footnote text-sage-muted truncate" data-noi18n>{u.classNames.join(' · ')}</span>}
                     </span>
-                    <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />
+                    {!selecting && <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />}
                   </button>
-                </div>
-              ))}
+                );
+              })}
             </ListGroup>
 
             {/* iPad quer & Mac: Tabelle */}
-            <Card className="hidden lg:block overflow-x-auto">
+            <Card className="hidden lg:block overflow-x-auto p-0">
               <table className="w-full text-subhead">
                 <thead>
-                  <tr className="text-left text-footnote text-sage-muted border-b border-line/70 bg-subtle/50">
-                    <th className="py-2.5 pl-4 pr-1 w-8">
-                      <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label="Alle auswählen" checked={allOn}
-                        onChange={() => setSelected(allOn ? selected.filter((id) => !selectable.includes(id)) : [...new Set([...selected, ...selectable])])} />
-                    </th>
-                    {th('name', 'Name')}
+                  <tr className="text-left text-footnote text-sage-muted border-b border-line/70">
+                    {selecting && <th className="py-3 pl-4 pr-0 w-10"><span className="sr-only">Auswahl</span></th>}
+                    {th('name', 'Name', selecting ? '' : 'pl-5')}
                     {th('role', 'Rolle')}
-                    {!detail && <th className="py-2.5 px-3 font-medium">Klassen</th>}
+                    {!detail && <th className="py-3 px-3 font-medium">Klassen</th>}
                     {!detail && th('seen', 'Zuletzt online')}
-                    <th className="py-2.5 pr-4 w-10"><span className="sr-only">Öffnen</span></th>
+                    <th className="py-3 pr-4 w-10"><span className="sr-only">Öffnen</span></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {list.map((u) => (
-                    <tr key={u.id} aria-selected={detailId === u.id} className={`group border-b border-line/60 last:border-0 hover:bg-hover/60 cursor-pointer ${detailId === u.id ? 'bg-mint/[0.08]' : ''}`} onClick={(e) => { if (e.target.closest('input,button')) return; onOpen(u); }}>
-                      <td className="py-2.5 pl-4 pr-1">
-                        {!isMe(u) && <input type="checkbox" className="accent-[rgb(var(--c-mint))]" aria-label={`${u.name} auswählen`} checked={selected.includes(u.id)} onChange={() => toggleOne(u.id)} />}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <Avatar name={u.name} size={32} />
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <button type="button" onClick={() => onOpen(u)} className="font-medium text-ivory truncate hover:underline text-left" data-noi18n>{u.name}</button>
-                              {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                  {list.map((u) => {
+                    const on = selected.includes(u.id);
+                    return (
+                      <tr key={u.id} aria-selected={selecting ? on : detailId === u.id}
+                        className={`group border-b border-line/50 last:border-0 cursor-pointer transition-colors hover:bg-hover/50 ${on || detailId === u.id ? 'bg-mint/[0.07]' : ''}`}
+                        onClick={(e) => { if (e.target.closest('button')) return; tap(u); }}>
+                        {selecting && (
+                          <td className="py-3 pl-4 pr-0">
+                            {!isMe(u) && <button type="button" onClick={() => toggleOne(u.id)} aria-pressed={on} aria-label={`${u.name} ${on ? 'abwählen' : 'auswählen'}`}><SelectMark on={on} /></button>}
+                          </td>
+                        )}
+                        <td className={`py-3 px-3 ${selecting ? '' : 'pl-5'}`}>
+                          <div className="flex items-center gap-3 min-w-0">
+                            <Avatar name={u.name} size={36} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <button type="button" onClick={() => tap(u)} className="font-semibold text-ivory truncate hover:underline text-left" data-noi18n>{u.name}</button>
+                                {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                              </div>
+                              <div className="text-footnote text-sage-muted truncate" data-noi18n>{u.email || u.loginEmail || ''}</div>
                             </div>
-                            <div className="text-footnote text-sage-muted truncate" data-noi18n>{u.email || u.loginEmail || ''}</div>
                           </div>
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex flex-wrap gap-x-2 gap-y-0.5">
-                          {rolesOf(u).map((r, i) => <span key={r} className={i === 0 ? 'text-sage whitespace-nowrap' : 'text-sage-muted whitespace-nowrap'}>{r}</span>)}
-                        </div>
-                        {detail && u.classNames?.length > 0 && <div className="text-footnote text-sage-muted" data-noi18n>{u.classNames.join(', ')}</div>}
-                      </td>
-                      {!detail && <td className="py-2.5 px-3 text-sage-muted" data-noi18n>{u.classNames?.length ? <span className="flex flex-wrap gap-x-1.5">{u.classNames.map((c, i) => <span key={c} className="whitespace-nowrap">{c}{i < u.classNames.length - 1 ? ',' : ''}</span>)}</span> : '–'}</td>}
-                      {!detail && <td className="py-2.5 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>}
-                      <td className="py-2.5 pr-4 text-right"><ChevronRight size={18} className="inline text-sage-muted/50 group-hover:text-sage-muted" /></td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-3 px-3">
+                          <RoleBadges u={u} />
+                          {detail && u.classNames?.length > 0 && <div className="mt-1 text-footnote text-sage-muted" data-noi18n>{u.classNames.join(' · ')}</div>}
+                        </td>
+                        {!detail && <td className="py-3 px-3">{classChips(u)}</td>}
+                        {!detail && <td className="py-3 px-3 text-sage-muted whitespace-nowrap">{lastSeenLabel(u.lastSeenAt)}</td>}
+                        <td className="py-3 pr-4 text-right">{!selecting && <ChevronRight size={18} className="inline text-sage-muted/40 group-hover:text-sage-muted" />}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </Card>
@@ -883,6 +949,20 @@ function SettingsTab() {
             <input type="number" className="input mt-1" value={org.audioRetentionDays ?? 0} onChange={(e) => setOrg({ ...org, audioRetentionDays: e.target.value })} />
             <span className="text-xs text-sage-muted">Audio-Abgaben werden nach dieser Frist automatisch gelöscht (Bewertung bleibt). 0 lässt alles unangetastet.</span>
           </label>
+          {isSuperAdmin && (
+            <label className="flex items-start gap-3 pt-2 border-t border-line">
+              <input type="checkbox" className="mt-1 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={org.leitungNeedsApproval === true}
+                onChange={async (e) => {
+                  const on = e.target.checked;
+                  try { await api.patch('/org', { leitungNeedsApproval: on }); setOrg({ ...org, leitungNeedsApproval: on }); toast.push('Gespeichert', 'success'); }
+                  catch (err) { toast.push(err.message, 'error'); }
+                }} />
+              <span>
+                <span className="block text-sm text-ivory">Änderungen der Leitung bestätigen</span>
+                <span className="block text-xs text-sage-muted">Aus: Die Leitung legt Konten und Klassen an und schaltet frei, du wirst informiert. An: Erst nach deiner Bestätigung wirksam.</span>
+              </span>
+            </label>
+          )}
           <div className="pt-2 border-t border-line">
             <div className="text-sm text-ivory mb-2">Strafsystem</div>
             <div className="grid gap-3 sm:grid-cols-3">

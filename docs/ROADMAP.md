@@ -65,9 +65,11 @@ kleine Textlinks in Tabellen (aktuell 32 px).
 - ✅ CSV-Export gegen Formeln geschützt; Tadschwid-Text der fremden Quelle wird am Server entschärft;
   Verhaltensvermerke erscheinen im Push ohne Wortlaut
 - ✅ README, `CLAUDE.md`, `.env.example` auf Stand (`PROJECT_STATUS.md` und `BACKLOG.md` bleiben als Archiv)
-- ❓ **Entscheidung des Betreibers:** Soll die Leitung Rollen ändern und Einladungen für Lehrkräfte ausstellen
-  dürfen, ohne dass der System-Administrator bestätigt? Heute geht das (bewusst so gebaut: „höchstens Leitung");
-  nur das Anlegen von Konten und Klassen braucht eine Bestätigung.
+- ✅ **Entschieden (16.11.2026):** Die Leitung darf Rollen ändern, einladen, Konten und Klassen anlegen und
+  freischalten, ohne dass der System-Administrator bestätigt; er wird informiert. Die Bestätigungspflicht lässt
+  sich in den Einstellungen wieder einschalten (nur Administrator).
+- ✅ Nutzerliste: Auswahl erst über „Auswählen“, kein Alle-Auswählen-Kasten; Löschen nur für vorher deaktivierte
+  Personen und mit eingetipptem „LÖSCHEN“ (auch auf dem Server erzwungen).
 - ⬜ Prüfungen mit Zeitfenster; Eltern-Sicht auf Übungsverläufe; Mindestlänge für Passwörter über 6 Zeichen
 
 ## Struktur für die ganze Schule (begonnen am 15.11.2026)

@@ -1,6 +1,17 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Änderungen der Leitung bestätigen": "Confirmer les modifications de la direction",
+"Aus: Die Leitung legt Konten und Klassen an und schaltet frei, du wirst informiert. An: Erst nach deiner Bestätigung wirksam.": "Désactivé : la direction crée des comptes et des classes et valide les inscriptions ; vous êtes informé. Activé : effectif seulement après votre confirmation.",
+"Änderung durch die Leitung": "Modification par la direction",
+"Auswahl bearbeiten": "Modifier la sélection",
+"Personen in der Liste antippen, um sie auszuwählen.": "Touchez des personnes dans la liste pour les sélectionner.",
+"Deaktivieren": "Désactiver",
+"Endgültig löschen …": "Supprimer définitivement …",
+"Bestätigung": "Confirmation",
+"Löschen ist erst möglich, wenn alle Ausgewählten deaktiviert sind.": "La suppression n'est possible que si toutes les personnes sélectionnées sont désactivées.",
+"1 Person": "1 personne",
+"Auswahl": "Sélection",
 "Auswahl versetzen": "Déplacer la sélection",
 "Zielklasse": "Classe de destination",
 "– Klasse –": "– Classe –",
@@ -2297,6 +2308,11 @@
 "Audio": "Audio"
 },
 "patterns": [
+["{} abwählen", "Désélectionner {1}"],
+["{} Person(en) deaktivieren? Die Anmeldung ist dann gesperrt, alle Daten bleiben erhalten.", "Désactiver {1} personne(s) ? La connexion sera bloquée, toutes les données sont conservées."],
+["{} deaktiviert, {} nicht möglich ({})", "{1} désactivé(s), {2} impossible(s) ({3})"],
+["{} deaktiviert", "{1} désactivé(s)"],
+["Zum Bestätigen LÖSCHEN eingeben – {} Person(en) mit allen Rollen werden unwiderruflich entfernt.", "Saisissez LÖSCHEN pour confirmer – {1} personne(s) avec tous leurs rôles seront supprimées définitivement."],
 ["{} ausgewählt – versetzen nach:", "{1} sélectionné(s) – déplacer vers :"],
 ["{} Schüler nach „{}\" versetzen?", "Déplacer {1} élève(s) vers « {2} » ?"],
 ["{} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.", "Supprimer définitivement {1} personne(s) avec tous leurs rôles ? C'est irréversible."],

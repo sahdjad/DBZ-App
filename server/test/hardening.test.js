@@ -174,6 +174,7 @@ test('Datensicherung: täglich einmal, vor Massenlöschung, Wiederherstellung ho
 
   // Massenlöschung legt vorher automatisch eine Sicherung an.
   const before = (await listBackups()).filter((b) => b.kind === 'event').length;
+  assert.equal((await admin('PATCH', '/admin/users/user_amina', { status: 'disabled' })).status, 200);
   const del = await admin('POST', '/admin/users/bulk-delete', { ids: ['user_amina'] });
   assert.equal(del.status, 200);
   assert.equal(del.data.results[0].ok, true);
@@ -190,6 +191,8 @@ test('Datensicherung: täglich einmal, vor Massenlöschung, Wiederherstellung ho
   const r = await admin('POST', `/admin/backups/${events[0].name}/restore`, { confirm: 'WIEDERHERSTELLEN' });
   assert.equal(r.status, 200);
   assert.equal((await admin('GET', '/admin/users')).data.users.some((u) => u.id === 'user_amina'), true);
+  // Gesichert wurde der Stand nach dem Deaktivieren -- wieder aktivieren, dann klappt die Anmeldung.
+  assert.equal((await admin('PATCH', '/admin/users/user_amina', { status: 'active' })).status, 200);
   await loginAs('amina@dbz.de');
   // Die Wiederherstellung hat selbst eine Sicherung angelegt (lässt sich zurücknehmen).
   assert.ok((await listBackups()).some((b) => b.name.includes('vor-wiederherstellung')));
@@ -747,7 +750,10 @@ test('Eine Person, mehrere Rollen: gleiche personId, Klassenwechsel der Schüler
   assert.equal(own.data.results[0].ok, false, 'eigene Person bleibt geschützt');
   assert.ok(db.all('users').some((u) => u.id === mainId));
 
-  // Löschen der Person: alle Konten auf einmal gemeldet, keines bleibt zurück, kein Fehler.
+  // Löschen der Person: erst nach Deaktivieren; alle Konten auf einmal gemeldet, keines bleibt zurück.
+  const active = await admin('POST', '/admin/users/bulk-delete', { ids: [mainId] });
+  assert.equal(active.data.results[0].ok, false, 'aktive Person wird nicht gelöscht');
+  assert.equal((await admin('PATCH', `/admin/users/${mainId}`, { status: 'disabled' })).status, 200);
   const del = await admin('POST', '/admin/users/bulk-delete', { ids: [mainId, asStudent.id, asLead.id] });
   assert.equal(del.status, 200);
   assert.deepEqual(del.data.results.map((r) => r.ok), [true, true, true]);

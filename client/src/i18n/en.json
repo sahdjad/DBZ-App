@@ -1,6 +1,17 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Änderungen der Leitung bestätigen": "Confirm leadership changes",
+"Aus: Die Leitung legt Konten und Klassen an und schaltet frei, du wirst informiert. An: Erst nach deiner Bestätigung wirksam.": "Off: leadership creates accounts and classes and approves sign-ups; you are informed. On: takes effect only after your confirmation.",
+"Änderung durch die Leitung": "Change by leadership",
+"Auswahl bearbeiten": "Edit selection",
+"Personen in der Liste antippen, um sie auszuwählen.": "Tap people in the list to select them.",
+"Deaktivieren": "Deactivate",
+"Endgültig löschen …": "Delete permanently …",
+"Bestätigung": "Confirmation",
+"Löschen ist erst möglich, wenn alle Ausgewählten deaktiviert sind.": "Deleting is only possible once everyone selected is deactivated.",
+"1 Person": "1 person",
+"Auswahl": "Selection",
 "Auswahl versetzen": "Move selection",
 "Zielklasse": "Target class",
 "– Klasse –": "– Class –",
@@ -2296,6 +2307,11 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["{} abwählen", "Deselect {1}"],
+["{} Person(en) deaktivieren? Die Anmeldung ist dann gesperrt, alle Daten bleiben erhalten.", "Deactivate {1} person(s)? Sign-in will be blocked; all data is kept."],
+["{} deaktiviert, {} nicht möglich ({})", "{1} deactivated, {2} not possible ({3})"],
+["{} deaktiviert", "{1} deactivated"],
+["Zum Bestätigen LÖSCHEN eingeben – {} Person(en) mit allen Rollen werden unwiderruflich entfernt.", "Type LÖSCHEN to confirm – {1} person(s) with all roles will be removed permanently."],
 ["{} ausgewählt – versetzen nach:", "{1} selected – move to:"],
 ["{} Schüler nach „{}\" versetzen?", "Move {1} student(s) to “{2}”?"],
 ["{} Person(en) mit allen Rollen endgültig löschen? Das kann nicht rückgängig gemacht werden.", "Permanently delete {1} person(s) with all their roles? This cannot be undone."],
