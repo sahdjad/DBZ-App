@@ -401,3 +401,137 @@ export function SchoolTodayCard() {
     </Card>
   );
 }
+
+// Viele Unterrichtstage auf einmal nachtragen (z. B. ab Schuljahresbeginn):
+// Vorschau je Tag, Ferientage abwählen, dann nachtragen; jederzeit rückgängig.
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+function lastYearStart() {
+  const now = new Date();
+  const y = now.getMonth() >= 8 ? now.getFullYear() - 1 : now.getFullYear() - 2;
+  return `${y}-09-01`;
+}
+export function BackfillCard({ classId, onChanged }) {
+  const toast = useToast();
+  const [from, setFrom] = useState(lastYearStart);
+  const [to, setTo] = useState(() => isoLocal(new Date(Date.now() - 86400000)));
+  const [unexcused, setUnexcused] = useState(true);
+  const [pendingAsExcused, setPendingAsExcused] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [off, setOff] = useState([]); // abgewählte Tage
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState(null);
+  const loadHistory = () => api.get(`/classes/${classId}/backfill`).then((d) => setHistory(d)).catch(() => setHistory(false));
+  useEffect(() => { loadHistory(); }, [classId]);
+  const body = { from, to, unexcused, pendingAsExcused };
+  const runPreview = async (next = body) => {
+    setBusy(true);
+    try { setPreview(await api.post(`/classes/${classId}/backfill`, { ...next, dryRun: true })); }
+    catch (err) { toast.push(err.message, 'error'); setPreview(null); }
+    finally { setBusy(false); }
+  };
+  // Optionen ändern -> Vorschau gleich neu rechnen.
+  const setOpt = (patch) => {
+    if ('unexcused' in patch) setUnexcused(patch.unexcused);
+    if ('pendingAsExcused' in patch) setPendingAsExcused(patch.pendingAsExcused);
+    if (preview) runPreview({ ...body, ...patch });
+  };
+  const chosen = preview ? preview.days.filter((d) => !off.includes(d.date)) : [];
+  const sum = (k) => chosen.reduce((t, d) => t + d.counts[k], 0);
+  const apply = async () => {
+    if (!chosen.length) return;
+    if (!window.confirm(`${chosen.length} Unterrichtstag(e) nachtragen? Vorher wird automatisch eine Sicherung angelegt; der Nachtrag lässt sich danach zurücknehmen.`)) return;
+    setBusy(true);
+    try {
+      const r = await api.post(`/classes/${classId}/backfill`, { ...body, dryRun: false, dates: chosen.map((d) => d.date) });
+      toast.push(`${r.days} Tag(e) nachgetragen, ${r.entries} Einträge`, 'success');
+      setPreview(null); setOff([]);
+      loadHistory(); onChanged?.();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  const undo = async (b) => {
+    if (!window.confirm(`Nachtrag vom ${new Date(b.at).toLocaleDateString('de-DE')} zurücknehmen? Seither von Hand geänderte Einträge bleiben erhalten.`)) return;
+    try {
+      const r = await api.del(`/classes/${classId}/backfill/${b.id}`);
+      toast.push(`Zurückgenommen: ${r.entries} Einträge, ${r.days} leere Tage`, 'success');
+      loadHistory(); onChanged?.();
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (history === false) return null; // keine Berechtigung (z. B. Vertretung)
+  const weekday = WEEKDAYS[preview?.weekday ?? history?.weekday ?? 6];
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Viele Tage auf einmal nachtragen" subtitle={`Jeder ${weekday} im Zeitraum gilt als Unterrichtstag`} icon={CalendarDays} />
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Von"><input type="date" className="input" value={from} onChange={(e) => { setFrom(e.target.value); setPreview(null); }} /></Field>
+        <Field label="Bis"><input type="date" className="input" value={to} max={isoLocal(new Date(Date.now() - 86400000))} onChange={(e) => { setTo(e.target.value); setPreview(null); }} /></Field>
+      </div>
+      <div className="mt-3 space-y-2 text-sm">
+        <label className="flex items-start gap-2.5">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={unexcused} onChange={(e) => setOpt({ unexcused: e.target.checked })} />
+          <span className="text-sage">Wer an einem erfassten Tag fehlt und sich nicht abgemeldet hat, gilt als <b className="text-ivory">unentschuldigt</b>.<span className="block text-caption text-sage-muted">Tage, an denen noch niemand eingetragen ist, bleiben offen – sonst stünde die ganze Klasse als unentschuldigt da.</span></span>
+        </label>
+        <label className="flex items-start gap-2.5">
+          <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={pendingAsExcused} onChange={(e) => setOpt({ pendingAsExcused: e.target.checked })} />
+          <span className="text-sage">Noch <b className="text-ivory">offene Entschuldigungen</b> als entschuldigt übernehmen.<span className="block text-caption text-sage-muted">Bestätigte Entschuldigungen werden immer übernommen. Verspätungen werden noch nicht nachgetragen.</span></span>
+        </label>
+      </div>
+      <div className="pt-3"><Button variant="outline" onClick={() => { setOff([]); runPreview(); }} disabled={busy || !from || !to}>Vorschau</Button></div>
+
+      {preview && (
+        <div className="mt-4 space-y-3">
+          {preview.days.length === 0 ? <p className="text-sm text-sage-muted">Im Zeitraum liegt kein {weekday}.</p> : (
+            <>
+              <p className="text-footnote text-sage-muted">{chosen.length} von {preview.days.length} Tagen ausgewählt – Ferien oder ausgefallene Tage einfach abwählen.</p>
+              <ul className="divide-y divide-line max-h-80 overflow-y-auto dbz-scroll rounded-xl border border-line">
+                {preview.days.map((d) => {
+                  const on = !off.includes(d.date);
+                  const parts = [
+                    d.existing ? `${d.existing} schon erfasst` : null,
+                    d.counts.excused ? `+${d.counts.excused} entschuldigt` : null,
+                    d.counts.leftEarly ? `+${d.counts.leftEarly} früher gegangen` : null,
+                    d.counts.present ? `+${d.counts.present} da (verspätet gemeldet)` : null,
+                    d.counts.unexcused ? `+${d.counts.unexcused} unentschuldigt` : null,
+                    d.open ? `${d.open} offen` : null,
+                  ].filter(Boolean);
+                  return (
+                    <li key={d.date}>
+                      <label className={`flex items-start gap-3 px-3 py-2.5 ${on ? '' : 'opacity-50'}`}>
+                        <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={on} onChange={() => setOff((o) => (on ? [...o, d.date] : o.filter((x) => x !== d.date)))} />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-1.5 text-sm text-ivory">{fmtDate(d.date)}{!d.hasSession && <Badge tone="neutral">neu</Badge>}{!d.taken && <Badge tone="late">noch nichts erfasst</Badge>}</span>
+                          <span className="block text-caption text-sage-muted">{parts.join(' · ') || 'keine Änderung'}</span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="rounded-xl bg-subtle px-3 py-2.5 text-sm text-sage">
+                Wird eingetragen: <b className="text-ivory">{sum('excused')}</b> entschuldigt · <b className="text-ivory">{sum('unexcused')}</b> unentschuldigt · <b className="text-ivory">{sum('leftEarly')}</b> früher gegangen · <b className="text-ivory">{sum('present')}</b> da
+                {preview.totals.pendingSkipped > 0 && !pendingAsExcused && <span className="block text-caption text-sage-muted">{preview.totals.pendingSkipped} offene Entschuldigung(en) bleiben offen (Häkchen oben setzen, um sie zu übernehmen).</span>}
+              </div>
+              <Button onClick={apply} disabled={busy || !chosen.length}><CalendarPlus size={16} /> {chosen.length} Tag(e) nachtragen</Button>
+            </>
+          )}
+        </div>
+      )}
+
+      {history?.backfills?.length > 0 && (
+        <div className="mt-5 border-t border-line pt-3">
+          <div className="text-sm text-ivory mb-1.5">Bisherige Nachträge</div>
+          <ul className="space-y-1.5">
+            {history.backfills.map((b) => (
+              <li key={b.id} className={`flex items-center gap-2 text-sm ${b.undoneAt ? 'opacity-50' : ''}`}>
+                <span className="flex-1 min-w-0 text-sage">
+                  {fmtDate(b.from)} – {fmtDate(b.to)} · {b.days} Tage, {b.entries} Einträge
+                  <span className="block text-caption text-sage-muted"><span data-noi18n>{b.byName}</span>, {new Date(b.at).toLocaleDateString('de-DE')}{b.undoneAt ? ' · zurückgenommen' : ''}</span>
+                </span>
+                {!b.undoneAt && <Button size="sm" variant="ghost" onClick={() => undo(b)}>Rückgängig</Button>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </Card>
+  );
+}

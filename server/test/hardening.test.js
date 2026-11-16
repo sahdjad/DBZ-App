@@ -789,3 +789,92 @@ test('Sammel-Versetzen: nur Leitung/Administrator, nur Schüler, nur Stammklasse
   // Aufräumen für nachfolgende Tests.
   await admin('POST', '/admin/users/bulk-class', { ids: ['user_yusuf'], classId: from });
 });
+
+test('Anwesenheit nachtragen: Vorschau, Entschuldigungen, unentschuldigt nur an erfassten Tagen, rückgängig', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const klass = (await admin('POST', '/admin/classes', { name: 'Klasse Nachtrag', weekday: 6 })).data.class;
+  // Zwei Schüler seit Anfang September in der Klasse (laut Klassenverlauf).
+  const mk = async (name) => {
+    const u = (await admin('POST', '/admin/users', { name, email: `${name.toLowerCase()}@example.org`, password: 'demo1234', role: 'schueler' })).data.user;
+    db.insert('enrollments', { id: `enr_${u.id}`, studentId: u.id, classId: klass.id, from: '2025-09-01', to: null, reason: 'start', by: null });
+    db.all('users').find((x) => x.id === u.id).classIds = [klass.id];
+    return u.id;
+  };
+  const a = await mk('Nachtrag A');
+  const b = await mk('Nachtrag B');
+  // Ein Neuer, erst seit 2025-10-01 in der Klasse.
+  const c = await mk('Nachtrag C');
+  db.all('enrollments').find((e) => e.studentId === c).from = '2025-10-01';
+
+  // Samstage im September 2025: 6., 13., 20., 27.
+  // Am 13.9. hat A eingecheckt (Tag wurde erfasst), am 20.9. meldet B sich krank, A offen.
+  const s13 = (await admin('POST', `/classes/${klass.id}/days`, { date: '2025-09-13' })).data.session;
+  db.insert('attendance', { id: 'att_bf_a', sessionId: s13.id, classId: klass.id, studentId: a, status: 'present', source: 'checkin', updatedAt: new Date().toISOString() });
+  db.insert('absence_requests', { id: 'abs_bf_b', studentId: b, classId: klass.id, requestType: 'absent', reasonCategory: 'krankheit', sessionDate: '2025-09-13', status: 'approved', createdAt: '2025-09-12T10:00:00Z' });
+  db.insert('absence_requests', { id: 'abs_bf_open', studentId: a, classId: klass.id, requestType: 'absent', reasonCategory: 'sonstiges', sessionDate: '2025-09-20', status: 'pending', createdAt: '2025-09-19T10:00:00Z' });
+
+  const body = { from: '2025-09-01', to: '2025-09-30' };
+  assert.equal((await student('POST', `/classes/${klass.id}/backfill`, body)).status, 403);
+  assert.equal((await admin('POST', `/classes/${klass.id}/backfill`, { from: '2025-09-01', to: '2099-01-01' })).status, 400);
+
+  const preview = (await admin('POST', `/classes/${klass.id}/backfill`, body)).data;
+  assert.equal(preview.dryRun, true);
+  assert.deepEqual(preview.days.map((d) => d.date), ['2025-09-06', '2025-09-13', '2025-09-20', '2025-09-27']);
+  const d13 = preview.days.find((d) => d.date === '2025-09-13');
+  assert.equal(d13.existing, 1);
+  assert.deepEqual(d13.counts, { excused: 1, unexcused: 0, leftEarly: 0, present: 0 }, 'B entschuldigt, C noch nicht in der Klasse');
+  const d20 = preview.days.find((d) => d.date === '2025-09-20');
+  assert.equal(d20.taken, false);
+  assert.equal(d20.counts.unexcused, 0, 'Tag ohne jeden Eintrag: niemand wird unentschuldigt');
+  assert.equal(d20.pendingSkipped, 1, 'offene Entschuldigung wird nur auf Wunsch übernommen');
+  assert.equal(db.all('attendance').filter((x) => x.classId === klass.id).length, 1, 'Vorschau schreibt nichts');
+
+  // Offene Entschuldigungen übernehmen, Ferientag 27.9. abwählen.
+  const done = (await admin('POST', `/classes/${klass.id}/backfill`, { ...body, dryRun: false, pendingAsExcused: true, dates: ['2025-09-06', '2025-09-13', '2025-09-20'] })).data;
+  assert.equal(done.ok, true);
+  assert.equal(done.days, 3);
+  const recs = db.all('attendance').filter((x) => x.classId === klass.id);
+  assert.equal(recs.find((x) => x.studentId === b && x.sessionId === s13.id)?.status, 'excused');
+  assert.equal(recs.find((x) => x.studentId === b && x.sessionId === s13.id)?.note, 'Krank');
+  assert.equal(recs.find((x) => x.id === 'att_bf_a').status, 'present', 'vorhandener Eintrag unverändert');
+  const s20 = db.all('sessions').find((x) => x.classId === klass.id && x.date === '2025-09-20');
+  assert.equal(recs.find((x) => x.studentId === a && x.sessionId === s20.id)?.status, 'excused');
+  assert.equal(db.all('sessions').some((x) => x.classId === klass.id && x.date === '2025-09-27'), false, 'abgewählter Tag bleibt weg');
+
+  // Nachtrag unentschuldigt: ein erfasster Tag, an dem jemand ohne Meldung fehlte.
+  const s6 = db.all('sessions').find((x) => x.classId === klass.id && x.date === '2025-09-06');
+  db.insert('attendance', { id: 'att_bf_a6', sessionId: s6.id, classId: klass.id, studentId: a, status: 'present', source: 'checkin', updatedAt: new Date().toISOString() });
+  const second = (await admin('POST', `/classes/${klass.id}/backfill`, { from: '2025-09-06', to: '2025-09-06', dryRun: false })).data;
+  assert.equal(second.entries, 1);
+  assert.equal(db.all('attendance').find((x) => x.sessionId === s6.id && x.studentId === b)?.status, 'unexcused');
+
+  // Rückgängig: der erste Nachtrag verschwindet samt neu angelegter, leerer Tage.
+  const list = (await admin('GET', `/classes/${klass.id}/backfill`)).data.backfills;
+  assert.equal(list.length, 2);
+  const undo = (await admin('DELETE', `/classes/${klass.id}/backfill/${done.batch}`)).data;
+  assert.equal(undo.ok, true);
+  assert.equal(db.all('attendance').some((x) => x.backfillBatch === done.batch), false);
+  assert.equal(db.all('sessions').some((x) => x.id === s20.id), false, 'leerer, nachgetragener Tag entfernt');
+  assert.ok(db.all('sessions').some((x) => x.id === s6.id), 'Tag mit anderen Einträgen bleibt');
+  assert.equal((await admin('DELETE', `/classes/${klass.id}/backfill/${done.batch}`)).status, 404, 'nicht doppelt');
+});
+
+test('Anwesenheit nachtragen: Mitglied ab erstem eigenen Eintrag, auch wenn das Konto später angelegt wurde', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const klass = (await admin('POST', '/admin/classes', { name: 'Klasse Erster Eintrag', weekday: 6 })).data.class;
+  const u = (await admin('POST', '/admin/users', { name: 'Spaet Angelegt', email: 'spaet@example.org', password: 'demo1234', role: 'schueler', classIds: [klass.id] })).data.user;
+  const other = (await admin('POST', '/admin/users', { name: 'Anderer', email: 'anderer@example.org', password: 'demo1234', role: 'schueler', classIds: [klass.id] })).data.user;
+  // Konto heute angelegt, aber schon im Oktober 2025 eingecheckt.
+  const sOct = (await admin('POST', `/classes/${klass.id}/days`, { date: '2025-10-04' })).data.session;
+  db.insert('attendance', { id: 'att_first_seen', sessionId: sOct.id, classId: klass.id, studentId: u.id, status: 'present', source: 'checkin', updatedAt: new Date().toISOString() });
+  const sOct11 = (await admin('POST', `/classes/${klass.id}/days`, { date: '2025-10-11' })).data.session;
+  db.insert('attendance', { id: 'att_first_seen2', sessionId: sOct11.id, classId: klass.id, studentId: other.id, status: 'present', source: 'checkin', updatedAt: new Date().toISOString() });
+  const preview = (await admin('POST', `/classes/${klass.id}/backfill`, { from: '2025-09-27', to: '2025-10-11' })).data;
+  const byDate = Object.fromEntries(preview.days.map((d) => [d.date, d]));
+  assert.equal(byDate['2025-10-11'].counts.unexcused, 1, 'ab dem ersten Eintrag Mitglied: fehlt am 11.10.');
+  assert.equal(byDate['2025-10-04'].counts.unexcused, 0, '„Anderer" war am 4.10. noch nicht nachweisbar dabei');
+  assert.equal(byDate['2025-09-27'].open, 0, 'vor dem ersten Eintrag gehört niemand dazu');
+});
