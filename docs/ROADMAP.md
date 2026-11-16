@@ -108,7 +108,7 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   Bestätigung, Sicherung, 30 Tage Löschliste) für den Systemadministrator. Frist einschalten: Einstellungen.
 - ⬜ **Kostenloser Zusatzspeicher** (offen): Supabase Free hat 1 GB Dateispeicher; Alternativen mit größerem
   Gratis-Kontingent prüfen, bevor die Grenze erreicht ist.
-- ⬜ **Speicher für Aufnahmen (alt):** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
+- ✅ Entschieden (16.11.2026): Aufnahmen dürfen nach der Bewertung weg; die Frist stellt der Administrator ein.
 
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);
 für Umra braucht es keine Klasse; versetzen nur Leitung/Administrator; Klassendaten aus dem alten Schuljahr sehen nur
