@@ -81,13 +81,16 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   in Anwesenheitsquote, Bericht und Notenvorschlag. Verwaltung → Klassen: Art wählen/umstellen, Teilnehmer
   aufnehmen und austragen. Die Stammklasse wird weiterhin bei der Person geändert; Zusatzkurse bleiben dabei erhalten.
 - ⬜ **Schuljahr:** Einträge einem Schuljahr zuordnen; Jahreswechsel archiviert statt zu löschen
-- ⬜ **Klassenwechsel mit Verlauf:** Auf-/Absteigen und Einstieg mit Datum; alte Einträge bleiben bei der alten Klasse
+- ✅ **Klassenwechsel mit Verlauf:** Stammklasse ändern nur Leitung und Administrator (Verwaltung → Person),
+  mit Grund (Aufstieg, Abstieg, Wechsel) und Datum im Klassenverlauf. Alte Einträge bleiben bei der alten Klasse,
+  Zusatzkurse bleiben erhalten, das Amt des Klassensprechers endet. Lehrkräfte tragen nur aus Zusatzkursen aus.
 - ⬜ **Eine Person, mehrere Rollen:** in der Verwaltung eine Zeile je Person statt je Rollenkonto
 - ⬜ **Verwaltung für viele Klassen:** Nutzerliste nach Klasse gruppiert, Suche, Sammelaktionen, Import
 - ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
 
-Offene Fragen an den Betreiber: Ist der Walima-Kurs Stammklasse oder Zusatz? Wer darf versetzen?
-Sehen Schüler und Eltern das Vorjahr?
+Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);
+für Umra braucht es keine Klasse; versetzen nur Leitung/Administrator; Klassendaten aus dem alten Schuljahr sehen nur
+Lehrkräfte und Leitung, Schüler behalten nur, was sie für sich selbst gespeichert haben.
 
 ## Stufe 5 – Neue Funktionen (4 bis 8 Wochen, in dieser Reihenfolge)
 

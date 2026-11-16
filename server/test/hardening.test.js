@@ -610,3 +610,52 @@ test('Stammklasse und Zusatzkurs: Kurs ist freiwillig, zählt nicht, Stammklasse
   assert.equal((await teacher('DELETE', `/classes/${course.id}/students/user_yusuf`)).status, 200);
   assert.deepEqual(yusuf().classIds, ['class_3']);
 });
+
+test('Klassenwechsel: nur Leitung/Administrator, mit Verlauf; alte Einträge bleiben bei der alten Klasse', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const { db } = await import('../store.js');
+  const email = `wechsel-${Date.now()}@dbz.de`;
+  const s = (await admin('POST', '/admin/users', { name: 'Wechsel Kind', email, password: 'demo1234', role: 'klassensprecher', classIds: ['class_3'] })).data.user;
+  const k5 = (await admin('POST', '/admin/classes', { name: 'Klasse 5' })).data.class;
+  const kurs = (await admin('POST', '/admin/classes', { name: 'Walima-Kurs', kind: 'extra' })).data.class;
+  assert.equal((await admin('POST', `/classes/${kurs.id}/members`, { studentId: s.id })).status, 200);
+
+  // Ein Eintrag in der alten Klasse.
+  const teacher = await loginAs('lehrer@dbz.de');
+  const cats = (await teacher('GET', '/behavior-categories')).data.categories;
+  await teacher('POST', '/behavior', { studentId: s.id, classId: 'class_3', category: cats[0].id, note: 'Alte Klasse', tone: 'positive' });
+
+  // Lehrkraft kann nicht versetzen (hat keinen Zugang zur Verwaltung).
+  assert.equal((await teacher('PATCH', `/admin/users/${s.id}`, { classIds: [k5.id] })).status, 403);
+  assert.equal((await admin('PATCH', `/admin/users/${s.id}`, { classIds: [k5.id], classChangeReason: 'unsinn' })).status, 400);
+
+  // Leitung versetzt: Aufstieg.
+  const leitung = await loginAs('leitung@dbz.de');
+  const moved = await leitung('PATCH', `/admin/users/${s.id}`, { classIds: [k5.id], classChangeReason: 'promotion' });
+  assert.equal(moved.status, 200);
+  const user = db.all('users').find((u) => u.id === s.id);
+  assert.deepEqual(user.classIds, [k5.id, kurs.id], 'neue Stammklasse vorn, Zusatzkurs bleibt');
+  assert.equal(user.role, 'schueler', 'Amt des Klassensprechers endet mit dem Wechsel');
+
+  const hist = (await admin('GET', `/admin/users/${s.id}`)).data.user.enrollments;
+  assert.deepEqual(hist.map((e) => [e.className, e.reason, Boolean(e.to)]), [['Klasse 5', 'promotion', false], ['Klasse 3', 'start', true]]);
+  assert.equal(hist[0].byName, 'Br. Leitung');
+  // Noch einmal dieselbe Klasse speichern erzeugt keinen neuen Eintrag.
+  await admin('PATCH', `/admin/users/${s.id}`, { classIds: [k5.id] });
+  assert.equal((await admin('GET', `/admin/users/${s.id}`)).data.user.enrollments.length, 2);
+
+  // Der alte Eintrag bleibt bei Klasse 3; die alte Lehrkraft sieht den Schüler nicht mehr in ihrer Liste.
+  assert.equal(db.all('behavior_records').find((b) => b.studentId === s.id).classId, 'class_3');
+  assert.equal((await teacher('GET', '/classes/class_3/roster')).data.rows.some((r) => r.id === s.id), false);
+  // Schüler und alte Lehrkraft wurden benachrichtigt.
+  assert.ok(db.all('notifications').some((n) => n.userId === s.id && n.title === 'Klassenwechsel' && /Klasse 5/.test(n.body)));
+  assert.ok(db.all('notifications').some((n) => n.userId === 'user_lehrer' && n.title === 'Klassenwechsel' && /Klasse 3 → Klasse 5/.test(n.body)));
+
+  // Aus dem Zusatzkurs darf die Kurs-Lehrkraft austragen, aus der Stammklasse nicht.
+  await admin('POST', `/admin/classes/${kurs.id}/teachers`, { userId: 'user_lehrer' });
+  await admin('POST', `/admin/classes/${k5.id}/teachers`, { userId: 'user_lehrer' });
+  const t2 = await loginAs('lehrer@dbz.de');
+  assert.equal((await t2('DELETE', `/classes/${k5.id}/students/${s.id}`)).status, 403);
+  assert.equal((await t2('DELETE', `/classes/${kurs.id}/students/${s.id}`)).status, 200);
+  assert.deepEqual(db.all('users').find((u) => u.id === s.id).classIds, [k5.id]);
+});
