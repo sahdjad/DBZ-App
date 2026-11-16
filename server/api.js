@@ -1335,6 +1335,7 @@ router.post('/checkin', requireAuth, requireRole(STUDENT_ROLES), (req, res) => {
 // Sitzung für ein beliebiges (vergangenes) Datum holen oder anlegen -- zum
 // Nachtragen/Korrigieren der Anwesenheit und für Protokolle im Nachhinein.
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const BACKFILL_MAX_DAYS = 800; // so weit zurück lassen sich Tage nachtragen (gut zwei Schuljahre)
 function validPastDate(date, maxDaysBack = 400) {
   if (!DATE_RE.test(String(date || ''))) return 'Ungültiges Datum';
   const today = todayKey();
@@ -1363,10 +1364,193 @@ router.post('/classes/:id/days', requireAuth, requireRole(CLASS_MANAGERS), (req,
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
   const date = String(req.body?.date || '');
-  const err = validPastDate(date);
+  const err = validPastDate(date, BACKFILL_MAX_DAYS);
   if (err) return res.status(400).json({ error: err });
   const s = sessionForDate(klass, date);
   res.json({ session: sessionView(s, klass, req.user) });
+});
+
+// --- Anwesenheit für viele Tage nachtragen (z. B. ab Schuljahresbeginn) ------
+// Legt für jeden Unterrichtstag (Wochentag der Klasse) im Zeitraum einen Tag an
+// und trägt ein, was sich sicher ableiten lässt:
+//  * vorhandene Einträge bleiben unverändert;
+//  * Entschuldigung zum Datum -> „entschuldigt" (offene nur auf Wunsch),
+//    „früher gehen" -> „früher gegangen", gemeldete Verspätung -> „da" (Verspätungen
+//    werden bewusst noch nicht nachgetragen);
+//  * wer sonst fehlt -> „unentschuldigt", aber NUR an Tagen, an denen schon
+//    jemand eingetragen ist. Tage ganz ohne Einträge (App noch nicht genutzt)
+//    bleiben offen, damit nicht die ganze Klasse fälschlich als unentschuldigt gilt.
+// Jeder Nachtrag bekommt eine Kennung und lässt sich vollständig zurücknehmen.
+const isoDay = (d) => d.toISOString().slice(0, 10);
+function lessonDates(klass, from, to) {
+  const weekday = Number.isInteger(klass.weekday) ? klass.weekday : 6;
+  const out = [];
+  const d = new Date(`${from}T12:00:00Z`);
+  const end = new Date(`${to}T12:00:00Z`);
+  while (d <= end && out.length < 200) {
+    if (d.getUTCDay() === weekday) out.push(isoDay(d));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+/**
+ * War der Schüler an diesem Tag in der Klasse? (laut Klassenverlauf bzw. Kurs-Mitgliedschaft)
+ * Der automatisch angelegte Anfang ('start') kennt nur das Anlagedatum des Kontos;
+ * hat der Schüler schon früher Einträge in der Klasse, zählt der erste Eintrag.
+ */
+function memberOn(student, klass, date, firstSeen) {
+  const seen = firstSeen?.get(student.id);
+  if (klass.kind === 'extra') {
+    const since = [String(student.createdAt || '').slice(0, 10), seen].filter(Boolean).sort()[0];
+    return (student.classIds || []).includes(klass.id) && (!since || since <= date);
+  }
+  return enrollmentsOf(student).some((e) => {
+    if (e.classId !== klass.id) return false;
+    const from = e.reason === 'start' && !e.by && seen && seen < e.from ? seen : e.from;
+    return from <= date && (!e.to || e.to > date);
+  });
+}
+function planBackfill(klass, dates, { unexcused = true, pendingAsExcused = false } = {}) {
+  const students = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role));
+  const requests = db.all('absence_requests').filter((r) => r.classId === klass.id && r.sessionDate && r.status !== 'rejected');
+  // Erster eigener Eintrag je Schüler in dieser Klasse (siehe memberOn).
+  const sessionDate = new Map(db.all('sessions').filter((x) => x.classId === klass.id).map((x) => [x.id, x.date]));
+  const firstSeen = new Map();
+  for (const a of db.all('attendance')) {
+    const d = sessionDate.get(a.sessionId);
+    if (d && (!firstSeen.has(a.studentId) || d < firstSeen.get(a.studentId))) firstSeen.set(a.studentId, d);
+  }
+  // Auch eine Abmeldung für einen Unterrichtstag belegt, dass jemand zur Klasse gehört.
+  for (const r of requests) {
+    const d = String(r.sessionDate).slice(0, 10);
+    if (!firstSeen.has(r.studentId) || d < firstSeen.get(r.studentId)) firstSeen.set(r.studentId, d);
+  }
+  const days = dates.map((date) => {
+    const session = db.all('sessions').find((x) => x.classId === klass.id && x.date === date) || null;
+    const recs = session ? db.all('attendance').filter((a) => a.sessionId === session.id) : [];
+    const taken = recs.length > 0;
+    const add = [];
+    let open = 0;
+    let pendingSkipped = 0;
+    for (const st of students) {
+      if (!memberOn(st, klass, date, firstSeen) || recs.some((a) => a.studentId === st.id)) continue;
+      const mine = requests.filter((r) => r.studentId === st.id && String(r.sessionDate).slice(0, 10) === date);
+      const req = mine.find((r) => r.status === 'approved') || mine.find((r) => r.status !== 'approved');
+      if (req && (req.status === 'approved' || pendingAsExcused)) {
+        const sick = /krank/i.test(req.reasonCategory || '');
+        if (req.requestType === 'leave_early') add.push({ studentId: st.id, status: 'left_early', note: 'Früher gegangen (Abmeldung)' });
+        else if (req.requestType === 'late') add.push({ studentId: st.id, status: 'present', note: 'Verspätung gemeldet' });
+        else add.push({ studentId: st.id, status: 'excused', note: sick ? 'Krank' : 'Entschuldigt (Abmeldung)' });
+      } else if (req) {
+        pendingSkipped++;
+        open++;
+      } else if (taken && unexcused) {
+        add.push({ studentId: st.id, status: 'unexcused', note: null });
+      } else {
+        open++;
+      }
+    }
+    const n = (k) => add.filter((a) => a.status === k).length;
+    return {
+      date, hasSession: Boolean(session), existing: recs.length, taken, open, pendingSkipped, add,
+      counts: { excused: n('excused'), unexcused: n('unexcused'), leftEarly: n('left_early'), present: n('present') },
+    };
+  });
+  return days;
+}
+function canBackfill(user, klass) {
+  return isAdmin(user) || canDecideForClass(user, klass.id);
+}
+router.post('/classes/:id/backfill', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (req.user.isDemo && !klass.isDemo) return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  if (!canBackfill(req.user, klass)) return res.status(403).json({ error: 'Nachtragen darf die Klassenlehrkraft, die Leitung oder der Administrator' });
+  const b = req.body || {};
+  const yesterday = localDateKey(new Date(Date.now() - 86400000));
+  const from = String(b.from || '');
+  const to = String(b.to || yesterday);
+  for (const d of [from, to]) {
+    const err = validPastDate(d, BACKFILL_MAX_DAYS);
+    if (err) return res.status(400).json({ error: err });
+  }
+  if (from > to) return res.status(400).json({ error: 'Der Beginn liegt nach dem Ende' });
+  if (to >= todayKey()) return res.status(400).json({ error: 'Heute wird live erfasst – nachtragen bis gestern' });
+  let dates = lessonDates(klass, from, to);
+  // Auswahl einzelner Tage (z. B. Ferien abwählen).
+  if (Array.isArray(b.dates)) {
+    const wanted = new Set(b.dates.map(String));
+    dates = dates.filter((d) => wanted.has(d));
+  }
+  const opts = { unexcused: b.unexcused !== false, pendingAsExcused: b.pendingAsExcused === true };
+  const plan = planBackfill(klass, dates, opts);
+  const view = plan.map(({ add, ...rest }) => rest);
+  const totals = view.reduce((t, d) => {
+    Object.keys(d.counts).forEach((k) => { t[k] = (t[k] || 0) + d.counts[k]; });
+    t.newDays += d.hasSession ? 0 : 1;
+    t.emptyDays += d.taken ? 0 : 1;
+    t.pendingSkipped += d.pendingSkipped;
+    return t;
+  }, { newDays: 0, emptyDays: 0, pendingSkipped: 0 });
+  if (b.dryRun !== false) return res.json({ dryRun: true, weekday: Number.isInteger(klass.weekday) ? klass.weekday : 6, days: view, totals });
+
+  if (!dates.length) return res.status(400).json({ error: 'Keine Tage ausgewählt' });
+  if (!(await safeguard('anwesenheit-nachtragen'))) return res.status(503).json({ error: BACKUP_FAILED });
+  const batch = newId('nachtrag');
+  const now = new Date().toISOString();
+  let entries = 0;
+  for (const day of plan) {
+    let session = db.all('sessions').find((x) => x.classId === klass.id && x.date === day.date);
+    if (!session) {
+      session = sessionForDate(klass, day.date);
+      session.backfillBatch = batch;
+    }
+    for (const a of day.add) {
+      db.insert('attendance', {
+        id: newId('att'), sessionId: session.id, classId: klass.id, studentId: a.studentId, status: a.status,
+        checkInAt: null, minutesLate: 0, source: 'backfill', backfillBatch: batch, confirmedBy: req.user.id,
+        note: a.note, updatedAt: now,
+      });
+      entries++;
+    }
+  }
+  klass.backfills = [...(klass.backfills || []), { id: batch, at: now, by: req.user.id, byName: req.user.name, from, to, days: plan.length, entries }].slice(-20);
+  db.commit();
+  audit(req.user.id, 'attendance.backfill', 'class', klass.id, null, { batch, from, to, days: plan.length, entries, ...opts });
+  res.json({ ok: true, batch, days: plan.length, entries, totals });
+});
+router.get('/classes/:id/backfill', requireAuth, requireRole(CLASS_MANAGERS), (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (!canBackfill(req.user, klass)) return res.status(403).json({ error: 'Kein Zugriff' });
+  res.json({ backfills: [...(klass.backfills || [])].reverse(), canBackfill: true, weekday: Number.isInteger(klass.weekday) ? klass.weekday : 6 });
+});
+// Nachtrag zurücknehmen: nur die damals eingetragenen, seither NICHT geänderten
+// Einträge; dabei angelegte Tage nur, wenn danach nichts anderes daran hängt.
+router.delete('/classes/:id/backfill/:batch', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {
+  const klass = findClass(req.params.id);
+  if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
+  if (req.user.isDemo && !klass.isDemo) return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  if (!canBackfill(req.user, klass)) return res.status(403).json({ error: 'Kein Zugriff' });
+  const batch = req.params.batch;
+  const info = (klass.backfills || []).find((x) => x.id === batch);
+  if (!info || info.undoneAt) return res.status(404).json({ error: 'Nachtrag nicht gefunden' });
+  if (!(await safeguard('nachtrag-zuruecknehmen'))) return res.status(503).json({ error: BACKUP_FAILED });
+  const att = db.all('attendance');
+  let entries = 0;
+  for (let i = att.length - 1; i >= 0; i--) {
+    if (att[i].backfillBatch === batch && att[i].source === 'backfill') { att.splice(i, 1); entries++; }
+  }
+  const used = new Set([...db.all('attendance'), ...db.all('protocols')].map((x) => x.sessionId));
+  const sess = db.all('sessions');
+  let days = 0;
+  for (let i = sess.length - 1; i >= 0; i--) {
+    if (sess[i].backfillBatch === batch && sess[i].classId === klass.id && !used.has(sess[i].id)) { sess.splice(i, 1); days++; }
+  }
+  info.undoneAt = new Date().toISOString();
+  db.commit();
+  audit(req.user.id, 'attendance.backfill_undo', 'class', klass.id, null, { batch, entries, days });
+  res.json({ ok: true, entries, days });
 });
 
 // Live-Anwesenheit einer Sitzung (Verwalter).

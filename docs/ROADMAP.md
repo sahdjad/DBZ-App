@@ -96,6 +96,10 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
 - ◐ **Verwaltung für viele Klassen:** ✅ Nutzerliste nach Klasse oder Rolle, Suche · ✅ mehrere Schüler auf einmal
   versetzen (mit Grund und Klassenverlauf) · ⬜ Import von Schülern per Tabelle (offen: Einladungslink oder
   Startpasswort – Entscheidung des Nutzers)
+- ✅ **Anwesenheit nachtragen (16.11.2026):** viele Unterrichtstage auf einmal (Wochentag der Klasse, z. B. ab
+  1.9.2025), Vorschau je Tag, Ferien abwählbar; Entschuldigungen werden übernommen, unentschuldigt nur an Tagen
+  mit Einträgen; Sicherung vorher, Nachtrag rücknehmbar. Mitglied ab Klassenverlauf bzw. erstem eigenen Nachweis.
+  Verspätungen werden bewusst noch nicht nachgetragen.
 - ⬜ **Speicher für Aufnahmen:** Aufbewahrungsfrist festlegen (bei 500 Schülern rund 25.000 Aufnahmen im Jahr)
 
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);

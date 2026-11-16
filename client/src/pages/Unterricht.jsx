@@ -5,7 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, SkeletonRows, Section, ListGroup, Segmented, EmptyState, useToast, useSelection, SelectCheck, SelectionBar } from '../components/ui.jsx';
 import { QrStage, printQrCode } from '../components/QrCode.jsx';
-import { ClassSettingsCard, SessionHistoryCard, SchoolDaysCard, SchoolTodayCard, SchoolDayBanner } from './UnterrichtParts.jsx';
+import { ClassSettingsCard, SessionHistoryCard, SchoolDaysCard, SchoolTodayCard, SchoolDayBanner, BackfillCard } from './UnterrichtParts.jsx';
 
 const STATUSES = [
   ['present', 'Anwesend'],
@@ -75,6 +75,7 @@ export default function Unterricht() {
 }
 
 function TeacherUnterricht() {
+  const [historyRev, setHistoryRev] = useState(0); // Tagesliste nach Sammel-Nachtrag neu laden
   const toast = useToast();
   // Zuletzt geladener Stand sofort zeigen (lädt im Hintergrund neu).
   const [cached] = useState(() => { const t = peek('/sessions/today'); const id = t?.sessions?.[0]?.id; return { t, id, att: id ? peek(`/sessions/${id}/attendance`) : null }; });
@@ -377,7 +378,8 @@ function TeacherUnterricht() {
 
       {session?.classId && (
         <div className="grid gap-4 lg:grid-cols-2 items-start mt-7">
-          <SessionHistoryCard key={`h-${session.classId}`} classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
+          <SessionHistoryCard key={`h-${session.classId}-${historyRev}`} classId={session.classId} className={session.className} onChanged={() => loadAttendance(active)} />
+          <BackfillCard key={`b-${session.classId}`} classId={session.classId} onChanged={() => { setHistoryRev((n) => n + 1); loadAttendance(active); }} />
           <ClassSettingsCard key={`s-${session.classId}`} classId={session.classId} onSaved={() => loadAttendance(active)} />
         </div>
       )}
