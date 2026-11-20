@@ -87,7 +87,7 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   Berichte, Protokolle, Ankündigungen, erledigte Strafen) sehen nur Lehrkräfte und Leitung; Schüler und Eltern
   nicht mehr. Offene Strafen bleiben sichtbar. Eigenes (Lesezeichen, eigene Übungen, Nachrichten) bleibt.
   Es wird nichts gelöscht – die Zuordnung folgt dem Datum des Eintrags. `/api/health` zeigt das Schuljahr.
-- ⬜ Schuljahr für Lehrkräfte auswählbar machen (heute: laufendes Jahr als Standard, ältere über Zeitraum/Monat)
+- ✅ Schuljahr für Lehrkräfte auswählbar (Anwesenheit, Berichte; 20.11.2026)
 - ✅ **Klassenwechsel mit Verlauf:** Stammklasse ändern nur Leitung und Administrator (Verwaltung → Person),
   mit Grund (Aufstieg, Abstieg, Wechsel) und Datum im Klassenverlauf. Alte Einträge bleiben bei der alten Klasse,
   Zusatzkurse bleiben erhalten, das Amt des Klassensprechers endet. Lehrkräfte tragen nur aus Zusatzkursen aus.
@@ -120,6 +120,22 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
 Entschieden (16.11.2026): Walima ist ein Zusatzkurs (eigene Hausaufgaben und Strafen, zählt nicht fürs Schuljahr);
 für Umra braucht es keine Klasse; versetzen nur Leitung/Administrator; Klassendaten aus dem alten Schuljahr sehen nur
 Lehrkräfte und Leitung, Schüler behalten nur, was sie für sich selbst gespeichert haben.
+
+## Merkliste des Betreibers (Stand 20.11.2026)
+
+Alles, was der Betreiber umgesetzt haben möchte, an einer Stelle. Details stehen in den Abschnitten darüber/darunter.
+
+| Status | Wunsch | Wartet auf |
+|---|---|---|
+| ⬜ | **KI-Assistent** für Lehrkräfte, Klassensprecher, Leitung, Admin: Aufträge per Text/Sprache ausführen, Vorschläge („nicht eingetragen“, „zu spät“), Genehmigungen für Kritisches – Plan in `docs/KI-ASSISTENT.md` | Entscheidungen E1–E6 dort |
+| ⬜ | E-Mail-Versand (Passwort vergessen, Benachrichtigungen per E-Mail, echte E-Mail-Adressen der Schüler) | Betreiber: kostenlosen Versanddienst einrichten, `EMAIL_API_URL`/`EMAIL_API_KEY` bei Render |
+| ⬜ | Layout der Nachrichten und Benachrichtigungen überarbeiten | Wünsche im Detail |
+| ⬜ | Impressum: E-Mail, Vereinsregister-Nummer, ggf. weitere Vorstände eintragen; Texte rechtlich prüfen lassen | Betreiber (Einstellungen → Impressum & Datenschutz) |
+| ⬜ | Regionen von Render/Supabase bestätigen, Auftragsverarbeitungsverträge abschließen | Betreiber |
+| ⬜ | Verspätungen gezielt nachtragen (heute: Check-in-Verspätungen werden bereits erfasst) | regelmäßige Check-ins |
+| ⬜ | Import von Schülern per Tabelle (mit Einladungslink) | – |
+| ⏸ | Speicher (Zusatzspeicher, Arbeitsspeicher, PDF-Notizen auslagern) | **zurückgestellt** bis der Betreiber es aufruft |
+| ⬜ | App Store (Stufe 7) | nach den Punkten oben |
 
 ## Stufe 5 – Neue Funktionen (4 bis 8 Wochen, in dieser Reihenfolge)
 
@@ -166,7 +182,7 @@ Die Richtlinien ändern sich; vor der Einreichung die aktuellen
 |---|---|---|
 | ✅ | Datenschutzerklärung und Impressum als Seite in der App und öffentlich im Web (`/#/impressum`, `/#/datenschutz`) | Pflicht (5.1.1), auch für App Store Connect |
 | ⬜ | Nachrichten und Inhalte melden, Nutzer blockieren, Kontaktadresse für Beschwerden | Pflicht bei nutzererzeugten Inhalten (1.2) |
-| ⬜ | Einwilligung der Eltern für Minderjährige sauber dokumentiert | Daten von Kindern (5.1.4, DSGVO) |
+| ✅ | Einwilligung der Eltern für Minderjährige sauber dokumentiert (unter 16: Pflicht bei Anmeldung, nachtragbar) | Daten von Kindern (5.1.4, DSGVO) |
 | ⬜ | Anmeldung ohne Cookie-Abhängigkeit für die native Hülle (Token im sicheren Gerätespeicher) | Cookies sind in der iOS-WebView unzuverlässig |
 | ⬜ | Push über Apple (APNs) mit nativem Plugin | Web-Push funktioniert in der Hülle nicht |
 | ⬜ | Native Mehrwerte: Push, Kamera für QR-Check-in, Mikrofon, Offline-Qur'an | Reine Web-Hüllen werden abgelehnt (4.2) |

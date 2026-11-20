@@ -53,5 +53,7 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 
 ## Wo es weitergeht
 
-`docs/ROADMAP.md` ist der verbindliche Plan (Reihenfolge, Stand, App-Store-Vorbereitung).
+`docs/ROADMAP.md` ist der verbindliche Plan (Reihenfolge, Stand, App-Store-Vorbereitung) und enthält die
+**Merkliste des Betreibers** (alle offenen Wünsche). Der KI-Assistent ist in `docs/KI-ASSISTENT.md` geplant
+(Bestandsaufnahme, Architektur, Phasen, offene Entscheidungen E1–E6 – vor dem Bauen dort nachsehen).
 `BACKLOG.md` und `PROJECT_STATUS.md` sind älter und teilweise überholt.
