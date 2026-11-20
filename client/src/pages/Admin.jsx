@@ -38,7 +38,7 @@ export default function Admin() {
       {tab === 'pending' && <PendingTab />}
       {tab === 'invites' && <InvitesTab />}
       {tab === 'classes' && <ClassesTab />}
-      {tab === 'approvals' && <ApprovalsTab isSuperAdmin={isSuperAdmin} />}
+      {tab === 'approvals' && <ApprovalsTab />}
       {tab === 'settings' && <SettingsTab />}
       {tab === 'audit' && <AuditTab />}
     </AppLayout>
@@ -48,56 +48,91 @@ export default function Admin() {
 // Genehmigungen: der System-Administrator bestätigt/lehnt Grundlagen-Änderungen
 // der Leitung (neue Konten, neue Klassen). Die Leitung sieht hier ihre eigenen
 // Anträge samt Status.
-function ApprovalsTab({ isSuperAdmin }) {
+const CR_STATUS = {
+  pending: ['Offen', 'late'], approved: ['Bestätigt', 'present'], executed: ['Ausgeführt', 'present'], rejected: ['Abgelehnt', 'absent'],
+  failed: ['Fehlgeschlagen', 'absent'], expired: ['Abgelaufen', 'neutral'], withdrawn: ['Zurückgezogen', 'neutral'],
+};
+const ROLE_NAME = { super_admin: 'Administrator', leitung: 'DBZ-Leitung', klassenlehrer: 'Klassenlehrer', vertretung: 'Vertretung' };
+// Was sich durch den Antrag ändert (Vorschau für die Entscheidung).
+function crChange(r) {
+  if (!r.preview) return null;
+  if (r.type === 'remove_student') return `${r.preview.name}: ${r.preview.classNow || 'ohne Klasse'} → keine Stammklasse (Konto und Verlauf bleiben)`;
+  if (r.type === 'deactivate_user') return `${r.preview.name}: Konto ${r.preview.statusNow === 'active' ? 'aktiv' : r.preview.statusNow} → deaktiviert (Daten bleiben, Anmeldung gesperrt)`;
+  return null;
+}
+function RequestRow({ r, onDecide, onWithdraw }) {
+  const [label, tone] = CR_STATUS[r.status] || [r.status, 'neutral'];
+  const change = crChange(r);
+  return (
+    <li className="py-3 space-y-1.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-ivory text-sm font-medium" data-noi18n>{r.summary}</span>
+            {r.level >= 3 && <Badge tone="absent">kritisch</Badge>}
+          </div>
+          <div className="text-xs text-sage-muted">
+            {r.typeLabel} · <span data-noi18n>{r.requestedByName}</span>{r.requestedByRole ? ` (${ROLE_NAME[r.requestedByRole] || r.requestedByRole})` : ''}
+            {' · '}{new Date(r.createdAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
+          </div>
+        </div>
+        <Badge tone={tone}>{label}</Badge>
+      </div>
+      {r.reason && <div className="text-sm text-sage">Begründung: <span data-noi18n>{r.reason}</span></div>}
+      {change && r.status === 'pending' && <div className="rounded-lg bg-subtle px-3 py-2 text-sm text-ivory" data-noi18n>{change}</div>}
+      {r.error && <div className="text-xs text-sage-muted" data-noi18n>{r.error}</div>}
+      {r.decidedByName && r.status !== 'pending' && <div className="text-xs text-sage-muted">Entschieden von <span data-noi18n>{r.decidedByName}</span></div>}
+      {(r.canDecide || (r.mine && r.status === 'pending')) && (
+        <div className="flex flex-wrap gap-2 pt-1">
+          {r.canDecide && <Button size="sm" onClick={() => onDecide(r, 'approve')}><CheckCircle2 size={16} /> Genehmigen</Button>}
+          {r.canDecide && <Button size="sm" variant="outline" onClick={() => onDecide(r, 'reject')}><XCircle size={16} /> Ablehnen</Button>}
+          {r.mine && r.status === 'pending' && <Button size="sm" variant="ghost" onClick={() => onWithdraw(r)}>Zurückziehen</Button>}
+        </div>
+      )}
+    </li>
+  );
+}
+function ApprovalsTab() {
   const toast = useToast();
   const [requests, setRequests] = useState(null);
   const load = () => api.get('/admin/change-requests').then((d) => setRequests(d.requests)).catch(() => setRequests([]));
   useEffect(() => { load(); }, []);
 
-  const decide = async (id, action) => {
+  const decide = async (r, action) => {
+    let note = '';
+    if (action === 'approve' && !window.confirm(`Genehmigen und sofort ausführen?\n\n${r.summary}`)) return;
+    if (action === 'reject') { note = window.prompt('Ablehnen – kurze Begründung für die antragstellende Person (optional):', ''); if (note === null) return; }
     try {
-      await api.post(`/admin/change-requests/${id}/${action}`, {});
-      toast.push(action === 'approve' ? 'Bestätigt' : 'Abgelehnt', 'success');
-      load();
+      await api.post(`/admin/change-requests/${r.id}/${action}`, action === 'reject' ? { note } : {});
+      toast.push(action === 'approve' ? 'Genehmigt und ausgeführt' : 'Abgelehnt', 'success');
     } catch (err) { toast.push(err.message, 'error'); }
+    load();
+  };
+  const withdraw = async (r) => {
+    try { await api.post(`/change-requests/${r.id}/withdraw`); toast.push('Antrag zurückgezogen', 'success'); load(); }
+    catch (err) { toast.push(err.message, 'error'); }
   };
 
   if (!requests) return <Spinner />;
-  const STAT = { pending: ['Offen', 'late'], approved: ['Bestätigt', 'present'], rejected: ['Abgelehnt', 'absent'] };
+  const open = requests.filter((r) => r.canDecide);
+  const rest = requests.filter((r) => !r.canDecide);
   return (
-    <Card className="p-4 sm:p-5">
-      <CardHeader
-        title={isSuperAdmin ? 'Zu bestätigen' : 'Meine Anträge'}
-        subtitle={isSuperAdmin ? 'Neue Konten und Klassen der Leitung freigeben' : 'Deine Änderungen warten auf Bestätigung durch den Administrator'}
-        icon={ShieldCheck}
-      />
-      {requests.length === 0 ? (
-        <p className="p-4 text-sage-muted text-sm">Nichts offen.</p>
-      ) : (
-        <ul className="divide-y divide-line">
-          {requests.map((r) => (
-            <li key={r.id} className="py-3 flex items-center justify-between gap-3 flex-wrap">
-              <div className="min-w-0">
-                <div className="text-ivory text-sm">{r.summary}</div>
-                <div className="text-xs text-sage-muted">
-                  {r.type === 'create_user' ? 'Neues Konto' : r.type === 'assign_class' ? 'Klassenzuweisung' : 'Neue Klasse'} · beantragt von {r.requestedByName}
-                  {' · '}{new Date(r.createdAt).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}
-                </div>
-              </div>
-              {isSuperAdmin && r.status === 'pending' ? (
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => decide(r.id, 'approve')}><CheckCircle2 size={16} /> Bestätigen</Button>
-                  <Button size="sm" variant="outline" onClick={() => decide(r.id, 'reject')}><XCircle size={16} /> Ablehnen</Button>
-                </div>
-              ) : (
-                <Badge tone={STAT[r.status]?.[1] || 'neutral'}>{STAT[r.status]?.[0] || r.status}</Badge>
-              )}
-            </li>
-          ))}
-        </ul>
+    <div className="space-y-4">
+      <Card className="p-4 sm:p-5">
+        <CardHeader title="Zu entscheiden" subtitle="Vor dem Ausführen wird erneut geprüft, ob die Daten noch stimmen" icon={ShieldCheck} />
+        {open.length === 0 ? <p className="text-sage-muted text-sm">Nichts offen.</p> : (
+          <ul className="divide-y divide-line">{open.map((r) => <RequestRow key={r.id} r={r} onDecide={decide} onWithdraw={withdraw} />)}</ul>
+        )}
+      </Card>
+      {rest.length > 0 && (
+        <Card className="p-4 sm:p-5">
+          <CardHeader title="Verlauf und eigene Anträge" subtitle="Letzte 30 Tage" icon={ScrollText} />
+          <ul className="divide-y divide-line">{rest.map((r) => <RequestRow key={r.id} r={r} onDecide={decide} onWithdraw={withdraw} />)}</ul>
+        </Card>
       )}
-    </Card>
+    </div>
   );
+
 }
 
 const ROLES = [

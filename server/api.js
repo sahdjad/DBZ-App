@@ -7576,27 +7576,77 @@ function superAdminIds() {
 function leitungIds() {
   return db.all('users').filter((u) => u.role === ROLES.LEITUNG && u.status !== 'disabled').map((u) => u.id);
 }
-function crView(cr) {
+// --- Genehmigungsanträge ------------------------------------------------------
+// Jede Antragsart hat feste Genehmiger und eine Sicherheitsstufe (nie vom
+// Antrag selbst bestimmt). Ein Antrag gilt nur für genau den Datenstand, für
+// den er gestellt wurde (Prüfsumme), läuft nach CR_EXPIRE_DAYS ab und wird
+// höchstens einmal ausgeführt. Siehe docs/KI-ASSISTENT.md (E5).
+const CR_EXPIRE_DAYS = 14;
+const CR_TYPES = {
+  create_user: { label: 'Neues Konto', level: 2, approvers: [ROLES.SUPER_ADMIN] },
+  create_class: { label: 'Neue Klasse', level: 2, approvers: [ROLES.SUPER_ADMIN] },
+  assign_class: { label: 'Klassenzuweisung', level: 2, approvers: [ROLES.SUPER_ADMIN] },
+  remove_student: { label: 'Schüler aus der Klasse nehmen', level: 3, approvers: [ROLES.SUPER_ADMIN, ROLES.LEITUNG] },
+  deactivate_user: { label: 'Konto deaktivieren (Löschantrag)', level: 3, approvers: [ROLES.SUPER_ADMIN, ROLES.LEITUNG] },
+};
+const CR_STATUS_OPEN = 'pending';
+/** Prüfsumme des betroffenen Datensatzes – ändert er sich, verfällt die Genehmigung. */
+function crFingerprint(type, payload) {
+  if (type === 'remove_student' || type === 'deactivate_user') {
+    const u = findUserById(payload?.userId);
+    if (!u) return 'missing';
+    return crypto.createHash('sha256').update(JSON.stringify([u.status, u.role, homeClassId(u), (u.classIds || []).slice().sort()])).digest('hex').slice(0, 16);
+  }
+  return null;
+}
+function canDecideRequest(user, cr) {
+  const t = CR_TYPES[cr.type];
+  if (!t || !t.approvers.includes(user.role)) return false;
+  // Niemand genehmigt den eigenen Antrag (auch nicht über eine andere eigene Rolle).
+  return !personAccounts(findUserById(cr.requestedBy) || { id: cr.requestedBy }).some((a) => a.id === user.id);
+}
+/** Abgelaufene offene Anträge kennzeichnen (beim Lesen, ohne Hintergrundjob). */
+function expireRequests() {
+  const cutoff = Date.now() - CR_EXPIRE_DAYS * 86400000;
+  let changed = false;
+  for (const cr of db.all('change_requests')) {
+    if (cr.status === CR_STATUS_OPEN && new Date(cr.createdAt).getTime() < cutoff) { cr.status = 'expired'; cr.decidedAt = new Date().toISOString(); changed = true; }
+  }
+  if (changed) db.commit();
+}
+function crView(cr, viewer) {
   const p = { ...(cr.payload || {}) };
   delete p.passwordHash; // niemals den Passwort-Hash nach außen geben
+  const t = CR_TYPES[cr.type] || {};
+  const target = p.userId ? findUserById(p.userId) : null;
   return {
-    id: cr.id, type: cr.type, summary: cr.summary, payload: p,
-    requestedByName: cr.requestedByName, status: cr.status,
-    createdAt: cr.createdAt, decidedByName: cr.decidedByName, decidedAt: cr.decidedAt,
+    id: cr.id, type: cr.type, typeLabel: t.label || cr.type, level: t.level || 2, summary: cr.summary, payload: p,
+    reason: cr.reason || null, requestedByName: cr.requestedByName, requestedByRole: cr.requestedByRole || null,
+    status: cr.status, createdAt: cr.createdAt, decidedByName: cr.decidedByName, decidedAt: cr.decidedAt,
+    result: cr.result || null, error: cr.error || null,
+    // Was sich ändern würde (für die Vorschau beim Genehmigen).
+    preview: target ? { name: target.name, classNow: findClass(homeClassId(target))?.name || null, statusNow: target.status } : null,
+    canDecide: viewer ? cr.status === CR_STATUS_OPEN && canDecideRequest(viewer, cr) : false,
+    mine: viewer ? cr.requestedBy === viewer.id : false,
   };
 }
-function submitChangeRequest(user, type, summary, payload) {
+function submitChangeRequest(user, type, summary, payload, extra = {}) {
   const cr = {
     id: newId('chg'), type, summary, payload,
-    requestedBy: user.id, requestedByName: user.name,
-    status: 'pending', createdAt: new Date().toISOString(),
+    requestedBy: user.id, requestedByName: user.name, requestedByRole: user.role,
+    status: CR_STATUS_OPEN, createdAt: new Date().toISOString(),
     decidedBy: null, decidedByName: null, decidedAt: null,
+    fingerprint: crFingerprint(type, payload),
+    ...extra,
   };
   db.insert('change_requests', cr);
   audit(user.id, 'change_request.create', 'change_request', cr.id, null, { type });
-  superAdminIds().forEach((id) => notify(id, {
+  const approvers = CR_TYPES[type]?.approvers || [ROLES.SUPER_ADMIN];
+  const ids = new Set([...(approvers.includes(ROLES.SUPER_ADMIN) ? superAdminIds() : []), ...(approvers.includes(ROLES.LEITUNG) ? leitungIds() : [])]);
+  ids.delete(user.id);
+  ids.forEach((id) => notify(id, {
     type: 'approval', level: 'action', title: 'Bestätigung nötig',
-    body: `${user.name}: ${summary}`, deepLink: '/admin', refId: cr.id, groupId: cr.id,
+    body: `${user.name}: ${summary}`, deepLink: '/admin?tab=approvals', refId: cr.id, groupId: cr.id,
   }));
   return cr;
 }
@@ -7625,6 +7675,21 @@ function applyChangeRequest(cr) {
     };
     db.insert('classes', c);
     return c.id;
+  }
+  if (cr.type === 'remove_student') {
+    const u = findUserById(cr.payload.userId);
+    if (!u || !STUDENT_ROLES.includes(u.role)) throw new Error('Schüler nicht mehr vorhanden');
+    if (homeClassId(u) !== cr.payload.classId) throw new Error('Schüler ist nicht mehr in dieser Klasse');
+    setHomeClass(u, null, { by: cr.decidedBy, reason: 'left' });
+    return u.id;
+  }
+  if (cr.type === 'deactivate_user') {
+    const u = findUserById(cr.payload.userId);
+    if (!u) throw new Error('Konto nicht mehr vorhanden');
+    if (isLastSuperAdmin(u)) throw new Error('Der letzte System-Administrator kann nicht deaktiviert werden');
+    u.status = 'disabled';
+    revokeSessions(u);
+    return u.id;
   }
   if (cr.type === 'assign_class') {
     const u = findUserById(cr.payload.userId);
@@ -7732,37 +7797,108 @@ router.post('/admin/pending-registrations/:id/reject', requireAuth, requireRole(
 
 // Liste offener/eigener Anträge. System-Admin: alle offenen. Leitung: eigene.
 router.get('/admin/change-requests', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  expireRequests();
   let list = db.all('change_requests');
   if (req.user.isDemo) list = list.filter((c) => findUserById(c.requestedBy)?.isDemo);
-  else if (req.user.role === ROLES.SUPER_ADMIN) list = list.filter((c) => c.status === 'pending');
-  else list = list.filter((c) => c.requestedBy === req.user.id);
-  list = [...list].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 100);
-  res.json({ requests: list.map(crView) });
+  // Zu entscheiden (offen, ich darf genehmigen), eigene Anträge, und das zuletzt Entschiedene meiner Arten.
+  const recent = Date.now() - 30 * 86400000;
+  list = list.filter((c) => c.requestedBy === req.user.id
+    || (CR_TYPES[c.type]?.approvers || [ROLES.SUPER_ADMIN]).includes(req.user.role) && (c.status === CR_STATUS_OPEN || new Date(c.decidedAt || c.createdAt).getTime() > recent));
+  list = [...list].sort((a, b) => (a.status === CR_STATUS_OPEN) - (b.status === CR_STATUS_OPEN) === 0
+    ? (b.createdAt || '').localeCompare(a.createdAt || '') : (a.status === CR_STATUS_OPEN ? -1 : 1)).slice(0, 100);
+  res.json({ requests: list.map((c) => crView(c, req.user)) });
 });
 
-router.post('/admin/change-requests/:id/approve', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
+// Eigene Anträge (z. B. Lehrkraft: „Schüler aus der Klasse nehmen“).
+router.get('/change-requests/mine', requireAuth, (req, res) => {
+  expireRequests();
+  const list = db.all('change_requests').filter((c) => c.requestedBy === req.user.id)
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 50);
+  res.json({ requests: list.map((c) => crView(c, req.user)) });
+});
+
+// Antrag stellen (Stufe 3): Lehrkraft der Stammklasse, Leitung oder Administrator.
+router.post('/change-requests', requireAuth, requireRole(ROLES.KLASSENLEHRER, ROLES.LEITUNG, ROLES.SUPER_ADMIN), (req, res) => {
+  const { type, userId, reason } = req.body || {};
+  if (!['remove_student', 'deactivate_user'].includes(type)) return res.status(400).json({ error: 'Unbekannte Antragsart' });
+  const target = findUserById(String(userId || ''));
+  if (!target || !STUDENT_ROLES.includes(target.role) || target.status === 'disabled') return res.status(404).json({ error: 'Schüler nicht gefunden' });
+  if (req.user.isDemo && !target.isDemo) return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  const home = homeClassId(target);
+  const homeRegular = home && !isExtraClass(home) ? home : null;
+  if (!isAdmin(req.user) && !(homeRegular && canDecideForClass(req.user, homeRegular)))
+    return res.status(403).json({ error: 'Anträge nur für Schüler der eigenen Stammklasse' });
+  if (type === 'remove_student' && !homeRegular) return res.status(400).json({ error: 'Schüler hat keine Stammklasse' });
+  const why = typeof reason === 'string' ? reason.trim() : '';
+  if (why.length < 3 || why.length > 500) return res.status(400).json({ error: 'Bitte kurz begründen' });
+  if (db.all('change_requests').some((c) => c.status === CR_STATUS_OPEN && c.type === type && c.payload?.userId === target.id))
+    return res.status(409).json({ error: 'Dazu gibt es schon einen offenen Antrag' });
+  const cls = findClass(homeRegular)?.name;
+  const summary = type === 'remove_student' ? `${target.name} aus „${cls}" nehmen` : `Konto von ${target.name} deaktivieren${cls ? ` („${cls}")` : ''}`;
+  const cr = submitChangeRequest(req.user, type, summary, { userId: target.id, classId: homeRegular }, { reason: why });
+  res.json({ request: crView(cr, req.user) });
+});
+
+router.post('/change-requests/:id/withdraw', requireAuth, (req, res) => {
   const cr = byId('change_requests', req.params.id);
-  if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
-  if (req.user.isDemo && !findUserById(cr.requestedBy)?.isDemo)
-    return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
-  let newId2;
-  try { newId2 = applyChangeRequest(cr); } catch (e) { return res.status(400).json({ error: e.message }); }
-  cr.status = 'approved'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
+  if (!cr || cr.requestedBy !== req.user.id) return res.status(404).json({ error: 'Antrag nicht gefunden' });
+  if (cr.status !== CR_STATUS_OPEN) return res.status(409).json({ error: 'Antrag ist nicht mehr offen' });
+  cr.status = 'withdrawn'; cr.decidedAt = new Date().toISOString();
   db.commit();
-  audit(req.user.id, 'change_request.approve', 'change_request', cr.id, null, { entityId: newId2 });
-  notify(cr.requestedBy, { type: 'approval', level: 'info', title: 'Änderung bestätigt', body: cr.summary, deepLink: '/admin' });
-  res.json({ ok: true });
+  audit(req.user.id, 'change_request.withdraw', 'change_request', cr.id);
+  res.json({ ok: true, request: crView(cr, req.user) });
 });
 
-router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.SUPER_ADMIN), (req, res) => {
+// Genehmigen: Status, Ablauf, Genehmiger, unveränderter Datenstand und die Rechte
+// des Antragstellers werden HIER erneut geprüft; die Ausführung läuft ohne
+// Unterbrechung (kein await), daher höchstens einmal.
+router.post('/admin/change-requests/:id/approve', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  expireRequests();
   const cr = byId('change_requests', req.params.id);
-  if (!cr || cr.status !== 'pending') return res.status(404).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  if (!cr || cr.status !== CR_STATUS_OPEN) return res.status(409).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
   if (req.user.isDemo && !findUserById(cr.requestedBy)?.isDemo)
     return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  if (!canDecideRequest(req.user, cr)) return res.status(403).json({ error: 'Diesen Antrag darfst du nicht genehmigen' });
+  const now = new Date().toISOString();
+  const finish = (status, extra) => {
+    Object.assign(cr, { status, decidedBy: req.user.id, decidedByName: req.user.name, decidedAt: now, ...extra });
+    db.commit();
+    audit(req.user.id, `change_request.${status}`, 'change_request', cr.id, null, extra || null);
+  };
+  if (cr.fingerprint && crFingerprint(cr.type, cr.payload) !== cr.fingerprint) {
+    finish('expired', { error: 'Die betroffenen Daten haben sich seit dem Antrag geändert – bitte neu beantragen.' });
+    notify(cr.requestedBy, { type: 'approval', level: 'warn', title: 'Antrag abgelaufen', body: cr.summary, deepLink: '/klassenliste' });
+    return res.status(409).json({ error: cr.error, request: crView(cr, req.user) });
+  }
+  const requester = findUserById(cr.requestedBy);
+  if (['remove_student', 'deactivate_user'].includes(cr.type) && requester && !isAdmin(requester)
+    && !(cr.payload.classId && canDecideForClass(requester, cr.payload.classId))) {
+    finish('expired', { error: 'Die antragstellende Person ist für diese Klasse nicht mehr zuständig.' });
+    return res.status(409).json({ error: cr.error, request: crView(cr, req.user) });
+  }
+  cr.decidedBy = req.user.id; // für den Klassenverlauf (wer hat ausgeführt)
+  let resultId;
+  try { resultId = applyChangeRequest(cr); } catch (e) {
+    finish('failed', { error: e.message });
+    return res.status(400).json({ error: e.message, request: crView(cr, req.user) });
+  }
+  finish(['remove_student', 'deactivate_user'].includes(cr.type) ? 'executed' : 'approved', { result: resultId || null });
+  notify(cr.requestedBy, { type: 'approval', level: 'info', title: 'Antrag genehmigt und ausgeführt', body: cr.summary, deepLink: '/klassenliste' });
+  res.json({ ok: true, request: crView(cr, req.user) });
+});
+
+router.post('/admin/change-requests/:id/reject', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
+  const cr = byId('change_requests', req.params.id);
+  if (!cr || cr.status !== CR_STATUS_OPEN) return res.status(409).json({ error: 'Antrag nicht gefunden oder bereits entschieden' });
+  if (req.user.isDemo && !findUserById(cr.requestedBy)?.isDemo)
+    return res.status(403).json({ error: 'Demo-Konten dürfen nur Demo-Daten bearbeiten, keine echten Konten/Klassen' });
+  if (!canDecideRequest(req.user, cr)) return res.status(403).json({ error: 'Diesen Antrag darfst du nicht entscheiden' });
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
   cr.status = 'rejected'; cr.decidedBy = req.user.id; cr.decidedByName = req.user.name; cr.decidedAt = new Date().toISOString();
+  if (note) cr.error = note;
   db.commit();
   audit(req.user.id, 'change_request.reject', 'change_request', cr.id);
-  notify(cr.requestedBy, { type: 'approval', level: 'warn', title: 'Änderung abgelehnt', body: cr.summary, deepLink: '/admin' });
+  notify(cr.requestedBy, { type: 'approval', level: 'warn', title: 'Antrag abgelehnt', body: note ? `${cr.summary} – ${note}` : cr.summary, deepLink: '/klassenliste' });
   res.json({ ok: true });
 });
 

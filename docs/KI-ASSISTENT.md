@@ -61,7 +61,7 @@ Rolle „Verwaltungsmitarbeiter“ aus dem Auftrag gibt es noch nicht (siehe Ent
 | Phase | Inhalt | braucht LLM? | Stand |
 |---|---|---|---|
 | 0 | **Vorschläge ohne KI**: Startseite der Klassenlehrkraft „Anwesenheit vervollständigen“ (fehlende Einträge an erfassten Tagen der letzten 3 Wochen; bestätigte Entschuldigung → entschuldigt, sonst fehlend), mit einem Tipp übernehmen, rücknehmbar. Offene Entschuldigungen, Korrekturen, Protokolle stehen schon unter „Zu erledigen“ | nein | ✅ 20.11.2026 |
-| 1 | Werkzeug-Schicht + Sicherheitsstufen + erweitertes Genehmigungssystem (inkl. Tests C, D, E, G, I, J) | nein | geplant |
+| 1 | ✅ Erweitertes Genehmigungssystem (20.11.2026): Antragsarten mit festen Genehmigern und Stufe, „Schüler aus der Klasse nehmen“ und „Konto deaktivieren“ beantragt die Klassenlehrkraft, Leitung/Admin genehmigt; Prüfsumme des Datenstands, Ablauf nach 14 Tagen, erneute Rechteprüfung, genau einmal ausgeführt, keine Selbstgenehmigung, Zurückziehen; Tests C, D, E, I, J. ⬜ Werkzeug-Schicht für das Modell (kommt mit Phase 3) | nein | teilweise |
 | 2 | Assistent-Oberfläche (Knopf in der App, Eingabe, Ergebnisse, laufende Aufgaben, Kontext der geöffneten Klasse) | nein (Oberfläche) | geplant |
 | 3 | Anbindung eines Sprachmodells mit Werkzeugaufrufen, Platzhalter für Namen, Kosten- und Missbrauchsgrenzen | **ja** | wartet auf E1/E2 |
 | 4 | Arbeitsblätter (Material mit Text, Druckansicht, geprüfte Verse), Mehrschritt-Aufträge (Tests A, F, H) | ja | nach Phase 3 |
