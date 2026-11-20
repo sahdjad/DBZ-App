@@ -50,6 +50,37 @@ function PendingStudentsCard({ classId, className, onTaken }) {
   );
 }
 
+// Eigene Anträge (z. B. „aus der Klasse nehmen“) mit Stand – nur sichtbar, wenn es welche gibt.
+const REQ_STATUS = { pending: 'wartet auf Entscheidung', executed: 'genehmigt und ausgeführt', approved: 'genehmigt', rejected: 'abgelehnt', failed: 'fehlgeschlagen', expired: 'abgelaufen', withdrawn: 'zurückgezogen' };
+function MyRequestsCard() {
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const load = () => api.get('/change-requests/mine').then((d) => setList(d.requests)).catch(() => setList([]));
+  useEffect(() => { load(); }, []);
+  const recent = (list || []).filter((r) => r.status === 'pending' || Date.now() - new Date(r.decidedAt || r.createdAt).getTime() < 14 * 86400000);
+  if (!recent.length) return null;
+  const withdraw = async (r) => {
+    try { await api.post(`/change-requests/${r.id}/withdraw`); toast.push('Antrag zurückgezogen', 'success'); load(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  return (
+    <Card className="p-4">
+      <div className="text-ivory font-medium">Meine Anträge</div>
+      <ul className="mt-2 divide-y divide-line">
+        {recent.map((r) => (
+          <li key={r.id} className="flex items-center gap-3 py-2 text-sm">
+            <span className="min-w-0 flex-1">
+              <span className="block text-ivory truncate" data-noi18n>{r.summary}</span>
+              <span className="block text-caption text-sage-muted">{REQ_STATUS[r.status] || r.status}{r.error ? <> · <span data-noi18n>{r.error}</span></> : null}</span>
+            </span>
+            {r.status === 'pending' && <Button size="sm" variant="ghost" onClick={() => withdraw(r)}>Zurückziehen</Button>}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 function ClassInviteCard({ classId, className }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -293,6 +324,18 @@ export default function Klassenliste() {
   }, []);
 
   const load = () => api.get(`/classes/${classId}/roster`).then(setData).catch(() => setData({ rows: [] }));
+  const [reqRev, setReqRev] = useState(0);
+  // Antrag an Leitung/Administrator (Stufe 3) – nichts wird sofort geändert.
+  const requestChange = async (row, type) => {
+    const what = type === 'remove_student' ? `${row.name} aus der Klasse nehmen` : `Konto von ${row.name} deaktivieren`;
+    const reason = window.prompt(`${what} – Begründung für die Leitung:`, '');
+    if (reason === null) return;
+    try {
+      await api.post('/change-requests', { type, userId: row.id, reason });
+      toast.push('Antrag gestellt – Leitung oder Administrator entscheidet', 'success');
+      setReqRev((n) => n + 1);
+    } catch (err) { toast.push(err.message, 'error'); }
+  };
   useEffect(() => {
     if (!classId || classId === ALL) return;
     setData(null);
@@ -384,6 +427,7 @@ export default function Klassenliste() {
       <div className="space-y-4">
         {isLeadership && <ClassFolders groups={(classes || []).map((c) => ({ id: c.id, name: c.name }))} selected={classId} onSelect={(id) => { setClassId(id || ''); setData(null); }} />}
         {isTeacher && currentClass && <ClassInviteCard classId={classId} className={currentClass.name} />}
+        {user.role === 'klassenlehrer' && <MyRequestsCard key={reqRev} />}
         {user.role === 'klassenlehrer' && currentClass && currentClass.kind !== 'extra' && <PendingStudentsCard classId={classId} className={currentClass.name} onTaken={load} />}
         {currentClass && ['klassenlehrer', 'vertretung', 'leitung', 'super_admin'].includes(user.role) && (
           <ClassResetCard classId={classId} className={currentClass.name} onDone={load} />
@@ -504,6 +548,11 @@ export default function Klassenliste() {
               ...(isLeadership || (isTeacher && currentClass?.kind === 'extra') ? [
                 { key: 'remove', label: currentClass?.kind === 'extra' ? 'Aus dem Kurs austragen' : 'Aus der Klasse entfernen', description: 'Das Konto selbst bleibt bestehen.', variant: 'danger' },
               ] : []),
+              // Klassenlehrkraft der Stammklasse: nur beantragen, Leitung/Admin genehmigt.
+              ...(user.role === 'klassenlehrer' && currentClass?.kind !== 'extra' ? [
+                { key: 'req_remove', label: 'Aus der Klasse nehmen – beantragen', description: 'Leitung oder Administrator entscheidet.' },
+                { key: 'req_deactivate', label: 'Konto deaktivieren – beantragen', description: 'Löschantrag; Daten bleiben bis zur Entscheidung.', variant: 'danger' },
+              ] : []),
             ]}
             onClose={() => setMenuFor(null)}
             onChoose={(key) => {
@@ -513,6 +562,7 @@ export default function Klassenliste() {
               if (key === 'sprecher') toggleKlassensprecher(ev, row);
               else if (key === 'probation') toggleProbation(ev, row);
               else if (key === 'remove') removeFromClass(ev, row);
+              else if (key === 'req_remove' || key === 'req_deactivate') requestChange(row, key === 'req_remove' ? 'remove_student' : 'deactivate_user');
             }}
           />
         )}

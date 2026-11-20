@@ -1107,3 +1107,78 @@ test('Vorschläge: Anwesenheit vervollständigen erscheint für die Lehrkraft, �
   const after = (await teacher('GET', '/assistant/suggestions')).data.suggestions.find((x) => x.classId === 'class_3');
   assert.ok(!after || !after.days.some((x) => x.date === day), 'nach dem Übernehmen kein Vorschlag mehr für den Tag');
 });
+
+test('Genehmigungen (Szenarien C, D, E, I, J): Antrag statt Löschung, Freigabe mit erneuter Prüfung, genau einmal', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const mk = async (name) => {
+    const id = (await admin('POST', '/admin/users', { name, email: `${name.replace(/\s/g, '').toLowerCase()}@example.org`, password: 'demo1234', role: 'schueler', classIds: ['class_3'] })).data.user.id;
+    return id;
+  };
+  const ahmad = await mk('Ahmad Test');
+  const bilal = await mk('Bilal Test');
+  const fremd = (await admin('POST', '/admin/classes', { name: 'Fremde Klasse G' })).data.class;
+  const other = (await admin('POST', '/admin/users', { name: 'Fremder Schueler', email: 'fremd.g@example.org', password: 'demo1234', role: 'schueler', classIds: [fremd.id] })).data.user.id;
+
+  // C: Lehrkraft kann nicht direkt entfernen, aber einen Antrag stellen.
+  assert.equal((await teacher('DELETE', `/classes/class_3/students/${ahmad}`)).status, 403);
+  assert.equal((await student('POST', '/change-requests', { type: 'remove_student', userId: ahmad, reason: 'zieht um' })).status, 403);
+  assert.equal((await teacher('POST', '/change-requests', { type: 'remove_student', userId: other, reason: 'test' })).status, 403, 'fremde Klasse');
+  assert.equal((await teacher('POST', '/change-requests', { type: 'remove_student', userId: ahmad })).status, 400, 'Begründung nötig');
+  const c = (await teacher('POST', '/change-requests', { type: 'remove_student', userId: ahmad, reason: 'Familie zieht um' })).data.request;
+  assert.equal(c.status, 'pending');
+  assert.deepEqual(db.all('users').find((u) => u.id === ahmad).classIds, ['class_3'], 'noch nichts ausgeführt');
+  assert.equal((await teacher('POST', '/change-requests', { type: 'remove_student', userId: ahmad, reason: 'nochmal' })).status, 409, 'kein Doppelantrag');
+
+  // Leitung sieht ihn als „zu entscheiden“, mit Vorschau.
+  const list = (await leitung('GET', '/admin/change-requests')).data.requests;
+  const seen = list.find((r) => r.id === c.id);
+  assert.equal(seen.canDecide, true);
+  assert.equal(seen.preview.classNow, 'Klasse 3');
+  assert.equal(seen.level, 3);
+
+  // D + I: Leitung genehmigt -> ausgeführt; zweite Genehmigung (Admin) scheitert.
+  const ok = await leitung('POST', `/admin/change-requests/${c.id}/approve`);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.data.request.status, 'executed');
+  assert.deepEqual(db.all('users').find((u) => u.id === ahmad).classIds, [], 'aus der Klasse genommen');
+  assert.equal(db.all('enrollments').find((e) => e.studentId === ahmad && e.classId === 'class_3').to !== null, true, 'im Klassenverlauf abgeschlossen');
+  assert.equal((await admin('POST', `/admin/change-requests/${c.id}/approve`)).status, 409, 'höchstens einmal');
+
+  // E: Ablehnung lässt alles unverändert.
+  const e = (await teacher('POST', '/change-requests', { type: 'deactivate_user', userId: bilal, reason: 'kommt nicht mehr' })).data.request;
+  assert.equal((await leitung('POST', `/admin/change-requests/${e.id}/reject`, { note: 'erst Gespräch mit Eltern' })).status, 200);
+  assert.equal(db.all('users').find((u) => u.id === bilal).status, 'active');
+  assert.equal((await leitung('POST', `/admin/change-requests/${e.id}/approve`)).status, 409);
+
+  // Datenstand geändert -> Antrag verfällt statt ausgeführt zu werden.
+  const f = (await teacher('POST', '/change-requests', { type: 'deactivate_user', userId: bilal, reason: 'kommt nicht mehr' })).data.request;
+  db.all('users').find((u) => u.id === bilal).classIds = [fremd.id];
+  const stale = await leitung('POST', `/admin/change-requests/${f.id}/approve`);
+  assert.equal(stale.status, 409);
+  assert.equal(stale.data.request.status, 'expired');
+  assert.equal(db.all('users').find((u) => u.id === bilal).status, 'active');
+  db.all('users').find((u) => u.id === bilal).classIds = ['class_3'];
+
+  // J: Zuständigkeit entzogen -> keine Ausführung.
+  const j = (await teacher('POST', '/change-requests', { type: 'deactivate_user', userId: bilal, reason: 'kommt nicht mehr' })).data.request;
+  const t = db.all('users').find((u) => u.email === 'lehrer@dbz.de');
+  const keep = t.classIds; t.classIds = [];
+  const lost = await leitung('POST', `/admin/change-requests/${j.id}/approve`);
+  assert.equal(lost.status, 409);
+  assert.equal(db.all('users').find((u) => u.id === bilal).status, 'active');
+  t.classIds = keep;
+
+  // Zurückziehen und keine Selbstgenehmigung.
+  const w = (await teacher('POST', '/change-requests', { type: 'deactivate_user', userId: bilal, reason: 'Probe' })).data.request;
+  assert.equal((await teacher('POST', `/change-requests/${w.id}/withdraw`)).status, 200);
+  const own = (await leitung('POST', '/change-requests', { type: 'deactivate_user', userId: bilal, reason: 'selbst' })).data.request;
+  assert.equal((await leitung('POST', `/admin/change-requests/${own.id}/approve`)).status, 403, 'nicht den eigenen Antrag');
+  assert.equal((await admin('POST', `/admin/change-requests/${own.id}/approve`)).status, 200, 'eine andere Person darf');
+  assert.equal(db.all('users').find((u) => u.id === bilal).status, 'disabled');
+  const mine = (await teacher('GET', '/change-requests/mine')).data.requests.map((r) => r.status);
+  assert.ok(mine.includes('executed') && mine.includes('rejected') && mine.includes('withdrawn') && mine.includes('expired'));
+});
