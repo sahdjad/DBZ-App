@@ -13,6 +13,8 @@ import Login from './pages/Login.jsx';
 // besonders auf dem Handy und im umfangreichen Lehrer-Bereich.
 const Registrieren = lazy(() => import('./pages/Registrieren.jsx'));
 const Ausweis = lazy(() => import('./pages/Ausweis.jsx'));
+const Impressum = lazy(() => import('./pages/Rechtliches.jsx').then((m) => ({ default: m.Impressum })));
+const Datenschutz = lazy(() => import('./pages/Rechtliches.jsx').then((m) => ({ default: m.Datenschutz })));
 const AusweisPruefen = lazy(() => import('./pages/Ausweis.jsx').then((m) => ({ default: m.AusweisPruefen })));
 const PasswortVergessen = lazy(() => import('./pages/PasswortVergessen.jsx'));
 const PasswortNeu = lazy(() => import('./pages/PasswortNeu.jsx'));
@@ -162,6 +164,8 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/registrieren" element={<Registrieren />} />
         <Route path="/ausweis/pruefen/:token" element={<AusweisPruefen />} />
+        <Route path="/impressum" element={<Impressum />} />
+        <Route path="/datenschutz" element={<Datenschutz />} />
         <Route path="/passwort-vergessen" element={<PasswortVergessen />} />
         <Route path="/passwort-neu" element={<PasswortNeu />} />
         <Route path="/" element={<Navigate to="/dashboard" replace />} />

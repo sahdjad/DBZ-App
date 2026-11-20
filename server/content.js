@@ -20,6 +20,22 @@ export function findSubject(id) {
 // Standard-Organisationseinstellungen (docs/PRODUCT.md §10, SOCIAL_MEDIA.md).
 // Werden beim Seed in die `organizations`-Collection geschrieben und sind danach
 // über den Admin-Bereich ohne neues Release änderbar.
+// Angaben für Impressum und Datenschutzerklärung (öffentlich sichtbar).
+// In der App unter Einstellungen änderbar (nur Administrator); leere Felder
+// erscheinen nicht. Stand: Angaben des Vereins vom 20.11.2026.
+export const DEFAULT_LEGAL = {
+  orgName: 'Deen Bildungszentrum e.V.',
+  street: 'Am Moosfeld 11',
+  zip: '81829',
+  city: 'München',
+  country: 'Deutschland',
+  representative: 'Sahdjad Mahamadou',
+  email: '',
+  phone: '',
+  register: '', // z. B. „Amtsgericht München, VR 12345“
+  privacyContact: '', // eigene Adresse für Datenschutzanfragen (sonst E-Mail oben)
+};
+
 export const DEFAULT_ORG = {
   id: 'org_dbz',
   name: 'Deen Bildungszentrum',

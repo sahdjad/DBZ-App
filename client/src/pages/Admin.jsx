@@ -922,6 +922,43 @@ function StorageCard() {
   );
 }
 
+// Angaben für Impressum und Datenschutzerklärung (öffentliche Seiten).
+const LEGAL_FIELDS = [
+  ['orgName', 'Name des Vereins'], ['street', 'Straße und Hausnummer'], ['zip', 'PLZ'], ['city', 'Ort'], ['country', 'Land'],
+  ['representative', 'Vertreten durch (Vorstand)'], ['email', 'E-Mail (Pflicht im Impressum)'], ['phone', 'Telefon (optional)'],
+  ['register', 'Registergericht und Nummer (z. B. Amtsgericht München, VR …)'], ['privacyContact', 'E-Mail für Datenschutzanfragen (optional)'],
+];
+function LegalCard() {
+  const toast = useToast();
+  const [legal, setLegal] = useState(null);
+  useEffect(() => { fetch('/api/legal').then((r) => r.json()).then((d) => setLegal(d.legal)).catch(() => setLegal({})); }, []);
+  const save = async (e) => {
+    e.preventDefault();
+    try { const r = await api.patch('/org', { legal }); if (r) toast.push('Gespeichert', 'success'); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
+  if (!legal) return <Card className="p-4 sm:p-5"><Spinner /></Card>;
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Impressum & Datenschutz" subtitle="Öffentlich sichtbar – leere Felder erscheinen nicht" icon={ShieldCheck} />
+      {!legal.email && <p className="mb-3 rounded-lg bg-status-late/10 px-3 py-2 text-footnote text-ivory">Für das Impressum fehlt noch eine E-Mail-Adresse.</p>}
+      <form onSubmit={save} className="grid gap-3 sm:grid-cols-2">
+        {LEGAL_FIELDS.map(([k, label]) => (
+          <label key={k} className={`block ${['orgName', 'register', 'privacyContact', 'representative'].includes(k) ? 'sm:col-span-2' : ''}`}>
+            <span className="text-footnote font-medium text-sage-muted">{label}</span>
+            <input className="input mt-1" type={['email', 'privacyContact'].includes(k) ? 'email' : 'text'} value={legal[k] || ''} onChange={(e) => setLegal({ ...legal, [k]: e.target.value })} maxLength={200} data-noi18n />
+          </label>
+        ))}
+        <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
+          <Button type="submit">Speichern</Button>
+          <a href="#/impressum" className="text-subhead text-mint-light dark:text-mint hover:underline">Impressum ansehen</a>
+          <a href="#/datenschutz" className="text-subhead text-mint-light dark:text-mint hover:underline">Datenschutzerklärung ansehen</a>
+        </div>
+      </form>
+    </Card>
+  );
+}
+
 function BackupsCard() {
   const toast = useToast();
   const [list, setList] = useState(null);
@@ -1045,6 +1082,7 @@ function SettingsTab() {
 
       {isSuperAdmin && <BackupsCard />}
       {isSuperAdmin && <StorageCard />}
+      {isSuperAdmin && <LegalCard />}
 
       <GradeWeightsCard weights={org.gradeWeights} onChange={(w) => setOrg({ ...org, gradeWeights: w })} onSave={saveWeights} />
     </div>
