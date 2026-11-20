@@ -22,6 +22,29 @@ export function ConsentText({ className = '' }) {
   );
 }
 
+/** Alter in Jahren aus JJJJ-MM-TT (oder null). */
+export function ageFrom(birthDate, now = new Date()) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(birthDate || ''));
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const before = now.getMonth() + 1 < mo || (now.getMonth() + 1 === mo && now.getDate() < d);
+  return now.getFullYear() - y - (before ? 1 : 0);
+}
+export const CONSENT_AGE = 16;
+
+// Zusätzliches Pflicht-Häkchen bei Kindern unter 16 Jahren (Art. 8 DSGVO).
+export function GuardianConsentCheckbox({ checked, onChange, guardianName }) {
+  return (
+    <label className="flex items-start gap-2 rounded-xl border border-status-late/40 bg-status-late/5 p-2.5">
+      <input type="checkbox" className="mt-0.5 shrink-0" checked={checked} onChange={(e) => onChange(e.target.checked)} required />
+      <span className="text-caption leading-snug text-sage">
+        <b className="text-ivory">Unter {CONSENT_AGE} Jahren:</b> Ich bin erziehungsberechtigt bzw. meine Erziehungsberechtigten
+        {guardianName ? <> (<span data-noi18n>{guardianName}</span>)</> : null} sind mit der Anmeldung und der Datenverarbeitung einverstanden.
+      </span>
+    </label>
+  );
+}
+
 // Kleines Pflicht-Häkchen für die Registrierung.
 export function ConsentCheckbox({ checked, onChange }) {
   return (

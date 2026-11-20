@@ -1010,3 +1010,73 @@ test('Sicherung prüfen ohne Wiederherstellen; neue Passwörter mindestens 8 Zei
   assert.match(short.data.error, /8 Zeichen/);
   assert.equal((await admin('POST', '/admin/users', { name: 'Lang PW', email: 'lang@example.org', password: 'abcd1234', role: 'schueler' })).status, 200);
 });
+
+test('Schuljahreswechsel: Vorschau, Kette 1->2->3 ohne Doppelversetzung, Austritt, nur Leitung/Admin', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const k1 = (await admin('POST', '/admin/classes', { name: 'SJ Klasse 1' })).data.class;
+  const k2 = (await admin('POST', '/admin/classes', { name: 'SJ Klasse 2' })).data.class;
+  const k3 = (await admin('POST', '/admin/classes', { name: 'SJ Klasse 3' })).data.class;
+  const kurs = (await admin('POST', '/admin/classes', { name: 'SJ Kurs', kind: 'extra' })).data.class;
+  const mk = async (name, classId) => (await admin('POST', '/admin/users', { name, email: `${name.replace(/\s/g, '').toLowerCase()}@example.org`, password: 'demo1234', role: 'schueler', classIds: [classId] })).data.user.id;
+  const a = await mk('SJ Anna', k1.id);
+  const b = await mk('SJ Bilal', k2.id);
+  const c = await mk('SJ Chadi', k3.id);
+  db.all('users').find((u) => u.id === a).classIds.push(kurs.id);
+
+  const moves = [{ from: k1.id, to: k2.id }, { from: k2.id, to: k3.id }, { from: k3.id, to: 'left' }];
+  assert.equal((await teacher('POST', '/admin/school-year/advance', { moves })).status, 403);
+  assert.equal((await admin('POST', '/admin/school-year/advance', { moves: [{ from: kurs.id, to: k2.id }] })).status, 400, 'Zusatzkurs ist keine Stammklasse');
+  assert.equal((await admin('POST', '/admin/school-year/advance', { moves: [{ from: k1.id, to: k2.id }, { from: k1.id, to: k3.id }] })).status, 400, 'doppelt');
+
+  const pre = (await admin('POST', '/admin/school-year/advance', { moves })).data;
+  assert.equal(pre.dryRun, true);
+  assert.deepEqual(pre.moves.map((m) => [m.fromName, m.action, m.count]), [['SJ Klasse 1', 'move', 1], ['SJ Klasse 2', 'move', 1], ['SJ Klasse 3', 'left', 1]]);
+  assert.deepEqual(db.all('users').find((u) => u.id === a).classIds, [k1.id, kurs.id], 'Vorschau ändert nichts');
+
+  const done = (await admin('POST', '/admin/school-year/advance', { moves, dryRun: false })).data;
+  assert.equal(done.moved, 2);
+  assert.equal(done.left, 1);
+  const cls = (id) => db.all('users').find((u) => u.id === id).classIds;
+  assert.deepEqual(cls(a), [k2.id, kurs.id], 'Anna nur eine Stufe weiter, Kurs bleibt');
+  assert.deepEqual(cls(b), [k3.id], 'Bilal nur eine Stufe weiter');
+  assert.deepEqual(cls(c), [], 'Chadi ausgetreten');
+  const hist = db.all('enrollments').filter((e) => e.studentId === a);
+  assert.equal(hist.find((e) => e.classId === k2.id && !e.to)?.reason, 'promotion');
+});
+
+test('Eltern-Einwilligung: fehlende bei Minderjährigen sichtbar, Leitung trägt sie nach', async () => {
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const y = new Date().getFullYear();
+  db.insert('users', { id: 'user_minor', name: 'Klein Kind', email: 'klein@example.org', role: 'schueler', status: 'active', classIds: [], profile: { birthDate: `${y - 10}-01-01` }, createdAt: new Date().toISOString() });
+  db.insert('users', { id: 'user_adult', name: 'Groß Jung', email: 'gross@example.org', role: 'schueler', status: 'active', classIds: [], profile: { birthDate: `${y - 20}-01-01` }, createdAt: new Date().toISOString() });
+  const list = () => admin('GET', '/admin/users').then((r) => Object.fromEntries(r.data.users.map((u) => [u.id, u.guardianConsentMissing])));
+  let m = await list();
+  assert.equal(m.user_minor, true);
+  assert.equal(m.user_adult, false);
+  assert.equal((await leitung('PATCH', '/admin/users/user_minor', { guardianConsent: true })).status, 200);
+  m = await list();
+  assert.equal(m.user_minor, false);
+  assert.equal(db.all('users').find((u) => u.id === 'user_minor').guardianConsentVia, 'recorded');
+});
+
+test('Schuljahr wählbar: Anwesenheit und Leistungsstand für ein früheres Schuljahr', async () => {
+  const { db } = await import('../store.js');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const y = Number((await (await fetch(`${base}/api/health`)).json()).schoolYear?.slice?.(0, 4)) || (new Date().getMonth() >= 8 ? new Date().getFullYear() : new Date().getFullYear() - 1);
+  const prev = y - 1;
+  db.insert('sessions', { id: 'sess_vj', classId: 'class_3', date: `${prev}-10-04`, status: 'ended' });
+  db.insert('attendance', { id: 'att_vj', sessionId: 'sess_vj', classId: 'class_3', studentId: 'user_amina', status: 'unexcused', updatedAt: new Date().toISOString() });
+  const now = (await teacher('GET', '/classes/class_3/attendance-overview')).data.rows.find((r) => r.id === 'user_amina');
+  const before = (await teacher('GET', `/classes/class_3/attendance-overview?schoolYear=${prev}`)).data;
+  const row = before.rows.find((r) => r.id === 'user_amina');
+  assert.ok(row, 'im Vorjahr dabei');
+  assert.equal(row.unexcused, 1);
+  assert.equal(now.sessions >= 0, true);
+  assert.equal((await teacher('GET', '/classes/class_3/attendance-overview?schoolYear=1990')).status, 400);
+  const st = (await teacher('GET', `/students/user_amina/standing?schoolYear=${prev}`)).data;
+  assert.equal(st.data.attendance.unexcused, 1);
+});

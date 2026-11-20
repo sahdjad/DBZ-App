@@ -7,6 +7,7 @@ import { Plus, ArrowRight, Contact as IdCard, ShieldCheck, KeyRound, Mail, Phone
 import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, Spinner, useToast } from './ui.jsx';
 import { lastSeenLabel } from '../lib/format.js';
+import { ageFrom, CONSENT_AGE } from './Consent.jsx';
 
 export const ROLES = [
   ['schueler', 'Schüler'],
@@ -236,6 +237,12 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
     try { await api.patch(`/admin/users/${u.id}`, { status }); toast.push(status === 'active' ? 'Konto aktiviert' : 'Konto deaktiviert', 'success'); changed(); }
     catch (err) { toast.push(err.message, 'error'); }
   };
+  // Einwilligung der Erziehungsberechtigten nachtragen (z. B. unterschriebenes Formular).
+  const recordConsent = async () => {
+    if (!window.confirm('Liegt die Einwilligung der Erziehungsberechtigten vor (z. B. unterschriebenes Formular)?')) return;
+    try { await api.patch(`/admin/users/${u.id}`, { guardianConsent: true }); toast.push('Einwilligung eingetragen', 'success'); changed(); }
+    catch (err) { toast.push(err.message, 'error'); }
+  };
   const resetPw = async () => {
     if (pw.length < 8) return toast.push('Mindestens 8 Zeichen', 'error');
     try { await api.post(`/admin/users/${u.id}/reset-password`, { newPassword: pw }); toast.push('Passwort zurückgesetzt – bitte der Person mitteilen', 'success'); setPw(''); }
@@ -251,6 +258,13 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
           <Row icon={Mail} label="E-Mail / Anmeldung">{u.email || u.loginEmail}</Row>
           <Row icon={Phone} label="Telefon">{p.phone}</Row>
           <Row icon={Cake} label="Geburtsdatum">{p.birthDate ? `${fmtDate(p.birthDate)}${p.gender ? ` · ${p.gender}` : ''}` : null}</Row>
+          {['schueler', 'klassensprecher'].includes(u.role) && ageFrom(p.birthDate) !== null && ageFrom(p.birthDate) < CONSENT_AGE && (
+            <Row icon={ShieldCheck} label="Einwilligung Eltern">
+              {u.guardianConsentAt
+                ? <span>liegt vor ({fmtDate(u.guardianConsentAt.slice(0, 10))}{u.guardianConsentVia === 'registration' ? ', bei der Anmeldung' : ', nachgetragen'})</span>
+                : <span className="inline-flex flex-wrap items-center gap-2"><Badge tone="late">fehlt</Badge><Button size="sm" variant="outline" onClick={recordConsent}>Liegt vor – eintragen</Button></span>}
+            </Row>
+          )}
           <Row icon={MapPin} label="Adresse">{address}</Row>
           <Row icon={Users} label="Erziehungsberechtigte">{(p.guardians || []).map((g) => `${g.name}${g.phones?.length ? ` (${g.phones.join(' / ')})` : ''}`).join('; ') || (u.parentNames?.length ? u.parentNames.join(', ') : null)}</Row>
           <Row icon={Users} label="Kinder">{u.childNames?.length ? u.childNames.join(', ') : null}</Row>

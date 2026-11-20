@@ -6,6 +6,7 @@ import { api } from '../lib/api.js';
 import { Card, CardHeader, Button, Badge, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { GRADE_OPTIONS, gradeLabel, avgLabel } from '../lib/grades.js';
+import { currentSchoolYear, schoolYearLabel, pastSchoolYears, periodQuery } from '../lib/schoolYear.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 const fmt = (iso) => (iso ? new Date(iso).toLocaleDateString('de-DE', { dateStyle: 'medium' }) : '');
@@ -20,12 +21,14 @@ const subjectName = (subjects, id) => subjects.find((s) => s.id === id)?.name ||
 
 // Monatsauswahl für die Auswertung (Gesamt + letzte 6 Monate).
 function monthOptions() {
-  const opts = [{ value: '', label: 'Gesamter Zeitraum' }];
+  const opts = [{ value: '', label: `Laufendes Schuljahr ${schoolYearLabel(currentSchoolYear())}` }];
   const now = new Date();
   for (let i = 0; i < 6; i++) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     opts.push({ value: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, label: d.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) });
   }
+  // Frühere Schuljahre (nur für Lehrkräfte/Leitung sichtbar, wie die ganze Seite).
+  pastSchoolYears(2).forEach((y) => opts.push({ value: `sy:${y}`, label: `Schuljahr ${schoolYearLabel(y)}` }));
   return opts;
 }
 const MONTHS = monthOptions();
@@ -196,7 +199,7 @@ function ManagerView() {
   const loadReports = () => api.get('/reports').then((d) => setReports(d.reports));
   const loadStanding = (studentId, m = month) => {
     setStanding(null);
-    const q = m ? `?month=${m}` : '';
+    const q = m ? `?${new URLSearchParams(periodQuery(m))}` : '';
     api.get(`/students/${studentId}/standing${q}`).then((d) => setStanding(d.standing)).catch(() => {});
   };
   // Monat gewechselt & Bericht offen -> Leistungsstand für den Monat neu laden.
@@ -334,7 +337,7 @@ function ClassOverview({ periodId, classId, month, onOpen }) {
   const [rows, setRows] = useState(null);
   useEffect(() => {
     if (!periodId) return;
-    const q = new URLSearchParams({ periodId, ...(classId ? { classId } : {}), ...(month ? { month } : {}) });
+    const q = new URLSearchParams({ periodId, ...(classId ? { classId } : {}), ...periodQuery(month) });
     api.get(`/reports/overview?${q}`).then((d) => setRows(d.rows)).catch(() => setRows([]));
   }, [periodId, classId, month]);
 

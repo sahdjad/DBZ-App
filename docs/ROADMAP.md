@@ -70,7 +70,7 @@ kleine Textlinks in Tabellen (aktuell 32 px).
   sich in den Einstellungen wieder einschalten (nur Administrator).
 - ✅ Nutzerliste: Auswahl erst über „Auswählen“, kein Alle-Auswählen-Kasten; Löschen nur für vorher deaktivierte
   Personen und mit eingetipptem „LÖSCHEN“ (auch auf dem Server erzwungen).
-- ⬜ Prüfungen mit Zeitfenster; Eltern-Sicht auf Übungsverläufe; Mindestlänge für Passwörter über 6 Zeichen
+- ⬜ Prüfungen mit Zeitfenster; Eltern-Sicht auf Übungsverläufe · ✅ neue Passwörter mind. 8 Zeichen (20.11.2026)
 
 ## Struktur für die ganze Schule (begonnen am 15.11.2026)
 
@@ -108,6 +108,11 @@ Einstieg mitten im Jahr, eine Person mit mehreren Rollen.
   Bestätigung, Sicherung, 30 Tage Löschliste) für den Systemadministrator. Frist einschalten: Einstellungen.
 - ✅ **Schülernummer und Ausweis (16.11.2026):** feste Nummer `DBZ-<Einstiegsjahr>-<lfd. Nr.>`, digitaler
   Schülerausweis im Konto mit QR-Code; öffentliche Prüfseite zeigt nur gültig/ungültig, Kurzname, Nummer, Schuljahr.
+- ✅ **Schuljahreswechsel-Assistent (20.11.2026):** alle Stammklassen auf einmal versetzen (Ziel je Klasse oder
+  Austritt), Vorschau mit Namen, Sicherung vorher, Klassenverlauf mit Grund „Aufstieg“.
+- ✅ **Eltern-Einwilligung:** Anmeldung unter 16 Jahren nur mit Zustimmung der Erziehungsberechtigten; fehlende
+  Einwilligungen in der Nutzerliste sichtbar, Leitung trägt sie nach (z. B. Papierformular).
+- ✅ **Schuljahr wählbar:** Anwesenheitsübersicht und Berichte auch für die zwei vorigen Schuljahre.
 - ⬜ **Kostenloser Zusatzspeicher** (offen): Supabase Free hat 1 GB Dateispeicher; Alternativen mit größerem
   Gratis-Kontingent prüfen, bevor die Grenze erreicht ist.
 - ✅ Entschieden (16.11.2026): Aufnahmen dürfen nach der Bewertung weg; die Frist stellt der Administrator ein.

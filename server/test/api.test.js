@@ -1449,8 +1449,14 @@ test('Einladung: erstellen, prüfen, registrieren; Rolle/Klasse aus Einladung', 
     ],
   };
   const reg = client();
-  const r = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1', ...profile });
+  // Unter 16: ohne Zustimmung der Erziehungsberechtigten keine Anmeldung.
+  const noConsent = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1', ...profile });
+  assert.equal(noConsent.status, 400);
+  assert.match(noConsent.data.error, /Erziehungsberechtigter/);
+  const r = await reg('POST', '/auth/register', { token, name: 'Neuer Schüler', email: 'neu@dbz.de', password: 'passwort1', ...profile, guardianConsent: true });
   assert.equal(r.status, 200);
+  assert.ok(r.data.user.guardianConsentAt, 'Zustimmung festgehalten');
+  assert.equal(r.data.user.guardianConsentBy, 'Mama Muster');
   assert.equal(r.data.user.role, 'schueler');
   assert.deepEqual(r.data.user.classIds, ['class_3']);
   assert.equal(r.data.user.profile.city, 'Musterstadt');
@@ -1492,7 +1498,7 @@ test('Offene Registrierung ohne Klasse: pending -> Leitung beantragt Zuweisung -
     guardians: [{ name: 'Mama Muster', phones: ['0170654321'], email: 'mama@muster.de' }],
   };
   const reg = client();
-  const r = await reg('POST', '/auth/register-open', { name: 'Wartender Schüler', email: 'wartend@dbz.de', password: 'passwort1', ...profile });
+  const r = await reg('POST', '/auth/register-open', { name: 'Wartender Schüler', email: 'wartend@dbz.de', password: 'passwort1', ...profile, guardianConsent: true });
   assert.equal(r.status, 200);
   assert.equal(r.data.ok, true);
 
