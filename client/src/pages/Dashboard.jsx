@@ -16,6 +16,7 @@ import {
   CheckCircle2,
   ChevronRight,
   UserRoundCog,
+  Sparkles,
 } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api, peek } from '../lib/api.js';
@@ -135,6 +136,60 @@ function StudentHome({ d, rep = false }) {
 }
 
 // --- Lehrkraft ----------------------------------------------------------------
+// Vorschläge (Assistent, Phase 0 – ohne KI): fehlende Anwesenheit an erfassten
+// Tagen der letzten drei Wochen; ein Tipp trägt ein (rücknehmbar unter Unterricht).
+const fmtDay = (d) => new Date(`${d}T12:00:00`).toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'numeric' });
+function Suggestions() {
+  const toast = useToast();
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const load = () => api.get('/assistant/suggestions').then((d) => setList(d.suggestions)).catch(() => setList([]));
+  useEffect(() => { load(); }, []);
+  if (!list || !list.length) return null;
+  const apply = async (s) => {
+    setBusy(s.classId);
+    try {
+      const r = await api.post(`/classes/${s.classId}/backfill`, { from: s.from, to: s.to, dates: s.dates, dryRun: false });
+      toast.push(`${r.entries} Einträge übernommen – rücknehmbar unter Unterricht → „Viele Tage auf einmal nachtragen“`, 'success');
+      load();
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(null); }
+  };
+  return (
+    <Section title="Vorschläge" footer="Entschuldigt, wer sich abgemeldet hat; sonst fehlend. Nur Tage, an denen schon jemand erfasst ist.">
+      <div className="space-y-3">
+        {list.map((s) => (
+          <Card key={s.classId} className="p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid place-items-center h-9 w-9 shrink-0 rounded-full bg-mint/10 text-mint-light dark:text-mint"><Sparkles size={18} /></span>
+              <div className="min-w-0 flex-1">
+                <div className="text-body font-semibold text-ivory">Anwesenheit vervollständigen · <span data-noi18n>{s.className}</span></div>
+                <ul className="mt-1 space-y-0.5 text-footnote text-sage-muted">
+                  {s.days.slice(0, 4).map((d) => (
+                    <li key={d.date}>
+                      <span className="text-sage">{fmtDay(d.date)}:</span>{' '}
+                      {d.counts.unexcused > 0 && <span>{d.counts.unexcused} fehlend</span>}
+                      {d.counts.unexcused > 0 && (d.counts.excused + d.counts.leftEarly + d.counts.present) > 0 && ', '}
+                      {d.counts.excused > 0 && <span>{d.counts.excused} entschuldigt</span>}
+                      {d.counts.leftEarly > 0 && <span>{d.counts.excused ? ', ' : ''}{d.counts.leftEarly} früher gegangen</span>}
+                      {d.counts.present > 0 && <span>{d.counts.excused || d.counts.leftEarly ? ', ' : ''}{d.counts.present} da</span>}
+                      {' '}<span className="text-sage-muted/80" data-noi18n>({d.names.join(', ')})</span>
+                    </li>
+                  ))}
+                  {s.days.length > 4 && <li>… und {s.days.length - 4} weitere Tage</li>}
+                </ul>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={() => apply(s)} loading={busy === s.classId}>Übernehmen</Button>
+                  <Button size="sm" variant="ghost" as={Link} to="/unterricht">Ansehen</Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
 function TeacherHome({ d }) {
   const p = d.pending;
   const todo = [
@@ -167,6 +222,8 @@ function TeacherHome({ d }) {
           </ListGroup>
         )}
       </Section>
+
+      <Suggestions />
 
       <Section title="Zu erledigen" footer={openCount === 0 ? 'Alles erledigt – nichts wartet auf dich.' : null}>
         <ListGroup>

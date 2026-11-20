@@ -1080,3 +1080,30 @@ test('Schuljahr wählbar: Anwesenheit und Leistungsstand für ein früheres Schu
   const st = (await teacher('GET', `/students/user_amina/standing?schoolYear=${prev}`)).data;
   assert.equal(st.data.attendance.unexcused, 1);
 });
+
+test('Vorschläge: Anwesenheit vervollständigen erscheint für die Lehrkraft, Übernehmen trägt ein, danach weg', async () => {
+  const { db } = await import('../store.js');
+  const teacher = await loginAs('lehrer@dbz.de');
+  const student = await loginAs('schueler@dbz.de');
+  const d = new Date(Date.now() - 3 * 86400000);
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const sess = (await teacher('POST', '/classes/class_3/days', { date: day })).data.session;
+  // Bisher nur Yusuf eingetragen; Amina gehört laut Klassenverlauf seit Langem dazu und fehlt.
+  db.all('attendance').filter((a) => a.sessionId === sess.id).forEach((a) => { a.status = 'present'; });
+  if (!db.all('attendance').some((a) => a.sessionId === sess.id && a.studentId === 'user_yusuf'))
+    db.insert('attendance', { id: 'att_sg_y', sessionId: sess.id, classId: 'class_3', studentId: 'user_yusuf', status: 'present', source: 'checkin', updatedAt: new Date().toISOString() });
+  db.all('attendance').filter((a) => a.sessionId === sess.id && a.studentId === 'user_amina').forEach((a) => db.all('attendance').splice(db.all('attendance').indexOf(a), 1));
+  db.insert('enrollments', { id: 'enr_sg_amina', studentId: 'user_amina', classId: 'class_3', from: '2020-09-01', to: null, reason: 'start', by: null });
+
+  assert.deepEqual((await student('GET', '/assistant/suggestions')).data.suggestions, [], 'Schüler bekommen keine Vorschläge');
+  const sg = (await teacher('GET', '/assistant/suggestions')).data.suggestions.find((x) => x.classId === 'class_3');
+  assert.ok(sg, 'Vorschlag für Klasse 3');
+  const dayRow = sg.days.find((x) => x.date === day);
+  assert.ok(dayRow && dayRow.names.includes('Amina'));
+  // Übernehmen über den Nachtrag (mit genau diesen Tagen).
+  const r = await teacher('POST', '/classes/class_3/backfill', { from: sg.from, to: sg.to, dates: sg.dates, dryRun: false });
+  assert.equal(r.status, 200);
+  assert.equal(db.all('attendance').find((a) => a.sessionId === sess.id && a.studentId === 'user_amina')?.status, 'unexcused');
+  const after = (await teacher('GET', '/assistant/suggestions')).data.suggestions.find((x) => x.classId === 'class_3');
+  assert.ok(!after || !after.days.some((x) => x.date === day), 'nach dem Übernehmen kein Vorschlag mehr für den Tag');
+});

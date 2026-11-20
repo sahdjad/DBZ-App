@@ -1,6 +1,10 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Vorschläge": "Suggestions",
+"Entschuldigt, wer sich abgemeldet hat; sonst fehlend. Nur Tage, an denen schon jemand erfasst ist.": "Excusé si une absence a été signalée ; sinon absent. Uniquement les jours où quelqu'un a déjà été saisi.",
+"Anwesenheit vervollständigen ·": "Compléter les présences ·",
+"Ansehen": "Voir",
 "(laufend)": "(en cours)",
 "Einwilligung Eltern fehlt": "Consentement parental manquant",
 "Einwilligung Eltern": "Consentement parental",
@@ -2403,6 +2407,10 @@
 "Audio": "Audio"
 },
 "patterns": [
+["{} Einträge übernommen – rücknehmbar unter Unterricht → „Viele Tage auf einmal nachtragen“", "{1} saisies appliquées – annulable sous Cours → « Compléter plusieurs jours d'un coup »"],
+["{} fehlend", "{1} absent(s)"],
+["{} entschuldigt", "{1} excusé(s)"],
+["… und {} weitere Tage", "… et {1} autres jours"],
 ["Laufendes Schuljahr {}", "Année scolaire en cours {1}"],
 ["Schuljahr {}", "Année scolaire {1}"],
 ["Schuljahr {} (laufend)", "Année scolaire {1} (en cours)"],
