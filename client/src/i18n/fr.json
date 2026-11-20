@@ -1,6 +1,19 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Sicherung ist in Ordnung": "La sauvegarde est correcte",
+"Sicherung ist unvollständig": "La sauvegarde est incomplète",
+"Konten": "Comptes",
+"Unterrichtstage": "Jours de cours",
+"Keine Nutzer enthalten": "Aucun utilisateur",
+"Kein Administrator-Konto enthalten": "Aucun compte administrateur",
+"Keine Organisation enthalten": "Aucune organisation",
+"Ausweis drucken": "Imprimer la carte",
+"Das neue Passwort muss mindestens 8 Zeichen lang sein": "Le nouveau mot de passe doit contenir au moins 8 caractères",
+"Das Passwort muss mindestens 8 Zeichen lang sein": "Le mot de passe doit contenir au moins 8 caractères",
+"Neues Passwort (mind. 8 Zeichen)": "Nouveau mot de passe (min. 8 caractères)",
+"Passwort (mind. 8 Zeichen)": "Mot de passe (min. 8 caractères)",
+"Mindestens 8 Zeichen": "Au moins 8 caractères",
 "Impressum": "Mentions légales",
 "Datenschutz": "Confidentialité",
 "Datenschutzerklärung": "Politique de confidentialité",
@@ -2373,6 +2386,7 @@
 "Audio": "Audio"
 },
 "patterns": [
+["{}: {} (heute {})", "{1} : {2} (aujourd'hui {3})"],
 ["{} in {} Dateien", "{1} dans {2} fichiers"],
 ["{} Aufnahme(n) entfernt ({})", "{1} enregistrement(s) supprimé(s) ({2})"],
 ["angemeldet am {}", "inscrit le {1}"],

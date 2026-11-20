@@ -82,6 +82,8 @@ function revokeSessions(user) {
 }
 const sha256 = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
 
+// Neue Passwörter: mindestens 8 Zeichen (bestehende kürzere bleiben gültig).
+const MIN_PASSWORD = 8;
 const router = express.Router();
 
 // --- Robustheit ---------------------------------------------------------------
@@ -775,8 +777,8 @@ router.patch('/me/password', requireAuth, async (req, res) => {
   const target = req.user.email ? req.user : (personAccounts(req.user).find((a) => a.email) || req.user);
   if (!target.passwordHash || !(await verifyPassword(currentPassword || '', target.passwordHash)))
     return res.status(400).json({ error: 'Aktuelles Passwort ist falsch' });
-  if (!newPassword || newPassword.length < 6)
-    return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
+  if (!newPassword || newPassword.length < MIN_PASSWORD)
+    return res.status(400).json({ error: `Das neue Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   target.passwordHash = await hashPassword(newPassword);
   // Alle anderen Geräte abmelden; dieses Gerät bekommt ein frisches Token.
   revokeSessions(target);
@@ -923,7 +925,7 @@ router.post('/auth/register', async (req, res) => {
   if (!v.ok) return res.status(400).json({ error: `Einladung ${v.reason}. Bitte neuen Einladungslink anfordern.` });
   if (!name || !name.trim() || !email || !email.trim() || !password)
     return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich' });
-  if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
+  if (password.length < MIN_PASSWORD) return res.status(400).json({ error: `Das Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
   const pr = buildProfile(req.body || {}, PROFILE_REQUIRED_ROLES.includes(inv.intendedRole));
   if (pr.error) return res.status(400).json({ error: pr.error });
@@ -958,7 +960,7 @@ router.post('/auth/register-open', async (req, res) => {
   const { name, email, password } = req.body || {};
   if (!name || !name.trim() || !email || !email.trim() || !password)
     return res.status(400).json({ error: 'Name, E-Mail und Passwort sind erforderlich' });
-  if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
+  if (password.length < MIN_PASSWORD) return res.status(400).json({ error: `Das Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
   const pr = buildProfile(req.body || {}, true);
   if (pr.error) return res.status(400).json({ error: pr.error });
@@ -1035,8 +1037,8 @@ router.post('/auth/reset-password', async (req, res) => {
   const pr = db.all('password_resets').find((p) => p.tokenHash === sha256(token || ''));
   if (!pr || pr.used || new Date(pr.expiresAt).getTime() < Date.now())
     return res.status(400).json({ error: 'Link ungültig oder abgelaufen. Bitte neu anfordern.' });
-  if (!newPassword || newPassword.length < 6)
-    return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
+  if (!newPassword || newPassword.length < MIN_PASSWORD)
+    return res.status(400).json({ error: `Das neue Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   const user = findUserById(pr.userId);
   if (!user) return res.status(400).json({ error: 'Konto nicht gefunden' });
   user.passwordHash = await hashPassword(newPassword);
@@ -7729,7 +7731,7 @@ router.get('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES
 router.post('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
   const { name, email, password, role, classIds, childIds } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ error: 'Name, E-Mail, Passwort erforderlich' });
-  if (password.length < 6) return res.status(400).json({ error: 'Das Passwort muss mindestens 6 Zeichen lang sein' });
+  if (password.length < MIN_PASSWORD) return res.status(400).json({ error: `Das Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   const validUntil = parseValidUntil(req.body?.validUntil);
   if (validUntil === false) return res.status(400).json({ error: 'Ungültiges Enddatum' });
   if (!ALL_ROLES.includes(role)) return res.status(400).json({ error: 'Ungültige Rolle' });
@@ -8135,6 +8137,22 @@ router.post('/admin/backups', requireAuth, requireRole(ROLES.SUPER_ADMIN), async
 
 // Stand einer Sicherung wieder einspielen. Der aktuelle Stand wird vorher
 // selbst gesichert, die Wiederherstellung lässt sich also zurücknehmen.
+// Sicherung prüfen, OHNE wiederherzustellen: lässt sie sich öffnen, ist sie
+// vollständig, und wie viel steckt darin (im Vergleich zum heutigen Stand)?
+const VERIFY_COLLECTIONS = ['users', 'classes', 'sessions', 'attendance', 'assignments', 'submissions', 'messages', 'enrollments'];
+router.post('/admin/backups/:name/verify', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (req, res) => {
+  let data;
+  try { data = await loadBackup(req.params.name); } catch (err) { return res.json({ ok: false, problem: `Lässt sich nicht öffnen: ${err.message}` }); }
+  if (!data) return res.status(404).json({ error: 'Sicherung nicht gefunden' });
+  const problems = [];
+  if (!Array.isArray(data.users) || !data.users.length) problems.push('Keine Nutzer enthalten');
+  if (!data.users?.some((u) => u.role === ROLES.SUPER_ADMIN)) problems.push('Kein Administrator-Konto enthalten');
+  if (!Array.isArray(data.organizations) || !data.organizations.length) problems.push('Keine Organisation enthalten');
+  const counts = VERIFY_COLLECTIONS.map((k) => ({ key: k, backup: Array.isArray(data[k]) ? data[k].length : 0, now: db.all(k).length }));
+  audit(req.user.id, 'backup.verify', 'organization', org()?.id, null, { name: req.params.name, ok: !problems.length });
+  res.json({ ok: !problems.length, problems, counts });
+});
+
 router.post('/admin/backups/:name/restore', requireAuth, requireRole(ROLES.SUPER_ADMIN), async (req, res) => {
   if (inSandbox()) return res.status(403).json({ error: 'Im Demo-Modus nicht möglich' });
   if (req.body?.confirm !== 'WIEDERHERSTELLEN') return res.status(400).json({ error: 'Zur Bestätigung bitte WIEDERHERSTELLEN eingeben' });
@@ -8156,8 +8174,8 @@ router.post('/admin/users/:id/reset-password', requireAuth, requireRole(ROLES.SU
   if (u.role === ROLES.SUPER_ADMIN && req.user.role !== ROLES.SUPER_ADMIN)
     return res.status(403).json({ error: 'Nur der System-Administrator darf dieses Passwort zurücksetzen' });
   const { newPassword } = req.body || {};
-  if (!newPassword || newPassword.length < 6)
-    return res.status(400).json({ error: 'Das neue Passwort muss mindestens 6 Zeichen lang sein' });
+  if (!newPassword || newPassword.length < MIN_PASSWORD)
+    return res.status(400).json({ error: `Das neue Passwort muss mindestens ${MIN_PASSWORD} Zeichen lang sein` });
   u.passwordHash = await hashPassword(newPassword);
   revokeSessions(u);
   audit(req.user.id, 'user.reset_password', 'user', u.id);

@@ -3,11 +3,20 @@
 // zeigt nur gültig/ungültig, Kurzname, Nummer und Schuljahr).
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { BadgeCheck, XCircle } from 'lucide-react';
+import { BadgeCheck, XCircle, Printer } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
-import { Spinner } from '../components/ui.jsx';
+import { Spinner, Button } from '../components/ui.jsx';
 import { QrImage } from '../components/QrCode.jsx';
+
+// Nur die Ausweis-Karte drucken (siehe @media print in index.css).
+function printPass() {
+  document.body.classList.add('print-pass');
+  const done = () => { document.body.classList.remove('print-pass'); window.removeEventListener('afterprint', done); };
+  window.addEventListener('afterprint', done);
+  window.print();
+  setTimeout(done, 60000); // Sicherheitsnetz, falls „afterprint“ ausbleibt
+}
 
 export default function Ausweis() {
   const [pass, setPass] = useState(null);
@@ -20,7 +29,8 @@ export default function Ausweis() {
         {error && <p className="text-sm text-sage-muted text-center py-10">{error}</p>}
         {!pass && !error && <Spinner />}
         {pass && (
-          <div className="rounded-3xl overflow-hidden shadow-card border border-line/70 bg-card">
+          <>
+          <div id="pass-card" className="rounded-3xl overflow-hidden shadow-card border border-line/70 bg-card">
             <div className="bg-[#063a2e] text-white px-5 pt-5 pb-4 flex items-center gap-3">
               <img src="/logo.png" alt="" className="h-11 w-11 rounded-xl bg-white/90 p-1" />
               <div className="min-w-0">
@@ -57,6 +67,10 @@ export default function Ausweis() {
               </div>
             </div>
           </div>
+          <div className="mt-4 flex justify-center no-print">
+            <Button variant="outline" onClick={printPass}><Printer size={17} /> Ausweis drucken</Button>
+          </div>
+          </>
         )}
       </div>
     </AppLayout>

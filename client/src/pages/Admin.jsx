@@ -960,6 +960,7 @@ function LegalCard() {
 }
 
 function BackupsCard() {
+  const [checked, setChecked] = useState(null);
   const toast = useToast();
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -980,9 +981,29 @@ function BackupsCard() {
       window.location.reload();
     } catch (err) { toast.push(err.message, 'error'); setBusy(false); }
   };
+  // Probe ohne Risiko: Sicherung öffnen und zählen, nichts wird verändert.
+  const verify = async (b) => {
+    setBusy(true);
+    try {
+      const r = await api.post(`/admin/backups/${encodeURIComponent(b.name)}/verify`);
+      setChecked({ name: b.name, ...r });
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
   return (
     <Card className="p-4 sm:p-5">
       <CardHeader title="Datensicherung" subtitle="Täglich automatisch, zusätzlich vor jeder Massenlöschung" icon={RotateCcw} />
+      {checked && (
+        <div className={`mb-3 rounded-xl px-3 py-2.5 text-sm ${checked.ok ? 'bg-status-present/10' : 'bg-status-absent/10'}`} role="status">
+          <div className="font-medium text-ivory">{checked.ok ? 'Sicherung ist in Ordnung' : 'Sicherung ist unvollständig'} <span className="font-normal text-sage-muted">({backupLabel({ name: checked.name })})</span></div>
+          {checked.problem && <div className="text-sage">{checked.problem}</div>}
+          {(checked.problems || []).map((p) => <div key={p} className="text-sage">{p}</div>)}
+          {checked.counts && (
+            <div className="mt-1.5 grid grid-cols-2 gap-x-4 text-caption text-sage-muted">
+              {checked.counts.map((c) => <span key={c.key}>{COUNT_LABEL[c.key] || c.key}: <span className="font-mono text-ivory">{c.backup}</span> (heute {c.now})</span>)}
+            </div>
+          )}
+        </div>
+      )}
       <div className="flex gap-2 flex-wrap mb-3">
         <Button type="button" onClick={create} disabled={busy}>Jetzt sichern</Button>
         <Button as="a" href="/api/admin/backup.json" variant="outline" type="button"><Download size={18} /> Abzug herunterladen</Button>
@@ -997,7 +1018,10 @@ function BackupsCard() {
                 <span className="block truncate">{backupLabel(b)}</span>
                 <span className="block text-xs text-sage-muted">{b.kind === 'daily' ? 'Täglich' : 'Vor einer Änderung'}{b.size ? ` · ${Math.max(1, Math.round(b.size / 1024))} KB` : ''}</span>
               </span>
-              <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => restore(b)}>Wiederherstellen</Button>
+              <span className="flex gap-1.5 shrink-0">
+                <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => verify(b)}>Prüfen</Button>
+                <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => restore(b)}>Wiederherstellen</Button>
+              </span>
             </li>
           ))}
         </ul>
@@ -1006,6 +1030,7 @@ function BackupsCard() {
     </Card>
   );
 }
+const COUNT_LABEL = { users: 'Konten', classes: 'Klassen', sessions: 'Unterrichtstage', attendance: 'Anwesenheit', assignments: 'Hausaufgaben', submissions: 'Abgaben', messages: 'Nachrichten', enrollments: 'Klassenverlauf' };
 function backupLabel(b) {
   const m = /^(?:daily|event)-(\d{4})-(\d{2})-(\d{2})(?:T(\d{2})-(\d{2}))?/.exec(b.name);
   if (!m) return b.name;

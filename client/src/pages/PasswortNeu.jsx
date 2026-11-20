@@ -56,8 +56,8 @@ export default function PasswortNeu() {
         {state === 'valid' && (
           <form onSubmit={submit} className="space-y-4">
             <label className="block">
-              <span className="text-sm text-sage">Neues Passwort (mind. 6 Zeichen)</span>
-              <input type="password" autoComplete="new-password" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} />
+              <span className="text-sm text-sage">Neues Passwort (mind. 8 Zeichen)</span>
+              <input type="password" autoComplete="new-password" className="input mt-1" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={8} />
             </label>
             <Button type="submit" size="lg" className="w-full" disabled={busy}><KeyRound size={18} /> {busy ? 'Speichern …' : 'Passwort setzen'}</Button>
           </form>
