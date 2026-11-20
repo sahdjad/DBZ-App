@@ -289,8 +289,8 @@ export default function Registrieren() {
                     <input type="email" autoComplete="username" className="input mt-1" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                   </label>
                   <label className="block">
-                    <span className="text-sm text-sage">Passwort (mind. 6 Zeichen)</span>
-                    <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} />
+                    <span className="text-sm text-sage">Passwort (mind. 8 Zeichen)</span>
+                    <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
                   </label>
                   <ProfileFields profile={profile} setProfile={setProfile} />
                   <ConsentCheckbox checked={consent} onChange={setConsent} />
@@ -334,8 +334,8 @@ export default function Registrieren() {
                       <input type="email" autoComplete="username" className="input mt-1" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
                     </label>
                     <label className="block">
-                      <span className="text-sm text-sage">Passwort (mind. 6 Zeichen)</span>
-                      <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={6} />
+                      <span className="text-sm text-sage">Passwort (mind. 8 Zeichen)</span>
+                      <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
                     </label>
                     {showsProfileFields && (
                       <ProfileFields profile={profile} setProfile={setProfile} />

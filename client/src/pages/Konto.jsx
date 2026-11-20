@@ -504,8 +504,8 @@ function PasswordCard() {
           <input type="password" autoComplete="current-password" className="input mt-1" value={current} onChange={(e) => setCurrent(e.target.value)} required />
         </label>
         <label className="block">
-          <span className="text-sm text-sage">Neues Passwort (mind. 6 Zeichen)</span>
-          <input type="password" autoComplete="new-password" className="input mt-1" value={next} onChange={(e) => setNext(e.target.value)} required minLength={6} />
+          <span className="text-sm text-sage">Neues Passwort (mind. 8 Zeichen)</span>
+          <input type="password" autoComplete="new-password" className="input mt-1" value={next} onChange={(e) => setNext(e.target.value)} required minLength={8} />
         </label>
         <Button type="submit" disabled={busy}><KeyRound size={18} /> Passwort ändern</Button>
       </form>

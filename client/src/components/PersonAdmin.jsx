@@ -237,7 +237,7 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
     catch (err) { toast.push(err.message, 'error'); }
   };
   const resetPw = async () => {
-    if (pw.length < 6) return toast.push('Mindestens 6 Zeichen', 'error');
+    if (pw.length < 8) return toast.push('Mindestens 8 Zeichen', 'error');
     try { await api.post(`/admin/users/${u.id}/reset-password`, { newPassword: pw }); toast.push('Passwort zurückgesetzt – bitte der Person mitteilen', 'success'); setPw(''); }
     catch (err) { toast.push(err.message, 'error'); }
   };
@@ -306,7 +306,7 @@ export function PersonAdminPanel({ userId, viewer, onChanged }) {
             <div>
               <div className="text-sm text-sage mb-1">Passwort zurücksetzen</div>
               <div className="flex gap-2">
-                <input type="text" className="input" placeholder="Neues Passwort (mind. 6 Zeichen)" value={pw} onChange={(e) => setPw(e.target.value)} />
+                <input type="text" className="input" placeholder="Neues Passwort (mind. 8 Zeichen)" value={pw} onChange={(e) => setPw(e.target.value)} />
                 <Button variant="outline" onClick={resetPw}>Setzen</Button>
               </div>
             </div>

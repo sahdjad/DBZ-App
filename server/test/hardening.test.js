@@ -989,3 +989,24 @@ test('Impressum-Angaben: öffentlich lesbar, nur der Administrator ändert sie',
   assert.equal(after.street, 'Am Moosfeld 11', 'andere Angaben bleiben');
   assert.equal((await admin('GET', '/org')).status, 200);
 });
+
+test('Sicherung prüfen ohne Wiederherstellen; neue Passwörter mindestens 8 Zeichen', async () => {
+  const { backupNow, listBackups } = await import('../backup.js');
+  const { db } = await import('../store.js');
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  await backupNow('event', 'pruefung');
+  const name = (await listBackups())[0].name;
+  const usersBefore = db.all('users').length;
+  assert.equal((await leitung('POST', `/admin/backups/${name}/verify`)).status, 403);
+  const v = (await admin('POST', `/admin/backups/${name}/verify`)).data;
+  assert.equal(v.ok, true);
+  assert.ok(v.counts.find((c) => c.key === 'users').backup > 0);
+  assert.equal(db.all('users').length, usersBefore, 'nichts verändert');
+  assert.equal((await admin('POST', '/admin/backups/gibt-es-nicht.json.gz/verify')).status, 404);
+
+  const short = await admin('POST', '/admin/users', { name: 'Kurz PW', email: 'kurz@example.org', password: 'abc1234', role: 'schueler' });
+  assert.equal(short.status, 400);
+  assert.match(short.data.error, /8 Zeichen/);
+  assert.equal((await admin('POST', '/admin/users', { name: 'Lang PW', email: 'lang@example.org', password: 'abcd1234', role: 'schueler' })).status, 200);
+});

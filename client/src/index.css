@@ -538,6 +538,24 @@ html {
   .no-print {
     display: none !important;
   }
+  /* Schülerausweis: nur die Karte drucken (Scheckkarten-Breite). */
+  body.print-pass * {
+    visibility: hidden !important;
+  }
+  body.print-pass #pass-card,
+  body.print-pass #pass-card * {
+    visibility: visible !important;
+  }
+  body.print-pass #pass-card {
+    position: absolute !important;
+    left: 10mm !important;
+    top: 10mm !important;
+    width: 86mm !important;
+    box-shadow: none !important;
+    border: 0.3mm solid #999 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
   html,
   body {
     background: #ffffff !important;
