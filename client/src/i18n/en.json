@@ -1,6 +1,10 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Vorschläge": "Suggestions",
+"Entschuldigt, wer sich abgemeldet hat; sonst fehlend. Nur Tage, an denen schon jemand erfasst ist.": "Excused if they reported an absence; otherwise absent. Only days where someone has already been recorded.",
+"Anwesenheit vervollständigen ·": "Complete attendance ·",
+"Ansehen": "View",
 "(laufend)": "(current)",
 "Einwilligung Eltern fehlt": "Parental consent missing",
 "Einwilligung Eltern": "Parental consent",
@@ -2402,6 +2406,10 @@
 "Weiße Tage": "White Days"
 },
 "patterns": [
+["{} Einträge übernommen – rücknehmbar unter Unterricht → „Viele Tage auf einmal nachtragen“", "{1} entries applied – can be undone under Lessons → “Fill in many days at once”"],
+["{} fehlend", "{1} absent"],
+["{} entschuldigt", "{1} excused"],
+["… und {} weitere Tage", "… and {1} more days"],
 ["Laufendes Schuljahr {}", "Current school year {1}"],
 ["Schuljahr {}", "School year {1}"],
 ["Schuljahr {} (laufend)", "School year {1} (current)"],

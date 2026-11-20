@@ -1573,12 +1573,17 @@ router.post('/classes/:id/backfill', requireAuth, requireRole(CLASS_MANAGERS), a
     if (err) return res.status(400).json({ error: err });
   }
   if (from > to) return res.status(400).json({ error: 'Der Beginn liegt nach dem Ende' });
-  if (to >= todayKey()) return res.status(400).json({ error: 'Heute wird live erfasst – nachtragen bis gestern' });
+  // Heute nur, wenn der Unterricht schon vorbei ist (sonst läuft die Live-Erfassung).
+  const todaySess = db.all('sessions').find((x) => x.classId === klass.id && x.date === todayKey());
+  const todayOver = Boolean(todaySess && (todaySess.status === 'ended' || new Date(todaySess.scheduledEnd).getTime() < Date.now()));
+  if (to > todayKey() || (to === todayKey() && !todayOver)) return res.status(400).json({ error: 'Heute wird live erfasst – nachtragen bis gestern' });
   let dates = lessonDates(klass, from, to);
-  // Auswahl einzelner Tage (z. B. Ferien abwählen).
+  // Auswahl einzelner Tage (z. B. Ferien abwählen). Vorhandene Unterrichtstage an
+  // anderen Wochentagen (z. B. Sondertermin) dürfen ausdrücklich dazugenommen werden.
   if (Array.isArray(b.dates)) {
-    const wanted = new Set(b.dates.map(String));
-    dates = dates.filter((d) => wanted.has(d));
+    const wanted = new Set(b.dates.map(String).slice(0, 400));
+    const held = new Set(db.all('sessions').filter((x) => x.classId === klass.id && x.date >= from && x.date <= to).map((x) => x.date));
+    dates = [...new Set([...dates, ...held])].filter((d) => wanted.has(d)).sort();
   }
   const opts = { unexcused: b.unexcused !== false, pendingAsExcused: b.pendingAsExcused === true };
   const plan = planBackfill(klass, dates, opts);
@@ -1623,6 +1628,35 @@ router.get('/classes/:id/backfill', requireAuth, requireRole(CLASS_MANAGERS), (r
   if (!canBackfill(req.user, klass)) return res.status(403).json({ error: 'Kein Zugriff' });
   res.json({ backfills: [...(klass.backfills || [])].reverse(), canBackfill: true, weekday: Number.isInteger(klass.weekday) ? klass.weekday : 6 });
 });
+// --- Vorschläge für Lehrkräfte (Phase 0 des Assistenten, ohne KI) ------------
+// „Anwesenheit vervollständigen“: an erfassten Unterrichtstagen der letzten drei
+// Wochen fehlen Einträge -> mit Abmeldung entschuldigt, sonst unentschuldigt.
+// Übernommen wird über den Nachtrag oben (Sicherung, rücknehmbar).
+const SUGGEST_DAYS = 21;
+router.get('/assistant/suggestions', requireAuth, (req, res) => {
+  const u = req.user;
+  const classes = db.all('classes').filter((c) => canDecideForClass(u, c.id) || (isAdmin(u) && (u.classIds || []).includes(c.id)));
+  const today = todayKey();
+  const from = localDateKey(new Date(Date.now() - SUGGEST_DAYS * 86400000));
+  const out = [];
+  for (const klass of classes) {
+    const dates = db.all('sessions')
+      .filter((x) => x.classId === klass.id && x.date >= from && x.date <= today
+        && (x.date < today || x.status === 'ended' || new Date(x.scheduledEnd).getTime() < Date.now()))
+      .map((x) => x.date);
+    if (!dates.length) continue;
+    const days = planBackfill(klass, [...new Set(dates)].sort(), { unexcused: true })
+      .filter((d) => d.taken && d.add.length)
+      .map((d) => ({ date: d.date, counts: d.counts, names: d.add.map((a) => findUserById(a.studentId)?.name).filter(Boolean) }));
+    if (!days.length) continue;
+    out.push({
+      kind: 'attendance', classId: klass.id, className: klass.name, from: days[0].date, to: days[days.length - 1].date,
+      dates: days.map((d) => d.date), days, total: days.reduce((t, d) => t + Object.values(d.counts).reduce((a, b) => a + b, 0), 0),
+    });
+  }
+  res.json({ suggestions: out });
+});
+
 // Nachtrag zurücknehmen: nur die damals eingetragenen, seither NICHT geänderten
 // Einträge; dabei angelegte Tage nur, wenn danach nichts anderes daran hängt.
 router.delete('/classes/:id/backfill/:batch', requireAuth, requireRole(CLASS_MANAGERS), async (req, res) => {

@@ -60,7 +60,7 @@ Rolle „Verwaltungsmitarbeiter“ aus dem Auftrag gibt es noch nicht (siehe Ent
 
 | Phase | Inhalt | braucht LLM? | Stand |
 |---|---|---|---|
-| 0 | **Vorschläge ohne KI**: täglich für Lehrkräfte/Klassensprecher „heute nicht eingetragen“, „zu spät laut Check-in“, „Entschuldigung offen“, „Abgabe fehlt“; mit einem Tipp übernehmen | nein | geplant |
+| 0 | **Vorschläge ohne KI**: Startseite der Klassenlehrkraft „Anwesenheit vervollständigen“ (fehlende Einträge an erfassten Tagen der letzten 3 Wochen; bestätigte Entschuldigung → entschuldigt, sonst fehlend), mit einem Tipp übernehmen, rücknehmbar. Offene Entschuldigungen, Korrekturen, Protokolle stehen schon unter „Zu erledigen“ | nein | ✅ 20.11.2026 |
 | 1 | Werkzeug-Schicht + Sicherheitsstufen + erweitertes Genehmigungssystem (inkl. Tests C, D, E, G, I, J) | nein | geplant |
 | 2 | Assistent-Oberfläche (Knopf in der App, Eingabe, Ergebnisse, laufende Aufgaben, Kontext der geöffneten Klasse) | nein (Oberfläche) | geplant |
 | 3 | Anbindung eines Sprachmodells mit Werkzeugaufrufen, Platzhalter für Namen, Kosten- und Missbrauchsgrenzen | **ja** | wartet auf E1/E2 |
@@ -68,7 +68,15 @@ Rolle „Verwaltungsmitarbeiter“ aus dem Auftrag gibt es noch nicht (siehe Ent
 | 5 | Spracheingabe Deutsch | je nach E3 | wartet auf E3 |
 | 6 | Testszenarien A–J automatisiert, Screenshots, Bildschirmaufnahmen (Browser-Aufnahmen mit Testdaten) | – | laufend |
 
-## 4. Offene Entscheidungen des Betreibers
+## 4. Entscheidungen des Betreibers
+
+**Entschieden am 20.11.2026 („Passt“ zu den Empfehlungen):** E1 EU-Anbieter mit Monatsgrenze (Betrag wird vor
+Phase 3 erfragt) · E3 deutsches Modell auf dem Gerät · E5 Löschen von Schülern/Konten genehmigen Leitung oder
+Administrator, Rollen und Systemeinstellungen nur der Administrator · E6 Klassensprecher: Protokoll-Entwürfe und
+Anwesenheits-Vorschläge, die Lehrkraft bestätigt · E4 vorerst keine neue Rolle, Verwaltungsaufgaben bleiben bei der
+Leitung (auf Wunsch später). Offen: E1 Monatsbetrag, E2 Zugangsschlüssel.
+
+Ursprüngliche Fragen:
 
 - **E1 – Sprachmodell-Anbieter und Kosten.** Ein Sprachmodell kostet in der Regel Geld; die Regel „alles
   kostenlos“ gilt bis zur Zustimmung. Optionen:
