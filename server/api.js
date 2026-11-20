@@ -916,6 +916,26 @@ function buildProfile(body, required) {
 }
 const PROFILE_REQUIRED_ROLES = [ROLES.SCHUELER, ROLES.KLASSENSPRECHER];
 
+// Einwilligung der Erziehungsberechtigten: bei Schülerinnen und Schülern unter
+// 16 Jahren (Art. 8 DSGVO) muss sie bei der Anmeldung bestätigt werden; für
+// ältere Konten kann die Leitung sie nachtragen (z. B. Papierformular).
+const CONSENT_AGE = 16;
+function ageOf(birthDate, on = todayIso()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(birthDate || ''))) return null;
+  const [y, m, d] = birthDate.split('-').map(Number);
+  const [ty, tm, td] = on.split('-').map(Number);
+  return ty - y - (tm < m || (tm === m && td < d) ? 1 : 0);
+}
+const isMinor = (u) => { const a = ageOf(u?.profile?.birthDate); return a !== null && a < CONSENT_AGE; };
+const guardianConsentMissing = (u) => STUDENT_ROLES.includes(u.role) && isMinor(u) && !u.guardianConsentAt;
+function guardianConsentFields(body, profile, role) {
+  if (!STUDENT_ROLES.includes(role)) return {};
+  const a = ageOf(profile?.birthDate);
+  if (a === null || a >= CONSENT_AGE) return {};
+  if (body?.guardianConsent !== true) return { error: `Bei Schülerinnen und Schülern unter ${CONSENT_AGE} Jahren muss ein Erziehungsberechtigter zustimmen.` };
+  return { fields: { guardianConsentAt: new Date().toISOString(), guardianConsentBy: profile.guardians?.[0]?.name || null, guardianConsentVia: 'registration' } };
+}
+
 // Selbst-Registrierung per Einladung (öffentlich). Klasse steht schon fest
 // (aus der Einladung) -> Konto ist sofort aktiv.
 router.post('/auth/register', async (req, res) => {
@@ -929,6 +949,8 @@ router.post('/auth/register', async (req, res) => {
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
   const pr = buildProfile(req.body || {}, PROFILE_REQUIRED_ROLES.includes(inv.intendedRole));
   if (pr.error) return res.status(400).json({ error: pr.error });
+  const gc = guardianConsentFields(req.body, pr.profile, inv.intendedRole);
+  if (gc.error) return res.status(400).json({ error: gc.error });
 
   const user = {
     id: newId('user'),
@@ -939,6 +961,7 @@ router.post('/auth/register', async (req, res) => {
     classIds: inv.classId ? [inv.classId] : [],
     childIds: inv.childId ? [inv.childId] : [],
     profile: pr.profile,
+    ...(gc.fields || {}),
     status: 'active',
     ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
@@ -964,6 +987,8 @@ router.post('/auth/register-open', async (req, res) => {
   if (findUserByEmail(email)) return res.status(409).json({ error: 'Diese E-Mail ist bereits registriert' });
   const pr = buildProfile(req.body || {}, true);
   if (pr.error) return res.status(400).json({ error: pr.error });
+  const gc = guardianConsentFields(req.body, pr.profile, ROLES.SCHUELER);
+  if (gc.error) return res.status(400).json({ error: gc.error });
 
   const user = {
     id: newId('user'),
@@ -974,6 +999,7 @@ router.post('/auth/register-open', async (req, res) => {
     classIds: [],
     childIds: [],
     profile: pr.profile,
+    ...(gc.fields || {}),
     status: 'pending',
     ...(req.body?.consent === true ? { consentAt: new Date().toISOString(), consentVersion: 1 } : {}),
     createdAt: new Date().toISOString(),
@@ -1717,6 +1743,7 @@ function attendanceStats(studentId, givenWin, opts = {}) {
   const dateOf = (a) => sdateMap.get(a.sessionId) || String(a.checkInAt || a.updatedAt || '').slice(0, 10);
   // Zusatzkurse zählen nicht in die Quote (opts.includeExtra: alles zeigen).
   const recs = db.all('attendance').filter((a) => a.studentId === studentId
+    && (!opts.classId || a.classId === opts.classId)
     && (opts.includeExtra || countsForGrade(a.classId))
     && (!win || inWindow(dateOf(a), win)));
   const count = (st) => recs.filter((a) => a.status === st).length;
@@ -2082,6 +2109,18 @@ router.get('/classes/:id/attendance-overview', requireAuth, (req, res) => {
   const klass = findClass(req.params.id);
   if (!klass) return res.status(404).json({ error: 'Klasse nicht gefunden' });
   if (!canManageClass(req.user, klass.id)) return res.status(403).json({ error: 'Kein Zugriff' });
+  // Früheres Schuljahr (?schoolYear=2025): wer damals laut Klassenverlauf in der
+  // Klasse war, und nur die Einträge dieser Klasse.
+  const past = req.query.schoolYear && schoolYearWin(req.query.schoolYear);
+  if (req.query.schoolYear && !past) return res.status(400).json({ error: 'Ungültiges Schuljahr' });
+  if (past && past.from !== schoolYearStart()) {
+    const sessDate = new Map(db.all('sessions').filter((x) => x.classId === klass.id).map((x) => [x.id, x.date]));
+    const hadEntry = new Set(db.all('attendance').filter((a) => inWindow(sessDate.get(a.sessionId), past)).map((a) => a.studentId));
+    const members = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && (hadEntry.has(u.id)
+      || enrollmentsOf(u).some((e) => e.classId === klass.id && e.from <= past.to && (!e.to || e.to > past.from))));
+    const rows = members.map((s) => ({ id: s.id, name: s.name, role: s.role, ...attendanceStats(s.id, past, { classId: klass.id }) }));
+    return res.json({ rows, schoolYear: Number(req.query.schoolYear) });
+  }
   const students = db
     .all('users')
     .filter((u) => STUDENT_ROLES.includes(u.role) && (u.classIds || []).includes(klass.id));
@@ -5021,7 +5060,15 @@ function studentStanding(studentId, win) {
   return { data, standing: computeStanding(data, gradeWeights()), window: win || null };
 }
 // Zeitfenster aus Query lesen: ?month=YYYY-MM oder ?from=YYYY-MM-DD&to=YYYY-MM-DD.
+/** Schuljahr „2025“ -> 1.9.2025 bis 31.8.2026 (nur gültige, nicht zukünftige Jahre). */
+function schoolYearWin(year) {
+  const y = Number(year);
+  const current = Number(schoolYearStart().slice(0, 4));
+  if (!Number.isInteger(y) || y < current - 10 || y > current) return null;
+  return { from: `${y}-09-01`, to: `${y + 1}-08-31` };
+}
 function winFromQuery(q) {
+  if (q.schoolYear) return schoolYearWin(q.schoolYear);
   if (q.month && /^\d{4}-\d{2}$/.test(q.month)) {
     const [y, m] = q.month.split('-').map(Number);
     const last = new Date(y, m, 0).getDate();
@@ -7696,6 +7743,7 @@ router.get('/admin/users', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEI
         ...publicUser(u),
         lastSeenAt: u.lastSeenAt || null,
         personId: personMain(u).id,
+        guardianConsentMissing: guardianConsentMissing(u),
         classNames: (u.classIds || []).map((c) => findClass(c)?.name).filter(Boolean),
         otherRoles: others.map((x) => ROLE_LABELS[x.role] || x.role),
         loginEmail: main?.email || null,
@@ -7803,6 +7851,56 @@ router.post('/admin/users/bulk-class', requireAuth, requireRole(ROLES.SUPER_ADMI
   res.json({ results });
 });
 
+// Schuljahreswechsel: alle Stammklassen auf einmal versetzen (z. B. Klasse 1 ->
+// Klasse 2, Abschlussklasse -> Austritt). Wer in welcher Klasse ist, wird VOR
+// dem ersten Wechsel festgehalten -- „1 -> 2“ und „2 -> 3“ verschieben also
+// niemanden doppelt. Jeder Wechsel steht mit Grund im Klassenverlauf;
+// einzelne Ausnahmen danach über „Versetzen“ in der Nutzerliste.
+router.post('/admin/school-year/advance', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), async (req, res) => {
+  if (req.user.isDemo) return res.status(403).json({ error: 'Im Demo-Modus nicht möglich' });
+  const moves = Array.isArray(req.body?.moves) ? req.body.moves : null;
+  if (!moves || !moves.length || moves.length > 100) return res.status(400).json({ error: 'Keine Zuordnung angegeben' });
+  const seen = new Set();
+  for (const m of moves) {
+    const from = findClass(String(m?.from || ''));
+    if (!from || from.kind === 'extra') return res.status(400).json({ error: 'Ausgangsklasse nicht gefunden (nur Stammklassen)' });
+    if (seen.has(from.id)) return res.status(400).json({ error: `„${from.name}" ist doppelt angegeben` });
+    seen.add(from.id);
+    if (m.to !== 'stay' && m.to !== 'left') {
+      const to = findClass(String(m.to || ''));
+      if (!to || to.kind === 'extra') return res.status(400).json({ error: `Zielklasse für „${from.name}" nicht gefunden (nur Stammklassen)` });
+      if (to.id === from.id) return res.status(400).json({ error: `„${from.name}" bleibt – dafür „bleibt“ wählen` });
+    }
+  }
+  // Schnappschuss vor jeder Änderung.
+  const students = db.all('users').filter((u) => STUDENT_ROLES.includes(u.role) && u.status !== 'disabled');
+  const plan = moves.map((m) => {
+    const from = findClass(m.from);
+    const members = students.filter((u) => homeClassId(u) === from.id);
+    const to = m.to === 'stay' || m.to === 'left' ? null : findClass(m.to);
+    return { from, to, action: m.to === 'stay' ? 'stay' : m.to === 'left' ? 'left' : 'move', members };
+  });
+  const view = plan.map((p) => ({
+    from: p.from.id, fromName: p.from.name, action: p.action, to: p.to?.id || null, toName: p.to?.name || null,
+    count: p.members.length, names: p.members.map((u) => u.name).sort((a, b) => a.localeCompare(b, 'de')),
+  }));
+  if (req.body?.dryRun !== false) return res.json({ dryRun: true, moves: view });
+
+  if (!(await safeguard('schuljahreswechsel'))) return res.status(503).json({ error: BACKUP_FAILED });
+  let moved = 0; let left = 0;
+  for (const p of plan) {
+    if (p.action === 'stay') continue;
+    for (const u of p.members) {
+      const r = setHomeClass(u, p.action === 'left' ? null : p.to.id, { by: req.user.id, reason: p.action === 'left' ? 'left' : 'promotion' });
+      if (!r) continue;
+      if (p.action === 'left') left++; else { moved++; announceMove(u, r); }
+    }
+  }
+  db.commit();
+  audit(req.user.id, 'school_year.advance', 'organization', org()?.id, null, { moves: view.map(({ names, ...v }) => v), moved, left });
+  res.json({ ok: true, moved, left, moves: view });
+});
+
 router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG), (req, res) => {
   const u = findUserById(req.params.id);
   if (!u) return res.status(404).json({ error: 'Nutzer nicht gefunden' });
@@ -7856,6 +7954,12 @@ router.patch('/admin/users/:id', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROL
   }
   if (Array.isArray(childIds))
     u.childIds = childIds.filter((id) => STUDENT_ROLES.includes(findUserById(id)?.role));
+  // Einwilligung der Erziehungsberechtigten nachtragen (z. B. Formular liegt vor) oder zurücknehmen.
+  if (req.body?.guardianConsent === true && !u.guardianConsentAt) {
+    u.guardianConsentAt = new Date().toISOString(); u.guardianConsentVia = 'recorded'; u.guardianConsentRecordedBy = req.user.id;
+  } else if (req.body?.guardianConsent === false) {
+    delete u.guardianConsentAt; delete u.guardianConsentVia; delete u.guardianConsentRecordedBy; delete u.guardianConsentBy;
+  }
 
   if (status === 'active' || status === 'disabled') {
     if (status === 'disabled' && u.id === req.user.id)

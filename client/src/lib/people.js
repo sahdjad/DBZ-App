@@ -46,6 +46,7 @@ export function mergePeople(users) {
       lastSeenAt: accounts.map((a) => a.lastSeenAt || '').sort().pop() || null,
       email: main.email || main.loginEmail || accounts.map((a) => a.email).find(Boolean) || null,
       studentNumber: accounts.map((a) => a.studentNumber).find(Boolean) || null,
+      guardianConsentMissing: accounts.some((a) => a.guardianConsentMissing && a.status !== 'disabled'),
       searchText: uniq([main.name, ...accounts.flatMap((a) => [a.name, a.email, a.loginEmail, a.studentNumber, ...(a.classNames || [])])]).join(' ').toLowerCase(),
     });
   }

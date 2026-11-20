@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight, Check, Database } from 'lucide-react';
+import { Users2, School, Settings, ScrollText, Plus, Download, Mail, Copy, KeyRound, CheckCircle2, ShieldCheck, XCircle, Link2, UserCheck, RotateCcw, Search, ChevronRight, Check, Database, CalendarClock } from 'lucide-react';
 import AppLayout from '../components/AppLayout.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/AuthContext.jsx';
@@ -622,6 +622,7 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
                       <span className="flex items-center gap-2">
                         <span className="text-body font-semibold text-ivory truncate" data-noi18n>{u.name}</span>
                         {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                        {u.guardianConsentMissing && <Badge tone="late">Einwilligung Eltern fehlt</Badge>}
                       </span>
                       <RoleBadges u={u} max={3} />
                       {(u.classNames?.length > 0 || u.studentNumber) && <span className="block text-footnote text-sage-muted truncate" data-noi18n>{[...(u.classNames || []), u.studentNumber].filter(Boolean).join(' · ')}</span>}
@@ -664,6 +665,7 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
                               <div className="flex items-center gap-2">
                                 <button type="button" onClick={() => tap(u)} className="font-semibold text-ivory truncate hover:underline text-left" data-noi18n>{u.name}</button>
                                 {u.status !== 'active' && <Badge tone="late">{STATUS_LABEL[u.status] || u.status}</Badge>}
+                                {u.guardianConsentMissing && <Badge tone="late">Einwilligung Eltern fehlt</Badge>}
                               </div>
                               <div className="text-footnote text-sage-muted truncate" data-noi18n>{[u.email || u.loginEmail, u.studentNumber].filter(Boolean).join(' · ')}</div>
                             </div>
@@ -694,6 +696,68 @@ function UserDirectory({ users, me, filters = FILTERS, byClass = false, roleFilt
   );
 }
 
+// Schuljahreswechsel: für jede Stammklasse wählen, wohin sie geht; Vorschau,
+// dann alle auf einmal versetzen (Sicherung vorher, Klassenverlauf je Schüler).
+function SchoolYearCard({ classes, onDone }) {
+  const toast = useToast();
+  const regular = classes.filter((c) => c.kind !== 'extra').sort((a, b) => a.name.localeCompare(b.name, 'de', { numeric: true }));
+  const [open, setOpen] = useState(false);
+  const [targets, setTargets] = useState({}); // classId -> 'stay' | 'left' | classId
+  const [preview, setPreview] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const moves = regular.map((c) => ({ from: c.id, to: targets[c.id] || 'stay' })).filter((m) => m.to !== 'stay');
+  const run = async (dryRun) => {
+    if (!moves.length) { toast.push('Bitte mindestens einer Klasse ein Ziel geben', 'error'); return; }
+    if (!dryRun) {
+      const n = preview.moves.reduce((t, m) => t + m.count, 0);
+      if (!window.confirm(`${n} Schüler versetzen bzw. austragen? Vorher wird automatisch gesichert.`)) return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.post('/admin/school-year/advance', { moves, dryRun });
+      if (dryRun) setPreview(r);
+      else { toast.push(`${r.moved} versetzt, ${r.left} ausgetreten`, 'success'); setPreview(null); setTargets({}); setOpen(false); onDone?.(); }
+    } catch (err) { toast.push(err.message, 'error'); } finally { setBusy(false); }
+  };
+  if (regular.length < 1) return null;
+  return (
+    <Card className="p-4 sm:p-5">
+      <CardHeader title="Schuljahreswechsel" subtitle="Alle Klassen auf einmal versetzen – mit Vorschau" icon={CalendarClock}
+        action={<Button size="sm" variant="ghost" onClick={() => setOpen((o) => !o)}>{open ? 'Schließen' : 'Öffnen'}</Button>} />
+      {open && (
+        <div className="space-y-3">
+          <p className="text-footnote text-sage-muted">Für jede Klasse wählen, wohin ihre Schüler im neuen Schuljahr gehen. Zusatzkurse bleiben unberührt; einzelne Ausnahmen danach in der Nutzerliste über „Versetzen“.</p>
+          <ul className="divide-y divide-line">
+            {regular.map((c) => (
+              <li key={c.id} className="flex items-center gap-3 py-2">
+                <span className="flex-1 min-w-0 truncate text-sm text-ivory" data-noi18n>{c.name}</span>
+                <span className="text-sage-muted" aria-hidden="true">→</span>
+                <select className="input w-44" aria-label={`Ziel für ${c.name}`} value={targets[c.id] || 'stay'} onChange={(e) => { setTargets({ ...targets, [c.id]: e.target.value }); setPreview(null); }}>
+                  <option value="stay">bleibt</option>
+                  {regular.filter((x) => x.id !== c.id).map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                  <option value="left">Austritt (Abschluss)</option>
+                </select>
+              </li>
+            ))}
+          </ul>
+          <Button variant="outline" onClick={() => run(true)} disabled={busy || !moves.length}>Vorschau</Button>
+          {preview && (
+            <div className="space-y-2">
+              {preview.moves.map((m) => (
+                <details key={m.from} className="rounded-xl border border-line px-3 py-2 text-sm">
+                  <summary className="cursor-pointer text-ivory"><span data-noi18n>{m.fromName}</span> → {m.action === 'left' ? 'Austritt' : <span data-noi18n>{m.toName}</span>} · {m.count} Schüler</summary>
+                  <p className="mt-1 text-caption text-sage-muted" data-noi18n>{m.names.join(', ') || '–'}</p>
+                </details>
+              ))}
+              <Button onClick={() => run(false)} disabled={busy}>Schuljahreswechsel durchführen</Button>
+            </div>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function ClassesTab() {
   const toast = useToast();
   const [classes, setClasses] = useState(null);
@@ -713,6 +777,7 @@ function ClassesTab() {
   if (!classes) return <Spinner />;
   return (
     <div className="space-y-4">
+      <SchoolYearCard classes={classes} onDone={load} />
       <Card className="p-4 sm:p-5">
         <CardHeader title="Neue Klasse" icon={School} />
         <form onSubmit={create} className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">

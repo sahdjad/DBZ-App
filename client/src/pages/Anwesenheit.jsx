@@ -5,6 +5,7 @@ import AppLayout from '../components/AppLayout.jsx';
 import { api, peek } from '../lib/api.js';
 import { Card, CardHeader, Button, Ring, StatusBadge, Spinner, useToast } from '../components/ui.jsx';
 import { useAuth } from '../lib/AuthContext.jsx';
+import { currentSchoolYear, schoolYearLabel, pastSchoolYears } from '../lib/schoolYear.js';
 
 const MANAGER = ['klassenlehrer', 'vertretung', 'super_admin', 'leitung'];
 
@@ -155,11 +156,12 @@ function ManagerView() {
       setClassId(d.classes[0]?.id || '');
     });
   }, []);
+  const [year, setYear] = useState(''); // '' = laufendes Schuljahr, sonst z. B. „2025“
   useEffect(() => {
     if (!classId) return;
     setRows(null);
-    api.get(`/classes/${classId}/attendance-overview`).then((d) => setRows(d.rows));
-  }, [classId]);
+    api.get(`/classes/${classId}/attendance-overview${year ? `?schoolYear=${year}` : ''}`).then((d) => setRows(d.rows)).catch(() => setRows([]));
+  }, [classId, year]);
 
   return (
     <div>
@@ -169,6 +171,10 @@ function ManagerView() {
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         ) : <span />}
+        <select aria-label="Schuljahr" className="input w-auto" value={year} onChange={(e) => setYear(e.target.value)}>
+          <option value="">Schuljahr {schoolYearLabel(currentSchoolYear())} (laufend)</option>
+          {pastSchoolYears(2).map((y) => <option key={y} value={y}>Schuljahr {schoolYearLabel(y)}</option>)}
+        </select>
         {classId && (
           <Button variant="outline" size="sm"
             onClick={() => api.download(`/export/attendance.csv?classId=${classId}`, `anwesenheit_${classId}.csv`).catch((e) => toast.push(e.message, 'error'))}>

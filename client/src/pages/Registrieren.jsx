@@ -4,7 +4,7 @@ import { BookMarked, UserPlus, CheckCircle2, Plus, X } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext.jsx';
 import { api } from '../lib/api.js';
 import { Button, Card, Spinner, useToast } from '../components/ui.jsx';
-import { ConsentCheckbox } from '../components/Consent.jsx';
+import { ConsentCheckbox, GuardianConsentCheckbox, ageFrom, CONSENT_AGE } from '../components/Consent.jsx';
 
 const emptyGuardian = () => ({ name: '', phones: [''], email: '' });
 const emptyProfile = {
@@ -216,6 +216,9 @@ export default function Registrieren() {
   // Bei Schüler/Klassensprecher ersetzen Vor-/Nachname aus den Anmeldedaten
   // das separate Namensfeld (weniger Doppelerfassung).
   const [consent, setConsent] = useState(false);
+  const [guardianConsent, setGuardianConsent] = useState(false);
+  const age = ageFrom(profile.birthDate);
+  const minor = age !== null && age < CONSENT_AGE;
   const showsProfileFields = openMode || invite?.role === 'schueler' || invite?.role === 'klassensprecher';
   const nameFor = () => (showsProfileFields ? `${profile.firstName} ${profile.lastName}`.trim() : form.name);
 
@@ -223,7 +226,7 @@ export default function Registrieren() {
     e.preventDefault();
     setBusy(true);
     try {
-      await register({ token, ...form, name: nameFor(), ...profile, consent });
+      await register({ token, ...form, name: nameFor(), ...profile, consent, guardianConsent: minor && guardianConsent });
       navigate('/dashboard', { replace: true });
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -236,7 +239,7 @@ export default function Registrieren() {
     e.preventDefault();
     setBusy(true);
     try {
-      await registerOpen({ ...form, name: nameFor(), ...profile, consent });
+      await registerOpen({ ...form, name: nameFor(), ...profile, consent, guardianConsent: minor && guardianConsent });
       setOpenDone(true);
     } catch (err) {
       toast.push(err.message || 'Registrierung fehlgeschlagen', 'error');
@@ -293,8 +296,9 @@ export default function Registrieren() {
                     <input type="password" autoComplete="new-password" className="input mt-1" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required minLength={8} />
                   </label>
                   <ProfileFields profile={profile} setProfile={setProfile} />
+                  {minor && <GuardianConsentCheckbox checked={guardianConsent} onChange={setGuardianConsent} guardianName={profile.guardians?.[0]?.name} />}
                   <ConsentCheckbox checked={consent} onChange={setConsent} />
-                  <Button type="submit" size="lg" className="w-full" disabled={busy || !consent}><UserPlus size={18} /> {busy ? 'Wird gesendet …' : 'Anmeldung senden'}</Button>
+                  <Button type="submit" size="lg" className="w-full" disabled={busy || !consent || (minor && !guardianConsent)}><UserPlus size={18} /> {busy ? 'Wird gesendet …' : 'Anmeldung senden'}</Button>
                   <button type="button" onClick={() => setOpenMode(false)} className="text-sm text-mint-light hover:underline w-full text-center">
                     Ich habe doch einen Einladungscode
                   </button>
@@ -340,8 +344,9 @@ export default function Registrieren() {
                     {showsProfileFields && (
                       <ProfileFields profile={profile} setProfile={setProfile} />
                     )}
+                    {showsProfileFields && minor && <GuardianConsentCheckbox checked={guardianConsent} onChange={setGuardianConsent} guardianName={profile.guardians?.[0]?.name} />}
                     <ConsentCheckbox checked={consent} onChange={setConsent} />
-                    <Button type="submit" size="lg" className="w-full" disabled={busy || !consent}><UserPlus size={18} /> {busy ? 'Konto wird erstellt …' : 'Konto erstellen'}</Button>
+                    <Button type="submit" size="lg" className="w-full" disabled={busy || !consent || (showsProfileFields && minor && !guardianConsent)}><UserPlus size={18} /> {busy ? 'Konto wird erstellt …' : 'Konto erstellen'}</Button>
                   </form>
                 </>
               ) : null}
