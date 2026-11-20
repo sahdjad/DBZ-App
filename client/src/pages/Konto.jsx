@@ -597,6 +597,9 @@ function AppVersionCard() {
         <div className="text-sm text-sage">Stand: <span className="text-ivory">{buildLabel()}</span></div>
         <Button size="sm" variant="outline" onClick={check} loading={busy}><RefreshCw size={16} /> Nach Updates suchen</Button>
       </div>
+      <p className="mt-3 text-footnote text-sage-muted">
+        <a href="#/impressum" className="hover:underline">Impressum</a><span className="mx-2">·</span><a href="#/datenschutz" className="hover:underline">Datenschutz</a>
+      </p>
     </Card>
   );
 }

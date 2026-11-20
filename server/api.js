@@ -37,7 +37,7 @@ import {
   computeStanding,
   STANDING_WEIGHTS,
 } from './domain.js';
-import { SUBJECTS, findSubject, DEFAULT_ORG, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
+import { SUBJECTS, findSubject, DEFAULT_ORG, DEFAULT_LEGAL, ABSENCE_REASONS, BEHAVIOR_CATEGORIES } from './content.js';
 import { SURAHS, surahByN, ayahSpan } from './quran.js';
 import { listSurahs, getSurah } from './providers/quranProvider.js';
 import { getTafsir, listTafsirEditions } from './providers/tafsirProvider.js';
@@ -204,7 +204,7 @@ router.use((req, res, next) => {
 // (server/store.js versucht es selbst weiter). Der Demo-Sandkasten ist davon
 // unabhängig und läuft normal.
 const MAINTENANCE = 'Die App ist gerade nicht erreichbar (Wartung). Deine Daten sind sicher – bitte in einigen Minuten erneut versuchen.';
-const OPEN_IN_MAINTENANCE = new Set(['/health', '/auth/login', '/auth/logout', '/auth/me']);
+const OPEN_IN_MAINTENANCE = new Set(['/health', '/auth/login', '/auth/logout', '/auth/me', '/legal']);
 router.use((req, res, next) => {
   if (!isSupabaseDegraded() || inSandbox() || OPEN_IN_MAINTENANCE.has(req.path)) return next();
   res.set('Retry-After', '60').status(503).json({ error: MAINTENANCE, maintenance: true });
@@ -500,7 +500,7 @@ function noSubstitute(req, res, next) {
 // (Rolle wechseln, abmelden, Benachrichtigungen lesen).
 const todayIso = () => new Date().toLocaleDateString('sv-SE', { timeZone: process.env.SCHOOL_TZ || 'Europe/Berlin' });
 const substituteExpired = (u) => u.role === ROLES.VERTRETUNG && Boolean(u.validUntil) && u.validUntil < todayIso();
-const OPEN_WHEN_EXPIRED = /^\/(me(\/|$)|auth\/|notifications|push\/|org$)/;
+const OPEN_WHEN_EXPIRED = /^\/(me(\/|$)|auth\/|notifications|push\/|org$|legal$)/;
 
 function requireAuth(req, res, next) {
   const payload = readToken(req);
@@ -1050,6 +1050,11 @@ router.post('/auth/reset-password', async (req, res) => {
 // Organisation (Social Links, Einstellungen)
 // =============================================================================
 
+// Impressum/Datenschutz: öffentlich (ohne Anmeldung) lesbar.
+const LEGAL_KEYS = Object.keys(DEFAULT_LEGAL);
+const legalInfo = () => ({ ...DEFAULT_LEGAL, ...(org().legal || {}) });
+router.get('/legal', (_req, res) => res.json({ legal: legalInfo() }));
+
 router.get('/org', requireAuth, (_req, res) => {
   const o = org();
   res.json({
@@ -1079,6 +1084,19 @@ router.patch('/org', requireAuth, requireRole(ROLES.SUPER_ADMIN, ROLES.LEITUNG),
   if (Number.isFinite(lateAfterMinutes)) o.lateAfterMinutes = Math.max(0, Math.min(60, lateAfterMinutes));
   if (typeof checkinAutoClose === 'string' && /^\d{1,2}:\d{2}$/.test(checkinAutoClose)) o.checkinAutoClose = checkinAutoClose;
   if (Number.isFinite(audioRetentionDays)) o.audioRetentionDays = Math.max(0, Math.min(3650, audioRetentionDays));
+  // Impressum-Angaben: nur der Administrator.
+  if (req.body?.legal && typeof req.body.legal === 'object') {
+    if (req.user.role !== ROLES.SUPER_ADMIN) return res.status(403).json({ error: 'Nur der System-Administrator kann das ändern' });
+    const next = { ...legalInfo() };
+    for (const k of LEGAL_KEYS) {
+      const v = req.body.legal[k];
+      if (v === undefined) continue;
+      if (typeof v !== 'string' || v.length > 200) return res.status(400).json({ error: 'Ungültige Angabe' });
+      next[k] = v.trim();
+    }
+    if (next.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next.email)) return res.status(400).json({ error: 'Ungültige E-Mail-Adresse' });
+    o.legal = next;
+  }
   // Bestätigungspflicht für die Leitung: nur der Administrator schaltet sie.
   if (typeof req.body?.leitungNeedsApproval === 'boolean') {
     if (req.user.role !== ROLES.SUPER_ADMIN) return res.status(403).json({ error: 'Nur der System-Administrator kann das ändern' });

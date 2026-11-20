@@ -133,7 +133,11 @@ export default function Login() {
 
           </Card>
 
-          <p className="text-center text-footnote text-white/60 mt-6">© {new Date().getFullYear()} Deen Bildungszentrum e.V.</p>
+          <p className="text-center text-footnote text-white/60 mt-6">
+            © {new Date().getFullYear()} Deen Bildungszentrum e.V.
+            <span className="mx-2">·</span><Link to="/impressum" className="hover:underline">Impressum</Link>
+            <span className="mx-2">·</span><Link to="/datenschutz" className="hover:underline">Datenschutz</Link>
+          </p>
         </div>
       </div>
     </div>

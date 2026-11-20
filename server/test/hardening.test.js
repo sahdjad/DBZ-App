@@ -973,3 +973,19 @@ test('Schülernummer und Ausweis: feste Nummer, Prüfung per QR zeigt nur das N�
   assert.equal((await (await fetch(`${base}/api/pass/${pass.token}`)).json()).valid, false);
   u.status = 'active';
 });
+
+test('Impressum-Angaben: öffentlich lesbar, nur der Administrator ändert sie', async () => {
+  const admin = await loginAs('admin@dbz.de');
+  const leitung = await loginAs('leitung@dbz.de');
+  const pub = await (await fetch(`${base}/api/legal`)).json();
+  assert.equal(pub.legal.street, 'Am Moosfeld 11');
+  assert.equal(pub.legal.zip, '81829');
+  assert.equal((await leitung('PATCH', '/org', { legal: { email: 'info@example.org' } })).status, 403);
+  assert.equal((await admin('PATCH', '/org', { legal: { email: 'keine-adresse' } })).status, 400);
+  assert.equal((await admin('PATCH', '/org', { legal: { phone: 12 } })).status, 400);
+  assert.equal((await admin('PATCH', '/org', { legal: { email: 'info@example.org', register: 'Amtsgericht München, VR 1' } })).status, 200);
+  const after = (await (await fetch(`${base}/api/legal`)).json()).legal;
+  assert.equal(after.email, 'info@example.org');
+  assert.equal(after.street, 'Am Moosfeld 11', 'andere Angaben bleiben');
+  assert.equal((await admin('GET', '/org')).status, 200);
+});

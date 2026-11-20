@@ -136,7 +136,7 @@ Lehrkräfte und Leitung, Schüler behalten nur, was sie für sich selbst gespeic
 - ⬜ ~~Tabellen statt eines Dokuments~~ (ersetzt durch die beiden Punkte oben): in `server/store.js` Sammlung für Sammlung auf
   Supabase-Tabellen umstellen – zuerst Benachrichtigungen, Audit-Log, Notizen, zuletzt Nutzer.
 - ⬜ `server/api.js` nach Bereichen aufteilen, ohne Verhalten zu ändern
-- ⬜ Rechtlicher Rahmen: Datenschutzerklärung, Auftragsverarbeitung (Supabase, Render), Löschfristen
+- ◐ Rechtlicher Rahmen: ✅ Datenschutzerklärung und Impressum (20.11.2026, Entwurf – rechtlich prüfen lassen) · ⬜ Auftragsverarbeitungsverträge mit Supabase und Render abschließen · ⬜ Regionen von Render/Supabase bestätigen
 
 ---
 
@@ -159,7 +159,7 @@ Die Richtlinien ändern sich; vor der Einreichung die aktuellen
 
 | | Aufgabe | Warum |
 |---|---|---|
-| ⬜ | Datenschutzerklärung und Impressum als Seite in der App und öffentlich im Web | Pflicht (5.1.1), auch für App Store Connect |
+| ✅ | Datenschutzerklärung und Impressum als Seite in der App und öffentlich im Web (`/#/impressum`, `/#/datenschutz`) | Pflicht (5.1.1), auch für App Store Connect |
 | ⬜ | Nachrichten und Inhalte melden, Nutzer blockieren, Kontaktadresse für Beschwerden | Pflicht bei nutzererzeugten Inhalten (1.2) |
 | ⬜ | Einwilligung der Eltern für Minderjährige sauber dokumentiert | Daten von Kindern (5.1.4, DSGVO) |
 | ⬜ | Anmeldung ohne Cookie-Abhängigkeit für die native Hülle (Token im sicheren Gerätespeicher) | Cookies sind in der iOS-WebView unzuverlässig |
