@@ -127,7 +127,7 @@ Alles, was der Betreiber umgesetzt haben möchte, an einer Stelle. Details stehe
 
 | Status | Wunsch | Wartet auf |
 |---|---|---|
-| ⬜ | **KI-Assistent** für Lehrkräfte, Klassensprecher, Leitung, Admin: Aufträge per Text/Sprache ausführen, Vorschläge („nicht eingetragen“, „zu spät“), Genehmigungen für Kritisches – Plan in `docs/KI-ASSISTENT.md` | Entscheidungen E1–E6 dort |
+| ⏸ | **KI-Assistent** – vom Betreiber am 21.11.2026 **zurückgestellt**, bis er ihn wieder aufruft. Plan bleibt in `docs/KI-ASSISTENT.md`. Ohne KI gebaut und weiter in Betrieb: Vorschlag „Anwesenheit vervollständigen“ (Startseite Lehrkraft) und Genehmigungen für kritische Aktionen | Betreiber |
 | ⬜ | E-Mail-Versand (Passwort vergessen, Benachrichtigungen per E-Mail, echte E-Mail-Adressen der Schüler) | Betreiber: kostenlosen Versanddienst einrichten, `EMAIL_API_URL`/`EMAIL_API_KEY` bei Render |
 | ⬜ | Layout der Nachrichten und Benachrichtigungen überarbeiten | Wünsche im Detail |
 | ⬜ | Impressum: E-Mail, Vereinsregister-Nummer, ggf. weitere Vorstände eintragen; Texte rechtlich prüfen lassen | Betreiber (Einstellungen → Impressum & Datenschutz) |

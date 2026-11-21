@@ -20,6 +20,7 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 - Keine destruktiven Tests, Migrationen oder Änderungen an Produktionsdaten ohne Freigabe.
 - Die App wird weiterentwickelt, nicht neu gebaut.
 - Das Speicher-Thema (Dateigrößen, Kontingente) ist zurückgestellt, bis der Nutzer es aufruft.
+- Der KI-Assistent ist zurückgestellt (21.11.2026), bis der Nutzer ihn aufruft – nicht weiterbauen.
 - Keine Modellnamen in Commits, PRs oder Code.
 
 ## Ablauf je Aufgabe
@@ -54,6 +55,6 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 ## Wo es weitergeht
 
 `docs/ROADMAP.md` ist der verbindliche Plan (Reihenfolge, Stand, App-Store-Vorbereitung) und enthält die
-**Merkliste des Betreibers** (alle offenen Wünsche). Der KI-Assistent ist in `docs/KI-ASSISTENT.md` geplant
-(Bestandsaufnahme, Architektur, Phasen, offene Entscheidungen E1–E6 – vor dem Bauen dort nachsehen).
+**Merkliste des Betreibers** (alle offenen Wünsche). Der KI-Assistent ist in `docs/KI-ASSISTENT.md` geplant,
+aber **zurückgestellt** (siehe oben).
 `BACKLOG.md` und `PROJECT_STATUS.md` sind älter und teilweise überholt.

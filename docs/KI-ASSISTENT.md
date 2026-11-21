@@ -1,5 +1,9 @@
 # KI-Assistent für die DBZ-App – Bestandsaufnahme und Umsetzungsplan
 
+> **Zurückgestellt am 21.11.2026 (Entscheidung des Betreibers).** Nicht weiterbauen, bis der Betreiber den
+> KI-Assistenten wieder aufruft. Phase 0 (Vorschlag „Anwesenheit vervollständigen“) und der Genehmigungsteil von
+> Phase 1 sind fertig und bleiben als normale Funktionen ohne KI in Betrieb.
+
 Stand: 20.11.2026. Grundlage ist der Auftrag des Betreibers („Master-Prompt DBZ AI Assistant“) vom 20.11.2026.
 Ziel: ein in die App integrierter Assistent für Lehrkräfte, Klassensprecher, Leitung und Systemadministration,
 der Aufträge in Text oder Sprache versteht und **erlaubte Aktionen tatsächlich ausführt**: Arbeitsblätter,
