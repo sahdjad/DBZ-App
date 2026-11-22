@@ -4,7 +4,7 @@ import { Button } from '../components/ui.jsx';
 
 export default function NotFound() {
   return (
-    <div className="min-h-screen relative grid place-items-center bg-bg text-center px-6">
+    <div className="min-h-screen min-h-svh relative grid place-items-center bg-bg text-center px-6">
       <div className="absolute inset-0 hero-atmosphere hero-image" aria-hidden="true" />
       <div className="absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-[#0B1E14]" aria-hidden="true" />
       <div className="relative animate-fade-up">

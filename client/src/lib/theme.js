@@ -21,8 +21,14 @@ export function resolveTheme(pref = getThemePref()) {
   return pref === 'dark' || (pref === 'system' && media.matches) ? 'dark' : 'light';
 }
 
+// Farbe der Statusleiste/Browserleiste = Farbe der Kopfzeile (--header-bg in
+// index.css), damit sie im Dunkelmodus nicht als hellerer Balken absteht.
+export const HEADER_COLORS = { light: '#07382E', dark: '#0C221B' };
+
 function apply(pref) {
-  document.documentElement.classList.toggle('dark', resolveTheme(pref) === 'dark');
+  const theme = resolveTheme(pref);
+  document.documentElement.classList.toggle('dark', theme === 'dark');
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', HEADER_COLORS[theme]);
 }
 
 export function setThemePref(pref) {
