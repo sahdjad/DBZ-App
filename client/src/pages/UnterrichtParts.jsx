@@ -127,8 +127,8 @@ export function SessionHistoryCard({ classId, className, onChanged }) {
   return (
     <Card className="p-4 sm:p-5">
       <CardHeader title="Anwesenheit nachtragen & korrigieren" subtitle="Tag antippen zum Bearbeiten – auch Tage, die noch fehlen" icon={History} />
-      <div className="flex items-end gap-2 pb-3">
-        <label className="block flex-1">
+      <div className="flex flex-wrap items-end gap-2 pb-3">
+        <label className="block flex-1 min-w-0 basis-40">
           <span className="text-xs text-sage">Tag nachtragen</span>
           <input type="date" className="input mt-1" value={newDate} max={localToday()} onChange={(e) => setNewDate(e.target.value)} />
         </label>
@@ -468,11 +468,11 @@ export function BackfillCard({ classId, onChanged }) {
       <div className="mt-3 space-y-2 text-sm">
         <label className="flex items-start gap-2.5">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={unexcused} onChange={(e) => setOpt({ unexcused: e.target.checked })} />
-          <span className="text-sage">Wer an einem erfassten Tag fehlt und sich nicht abgemeldet hat, gilt als <b className="text-ivory">unentschuldigt</b>.<span className="block text-caption text-sage-muted">Tage, an denen noch niemand eingetragen ist, bleiben offen – sonst stünde die ganze Klasse als unentschuldigt da.</span></span>
+          <span className="min-w-0 text-sage [overflow-wrap:anywhere]">Wer an einem erfassten Tag fehlt und sich nicht abgemeldet hat, gilt als <b className="text-ivory">unentschuldigt</b>.<span className="block text-caption text-sage-muted">Tage, an denen noch niemand eingetragen ist, bleiben offen – sonst stünde die ganze Klasse als unentschuldigt da.</span></span>
         </label>
         <label className="flex items-start gap-2.5">
           <input type="checkbox" className="mt-0.5 h-5 w-5 accent-[rgb(var(--c-mint))]" checked={pendingAsExcused} onChange={(e) => setOpt({ pendingAsExcused: e.target.checked })} />
-          <span className="text-sage">Noch <b className="text-ivory">offene Entschuldigungen</b> als entschuldigt übernehmen.<span className="block text-caption text-sage-muted">Bestätigte Entschuldigungen werden immer übernommen. Verspätungen werden noch nicht nachgetragen.</span></span>
+          <span className="min-w-0 text-sage [overflow-wrap:anywhere]">Noch <b className="text-ivory">offene Entschuldigungen</b> als entschuldigt übernehmen.<span className="block text-caption text-sage-muted">Bestätigte Entschuldigungen werden immer übernommen. Verspätungen werden noch nicht nachgetragen.</span></span>
         </label>
       </div>
       <div className="pt-3"><Button variant="outline" onClick={() => { setOff([]); runPreview(); }} disabled={busy || !from || !to}>Vorschau</Button></div>

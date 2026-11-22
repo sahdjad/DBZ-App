@@ -167,11 +167,11 @@ function ManagerView() {
     <div>
       <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         {classes.length > 1 ? (
-          <select aria-label="Klasse" className="input w-auto" value={classId} onChange={(e) => setClassId(e.target.value)}>
+          <select aria-label="Klasse" className="input w-auto max-w-full" value={classId} onChange={(e) => setClassId(e.target.value)}>
             {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         ) : <span />}
-        <select aria-label="Schuljahr" className="input w-auto" value={year} onChange={(e) => setYear(e.target.value)}>
+        <select aria-label="Schuljahr" className="input w-auto max-w-full" value={year} onChange={(e) => setYear(e.target.value)}>
           <option value="">Schuljahr {schoolYearLabel(currentSchoolYear())} (laufend)</option>
           {pastSchoolYears(2).map((y) => <option key={y} value={y}>Schuljahr {schoolYearLabel(y)}</option>)}
         </select>

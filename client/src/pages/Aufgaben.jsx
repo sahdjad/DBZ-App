@@ -205,8 +205,8 @@ function HomeworkRules({ classes }) {
   return (
     <Card className="p-4">
       <button type="button" onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between gap-2 text-left">
-        <span className="flex items-center gap-2 text-sm text-ivory"><SlidersHorizontal size={16} className="text-mint" /> Regeln: eine Hausaufgabe pro Tag</span>
-        <span className="text-xs text-sage-muted">{open ? 'Schließen' : 'Einstellen'}</span>
+        <span className="flex min-w-0 items-center gap-2 text-sm text-ivory"><SlidersHorizontal size={16} className="text-mint shrink-0" /> Regeln: eine Hausaufgabe pro Tag</span>
+        <span className="shrink-0 text-xs text-sage-muted">{open ? 'Schließen' : 'Einstellen'}</span>
       </button>
       {open && (
         <div className="mt-3 space-y-3">
@@ -444,7 +444,7 @@ function ManagerView() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Segmented options={[[false, 'Aktuell'], [true, 'Archiv']]} value={archived} onChange={setArchived} />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {allIds.length > 0 && !selection.active && (
             <Button variant="outline" onClick={() => selection.start()}><ListChecks size={18} /> Auswählen</Button>
           )}

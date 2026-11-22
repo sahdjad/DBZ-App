@@ -163,6 +163,10 @@ Alles, was der Betreiber umgesetzt haben möchte, an einer Stelle. Details stehe
 
 ## Stufe 7 – iOS-App im App Store
 
+Prüfstand nach Apples Regeln (Skills angewendet am 22.11.2026): `docs/APP-STORE-PRUEFUNG.md` – erfüllt: Prüferzugang,
+Konto löschen, Datenschutzerklärung, Eltern-Einwilligung, Textgröße bis 200 %; Blocker: Melden/Blockieren, native
+Mehrwerte, Token im Schlüsselbund, Datenschutz-Angaben.
+
 Empfohlener Weg: **Capacitor-Hülle** um die vorhandene React-App (kein Neubau).
 Voraussetzung sind Stufe 1, 2 und der rechtliche Teil aus Stufe 6.
 Die Richtlinien ändern sich; vor der Einreichung die aktuellen

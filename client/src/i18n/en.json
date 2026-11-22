@@ -1,6 +1,8 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Riesig": "Huge",
+"Maximal (200 %)": "Maximum (200 %)",
 "Aus der Klasse nehmen – beantragen": "Remove from class – request",
 "Leitung oder Administrator entscheidet.": "Leadership or administrator decides.",
 "Konto deaktivieren – beantragen": "Deactivate account – request",

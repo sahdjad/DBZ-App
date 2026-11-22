@@ -436,7 +436,7 @@ function UsersTab() {
       )}
       {/* Werkzeugleiste */}
       <div className="flex gap-2 flex-wrap items-center">
-        <label className="relative flex-1 min-w-[12rem]">
+        <label className="relative flex-1 basis-48 min-w-0">
           <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted pointer-events-none" aria-hidden="true" />
           <input className="input pl-10" placeholder="Suchen: Name, E-Mail oder Klasse …" aria-label="Nutzer suchen" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
@@ -545,7 +545,7 @@ function UsersTab() {
         ) : null}
       />
 
-      <details className="rounded-2xl border border-line/70 bg-card text-subhead">
+      <details className="rounded-2xl border border-line/70 bg-card text-subhead [overflow-wrap:anywhere]">
         <summary className="cursor-pointer px-4 py-3 text-ivory font-medium">So beförderst du jemanden (z. B. zum Klassenlehrer, zur Leitung oder zum Admin)</summary>
         <ol className="list-decimal space-y-1.5 px-8 pb-4 text-sage">
           <li>Hat sich die Person gerade erst registriert, steht sie oben im Reiter <b>„Neue Anmeldungen“</b>. Dort bei <b>„Freischalten als“</b> die Rolle wählen (bei Lehrkräften die Klassen antippen) und <b>Freischalten</b> drücken.</li>
