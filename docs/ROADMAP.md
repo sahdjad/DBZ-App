@@ -128,7 +128,8 @@ Alles, was der Betreiber umgesetzt haben möchte, an einer Stelle. Details stehe
 | Status | Wunsch | Wartet auf |
 |---|---|---|
 | ⏸ | **KI-Assistent** – vom Betreiber am 21.11.2026 **zurückgestellt**, bis er ihn wieder aufruft. Plan bleibt in `docs/KI-ASSISTENT.md`. Ohne KI gebaut und weiter in Betrieb: Vorschlag „Anwesenheit vervollständigen“ (Startseite Lehrkraft) und Genehmigungen für kritische Aktionen | Betreiber |
-| ⬜ | E-Mail-Versand (Passwort vergessen, Benachrichtigungen per E-Mail, echte E-Mail-Adressen der Schüler) | Betreiber: kostenlosen Versanddienst einrichten, `EMAIL_API_URL`/`EMAIL_API_KEY` bei Render |
+| ⬜ | E-Mail-Versand (Passwort vergessen, Benachrichtigungen per E-Mail, echte E-Mail-Adressen der Schüler). **Wunsch 22.11.2026:** Benachrichtigungs-E-Mails von Anfang an abbestellbar (Schalter im Konto + Abmeldelink in jeder Mail); „Passwort vergessen“ bleibt immer zustellbar | Betreiber: kostenlosen Versanddienst einrichten, `EMAIL_API_URL`/`EMAIL_API_KEY` bei Render |
+| ✅ | Chat ist geschlossener Schul-Chat: kein Blockieren, Schüler/Eltern löschen keine Nachrichten; Lehrkräfte/Leitung behalten „für mich ausblenden“ und „zurückrufen“ (Entscheidung 22.11.2026, steht in Datenschutz und Einwilligung) | – |
 | ⬜ | Layout der Nachrichten und Benachrichtigungen überarbeiten | Wünsche im Detail |
 | ⬜ | Impressum: E-Mail, Vereinsregister-Nummer, ggf. weitere Vorstände eintragen; Texte rechtlich prüfen lassen | Betreiber (Einstellungen → Impressum & Datenschutz) |
 | ⬜ | Regionen von Render/Supabase bestätigen, Auftragsverarbeitungsverträge abschließen | Betreiber |
