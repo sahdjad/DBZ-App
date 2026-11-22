@@ -1,6 +1,7 @@
 {
 "_comment": "Deutsch -> Englisch. Schlüssel = deutscher Originaltext (exakt, ohne Rand-Leerzeichen). patterns: {} = Platzhalter, {1},{2} im Englischen.",
 "words": {
+"Die Nachrichten sind ein geschlossener Schul-Chat: Blockieren ist nicht möglich, und Schüler und Eltern können Nachrichten nicht löschen.": "Messages are a closed school chat: blocking is not possible, and students and parents cannot delete messages.",
 "Riesig": "Huge",
 "Maximal (200 %)": "Maximum (200 %)",
 "Aus der Klasse nehmen – beantragen": "Remove from class – request",

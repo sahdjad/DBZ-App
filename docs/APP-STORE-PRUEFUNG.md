@@ -23,8 +23,12 @@ erneut prüfen (siehe Skill `app-store-review`).
 
 ## Offen – Blocker für die Einreichung
 
-1. **1.2 Nutzerinhalte:** Nachrichten zwischen Nutzern brauchen „Melden“, „Blockieren“ und eine veröffentlichte
-   Kontaktadresse (E-Mail im Impressum fehlt noch).
+1. **1.2 Nutzerinhalte:** Apple verlangt bei Nachrichten zwischen Nutzern normalerweise „Melden“ und „Blockieren“.
+   **Entscheidung des Betreibers (22.11.2026): kein Blockieren und kein Löschen für Schüler/Eltern** – der Chat ist
+   ein geschlossener Schul-Chat, nur vom Verein aufgenommene Personen schreiben einander (steht in
+   Datenschutzerklärung und Einwilligung). In den Review-Notizen begründen: geschlossene Nutzergruppe, keine
+   Fremden, keine öffentliche Registrierung ohne Freigabe, Ansprechpartner ist die Leitung. Risiko: Apple kann
+   trotzdem eine Meldefunktion verlangen. Noch nötig: veröffentlichte Kontaktadresse (E-Mail im Impressum fehlt).
 2. **4.2 Mindestfunktion:** Eine reine Web-Hülle wird abgelehnt. Die native App braucht echten Mehrwert: Push über
    APNs (Skill `push-notifications`), Kamera für den QR-Check-in, Schülerausweis in Apple Wallet (`passkit`), Web-Inhalt
    über WebKit (`swiftui-webkit`).

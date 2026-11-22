@@ -134,6 +134,15 @@ export function Datenschutz() {
         <li>Nachrichten, Ankündigungen und Benachrichtigungen in der App</li>
         <li>bei aktivierten Push-Mitteilungen: eine technische Adresse des Push-Dienstes Ihres Geräts</li>
       </UL>
+      <P>
+        Die Nachrichten der App sind kein offener Messenger, sondern ein geschlossener Schul-Chat: Schreiben können
+        nur Personen, die der Verein als Lehrkraft, Leitung, Schülerin/Schüler oder Elternteil aufgenommen hat.
+        Deshalb lassen sich andere Teilnehmende <b className="text-ivory">nicht blockieren</b>. Schülerinnen, Schüler
+        und Eltern können Nachrichten <b className="text-ivory">nicht löschen</b>; Verläufe bleiben erhalten, damit
+        Absprachen zwischen Schule und Familie nachvollziehbar sind. Lehrkräfte und Leitung können eine eigene
+        Nachricht zurückrufen; die Empfänger sehen dann nur einen Hinweis. Wer eine unangemessene Nachricht erhält,
+        wendet sich bitte an die Leitung.
+      </P>
       <H3>Technische Daten</H3>
       <UL>
         <li>beim Aufruf der App verarbeitet unser Hosting-Anbieter technisch notwendige Verbindungsdaten (u. a. IP-Adresse, Zeitpunkt, aufgerufene Adresse) in Server-Protokollen</li>

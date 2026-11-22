@@ -1,6 +1,7 @@
 {
 "_comment": "Deutsch -> Französisch (gleiche Schlüssel wie en.json).",
 "words": {
+"Die Nachrichten sind ein geschlossener Schul-Chat: Blockieren ist nicht möglich, und Schüler und Eltern können Nachrichten nicht löschen.": "La messagerie est un chat scolaire fermé : il n’est pas possible de bloquer quelqu’un, et les élèves et les parents ne peuvent pas supprimer de messages.",
 "Riesig": "Énorme",
 "Maximal (200 %)": "Maximum (200 %)",
 "Aus der Klasse nehmen – beantragen": "Retirer de la classe – demander",
