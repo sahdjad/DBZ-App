@@ -36,7 +36,7 @@ export default function PasswortNeu() {
   };
 
   return (
-    <div className="min-h-screen grid place-items-center bg-bg p-6">
+    <div className="min-h-screen min-h-svh grid place-items-center bg-bg p-6">
       <div className="w-full max-w-sm">
         <div className="flex items-center gap-3 mb-6">
           <span className="grid place-items-center h-10 w-10 rounded-lg bg-mint/15 border border-mint/25 text-mint"><BookMarked size={22} /></span>

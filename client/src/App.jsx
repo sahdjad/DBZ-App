@@ -67,7 +67,7 @@ const ADMINS = ['super_admin', 'leitung'];
 function Splash() {
   const [logoOk, setLogoOk] = useState(true);
   return (
-    <div className="app-splash min-h-screen grid place-items-center">
+    <div className="app-splash min-h-screen min-h-svh grid place-items-center">
       <div className="flex flex-col items-center">
         <div className="splash-mark relative grid place-items-center h-28 w-28">
           <svg className="splash-ring absolute inset-0" viewBox="0 0 112 112" aria-hidden="true"><circle cx="56" cy="56" r="52" /></svg>
@@ -99,7 +99,7 @@ function Protected({ children, roles }) {
 // Apps) statt eines leeren Bildschirms mit "Lädt …".
 function PageFallback() {
   return (
-    <div className="min-h-screen bg-bg">
+    <div className="min-h-screen min-h-svh bg-bg">
       <div className="page-progress" role="progressbar" aria-label="Seite wird geladen" />
       <div className="grid place-items-center pt-40"><Spinner label="" /></div>
     </div>

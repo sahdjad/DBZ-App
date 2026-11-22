@@ -24,8 +24,8 @@ export default function BerichtDruck() {
     api.get('/org').then((d) => setOrg(d.org)).catch(() => {});
   }, [id]);
 
-  if (error) return <div className="min-h-screen grid place-items-center bg-bg text-status-absent p-6">{error}</div>;
-  if (!report) return <div className="min-h-screen grid place-items-center bg-bg"><Spinner /></div>;
+  if (error) return <div className="min-h-screen min-h-svh grid place-items-center bg-bg text-status-absent p-6">{error}</div>;
+  if (!report) return <div className="min-h-screen min-h-svh grid place-items-center bg-bg"><Spinner /></div>;
 
   const d = report.data;
   const rows = [
@@ -45,7 +45,7 @@ export default function BerichtDruck() {
   ];
 
   return (
-    <div className="min-h-screen bg-bg py-8 px-4">
+    <div className="min-h-screen min-h-svh bg-bg py-8 px-4">
       {/* Steuerleiste (nicht drucken) */}
       <div className="no-print max-w-3xl mx-auto mb-4 flex items-center justify-between">
         <button onClick={() => navigate(-1)} className="inline-flex items-center gap-2 text-sm text-sage-muted hover:text-ivory">
