@@ -177,7 +177,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
       )}
 
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sage-muted" />
           <input className="input pl-10 rounded-xl" type="search" aria-label="Sure suchen" placeholder="Sure suchen …" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
@@ -207,7 +207,7 @@ function SurahList({ surahs, marks, onSelect, onOpenPages, onMarksChanged }) {
               <div className="text-body text-ivory font-medium leading-snug break-words">{s.name}</div>
               <div className="text-footnote text-sage-muted">{s.ayat} Ayat</div>
             </div>
-            {s.ar && <span dir="rtl" lang="ar" className="font-arabic text-xl text-ivory/90 shrink-0 leading-none">سورة {s.ar}</span>}
+            {s.ar && <span dir="rtl" lang="ar" className="font-arabic text-xl text-ivory/90 max-w-[45%] text-right leading-tight">سورة {s.ar}</span>}
             <ChevronRight size={18} className="text-sage-muted/60 shrink-0" />
           </button>
         ))}

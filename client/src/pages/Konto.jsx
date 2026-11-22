@@ -233,7 +233,7 @@ function ThemeCard() {
           <div className="text-footnote font-medium text-sage-muted mb-2">Textgröße</div>
           <div className="flex items-end gap-3">
             <span className="text-footnote text-sage-muted pb-2">A</span>
-            <Segmented className="flex-1" options={TEXT_SIZES.map((t) => [t.id, t.label])} value={text} onChange={(v) => { setText(v); setTextSize(v); }} size="sm" />
+            <Segmented className="flex-1" options={TEXT_SIZES.map((t) => [t.id, <span key={t.id} title={t.label}><span aria-hidden="true">{t.short}</span><span className="sr-only">{t.label}</span></span>])} value={text} onChange={(v) => { setText(v); setTextSize(v); }} size="sm" />
             <span className="text-title3 text-sage-muted pb-1">A</span>
           </div>
         </div>
@@ -597,8 +597,8 @@ function AppVersionCard() {
         <div className="text-sm text-sage">Stand: <span className="text-ivory">{buildLabel()}</span></div>
         <Button size="sm" variant="outline" onClick={check} loading={busy}><RefreshCw size={16} /> Nach Updates suchen</Button>
       </div>
-      <p className="mt-3 text-footnote text-sage-muted">
-        <a href="#/impressum" className="hover:underline">Impressum</a><span className="mx-2">·</span><a href="#/datenschutz" className="hover:underline">Datenschutz</a>
+      <p className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-footnote text-sage-muted">
+        <a href="#/impressum" className="hover:underline">Impressum</a><a href="#/datenschutz" className="hover:underline">Datenschutz</a>
       </p>
     </Card>
   );

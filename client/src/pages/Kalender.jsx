@@ -131,7 +131,7 @@ export default function Kalender() {
           <button onClick={() => move(1)} className="grid place-items-center h-9 w-9 rounded-full text-mint-light dark:text-mint hover:bg-hover" aria-label="Weiter"><ChevronRight size={22} /></button>
         </div>
         <Segmented className="w-full mb-3" options={[['year', 'Jahr'], ['month', 'Monat'], ['week', 'Woche'], ['day', 'Tag']]} value={view} onChange={setView} />
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex flex-wrap items-center gap-2 mb-4">
           <Button size="sm" variant="ghost" onClick={() => setSubOpen((v) => !v)}><Rss size={15} /> Abonnieren</Button>
           <Button size="sm" variant="outline" className="ml-auto" onClick={() => openNew()}><Plus size={16} /> Termin</Button>
         </div>

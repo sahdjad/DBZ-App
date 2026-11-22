@@ -51,6 +51,8 @@ Der Nutzer schreibt Deutsch; Antworten, Commits, PRs und Code-Kommentare auf Deu
 - Supabase-Betrieb und Ausfälle lassen sich in Tests gegen `server/test/helpers/fake-supabase.js` durchspielen.
 - Das Repository ist **öffentlich**: keine Anleitungen zum Ausnutzen noch offener Lücken ablegen.
 - Sicherung/Wiederherstellung: `docs/SICHERUNG.md`. Umgebungsvariablen: `.env.example`.
+- iOS-/App-Store-Skills (HIG, App-Review, Barrierefreiheit, WebKit, Push, Wallet u. a.) liegen in `.claude/skills/`
+  (Quellen/Lizenzen: `.claude/skills/QUELLEN.md`); Prüfstand: `docs/APP-STORE-PRUEFUNG.md`.
 
 ## Wo es weitergeht
 

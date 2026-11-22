@@ -87,9 +87,9 @@ export function Section({ title, action, children, className = '', footer }) {
   return (
     <section className={cx('mt-7 first:mt-0', className)}>
       {(title || action) && (
-        <div className="flex items-end justify-between gap-3 mb-2 px-1">
-          {title && <h2 className="text-title3 font-semibold text-ivory">{title}</h2>}
-          {action && <span className="shrink-0 -my-2.5 [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-11 [&>a]:px-1 [&>button]:inline-flex [&>button]:items-center [&>button]:min-h-11 [&>button]:px-1">{action}</span>}
+        <div className="flex flex-wrap items-end justify-between gap-x-3 mb-2 px-1">
+          {title && <h2 className="min-w-0 text-title3 font-semibold text-ivory">{title}</h2>}
+          {action && <span className="ml-auto max-w-full -my-2.5 [&>a]:inline-flex [&>a]:items-center [&>a]:min-h-11 [&>a]:px-1 [&>button]:inline-flex [&>button]:items-center [&>button]:min-h-11 [&>button]:px-1">{action}</span>}
         </div>
       )}
       {children}

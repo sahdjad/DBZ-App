@@ -4,10 +4,13 @@
 // das Layout fließt also echt um.
 
 export const TEXT_SIZES = [
-  { id: 's', label: 'Klein' },
-  { id: 'm', label: 'Standard' },
-  { id: 'l', label: 'Groß' },
-  { id: 'xl', label: 'Sehr groß' },
+  { id: 's', label: 'Klein', short: 'S' },
+  { id: 'm', label: 'Standard', short: 'M' },
+  { id: 'l', label: 'Groß', short: 'L' },
+  { id: 'xl', label: 'Sehr groß', short: 'XL' },
+  // Apple (HIG): Text sollte sich bis etwa 200 % vergrößern lassen.
+  { id: 'xxl', label: 'Riesig', short: 'XXL' },
+  { id: 'max', label: 'Maximal (200 %)', short: 'Max' },
 ];
 export const FONTS = [
   { id: 'system', label: 'System', sample: 'Aa', css: 'var(--font-ui)' },

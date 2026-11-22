@@ -104,6 +104,8 @@ html[data-font='rounded'] { --font-ui: ui-rounded, 'SF Pro Rounded', -apple-syst
 html[data-text='s'] { --text-scale: 0.9375; }
 html[data-text='l'] { --text-scale: 1.1875; }
 html[data-text='xl'] { --text-scale: 1.3125; }
+html[data-text='xxl'] { --text-scale: 1.6875; } /* ca. 160 % */
+html[data-text='max'] { --text-scale: 2.125; } /* 200 % des Standards (HIG) */
 html {
   font-size: calc(var(--text-scale) * 100%);
   -webkit-text-size-adjust: 100%;
@@ -147,12 +149,12 @@ html {
     scroll-behavior: smooth;
   }
 
-  /* Kontrollkästchen und Auswahlpunkte: einheitlich 24 px (Mindest-Tippfläche
-     nach WCAG 2.2), in der Markenfarbe. Eigene Größenklassen haben Vorrang. */
+  /* Kontrollkästchen und Auswahlpunkte: 28 px (Mindestgröße für Bedienelemente
+     nach Apples HIG; WCAG 2.2 verlangt 24 px), in der Markenfarbe. */
   input[type='checkbox'],
   input[type='radio'] {
-    width: 1.5rem;
-    height: 1.5rem;
+    width: 1.75rem;
+    height: 1.75rem;
     flex-shrink: 0;
     accent-color: rgb(var(--c-mint));
   }
